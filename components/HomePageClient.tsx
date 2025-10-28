@@ -11,6 +11,7 @@ import {
   Users,
   Clock
 } from 'lucide-react';
+import Link from 'next/link';
 import Layout from '@/components/Layout';
 import BlogCard from '@/components/BlogCard';
 import NewsletterSignup from '@/components/NewsletterSignup';
@@ -86,13 +87,13 @@ export default function HomePageClient({ featuredPosts, categories }: HomePageCl
               transition={{ delay: 0.2 }}
               className="mt-10 flex items-center justify-center gap-x-6"
             >
-              <a
+              <Link
                 href="/blog"
                 className="group inline-flex items-center rounded-lg bg-primary-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
               >
                 Explore Articles
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </a>
+              </Link>
               <a
                 href="/about"
                 className="text-sm font-semibold leading-6 text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
@@ -169,13 +170,13 @@ export default function HomePageClient({ featuredPosts, categories }: HomePageCl
           </div>
 
           <div className="mt-12 text-center">
-            <a
+            <Link
               href="/blog"
               className="inline-flex items-center rounded-lg bg-primary-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
             >
               View All Articles
               <ArrowRight className="ml-2 h-4 w-4" />
-            </a>
+            </Link>
           </div>
         </div>
       </section>

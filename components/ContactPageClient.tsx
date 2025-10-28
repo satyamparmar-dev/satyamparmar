@@ -71,7 +71,7 @@ export default function ContactPageClient() {
             className="mx-auto mt-6 max-w-2xl text-lg text-gray-600 dark:text-gray-300"
           >
             Have a question about backend engineering? Want to collaborate? 
-            We'd love to hear from you.
+            We&apos;d love to hear from you.
           </motion.p>
         </div>
 
@@ -179,7 +179,7 @@ export default function ContactPageClient() {
               </h3>
               <p className="text-gray-600 dark:text-gray-400">
                 Absolutely! We welcome contributions from experienced developers. 
-                Contact us with your article ideas and we'll discuss collaboration opportunities.
+                Contact us with your article ideas and we&apos;ll discuss collaboration opportunities.
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">

@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { Code, Brain, Rocket, Building, Mail, Github, Twitter, Linkedin } from 'lucide-react';
+import Link from 'next/link';
 import Layout from '@/components/Layout';
 
 const features = [
@@ -156,8 +157,8 @@ export default function AboutPageClient() {
                   Senior Backend Engineer & Tech Writer
                 </p>
                 <p className="text-gray-700 dark:text-gray-300 leading-relaxed mb-6">
-                  With over 15 years of experience in backend engineering, I've built scalable systems 
-                  for startups and enterprises alike. I'm passionate about sharing knowledge and helping 
+                  With over 15 years of experience in backend engineering, I&apos;ve built scalable systems 
+                  for startups and enterprises alike. I&apos;m passionate about sharing knowledge and helping 
                   developers navigate the complex world of backend development, AI integration, and 
                   modern software architecture.
                 </p>
@@ -246,12 +247,12 @@ export default function AboutPageClient() {
               Join thousands of developers who are already improving their backend engineering skills.
             </p>
             <div className="flex flex-col gap-4 sm:flex-row sm:justify-center">
-              <a
+              <Link
                 href="/blog"
                 className="inline-flex items-center justify-center rounded-lg bg-white px-6 py-3 text-sm font-semibold text-primary-600 shadow-sm hover:bg-primary-50"
               >
                 Explore Articles
-              </a>
+              </Link>
               <a
                 href="/contact"
                 className="inline-flex items-center justify-center rounded-lg border border-white px-6 py-3 text-sm font-semibold text-white hover:bg-white hover:text-primary-600"

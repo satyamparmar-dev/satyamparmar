@@ -216,7 +216,7 @@ const FORMSPREE_FORM_ID = 'xpzgkqwe'; // Your form ID`
           <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400 mr-3" />
           <div>
             <h3 className="text-lg font-semibold text-green-800 dark:text-green-200">
-              🎉 You're Almost Done!
+              🎉 You&apos;re Almost Done!
             </h3>
             <p className="text-green-700 dark:text-green-300 mt-1">
               Once you complete these steps, your newsletter and contact form will be fully functional!

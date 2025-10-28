@@ -165,7 +165,7 @@ export default function ContactForm() {
             <div className="flex items-center">
               <CheckCircle className="h-5 w-5 mr-2" />
               <p className="text-sm font-medium">
-                Message sent successfully! We'll get back to you soon.
+                Message sent successfully! We&apos;ll get back to you soon.
               </p>
             </div>
           </motion.div>

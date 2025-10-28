@@ -242,7 +242,7 @@ export default function BlogPageClient({ allPosts, allTags, categories }: BlogPa
               )}
               {searchQuery && (
                 <span className="inline-flex items-center space-x-1 rounded-full bg-blue-100 px-3 py-1 text-sm text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-                  <span>"{searchQuery}"</span>
+                  <span>&ldquo;{searchQuery}&rdquo;</span>
                   <button
                     onClick={() => setSearchQuery('')}
                     className="ml-1 hover:text-blue-900 dark:hover:text-blue-100"
