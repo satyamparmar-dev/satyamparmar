@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 // For GitHub Pages, you'll need to use a third-party service
 // This is a placeholder that shows the structure
 
+export const dynamic = 'force-static';
+
 export async function POST(request: NextRequest) {
   try {
     const { email } = await request.json();

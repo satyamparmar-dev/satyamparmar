@@ -1,8 +1,10 @@
 import { getAllBlogPosts } from '@/lib/blog-server';
 
+export const dynamic = 'force-static';
+
 export async function GET() {
   const posts = getAllBlogPosts();
-  const baseUrl = 'https://your-domain.com';
+  const baseUrl = 'https://satyamparmar-dev.github.io/satyamparmar';
 
   const rssItems = posts
     .map((post) => {
