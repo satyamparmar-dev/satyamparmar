@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Backend Engineering Blog
 
 A modern, responsive static technical blog website built with Next.js 15, focused on Backend Engineering, AI, Tech Innovations, and the Startup World. Designed with an enterprise-grade, modern aesthetic and optimized for GitHub Pages deployment.
@@ -254,3 +255,7 @@ If you encounter any issues or have questions:
 ---
 
 **Built with ❤️ for the developer community**
+=======
+# satyamparmar
+satyamparmar
+>>>>>>> 117b447035e2b65675214fb3249633294d781018
