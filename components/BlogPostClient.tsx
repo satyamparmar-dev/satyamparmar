@@ -105,9 +105,10 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
-              code({ node, inline, className, children, ...props }) {
+              code({ className, children, ...props }: any) {
                 const match = /language-(\w+)/.exec(className || '');
-                return !inline && match ? (
+                const isInline = !match;
+                return !isInline && match ? (
                   <pre className="bg-gray-900 dark:bg-gray-800 text-gray-100 p-4 rounded-lg overflow-x-auto my-6">
                     <code className={className} {...props}>
                       {children}
