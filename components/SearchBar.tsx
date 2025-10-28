@@ -2,11 +2,10 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, X, Clock, Tag } from 'lucide-react';
+import { Search, X, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 // Note: Search functionality will be handled by the parent component
 // This component only handles UI interactions
-import type { BlogPost } from '@/lib/blog';
 
 interface SearchBarProps {
   onSearch: (query: string) => void;
@@ -14,14 +13,9 @@ interface SearchBarProps {
   className?: string;
 }
 
-interface SearchResult extends BlogPost {
-  type: 'post' | 'tag';
-}
-
 export default function SearchBar({ onSearch, onClear, className }: SearchBarProps) {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
-  const [results, setResults] = useState<SearchResult[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -55,29 +49,24 @@ export default function SearchBar({ onSearch, onClear, className }: SearchBarPro
       return;
     }
 
-    const searchResults = searchBlogPosts(searchQuery);
-    const tagResults = getAllTags()
-      .filter(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-      .map(tag => ({ ...tag, type: 'tag' } as any));
-
-    setResults([...searchResults.map(post => ({ ...post, type: 'post' as const })), ...tagResults]);
-    setIsOpen(true);
+    // Trigger parent component search
+    onSearch(searchQuery);
+    setIsOpen(false);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setQuery(value);
-    handleSearch(value);
+    if (value.trim()) {
+      setIsOpen(true);
+    } else {
+      setIsOpen(false);
+    }
   };
 
-  const handleResultClick = (result: SearchResult) => {
-    if (result.type === 'post') {
-      onSearch(result.title);
-      addToRecentSearches(result.title);
-    } else {
-      onSearch(result);
-      addToRecentSearches(result);
-    }
+  const handleResultClick = (searchTerm: string) => {
+    onSearch(searchTerm);
+    addToRecentSearches(searchTerm);
     setIsOpen(false);
     setQuery('');
   };
@@ -90,7 +79,6 @@ export default function SearchBar({ onSearch, onClear, className }: SearchBarPro
 
   const handleClear = () => {
     setQuery('');
-    setResults([]);
     setIsOpen(false);
     onClear();
   };
@@ -98,6 +86,8 @@ export default function SearchBar({ onSearch, onClear, className }: SearchBarPro
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       setIsOpen(false);
+    } else if (e.key === 'Enter') {
+      handleSearch(query);
     }
   };
 
@@ -128,7 +118,7 @@ export default function SearchBar({ onSearch, onClear, className }: SearchBarPro
       </div>
 
       <AnimatePresence>
-        {isOpen && (results.length > 0 || recentSearches.length > 0) && (
+        {isOpen && recentSearches.length > 0 && (
           <motion.div
             ref={dropdownRef}
             initial={{ opacity: 0, y: -10 }}
@@ -136,71 +126,26 @@ export default function SearchBar({ onSearch, onClear, className }: SearchBarPro
             exit={{ opacity: 0, y: -10 }}
             className="absolute z-50 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800"
           >
-            {results.length > 0 ? (
-              <div className="max-h-96 overflow-y-auto py-2">
-                {results.slice(0, 8).map((result, index) => (
-                  <motion.button
-                    key={`${result.type}-${index}`}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    onClick={() => handleResultClick(result)}
-                    className="flex w-full items-center space-x-3 px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    {result.type === 'post' ? (
-                      <>
-                        <div className="flex h-8 w-8 items-center justify-center rounded bg-primary-100 text-primary-600 dark:bg-primary-900 dark:text-primary-300">
-                          <Search className="h-4 w-4" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
-                            {result.title}
-                          </p>
-                          <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                            {result.excerpt}
-                          </p>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="flex h-8 w-8 items-center justify-center rounded bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300">
-                          <Tag className="h-4 w-4" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
-                            {result}
-                          </p>
-                          <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                            Tag
-                          </p>
-                        </div>
-                      </>
-                    )}
-                  </motion.button>
-                ))}
+            <div className="py-2">
+              <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                Recent Searches
               </div>
-            ) : (
-              <div className="py-2">
-                <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
-                  Recent Searches
-                </div>
-                {recentSearches.map((search, index) => (
-                  <motion.button
-                    key={index}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    onClick={() => handleResultClick(search)}
-                    className="flex w-full items-center space-x-3 px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    <Clock className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">
-                      {search}
-                    </span>
-                  </motion.button>
-                ))}
-              </div>
-            )}
+              {recentSearches.map((search, index) => (
+                <motion.button
+                  key={index}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  onClick={() => handleResultClick(search)}
+                  className="flex w-full items-center space-x-3 px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  <Clock className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    {search}
+                  </span>
+                </motion.button>
+              ))}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
