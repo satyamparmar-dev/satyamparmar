@@ -44,7 +44,6 @@ export default function SearchBar({ onSearch, onClear, className }: SearchBarPro
 
   const handleSearch = (searchQuery: string) => {
     if (!searchQuery.trim()) {
-      setResults([]);
       setIsOpen(false);
       return;
     }
