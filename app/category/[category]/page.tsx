@@ -5,9 +5,9 @@ import BlogPageClient from '@/components/BlogPageClient';
 import type { BlogPost } from '@/lib/blog';
 
 interface CategoryPageProps {
-  params: {
+  params: Promise<{
     category: string;
-  };
+  }>;
 }
 
 export async function generateMetadata({ params }: CategoryPageProps): Promise<Metadata> {

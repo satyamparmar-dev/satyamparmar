@@ -5,9 +5,9 @@ import BlogPostClient from '@/components/BlogPostClient';
 import type { BlogPost } from '@/lib/blog';
 
 interface BlogPostPageProps {
-  params: {
+  params: Promise<{
     slug: string;
-  };
+  }>;
 }
 
 export async function generateMetadata({ params }: BlogPostPageProps): Promise<Metadata> {
