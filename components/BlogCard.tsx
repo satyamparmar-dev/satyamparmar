@@ -6,6 +6,7 @@ import { Calendar, Clock, User, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDate, getEstimatedReadTime } from '@/lib/blog';
 import type { BlogPost } from '@/lib/blog';
+import { useState } from 'react';
 
 interface BlogCardProps {
   post: BlogPost;
@@ -14,6 +15,7 @@ interface BlogCardProps {
 }
 
 export default function BlogCard({ post, featured = false, className }: BlogCardProps) {
+  const [isLoaded, setIsLoaded] = useState(false);
   const readTime = getEstimatedReadTime(post.content);
 
   return (

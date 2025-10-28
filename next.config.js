@@ -7,6 +7,23 @@ const nextConfig = {
   },
   basePath: process.env.NODE_ENV === 'production' ? '/backend-engineering' : '',
   assetPrefix: process.env.NODE_ENV === 'production' ? '/backend-engineering/' : '',
+      // Performance optimizations
+      experimental: {
+        // optimizeCss: true, // Disabled due to critters dependency issues
+      },
+  // Reduce bundle size
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        path: false,
+      };
+    }
+    return config;
+  },
+      // Enable compression
+      compress: true,
 }
 
 module.exports = nextConfig

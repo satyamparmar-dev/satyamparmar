@@ -22,13 +22,14 @@ const navigation = [
   { name: 'Blog', href: '/blog', icon: Brain },
   { name: 'About', href: '/about', icon: Building },
   { name: 'Contact', href: '/contact', icon: Rocket },
+  { name: 'Setup', href: '/setup', icon: Code },
 ];
 
 const categories = [
-  { name: 'Backend', href: '/blog?category=backend', color: 'bg-blue-500' },
-  { name: 'AI', href: '/blog?category=ai', color: 'bg-purple-500' },
-  { name: 'Startup', href: '/blog?category=startup', color: 'bg-green-500' },
-  { name: 'Architecture', href: '/blog?category=architecture', color: 'bg-orange-500' },
+  { name: 'Backend Engineering', href: '/category/backend-engineering', color: 'bg-blue-500' },
+  { name: 'AI', href: '/category/ai', color: 'bg-purple-500' },
+  { name: 'Startup World', href: '/category/startup-world', color: 'bg-green-500' },
+  { name: 'Tech Innovations', href: '/category/tech-innovations', color: 'bg-orange-500' },
 ];
 
 export default function Header() {
@@ -104,6 +105,44 @@ export default function Header() {
             {navigation.map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.href;
+              
+              if (item.name === 'Blog') {
+                return (
+                  <div key={item.name} className="relative group">
+                    <button className={cn(
+                      'flex items-center space-x-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
+                        : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
+                    )}>
+                      <Icon className="h-4 w-4" />
+                      <span>{item.name}</span>
+                      <svg className="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    <div className="absolute left-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                      <div className="py-1">
+                        <Link
+                          href="/blog"
+                          className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        >
+                          All Articles
+                        </Link>
+                        {categories.map((category) => (
+                          <Link
+                            key={category.name}
+                            href={category.href}
+                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            {category.name}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
               
               return (
                 <Link

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import Layout from '@/components/Layout';
 import BlogCard from '@/components/BlogCard';
+import NewsletterSignup from '@/components/NewsletterSignup';
 import type { BlogPost } from '@/lib/blog';
 
 interface HomePageClientProps {
@@ -243,42 +244,7 @@ export default function HomePageClient({ featuredPosts, categories }: HomePageCl
       {/* CTA Section */}
       <section className="bg-primary-600 dark:bg-primary-700">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <motion.h2
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              className="text-3xl font-bold tracking-tight text-white sm:text-4xl"
-            >
-              Stay Updated
-            </motion.h2>
-            <motion.p
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.1 }}
-              className="mx-auto mt-4 max-w-2xl text-lg text-primary-100"
-            >
-              Get the latest articles on backend engineering, AI, and tech innovations 
-              delivered to your inbox.
-            </motion.p>
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.2 }}
-              className="mt-8 flex max-w-md mx-auto"
-            >
-              <input
-                type="email"
-                placeholder="Enter your email"
-                className="flex-1 rounded-l-lg border-0 px-4 py-3 text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-primary-300"
-              />
-              <button className="rounded-r-lg bg-primary-800 px-6 py-3 text-sm font-semibold text-white hover:bg-primary-900 focus:outline-none focus:ring-2 focus:ring-primary-300">
-                Subscribe
-              </button>
-            </motion.div>
-          </div>
+          <NewsletterSignup />
         </div>
       </section>
     </Layout>

@@ -22,6 +22,9 @@ export default function BlogPageClient({ allPosts, allTags, categories }: BlogPa
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [dateRange, setDateRange] = useState<{start: string, end: string}>({start: '', end: ''});
+  const [sortBy, setSortBy] = useState<'date' | 'title' | 'author'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -51,13 +54,13 @@ export default function BlogPageClient({ allPosts, allTags, categories }: BlogPa
   useEffect(() => {
     let filtered = [...posts];
 
-    // Apply search filter
+    // Apply search filter (support multiple keywords)
     if (searchQuery) {
-      filtered = filtered.filter(post =>
-        post.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        post.excerpt.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        post.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-      );
+      const keywords = searchQuery.toLowerCase().split(/\s+/).filter(keyword => keyword.length > 0);
+      filtered = filtered.filter(post => {
+        const searchText = `${post.title} ${post.excerpt} ${post.content} ${post.tags.join(' ')}`.toLowerCase();
+        return keywords.every(keyword => searchText.includes(keyword));
+      });
     }
 
     // Apply tag filter
@@ -74,8 +77,38 @@ export default function BlogPageClient({ allPosts, allTags, categories }: BlogPa
       );
     }
 
+    // Apply date range filter
+    if (dateRange.start || dateRange.end) {
+      filtered = filtered.filter(post => {
+        const postDate = new Date(post.date);
+        const startDate = dateRange.start ? new Date(dateRange.start) : new Date(0);
+        const endDate = dateRange.end ? new Date(dateRange.end) : new Date();
+        
+        return postDate >= startDate && postDate <= endDate;
+      });
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      
+      switch (sortBy) {
+        case 'date':
+          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          break;
+        case 'title':
+          comparison = a.title.localeCompare(b.title);
+          break;
+        case 'author':
+          comparison = a.author.localeCompare(b.author);
+          break;
+      }
+      
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
     setFilteredPosts(filtered);
-  }, [posts, searchQuery, selectedTag, selectedCategory]);
+  }, [posts, searchQuery, selectedTag, selectedCategory, dateRange, sortBy, sortOrder]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -120,10 +153,13 @@ export default function BlogPageClient({ allPosts, allTags, categories }: BlogPa
     setSelectedTag(null);
     setSelectedCategory(null);
     setSearchQuery('');
+    setDateRange({start: '', end: ''});
+    setSortBy('date');
+    setSortOrder('desc');
     setPosts(allPosts);
   };
 
-  const hasActiveFilters = selectedTag || selectedCategory || searchQuery;
+  const hasActiveFilters = selectedTag || selectedCategory || searchQuery || dateRange.start || dateRange.end;
 
   return (
     <Layout>
@@ -234,7 +270,7 @@ export default function BlogPageClient({ allPosts, allTags, categories }: BlogPa
             className="mt-4 overflow-hidden"
           >
             <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
                 {/* Categories */}
                 <div>
                   <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -276,6 +312,63 @@ export default function BlogPageClient({ allPosts, allTags, categories }: BlogPa
                         {tag}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* Date Range & Sorting */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Date Range & Sorting
+                  </h3>
+                  <div className="mt-3 space-y-4">
+                    {/* Date Range */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Date Range
+                      </label>
+                      <div className="space-y-2">
+                        <input
+                          type="date"
+                          value={dateRange.start}
+                          onChange={(e) => setDateRange(prev => ({...prev, start: e.target.value}))}
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                          placeholder="Start date"
+                        />
+                        <input
+                          type="date"
+                          value={dateRange.end}
+                          onChange={(e) => setDateRange(prev => ({...prev, end: e.target.value}))}
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                          placeholder="End date"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Sorting */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Sort By
+                      </label>
+                      <div className="space-y-2">
+                        <select
+                          value={sortBy}
+                          onChange={(e) => setSortBy(e.target.value as 'date' | 'title' | 'author')}
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                        >
+                          <option value="date">Date</option>
+                          <option value="title">Title</option>
+                          <option value="author">Author</option>
+                        </select>
+                        <select
+                          value={sortOrder}
+                          onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                        >
+                          <option value="desc">Newest First</option>
+                          <option value="asc">Oldest First</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
