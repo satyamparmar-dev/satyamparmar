@@ -6,6 +6,7 @@ import { Search, X, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 // Note: Search functionality will be handled by the parent component
 // This component only handles UI interactions
+// Build trigger: All setResults references removed
 
 interface SearchBarProps {
   onSearch: (query: string) => void;
