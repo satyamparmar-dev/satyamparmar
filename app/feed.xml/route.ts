@@ -4,7 +4,7 @@ export const dynamic = 'force-static';
 
 export async function GET() {
   const posts = getAllBlogPosts();
-  const baseUrl = 'https://satyamparmar-dev.github.io/backend-engineering';
+  const baseUrl = 'https://satyamparmar-dev.github.io/satyamparmar';
 
   const rssItems = posts
     .map((post) => {

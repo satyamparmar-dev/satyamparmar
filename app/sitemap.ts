@@ -4,7 +4,7 @@ import { getAllBlogPosts } from '@/lib/blog-client';
 export const dynamic = 'force-static';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = 'https://satyamparmar-dev.github.io/backend-engineering';
+  const baseUrl = 'https://satyamparmar-dev.github.io/satyamparmar';
   const posts = getAllBlogPosts();
 
   const staticRoutes: MetadataRoute.Sitemap = [

@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://satyamparmar-dev.github.io/backend-engineering',
+        url: 'https://satyamparmar-dev.github.io/satyamparmar',
     title: 'Backend Engineering Blog',
     description: 'A modern technical blog focused on backend engineering, AI, tech innovations, and the startup world.',
     siteName: 'Backend Engineering Blog',
