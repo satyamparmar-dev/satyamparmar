@@ -13,13 +13,15 @@ import {
   Code,
   Brain,
   Rocket,
-  Building
+  Building,
+  Star
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navigation = [
   { name: 'Home', href: '/', icon: Code },
   { name: 'Blog', href: '/blog', icon: Brain },
+  { name: 'Premium', href: '/premium', icon: Star },
   { name: 'About', href: '/about', icon: Building },
   { name: 'Contact', href: '/contact', icon: Rocket },
   { name: 'Setup', href: '/setup', icon: Code },

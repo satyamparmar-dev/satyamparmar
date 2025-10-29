@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Mail, CheckCircle, AlertCircle } from 'lucide-react';
+import { trackNewsletterSignup } from '@/lib/analytics';
 
 export default function NewsletterSignup() {
   const [email, setEmail] = useState('');
@@ -27,6 +28,9 @@ export default function NewsletterSignup() {
       setStatus('success');
       setMessage('Successfully subscribed! Check your email for confirmation.');
       setEmail('');
+      
+      // Track newsletter signup
+      trackNewsletterSignup(email);
       
       // TODO: Replace with actual EmailJS implementation:
       /*

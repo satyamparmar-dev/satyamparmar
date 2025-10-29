@@ -5,8 +5,8 @@ const nextConfig = {
   images: {
     unoptimized: true
   },
-  basePath: process.env.NODE_ENV === 'production' ? '/satyamparmar' : '',
-  assetPrefix: process.env.NODE_ENV === 'production' ? '/satyamparmar/' : '',
+  basePath: process.env.NODE_ENV === 'production' ? '/backend-engineering' : '',
+  assetPrefix: process.env.NODE_ENV === 'production' ? '/backend-engineering/' : '',
       // Performance optimizations
       experimental: {
         // optimizeCss: true, // Disabled due to critters dependency issues

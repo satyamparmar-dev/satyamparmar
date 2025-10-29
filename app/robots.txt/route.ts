@@ -4,7 +4,7 @@ export async function GET() {
   const robots = `User-agent: *
 Allow: /
 
-Sitemap: https://satyamparmar-dev.github.io/satyamparmar/sitemap.xml`;
+Sitemap: https://satyamparmar-dev.github.io/backend-engineering/sitemap.xml`;
 
   return new Response(robots, {
     headers: {

@@ -31,7 +31,7 @@ try {
   if (!fs.existsSync(path.join(outDir, '.git'))) {
     console.log('🔧 Initializing git in out directory...');
     execSync('git init', { cwd: outDir, stdio: 'inherit' });
-    execSync('git remote add origin https://github.com/satyamparmar-dev/satyamparmar.git', { 
+    execSync('git remote add origin https://github.com/satyamparmar-dev/backend-engineering.git', { 
       cwd: outDir, 
       stdio: 'inherit' 
     });
@@ -47,7 +47,7 @@ try {
   execSync('git push -f origin HEAD:gh-pages', { cwd: outDir, stdio: 'inherit' });
 
   console.log('🎉 Deployment successful!');
-  console.log('🌐 Your site should be available at: https://satyamparmar-dev.github.io/satyamparmar');
+  console.log('🌐 Your site should be available at: https://satyamparmar-dev.github.io/backend-engineering');
   console.log('⏰ It may take a few minutes for the changes to be visible.');
 
 } catch (error) {

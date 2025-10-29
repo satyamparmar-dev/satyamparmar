@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Send, CheckCircle, AlertCircle } from 'lucide-react';
+import { trackContactForm } from '@/lib/analytics';
 
 export default function ContactForm() {
   const [formData, setFormData] = useState({
@@ -37,6 +38,9 @@ export default function ContactForm() {
       // Simulate success for demo
       setSubmitStatus('success');
       setFormData({ name: '', email: '', subject: '', message: '' });
+      
+      // Track contact form submission
+      trackContactForm();
       
       // TODO: Replace with actual Formspree implementation:
       /*

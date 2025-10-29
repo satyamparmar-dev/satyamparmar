@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import { getFeaturedBlogPosts, getCategories } from '@/lib/blog-server';
+import { getFeaturedBlogPosts, getCategories } from '@/lib/blog-client';
 import HomePageClient from '@/components/HomePageClient';
 
 export const metadata: Metadata = {

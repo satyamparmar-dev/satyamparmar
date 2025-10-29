@@ -1,10 +1,10 @@
 import { MetadataRoute } from 'next';
-import { getAllBlogPosts } from '@/lib/blog-server';
+import { getAllBlogPosts } from '@/lib/blog-client';
 
 export const dynamic = 'force-static';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = 'https://satyamparmar-dev.github.io/satyamparmar';
+  const baseUrl = 'https://satyamparmar-dev.github.io/backend-engineering';
   const posts = getAllBlogPosts();
 
   const staticRoutes: MetadataRoute.Sitemap = [

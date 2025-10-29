@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
-import { getBlogPostBySlug, getAllBlogPosts } from '@/lib/blog-server';
+import { getBlogPostBySlug, getAllBlogPosts } from '@/lib/blog-client';
+import { generateBlogPosts } from '@/lib/blog-generator';
 import BlogPostClient from '@/components/BlogPostClient';
 import type { BlogPost } from '@/lib/blog';
 
@@ -41,10 +42,17 @@ export async function generateMetadata({ params }: BlogPostPageProps): Promise<M
 }
 
 export async function generateStaticParams() {
-  const posts = getAllBlogPosts();
-  return posts.map((post) => ({
-    slug: post.slug,
-  }));
+  // For static export, we need to generate all possible blog post slugs
+  // This includes both static blog posts and generated ones
+  const staticPosts = getAllBlogPosts();
+  const generatedPosts = generateBlogPosts(100); // Generate 100 posts for static export
+  
+  const allSlugs = [
+    ...staticPosts.map(post => ({ slug: post.slug })),
+    ...generatedPosts.map(post => ({ slug: post.slug }))
+  ];
+  
+  return allSlugs;
 }
 
 export default async function BlogPostPage({ params }: BlogPostPageProps) {
