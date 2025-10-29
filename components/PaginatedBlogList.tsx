@@ -295,7 +295,7 @@ export default function PaginatedBlogList({
             No articles found
           </h3>
           <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Try adjusting your search or filters to find what you're looking for.
+            Try adjusting your search or filters to find what you&apos;re looking for.
           </p>
           <button
             onClick={() => {
