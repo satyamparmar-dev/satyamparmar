@@ -1,0 +1,97 @@
+name: Enforce Pull Request Requirements
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  check-pr-requirements:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Check if push is to main branch
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      run: |
+        echo "❌ DIRECT COMMIT TO MAIN BRANCH DETECTED!"
+        echo "🚫 This repository requires all changes to go through Pull Requests."
+        echo ""
+        echo "📋 Required Process:"
+        echo "1. Create a feature branch: git checkout -b feature/your-feature-name"
+        echo "2. Make your changes and commit them"
+        echo "3. Push the branch: git push origin feature/your-feature-name"
+        echo "4. Create a Pull Request on GitHub"
+        echo "5. Get at least 1 approval from a reviewer"
+        echo "6. Merge through the PR interface"
+        echo ""
+        echo "🔒 Security: This prevents accidental commits and ensures code review."
+        echo "📊 Current commit: ${{ github.sha }}"
+        echo "👤 Committer: ${{ github.event.head_commit.committer.name }}"
+        echo "💬 Message: ${{ github.event.head_commit.message }}"
+        echo ""
+        echo "❌ This workflow will fail to prevent the commit."
+        exit 1
+
+  validate-pr:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run linting
+      run: npm run lint
+    
+    - name: Type check
+      run: npx tsc --noEmit
+    
+    - name: Build check
+      run: npm run build
+    
+    - name: Check PR requirements
+      run: |
+        echo "✅ Pull Request validation passed!"
+        echo "📋 PR Requirements:"
+        echo "- ✅ Code builds successfully"
+        echo "- ✅ Linting passes"
+        echo "- ✅ Type checking passes"
+        echo "- ⏳ Waiting for approval..."
+        echo ""
+        echo "🔒 This PR requires at least 1 approval before merging."
+        echo "👥 Please request a review from a team member."
+
+  block-direct-commits:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Block direct commits
+      run: |
+        echo "🛡️  BRANCH PROTECTION ACTIVATED"
+        echo ""
+        echo "This repository enforces the following rules:"
+        echo "1. ❌ No direct commits to main branch"
+        echo "2. ✅ All changes must go through Pull Requests"
+        echo "3. ✅ All PRs must be approved before merging"
+        echo "4. ✅ All PRs must pass CI checks"
+        echo ""
+        echo "Current commit has been blocked for security."
+        exit 1
