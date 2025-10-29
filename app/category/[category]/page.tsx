@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import { getBlogPostsByCategory, getAllCategories } from '@/lib/blog-server';
@@ -47,5 +48,9 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
   const allTags = Array.from(new Set(posts.flatMap(post => post.tags)));
   const categories = getAllCategories();
 
-  return <BlogPageClient allPosts={posts} allTags={allTags} categories={categories} />;
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <BlogPageClient allPosts={posts} allTags={allTags} categories={categories} />
+    </Suspense>
+  );
 }
