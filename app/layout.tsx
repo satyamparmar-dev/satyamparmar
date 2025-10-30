@@ -6,8 +6,8 @@ const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: {
-    default: 'Backend Engineering Blog',
-    template: '%s | Backend Engineering Blog',
+    default: 'Satyverse',
+    template: '%s | Satyverse',
   },
   description: 'A modern technical blog focused on backend engineering, AI, tech innovations, and the startup world. Built for developers, by developers.',
   keywords: ['backend engineering', 'AI', 'tech innovations', 'startup', 'software development', 'architecture', 'devops'],
@@ -17,13 +17,13 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_US',
         url: 'https://satyamparmar-dev.github.io/satyamparmar',
-    title: 'Backend Engineering Blog',
+    title: 'Satyverse',
     description: 'A modern technical blog focused on backend engineering, AI, tech innovations, and the startup world.',
-    siteName: 'Backend Engineering Blog',
+    siteName: 'Satyverse',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Backend Engineering Blog',
+    title: 'Satyverse',
     description: 'A modern technical blog focused on backend engineering, AI, tech innovations, and the startup world.',
     creator: '@yourusername',
   },
@@ -69,7 +69,7 @@ export default function RootLayout({
               dangerouslySetInnerHTML={{
                 __html: `
                   window.dataLayer = window.dataLayer || [];
-                  function gtag(){dataLayer.push(arguments);}
+                  function gtag(){dataLayer.push(arguments);} 
                   gtag('js', new Date());
                   gtag('config', '${process.env.NEXT_PUBLIC_GA_ID}', {
                     page_title: document.title,

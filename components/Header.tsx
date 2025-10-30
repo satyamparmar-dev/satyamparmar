@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -89,16 +90,16 @@ export default function Header() {
       <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center space-x-2">
+          <Link href="/" className="flex items-center space-x-2" aria-label="Satyverse home">
             <motion.div
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white"
+              className="flex h-8 w-8 items-center justify-center rounded-lg"
             >
-              <Code className="h-5 w-5" />
+              <Image src="/satyverse-logo.svg" alt="Satyverse logo" width={32} height={32} priority />
             </motion.div>
             <span className="text-xl font-bold text-gray-900 dark:text-white">
-              Backend Engineering
+              Satyverse
             </span>
           </Link>
 

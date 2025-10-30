@@ -73,7 +73,7 @@ export default function Footer() {
                 <Code className="h-5 w-5" />
               </div>
               <span className="text-xl font-bold text-gray-900 dark:text-white">
-                Backend Engineering
+                Satyverse
               </span>
             </motion.div>
             <motion.p
@@ -228,7 +228,7 @@ export default function Footer() {
         >
           <div className="flex flex-col items-center justify-between space-y-4 sm:flex-row sm:space-y-0">
             <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
-              <span>© 2025 Backend Engineering Blog. Made with</span>
+              <span>© 2025 Satyverse. Made with</span>
               <Heart className="h-4 w-4 text-red-500" />
               <span>for developers.</span>
             </div>
