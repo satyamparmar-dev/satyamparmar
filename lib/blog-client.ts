@@ -11,14 +11,13 @@ export interface BlogPost {
   content: string;
 }
 
-// Import all blog data statically
+// Import all blog data statically (excluding todo folder)
 import aiBackendIntegration from '@/data/blogs/ai-backend-integration.json';
 import cloudNativeBackend from '@/data/blogs/cloud-native-backend.json';
 import microservicesArchitecture from '@/data/blogs/microservices-architecture.json';
-import scalableNodejsApis from '@/data/blogs/scalable-nodejs-apis.json';
 import startupTechStack from '@/data/blogs/startup-tech-stack.json';
+import incidentPlaybookForBeginners from '@/data/blogs/incident-playbook-for-beginners.json';
 
-import advancedNodejsPatterns from '@/data/backend-engineering/advanced-nodejs-patterns.json';
 import databaseOptimization from '@/data/backend-engineering/database-optimization.json';
 import performanceMonitoring from '@/data/backend-engineering/performance-monitoring.json';
 import restApiBestPractices from '@/data/backend-engineering/rest-api-best-practices.json';
@@ -31,14 +30,12 @@ import techStackSelection from '@/data/startup-world/tech-stack-selection.json';
 
 import edgeComputing from '@/data/tech-innovations/edge-computing.json';
 
-// All blog posts data
+// All blog posts data (only complete posts, excluding todo folder)
 const allBlogPosts: BlogPost[] = [
   aiBackendIntegration,
   cloudNativeBackend,
   microservicesArchitecture,
-  scalableNodejsApis,
   startupTechStack,
-  advancedNodejsPatterns,
   databaseOptimization,
   performanceMonitoring,
   restApiBestPractices,
@@ -47,6 +44,7 @@ const allBlogPosts: BlogPost[] = [
   vectorDatabases,
   techStackSelection,
   edgeComputing,
+  incidentPlaybookForBeginners,
 ];
 
 // Cache for blog posts to improve performance
