@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import { getBlogPostsByCategory, getAllCategories } from '@/lib/blog-client';
 import BlogPageClient from '@/components/BlogPageClient';
-import type { BlogPost } from '@/lib/blog';
+import type { BlogPost } from '@/lib/blog-client';
 
 interface CategoryPageProps {
   params: Promise<{

@@ -15,7 +15,7 @@ import Link from 'next/link';
 import Layout from '@/components/Layout';
 import BlogCard from '@/components/BlogCard';
 import NewsletterSignup from '@/components/NewsletterSignup';
-import type { BlogPost } from '@/lib/blog';
+import type { BlogPost } from '@/lib/blog-client';
 
 interface HomePageClientProps {
   featuredPosts: BlogPost[];
