@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { List, X } from 'lucide-react';
+import { generateHeadingId } from '@/lib/utils';
 
 interface TOCItem {
   id: string;
@@ -21,72 +22,113 @@ export default function BlogTOC({ content, className }: BlogTOCProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    // Extract headings from markdown content
-    const headingRegex = /^(#{2,4})\s+(.+)$/gm;
+    // Extract headings from markdown content (H2-H6, skip H1 as it's usually the title)
+    // Supports headings with optional trailing spaces and special characters
+    const headingRegex = /^(#{2,6})\s+(.+?)(?:\s*#+\s*)?$/gm;
     const items: TOCItem[] = [];
     let match;
+
+    // Reset regex lastIndex to avoid issues with multiple calls
+    headingRegex.lastIndex = 0;
 
     while ((match = headingRegex.exec(content)) !== null) {
       const level = match[1].length; // Number of # symbols
       const title = match[2].trim();
-      const id = title
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .trim();
+      
+      // Skip empty titles
+      if (!title) continue;
+      
+      // Generate consistent ID using utility function
+      const id = generateHeadingId(title);
 
-      items.push({ id, title, level });
+      // Only add if ID is valid (not empty after processing)
+      if (id) {
+        items.push({ id, title, level });
+      }
     }
 
     setTocItems(items);
   }, [content]);
 
-  // Update TOC when headings are rendered in DOM
+  // Ensure all headings in the DOM have the correct IDs
   useEffect(() => {
     if (tocItems.length === 0) return;
 
-    const observer = new MutationObserver(() => {
+    const ensureHeadingIds = () => {
       tocItems.forEach((item) => {
-        const element = document.getElementById(item.id);
+        // First, try to find by ID
+        let element = document.getElementById(item.id);
+        
         if (!element && typeof window !== 'undefined') {
-          // Find heading by text content if ID not found
-          const headings = Array.from(document.querySelectorAll('h2, h3, h4'));
-          const heading = headings.find(
-            (h) => h.textContent?.trim().toLowerCase() === item.title.toLowerCase()
-          );
-          if (heading && !heading.id) {
+          // If not found by ID, find by text content and assign ID
+          const headings = Array.from(document.querySelectorAll('h2, h3, h4, h5, h6'));
+          const heading = headings.find((h) => {
+            const headingText = h.textContent?.trim() || '';
+            return generateHeadingId(headingText) === item.id || 
+                   headingText.toLowerCase() === item.title.toLowerCase();
+          });
+          
+          if (heading) {
             heading.id = item.id;
+            element = heading;
           }
         }
       });
-    });
+    };
 
-    observer.observe(document.body, {
+    // Run immediately
+    ensureHeadingIds();
+
+    // Set up observer to handle dynamically rendered content
+    const observer = new MutationObserver(ensureHeadingIds);
+
+    // Observe the article content area specifically
+    const articleContent = document.querySelector('article, .prose, [class*="prose"]');
+    const observeTarget = articleContent || document.body;
+
+    observer.observe(observeTarget, {
       childList: true,
       subtree: true,
     });
 
-    return () => observer.disconnect();
+    // Also check after a short delay to catch ReactMarkdown rendering
+    const timeoutId = setTimeout(ensureHeadingIds, 100);
+
+    return () => {
+      observer.disconnect();
+      clearTimeout(timeoutId);
+    };
   }, [tocItems]);
 
   useEffect(() => {
     if (tocItems.length === 0) return;
 
     const handleScroll = () => {
-      const headings = tocItems.map((item) => {
-        const element = document.getElementById(item.id);
-        return { id: item.id, element, offsetTop: element?.offsetTop || 0 };
-      });
+      if (typeof window === 'undefined') return;
+      
+      const headings = tocItems
+        .map((item) => {
+          const element = document.getElementById(item.id);
+          return element 
+            ? { id: item.id, element, offsetTop: element.offsetTop } 
+            : null;
+        })
+        .filter((item): item is { id: string; element: HTMLElement; offsetTop: number } => item !== null);
 
-      const scrollPosition = window.scrollY + 100; // Offset for header
+      if (headings.length === 0) return;
 
+      const scrollPosition = window.scrollY + 120; // Offset for sticky header
+
+      // Find the heading that's currently in view or the last one we've scrolled past
+      let activeHeadingId = headings[0].id;
       for (let i = headings.length - 1; i >= 0; i--) {
-        if (scrollPosition >= headings[i].offsetTop) {
-          setActiveId(headings[i].id);
+        if (scrollPosition >= headings[i].offsetTop - 50) {
+          activeHeadingId = headings[i].id;
           break;
         }
       }
+
+      setActiveId(activeHeadingId);
     };
 
     window.addEventListener('scroll', handleScroll);
@@ -126,10 +168,12 @@ export default function BlogTOC({ content, className }: BlogTOCProps) {
             <li
               key={item.id}
               className={`
-                cursor-pointer rounded px-3 py-2 text-sm transition-colors
-                ${item.level === 2 ? 'font-medium text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}
-                ${item.level === 3 ? 'ml-4 text-sm' : ''}
-                ${item.level === 4 ? 'ml-8 text-xs' : ''}
+                cursor-pointer rounded px-3 py-2 transition-colors
+                ${item.level === 2 ? 'font-medium text-sm text-gray-900 dark:text-white ml-0' : ''}
+                ${item.level === 3 ? 'text-sm text-gray-600 dark:text-gray-400 ml-4' : ''}
+                ${item.level === 4 ? 'text-xs text-gray-600 dark:text-gray-400 ml-8' : ''}
+                ${item.level === 5 ? 'text-xs text-gray-500 dark:text-gray-500 ml-12' : ''}
+                ${item.level === 6 ? 'text-xs text-gray-500 dark:text-gray-500 ml-16' : ''}
                 ${activeId === item.id
                   ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400 border-l-2 border-primary-600 dark:border-primary-400'
                   : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'

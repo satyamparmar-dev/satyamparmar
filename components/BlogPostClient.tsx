@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Calendar, Clock, User, ArrowLeft, Bookmark } from 'lucide-react';
 import Link from 'next/link';
 import Layout from '@/components/Layout';
-import { getEstimatedReadTime, formatDate } from '@/lib/utils';
+import { getEstimatedReadTime, formatDate, generateHeadingId } from '@/lib/utils';
 import type { BlogPost } from '@/lib/blog-client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -102,12 +102,7 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
             remarkPlugins={[remarkGfm]}
             components={{
               h2: ({ children, ...props }: any) => {
-                const textContent = typeof children === 'string' ? children : String(children).replace(/\[object Object\]/g, '');
-                const id = textContent
-                  .toLowerCase()
-                  .replace(/[^\w\s-]/g, '')
-                  .replace(/\s+/g, '-')
-                  .replace(/-+/g, '-');
+                const id = generateHeadingId(children);
                 return (
                   <h2 id={id} className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-8 scroll-mt-20" {...props}>
                     {children}
@@ -115,12 +110,7 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
                 );
               },
               h3: ({ children, ...props }: any) => {
-                const textContent = typeof children === 'string' ? children : String(children).replace(/\[object Object\]/g, '');
-                const id = textContent
-                  .toLowerCase()
-                  .replace(/[^\w\s-]/g, '')
-                  .replace(/\s+/g, '-')
-                  .replace(/-+/g, '-');
+                const id = generateHeadingId(children);
                 return (
                   <h3 id={id} className="text-xl font-semibold text-gray-900 dark:text-white mb-3 mt-6 scroll-mt-20" {...props}>
                     {children}
@@ -128,16 +118,27 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
                 );
               },
               h4: ({ children, ...props }: any) => {
-                const textContent = typeof children === 'string' ? children : String(children).replace(/\[object Object\]/g, '');
-                const id = textContent
-                  .toLowerCase()
-                  .replace(/[^\w\s-]/g, '')
-                  .replace(/\s+/g, '-')
-                  .replace(/-+/g, '-');
+                const id = generateHeadingId(children);
                 return (
                   <h4 id={id} className="text-lg font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
                     {children}
                   </h4>
+                );
+              },
+              h5: ({ children, ...props }: any) => {
+                const id = generateHeadingId(children);
+                return (
+                  <h5 id={id} className="text-base font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
+                    {children}
+                  </h5>
+                );
+              },
+              h6: ({ children, ...props }: any) => {
+                const id = generateHeadingId(children);
+                return (
+                  <h6 id={id} className="text-sm font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
+                    {children}
+                  </h6>
                 );
               },
               code({ className, children, ...props }: any) {
