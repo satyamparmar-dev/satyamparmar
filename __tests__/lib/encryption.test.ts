@@ -42,16 +42,19 @@ describe('Encryption Utilities', () => {
     it('should handle encryption errors gracefully', () => {
       // Mock btoa to throw error
       const originalBtoa = global.btoa;
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      
       global.btoa = jest.fn(() => {
         throw new Error('Encoding error');
       });
 
       const result = encrypt('test');
       expect(result).toBe('test'); // Should return original on error
-      expect(console.error).toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalled();
 
       // Restore
       global.btoa = originalBtoa;
+      consoleErrorSpy.mockRestore();
     });
   });
 
@@ -77,16 +80,19 @@ describe('Encryption Utilities', () => {
       
       // Mock atob to throw error
       const originalAtob = global.atob;
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      
       global.atob = jest.fn(() => {
         throw new Error('Invalid base64');
       });
 
       const result = decrypt(invalidEncrypted);
       expect(result).toBe(invalidEncrypted); // Should return original on error
-      expect(console.error).toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalled();
 
       // Restore
       global.atob = originalAtob;
+      consoleErrorSpy.mockRestore();
     });
 
     it('should handle decryption errors gracefully', () => {

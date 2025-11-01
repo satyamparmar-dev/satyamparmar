@@ -9,6 +9,7 @@ on:
 jobs:
   check-pr-requirements:
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
     steps:
     - name: Checkout code
@@ -16,8 +17,33 @@ jobs:
       with:
         fetch-depth: 0
     
-    - name: Check if push is to main branch
+    - name: Check if commit is from PR merge
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      id: check-merge
+      run: |
+        # Check commit message for PR merge pattern
+        COMMIT_MSG="${{ github.event.head_commit.message }}"
+        
+        if [[ "$COMMIT_MSG" =~ ^Merge\ pull\ request ]]; then
+          echo "✅ PR merge detected (commit message: Merge pull request)"
+          echo "is_pr_merge=true" >> $GITHUB_OUTPUT
+        elif [[ "$COMMIT_MSG" =~ ^Merge\ branch ]]; then
+          echo "✅ Branch merge detected (likely from PR)"
+          echo "is_pr_merge=true" >> $GITHUB_OUTPUT
+        else
+          # Check if commit has 2 parents (merge commit)
+          COMMIT_PARENTS=$(git show --format="%P" --no-patch HEAD | wc -w)
+          if [ "$COMMIT_PARENTS" -eq 2 ]; then
+            echo "✅ Merge commit detected (2 parents)"
+            echo "is_pr_merge=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Direct commit detected"
+            echo "is_pr_merge=false" >> $GITHUB_OUTPUT
+          fi
+        fi
+    
+    - name: Block direct commits
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.check-merge.outputs.is_pr_merge == 'false'
       run: |
         echo "❌ DIRECT COMMIT TO MAIN BRANCH DETECTED!"
         echo "🚫 This repository requires all changes to go through Pull Requests."
@@ -37,6 +63,13 @@ jobs:
         echo ""
         echo "❌ This workflow will fail to prevent the commit."
         exit 1
+    
+    - name: Allow PR merge
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.check-merge.outputs.is_pr_merge == 'true'
+      run: |
+        echo "✅ PR merge detected - allowing commit"
+        echo "📊 Commit: ${{ github.sha }}"
+        echo "💬 Message: ${{ github.event.head_commit.message }}"
 
   validate-pr:
     runs-on: ubuntu-latest

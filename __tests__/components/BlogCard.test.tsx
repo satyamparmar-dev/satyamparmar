@@ -11,9 +11,11 @@ import type { BlogPost } from '@/lib/blog-client';
 
 // Mock Next.js Link component
 jest.mock('next/link', () => {
-  return ({ children, href }: { children: React.ReactNode; href: string }) => {
+  const MockLink = ({ children, href }: { children: React.ReactNode; href: string }) => {
     return <a href={href}>{children}</a>;
   };
+  MockLink.displayName = 'MockLink';
+  return MockLink;
 });
 
 // Mock lucide-react icons
@@ -64,8 +66,11 @@ describe('BlogCard Component', () => {
 
   it('should render tags', () => {
     render(<BlogCard post={mockPost} />);
-    expect(screen.getByText('backend')).toBeInTheDocument();
-    expect(screen.getByText('nodejs')).toBeInTheDocument();
+    // Tags can appear multiple times (in tag pills and category), so use getAllByText
+    const backendTags = screen.getAllByText('backend');
+    const nodejsTags = screen.getAllByText('nodejs');
+    expect(backendTags.length).toBeGreaterThan(0);
+    expect(nodejsTags.length).toBeGreaterThan(0);
   });
 
   it('should link to blog post page', () => {

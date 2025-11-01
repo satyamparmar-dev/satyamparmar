@@ -17,39 +17,87 @@ import {
 } from '@/lib/premium';
 import { hashUserIdentifier } from '@/lib/encryption';
 
-// Mock localStorage before tests
+// Create a mock localStorage that we can control
 const mockLocalStorage = {
+  store: {} as Record<string, string>,
   getItem: jest.fn(),
   setItem: jest.fn(),
   removeItem: jest.fn(),
   clear: jest.fn(),
+  get length() {
+    return Object.keys(mockLocalStorage.store).length;
+  },
+  key: jest.fn((index: number) => {
+    const keys = Object.keys(mockLocalStorage.store);
+    return keys[index] || null;
+  }),
 };
 
-const mockCookie = jest.fn();
+// Set up initial implementations
+mockLocalStorage.getItem.mockImplementation((key: string) => {
+  return mockLocalStorage.store[key] || null;
+});
+mockLocalStorage.setItem.mockImplementation((key: string, value: string) => {
+  mockLocalStorage.store[key] = value.toString();
+});
+mockLocalStorage.removeItem.mockImplementation((key: string) => {
+  delete mockLocalStorage.store[key];
+});
+mockLocalStorage.clear.mockImplementation(() => {
+  mockLocalStorage.store = {};
+});
 
 beforeEach(() => {
-  // Reset mocks
-  jest.clearAllMocks();
+  // Reset cookie value
+  document.cookie = '';
   
-  // Setup localStorage mock
+  // Clear localStorage store
+  mockLocalStorage.store = {};
+  
+  // Clear call history (but keep implementations)
+  mockLocalStorage.getItem.mockClear();
+  mockLocalStorage.setItem.mockClear();
+  mockLocalStorage.removeItem.mockClear();
+  mockLocalStorage.clear.mockClear();
+  
+  // Ensure implementations are correct (they should persist but ensure they're set)
+  mockLocalStorage.getItem.mockImplementation((key: string) => {
+    return mockLocalStorage.store[key] || null;
+  });
+  mockLocalStorage.setItem.mockImplementation((key: string, value: string) => {
+    mockLocalStorage.store[key] = value.toString();
+  });
+  mockLocalStorage.removeItem.mockImplementation((key: string) => {
+    delete mockLocalStorage.store[key];
+  });
+  mockLocalStorage.clear.mockImplementation(() => {
+    mockLocalStorage.store = {};
+  });
+
+  // Override window.localStorage with our mock
+  // Delete the old one first (if it exists) to allow redefinition
+  try {
+    delete (window as any).localStorage;
+  } catch (e) {
+    // Ignore if can't delete
+  }
+  
   Object.defineProperty(window, 'localStorage', {
     value: mockLocalStorage,
     writable: true,
-  });
-
-  // Setup document.cookie mock
-  Object.defineProperty(document, 'cookie', {
-    get: () => '',
-    set: mockCookie,
     configurable: true,
   });
 
   // Reset console.error to avoid noise in tests
   jest.spyOn(console, 'error').mockImplementation(() => {});
+  
+  // Don't call jest.clearAllMocks() as it might interfere with our localStorage mock
 });
 
 afterEach(() => {
-  jest.restoreAllMocks();
+  // Restore console.error spy only (don't restore localStorage mocks)
+  const consoleErrorSpy = jest.spyOn(console, 'error');
+  consoleErrorSpy.mockRestore();
 });
 
 describe('Premium Content System', () => {
@@ -63,7 +111,17 @@ describe('Premium Content System', () => {
         subscriptionType: 'premium',
       };
 
-      mockLocalStorage.getItem.mockReturnValue(JSON.stringify(premiumData));
+      // Ensure getItem implementation is active BEFORE setting store value
+      mockLocalStorage.getItem.mockImplementation((key: string) => {
+        return mockLocalStorage.store[key] || null;
+      });
+
+      // Set the value in the store
+      mockLocalStorage.store['premium_user'] = JSON.stringify(premiumData);
+
+      // Verify the mock is set up correctly
+      expect(window.localStorage).toBe(mockLocalStorage);
+      expect(mockLocalStorage.getItem('premium_user')).toBe(JSON.stringify(premiumData));
 
       const result = isPremiumUser(email);
       expect(result).toBe(true);
@@ -71,14 +129,14 @@ describe('Premium Content System', () => {
     });
 
     it('should return false for non-premium user', () => {
-      mockLocalStorage.getItem.mockReturnValue(null);
+      mockLocalStorage.store = {};
 
       const result = isPremiumUser('test@example.com');
       expect(result).toBe(false);
     });
 
     it('should return false when localStorage is empty', () => {
-      mockLocalStorage.getItem.mockReturnValue(null);
+      mockLocalStorage.store = {};
 
       const result = isPremiumUser('test@example.com');
       expect(result).toBe(false);
@@ -93,14 +151,14 @@ describe('Premium Content System', () => {
         subscriptionType: 'premium',
       };
 
-      mockLocalStorage.getItem.mockReturnValue(JSON.stringify(premiumData));
+      mockLocalStorage.store['premium_user'] = JSON.stringify(premiumData);
 
       const result = isPremiumUser(email);
       expect(result).toBe(false);
     });
 
     it('should handle invalid localStorage data', () => {
-      mockLocalStorage.getItem.mockReturnValue('invalid-json');
+      mockLocalStorage.store['premium_user'] = 'invalid-json';
 
       const result = isPremiumUser('test@example.com');
       expect(result).toBe(false);
@@ -108,14 +166,16 @@ describe('Premium Content System', () => {
     });
 
     it('should return false on server-side (SSR)', () => {
-      // Simulate server-side environment
-      Object.defineProperty(window, 'window', {
-        value: undefined,
-        writable: true,
-      });
+      // Simulate server-side environment - temporarily remove window
+      const originalWindow = global.window;
+      // @ts-ignore
+      global.window = undefined;
 
       const result = isPremiumUser('test@example.com');
       expect(result).toBe(false);
+      
+      // Restore window
+      global.window = originalWindow;
     });
 
     it('should match email case-insensitively', () => {
@@ -127,7 +187,7 @@ describe('Premium Content System', () => {
         subscriptionType: 'premium',
       };
 
-      mockLocalStorage.getItem.mockReturnValue(JSON.stringify(premiumData));
+      mockLocalStorage.store['premium_user'] = JSON.stringify(premiumData);
 
       const result1 = isPremiumUser('test@example.com');
       const result2 = isPremiumUser('TEST@EXAMPLE.COM');
@@ -163,6 +223,7 @@ describe('Premium Content System', () => {
     });
 
     it('should set cookie with correct expiration', () => {
+      document.cookie = ''; // Reset before test
       const user: PremiumUser = {
         id: '1',
         email: 'test@example.com',
@@ -175,10 +236,9 @@ describe('Premium Content System', () => {
 
       setPremiumUser(user);
 
-      expect(mockCookie).toHaveBeenCalled();
-      expect(mockCookie.mock.calls[0][0]).toContain('premium_user=');
-      expect(mockCookie.mock.calls[0][0]).toContain('expires=');
-      expect(mockCookie.mock.calls[0][0]).toContain('path=/');
+      expect(document.cookie).toContain('premium_user=');
+      expect(document.cookie).toContain('expires=');
+      expect(document.cookie).toContain('path=/');
     });
 
     it('should hash email identifier', () => {
@@ -228,8 +288,7 @@ describe('Premium Content System', () => {
 
       setPremiumUser(user);
 
-      expect(mockCookie).toHaveBeenCalled();
-      expect(mockCookie.mock.calls[0][0]).toContain('expires=');
+      expect(document.cookie).toContain('expires=');
     });
   });
 
@@ -241,11 +300,15 @@ describe('Premium Content System', () => {
     });
 
     it('should clear premium cookie', () => {
+      // Set initial cookie - our mock stores it
+      document.cookie = 'premium_user=test';
+      expect(document.cookie).toBe('premium_user=test');
+      
       clearPremiumUser();
 
-      expect(mockCookie).toHaveBeenCalled();
-      expect(mockCookie.mock.calls[0][0]).toContain('premium_user=;');
-      expect(mockCookie.mock.calls[0][0]).toContain('expires=Thu, 01 Jan 1970');
+      // After clearing, cookie should be cleared
+      expect(document.cookie).toContain('premium_user=;');
+      expect(document.cookie).toContain('expires=Thu, 01 Jan 1970');
     });
   });
 
@@ -258,21 +321,21 @@ describe('Premium Content System', () => {
         name: 'Test User',
       };
 
-      mockLocalStorage.getItem.mockReturnValue(JSON.stringify(userData));
+      mockLocalStorage.store['premium_user'] = JSON.stringify(userData);
 
       const result = getCurrentPremiumUser();
       expect(result).toEqual(userData);
     });
 
     it('should return null when no premium data exists', () => {
-      mockLocalStorage.getItem.mockReturnValue(null);
+      mockLocalStorage.store = {};
 
       const result = getCurrentPremiumUser();
       expect(result).toBeNull();
     });
 
     it('should handle invalid JSON data', () => {
-      mockLocalStorage.getItem.mockReturnValue('invalid-json');
+      mockLocalStorage.store['premium_user'] = 'invalid-json';
 
       const result = getCurrentPremiumUser();
       expect(result).toBeNull();
@@ -289,7 +352,7 @@ describe('Premium Content System', () => {
         endDate: '2025-12-31',
       };
 
-      mockLocalStorage.getItem.mockReturnValue(JSON.stringify(userData));
+      mockLocalStorage.store['premium_user'] = JSON.stringify(userData);
 
       const result = canAccessContent('premium');
       expect(result).toBe(true);
@@ -303,7 +366,7 @@ describe('Premium Content System', () => {
         endDate: '2025-12-31',
       };
 
-      mockLocalStorage.getItem.mockReturnValue(JSON.stringify(userData));
+      mockLocalStorage.store['premium_user'] = JSON.stringify(userData);
 
       const result = canAccessContent('premium');
       expect(result).toBe(true);
@@ -317,7 +380,7 @@ describe('Premium Content System', () => {
         endDate: '2025-12-31',
       };
 
-      mockLocalStorage.getItem.mockReturnValue(JSON.stringify(userData));
+      mockLocalStorage.store['premium_user'] = JSON.stringify(userData);
 
       const result = canAccessContent('vip');
       expect(result).toBe(true);
@@ -331,7 +394,7 @@ describe('Premium Content System', () => {
         endDate: '2025-12-31',
       };
 
-      mockLocalStorage.getItem.mockReturnValue(JSON.stringify(userData));
+      mockLocalStorage.store['premium_user'] = JSON.stringify(userData);
 
       const result = canAccessContent('vip');
       expect(result).toBe(false);
@@ -345,7 +408,7 @@ describe('Premium Content System', () => {
         endDate: '2020-01-01', // Expired
       };
 
-      mockLocalStorage.getItem.mockReturnValue(JSON.stringify(userData));
+      mockLocalStorage.store['premium_user'] = JSON.stringify(userData);
 
       const result = canAccessContent('premium');
       expect(result).toBe(false);
@@ -359,14 +422,14 @@ describe('Premium Content System', () => {
         endDate: '2025-12-31',
       };
 
-      mockLocalStorage.getItem.mockReturnValue(JSON.stringify(userData));
+      mockLocalStorage.store['premium_user'] = JSON.stringify(userData);
 
       const result = canAccessContent('premium');
       expect(result).toBe(false);
     });
 
     it('should deny access when no user is logged in', () => {
-      mockLocalStorage.getItem.mockReturnValue(null);
+      mockLocalStorage.store = {};
 
       const result = canAccessContent('premium');
       expect(result).toBe(false);

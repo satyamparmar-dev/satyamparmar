@@ -96,7 +96,7 @@ export default function Header() {
               whileTap={{ scale: 0.95 }}
               className="flex h-8 w-8 items-center justify-center rounded-lg"
             >
-              <Image src="/satyverse-logo.svg" alt="Satyverse logo" width={32} height={32} priority />
+              <Image src="/satyverse-logo.svg" alt="Satyverse logo" width={32} height={32} />
             </motion.div>
             <span className="text-xl font-bold text-gray-900 dark:text-white">
               Satyverse

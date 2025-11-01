@@ -92,12 +92,17 @@ const localStorageMock = (() => {
 })();
 Object.defineProperty(window, 'localStorage', {
   value: localStorageMock,
+  configurable: true, // Allow tests to override this
 });
 
-// Mock document.cookie
+// Mock document.cookie with getter/setter for testability
+let cookieValue = '';
 Object.defineProperty(document, 'cookie', {
-  writable: true,
-  value: '',
+  get: () => cookieValue,
+  set: (value) => {
+    cookieValue = value;
+  },
+  configurable: true,
 });
 
 // Mock window.location
@@ -113,20 +118,22 @@ window.location = {
   reload: jest.fn(),
 };
 
-// Suppress console errors in tests (optional - remove if you want to see them)
-// const originalError = console.error;
-// beforeAll(() => {
-//   console.error = (...args) => {
-//     if (
-//       typeof args[0] === 'string' &&
-//       (args[0].includes('Warning:') || args[0].includes('Error:'))
-//     ) {
-//       return;
-//     }
-//     originalError.call(console, ...args);
-//   };
-// });
-// afterAll(() => {
-//   console.error = originalError;
-// });
+// Suppress React act() warnings from userEvent interactions
+// These warnings are expected with userEvent and are handled internally
+const originalError = console.error;
+beforeAll(() => {
+  console.error = (...args) => {
+    if (
+      typeof args[0] === 'string' &&
+      args[0].includes('Warning: An update to') &&
+      args[0].includes('inside a test was not wrapped in act(...)')
+    ) {
+      return;
+    }
+    originalError.call(console, ...args);
+  };
+});
+afterAll(() => {
+  console.error = originalError;
+});
 
