@@ -5,7 +5,7 @@
  * Coverage Target: ≥95%
  */
 
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import NewsletterSignup from '@/components/NewsletterSignup';
 import * as newsletter from '@/lib/newsletter';
@@ -198,8 +198,10 @@ describe('NewsletterSignup Component', () => {
     const emailInput = screen.getByPlaceholderText(/enter your email/i);
     const submitButton = screen.getByRole('button', { name: /subscribe/i });
 
-    await user.type(emailInput, 'test@example.com');
-    await user.click(submitButton);
+    await act(async () => {
+      await user.type(emailInput, 'test@example.com');
+      await user.click(submitButton);
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
@@ -219,8 +221,10 @@ describe('NewsletterSignup Component', () => {
     const emailInput = screen.getByPlaceholderText(/enter your email/i);
     const submitButton = screen.getByRole('button', { name: /subscribe/i });
 
-    await user.type(emailInput, 'test@example.com');
-    await user.click(submitButton);
+    await act(async () => {
+      await user.type(emailInput, 'test@example.com');
+      await user.click(submitButton);
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/not configured/i)).toBeInTheDocument();
