@@ -4,14 +4,18 @@ This document explains how to enable and disable the Test Suite workflow for dep
 
 ## Current Status
 
-**Test Suite Workflow: DISABLED** 🚫
+**Test Suite Workflow: DISABLED** 🚫  
+**Branch Protection Workflow: DISABLED** 🚫
 
-The test suite is currently disabled to allow:
+Both workflows are currently disabled to allow:
 - Deployment to GitHub Pages without waiting for tests
-- Commits to main branch without test blocking
+- Direct commits to main branch without blocking
 - Faster development cycles
+- Unrestricted deployment process
 
-## How to Disable the Test Suite
+## How to Disable Workflows
+
+### Disable Test Suite
 
 The test suite can be disabled in two ways:
 
@@ -45,7 +49,18 @@ jobs:
     # ... rest of the job
 ```
 
-## How to Enable the Test Suite
+### Disable Branch Protection
+
+Edit `.github/workflows/enforce-pr-requirements.yml` and:
+
+1. Comment out the `on:` triggers (similar to test suite)
+2. Add `if: false` to the jobs that block commits:
+   - `check-pr-requirements` job
+   - `block-direct-commits` job
+
+## How to Enable Workflows
+
+### Enable Test Suite
 
 To re-enable the test suite, follow these steps:
 
@@ -84,11 +99,33 @@ jobs:
     # ... rest of the job
 ```
 
-### Step 4: Commit and Push
+### Enable Branch Protection
+
+To re-enable branch protection, edit `.github/workflows/enforce-pr-requirements.yml`:
+
+1. **Uncomment the triggers:**
+```yaml
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+```
+
+2. **Remove or update the conditions:**
+```yaml
+check-pr-requirements:
+  if: github.event_name == 'push' && github.ref == 'refs/heads/main'  # Remove 'if: false'
+
+block-direct-commits:
+  if: github.event_name == 'push' && github.ref == 'refs/heads/main'  # Remove 'if: false'
+```
+
+### Commit and Push Changes
 
 ```bash
-git add .github/workflows/test.yml
-git commit -m "chore: enable test suite workflow"
+git add .github/workflows/test.yml .github/workflows/enforce-pr-requirements.yml
+git commit -m "chore: enable test suite and branch protection workflows"
 git push origin main
 ```
 
@@ -179,6 +216,7 @@ If deployment is blocked:
 ## Related Files
 
 - `.github/workflows/test.yml` - Test Suite workflow configuration
+- `.github/workflows/enforce-pr-requirements.yml` - Branch protection workflow
 - `.github/workflows/deploy.yml` - Deployment workflow
 - `package.json` - Test scripts configuration
 - `jest.config.js` - Jest test configuration
