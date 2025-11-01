@@ -61,7 +61,7 @@ export default function BlogTOC({ content, className }: BlogTOCProps) {
         
         if (!element && typeof window !== 'undefined') {
           // If not found by ID, find by text content and assign ID
-          const headings = Array.from(document.querySelectorAll('h2, h3, h4, h5, h6'));
+          const headings = Array.from(document.querySelectorAll('h2, h3, h4, h5, h6')) as HTMLElement[];
           const heading = headings.find((h) => {
             const headingText = h.textContent?.trim() || '';
             return generateHeadingId(headingText) === item.id || 
@@ -70,7 +70,7 @@ export default function BlogTOC({ content, className }: BlogTOCProps) {
           
           if (heading) {
             heading.id = item.id;
-            element = heading;
+            element = heading as HTMLElement;
           }
         }
       });
