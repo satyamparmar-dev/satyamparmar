@@ -7,7 +7,7 @@ import { Filter, X, Tag, Calendar, User } from 'lucide-react';
 import Layout from '@/components/Layout';
 import BlogCard from '@/components/BlogCard';
 import SearchBar from '@/components/SearchBar';
-import type { BlogPost } from '@/lib/blog';
+import type { BlogPost } from '@/lib/blog-client';
 
 interface BlogPageClientProps {
   allPosts: BlogPost[];

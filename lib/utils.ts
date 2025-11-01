@@ -51,3 +51,46 @@ export function generateMetadata(title: string, description: string, keywords: s
     },
   };
 }
+
+export function getEstimatedReadTime(content: string): number {
+  const wordsPerMinute = 200;
+  const wordCount = content.split(/\s+/).length;
+  return Math.ceil(wordCount / wordsPerMinute);
+}
+
+/**
+ * Generates a consistent ID from heading text for use in TOC and anchor links.
+ * This ensures TOC items match exactly with rendered heading IDs.
+ */
+export function generateHeadingId(text: string | React.ReactNode): string {
+  // Convert React nodes to string
+  let textStr: string;
+  if (typeof text === 'string') {
+    textStr = text;
+  } else if (Array.isArray(text)) {
+    textStr = text
+      .map((node) => {
+        if (typeof node === 'string') return node;
+        if (typeof node === 'object' && node !== null && 'props' in node) {
+          return typeof node.props.children === 'string' 
+            ? node.props.children 
+            : String(node.props.children || '');
+        }
+        return String(node || '');
+      })
+      .join('');
+  } else if (typeof text === 'object' && text !== null) {
+    textStr = String(text);
+  } else {
+    textStr = String(text || '');
+  }
+
+  // Clean and generate ID
+  return textStr
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '') // Remove special characters
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Replace multiple hyphens with single hyphen
+    .replace(/^-+|-+$/g, '') // Remove leading/trailing hyphens
+    .trim();
+}

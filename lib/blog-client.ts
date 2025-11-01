@@ -17,6 +17,7 @@ import cloudNativeBackend from '@/data/blogs/cloud-native-backend.json';
 import microservicesArchitecture from '@/data/blogs/microservices-architecture.json';
 import startupTechStack from '@/data/blogs/startup-tech-stack.json';
 import incidentPlaybookForBeginners from '@/data/blogs/incident-playbook-for-beginners.json';
+import kafkaInterviewSimulation from '@/data/blogs/kafka-interview-simulation.json';
 
 import databaseOptimization from '@/data/backend-engineering/database-optimization.json';
 import performanceMonitoring from '@/data/backend-engineering/performance-monitoring.json';
@@ -45,6 +46,7 @@ const allBlogPosts: BlogPost[] = [
   techStackSelection,
   edgeComputing,
   incidentPlaybookForBeginners,
+  kafkaInterviewSimulation,
 ];
 
 // Cache for blog posts to improve performance

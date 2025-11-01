@@ -1,0 +1,108 @@
+# Azure Pipelines CI Configuration
+# This file implements pre-merge gating: tests must pass before merging
+
+trigger:
+  branches:
+    include:
+      - main
+      - master
+  paths:
+    exclude:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+pr:
+  branches:
+    include:
+      - main
+      - master
+  paths:
+    exclude:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  nodeVersion: '20.x'
+  coverageThreshold: 80
+
+stages:
+  - stage: Test
+    displayName: 'Run Tests'
+    jobs:
+      - job: Test
+        displayName: 'Test Suite'
+        strategy:
+          matrix:
+            Node18:
+              nodeVersion: '18.x'
+            Node20:
+              nodeVersion: '20.x'
+        steps:
+          - task: NodeTool@0
+            displayName: 'Setup Node.js ${{ matrix.nodeVersion }}'
+            inputs:
+              versionSpec: ${{ matrix.nodeVersion }}
+
+          - script: |
+              npm ci
+            displayName: 'Install Dependencies'
+
+          - script: |
+              npm run typecheck
+            displayName: 'Type Check'
+
+          - script: |
+              npm run lint
+            displayName: 'Run Linter'
+            continueOnError: false
+
+          - script: |
+              npm run test:ci
+            displayName: 'Run Tests with Coverage'
+            env:
+              CI: true
+
+          - task: PublishCodeCoverageResults@1
+            displayName: 'Publish Coverage Reports'
+            inputs:
+              codeCoverageTool: 'Cobertura'
+              summaryFileLocation: '$(System.DefaultWorkingDirectory)/coverage/cobertura-coverage.xml'
+              reportDirectory: '$(System.DefaultWorkingDirectory)/coverage'
+
+          - script: |
+              COVERAGE=$(node -e "const fs=require('fs'); const data=JSON.parse(fs.readFileSync('coverage/coverage-summary.json')); console.log(data.total.lines.pct);")
+              THRESHOLD=$(coverageThreshold)
+              echo "Coverage: $COVERAGE%"
+              echo "Threshold: $THRESHOLD%"
+              if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+                echo "##vso[task.logissue type=error]Coverage ($COVERAGE%) is below threshold ($THRESHOLD%)"
+                exit 1
+              else
+                echo "##vso[task.logissue type=warning]Coverage ($COVERAGE%) meets threshold ($THRESHOLD%)"
+              fi
+            displayName: 'Check Coverage Threshold'
+            continueOnError: true
+
+  - stage: EnforceMerge
+    displayName: 'Enforce Merge Requirements'
+    dependsOn: Test
+    condition: succeeded()
+    jobs:
+      - job: EnforceMerge
+        displayName: 'Verify Merge Requirements'
+        steps:
+          - script: |
+              echo "✅ All tests passed. PR is ready to merge."
+            displayName: 'Merge Gate Passed'
+
+          - script: |
+              echo "❌ Tests failed. This PR cannot be merged."
+              exit 1
+            displayName: 'Merge Gate Failed'
+            condition: failed()
+

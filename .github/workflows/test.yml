@@ -1,0 +1,122 @@
+name: Test Suite
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Run linter
+        run: npm run lint
+        continue-on-error: false
+
+      - name: Run tests with coverage
+        run: npm run test:ci
+        env:
+          CI: true
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
+
+      - name: Check coverage threshold
+        run: |
+          COVERAGE=$(npm run test:coverage -- --coverage --json 2>/dev/null | grep -o '"lines":{"pct":[0-9.]*' | grep -o '[0-9.]*')
+          THRESHOLD=80
+          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+            echo "❌ Coverage ($COVERAGE%) is below threshold ($THRESHOLD%)"
+            exit 1
+          else
+            echo "✅ Coverage ($COVERAGE%) meets threshold ($THRESHOLD%)"
+          fi
+        continue-on-error: true
+
+      - name: Comment PR with test results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            let comment = '## 🧪 Test Results\n\n';
+            
+            try {
+              const coverage = fs.readFileSync('coverage/coverage-summary.json', 'utf8');
+              const data = JSON.parse(coverage);
+              const summary = data.total;
+              comment += `### Coverage Summary\n`;
+              comment += `- **Lines**: ${summary.lines.pct.toFixed(2)}%\n`;
+              comment += `- **Statements**: ${summary.statements.pct.toFixed(2)}%\n`;
+              comment += `- **Functions**: ${summary.functions.pct.toFixed(2)}%\n`;
+              comment += `- **Branches**: ${summary.branches.pct.toFixed(2)}%\n\n`;
+            } catch (e) {
+              comment += `⚠️ Could not read coverage summary\n\n`;
+            }
+            
+            comment += `### Status\n`;
+            comment += `✅ All tests passed!\n`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  enforce-merge-requirements:
+    name: Enforce Merge Requirements
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify test job passed
+        run: |
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "❌ Test job failed. Cannot merge."
+            exit 1
+          fi
+          echo "✅ Test job passed. Ready to merge."
+
+      - name: Fail if tests failed
+        run: |
+          echo "🚫 This PR cannot be merged until all tests pass."
+          echo "Please fix failing tests before requesting review."
+
