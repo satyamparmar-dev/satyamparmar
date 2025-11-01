@@ -92,12 +92,17 @@ const localStorageMock = (() => {
 })();
 Object.defineProperty(window, 'localStorage', {
   value: localStorageMock,
+  configurable: true, // Allow tests to override this
 });
 
-// Mock document.cookie
+// Mock document.cookie with getter/setter for testability
+let cookieValue = '';
 Object.defineProperty(document, 'cookie', {
-  writable: true,
-  value: '',
+  get: () => cookieValue,
+  set: (value) => {
+    cookieValue = value;
+  },
+  configurable: true,
 });
 
 // Mock window.location

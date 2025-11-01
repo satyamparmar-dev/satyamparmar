@@ -66,8 +66,11 @@ describe('BlogCard Component', () => {
 
   it('should render tags', () => {
     render(<BlogCard post={mockPost} />);
-    expect(screen.getByText('backend')).toBeInTheDocument();
-    expect(screen.getByText('nodejs')).toBeInTheDocument();
+    // Tags can appear multiple times (in tag pills and category), so use getAllByText
+    const backendTags = screen.getAllByText('backend');
+    const nodejsTags = screen.getAllByText('nodejs');
+    expect(backendTags.length).toBeGreaterThan(0);
+    expect(nodejsTags.length).toBeGreaterThan(0);
   });
 
   it('should link to blog post page', () => {
