@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -96,7 +95,7 @@ export default function Header() {
               whileTap={{ scale: 0.95 }}
               className="flex h-8 w-8 items-center justify-center rounded-lg"
             >
-              <Image src="/satyverse-logo.svg" alt="Satyverse logo" width={32} height={32} />
+              <img src="/satyverse-logo.svg" alt="Satyverse logo" className="h-8 w-8" />
             </motion.div>
             <span className="text-xl font-bold text-gray-900 dark:text-white">
               Satyverse

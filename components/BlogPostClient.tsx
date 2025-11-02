@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Calendar, Clock, User, ArrowLeft, Bookmark } from 'lucide-react';
+import { Calendar, Clock, User, ArrowLeft, Bookmark, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRef } from 'react';
 import Layout from '@/components/Layout';
@@ -24,20 +24,30 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
 
   return (
     <Layout>
-      <div className="relative mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-        {/* Back Button */}
+      <div className="relative mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+        {/* Breadcrumb Navigation */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="mb-8"
+          className="mb-6 sm:mb-8"
         >
-          <Link
-            href="/blog"
-            className="inline-flex items-center space-x-2 text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Back to Blog</span>
-          </Link>
+          <nav className="flex items-center space-x-2 text-sm">
+            <Link
+              href="/"
+              className="text-gray-600 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400 transition-colors"
+            >
+              Home
+            </Link>
+            <ChevronRight className="h-4 w-4 text-gray-400" />
+            <Link
+              href="/blog"
+              className="text-gray-600 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400 transition-colors"
+            >
+              Blog
+            </Link>
+            <ChevronRight className="h-4 w-4 text-gray-400" />
+            <span className="text-gray-900 dark:text-white font-medium truncate">{post.title}</span>
+          </nav>
         </motion.div>
 
         {/* Main Content Layout with Sidebar */}
@@ -49,14 +59,14 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
         <motion.header
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="mb-6 sm:mb-8"
         >
           {/* Tags */}
-          <div className="mb-4 flex flex-wrap gap-2">
+          <div className="mb-3 sm:mb-4 flex flex-wrap gap-2">
             {post.tags.map((tag) => (
               <span
                 key={tag}
-                className="rounded-full bg-primary-100 px-3 py-1 text-sm font-medium text-primary-700 dark:bg-primary-900 dark:text-primary-300"
+                className="rounded-full bg-primary-100 px-2 py-1 text-xs sm:text-sm font-medium text-primary-700 dark:bg-primary-900 dark:text-primary-300"
               >
                 {tag}
               </span>
@@ -64,28 +74,28 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
           </div>
 
           {/* Title */}
-          <h1 className="text-4xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-5xl">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-gray-900 dark:text-white lg:text-4xl xl:text-5xl">
             {post.title}
           </h1>
 
           {/* Meta Information */}
-          <div className="mt-6 flex flex-wrap items-center gap-6 text-sm text-gray-600 dark:text-gray-400">
+          <div className="mt-4 sm:mt-6 flex flex-wrap items-center gap-3 sm:gap-6 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
             <div className="flex items-center space-x-2">
-              <User className="h-4 w-4" />
+              <User className="h-3 w-3 sm:h-4 sm:w-4" />
               <span>{post.author}</span>
             </div>
             <div className="flex items-center space-x-2">
-              <Calendar className="h-4 w-4" />
+              <Calendar className="h-3 w-3 sm:h-4 sm:w-4" />
               <span>{formatDate(post.date)}</span>
             </div>
             <div className="flex items-center space-x-2">
-              <Clock className="h-4 w-4" />
+              <Clock className="h-3 w-3 sm:h-4 sm:w-4" />
               <span>{readTime} min read</span>
             </div>
           </div>
 
           {/* Social Share */}
-          <div className="mt-6">
+          <div className="mt-4 sm:mt-6">
             <SocialShare
               url={`/blog/${post.slug}`}
               title={post.title}
@@ -295,12 +305,12 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
-                className="mt-16 border-t border-gray-200 pt-12 dark:border-gray-700"
+                className="mt-12 sm:mt-16 border-t border-gray-200 pt-8 sm:pt-12 dark:border-gray-700"
               >
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-8">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-6 sm:mb-8">
                   Related Articles
                 </h2>
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
                   {relatedPosts.map((relatedPost) => (
                     <motion.article
                       key={relatedPost.slug}
@@ -308,20 +318,20 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
                       className="group overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-all duration-300 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800"
                     >
                       <Link href={`/blog/${relatedPost.slug}`} className="block">
-                        <div className="h-48 bg-gradient-to-br from-primary-500 to-primary-600">
+                        <div className="h-40 sm:h-48 bg-gradient-to-br from-primary-500 to-primary-600">
                           <div className="flex h-full items-center justify-center">
                             <div className="text-center text-white">
-                              <div className="text-3xl font-bold mb-2">
+                              <div className="text-2xl sm:text-3xl font-bold mb-2">
                                 {relatedPost.title.charAt(0)}
                               </div>
-                              <div className="text-sm opacity-90">
+                              <div className="text-xs sm:text-sm opacity-90">
                                 {relatedPost.tags[0]}
                               </div>
                             </div>
                           </div>
                         </div>
-                        <div className="p-6">
-                          <div className="mb-3 flex flex-wrap gap-2">
+                        <div className="p-4 sm:p-6">
+                          <div className="mb-2 sm:mb-3 flex flex-wrap gap-2">
                             {relatedPost.tags.slice(0, 2).map((tag) => (
                               <span
                                 key={tag}
@@ -331,10 +341,10 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
                               </span>
                             ))}
                           </div>
-                          <h3 className="mb-2 text-lg font-semibold text-gray-900 group-hover:text-primary-600 dark:text-white dark:group-hover:text-primary-400">
+                          <h3 className="mb-2 text-base sm:text-lg font-semibold text-gray-900 group-hover:text-primary-600 dark:text-white dark:group-hover:text-primary-400">
                             {relatedPost.title}
                           </h3>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                          <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                             {relatedPost.excerpt}
                           </p>
                         </div>
