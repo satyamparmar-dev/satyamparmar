@@ -1,11 +1,12 @@
 import { MetadataRoute } from 'next';
-import { getAllBlogPosts } from '@/lib/blog-client';
+import { getAllBlogPosts, getAllCategories } from '@/lib/blog-client';
 
 export const dynamic = 'force-static';
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://satyamparmar.blog';
   const posts = getAllBlogPosts();
+  const categories = getAllCategories();
 
   const staticRoutes: MetadataRoute.Sitemap = [
     {
@@ -34,6 +35,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
   ];
 
+  const categoryRoutes: MetadataRoute.Sitemap = categories.map((category) => ({
+    url: `${baseUrl}/category/${category}`,
+    lastModified: new Date(),
+    changeFrequency: 'daily',
+    priority: 0.7,
+  }));
+
   const blogRoutes: MetadataRoute.Sitemap = posts.map((post) => ({
     url: `${baseUrl}/blog/${post.slug}`,
     lastModified: new Date(post.date),
@@ -41,5 +49,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.7,
   }));
 
-  return [...staticRoutes, ...blogRoutes];
+  return [...staticRoutes, ...categoryRoutes, ...blogRoutes];
 }

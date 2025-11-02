@@ -9,16 +9,16 @@ const contactInfo = [
   {
     icon: Mail,
     title: 'Email',
-    description: 'Get in touch via email',
-    value: '',
-    href: 'mailto:'
+    description: 'Get in touch via email: satyverse@gmail.com',
+    value: 'satyverse@gmail.com',
+    href: 'mailto:satyverse@gmail.com'
   },
   {
     icon: Phone,
     title: 'Phone',
     description: 'Call us directly',
-    value: '+91 (000) 123-4567',
-    href: 'tel:+910001234567'
+    value: '+91 (861) 890-5855',
+    href: 'tel:+918618905855'
   },
   {
     icon: MapPin,
