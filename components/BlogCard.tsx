@@ -32,24 +32,24 @@ export default function BlogCard({ post, featured = false, className }: BlogCard
       <Link href={`/blog/${post.slug}`} className="block">
         {/* Featured Image Placeholder */}
         <div className={cn(
-          'h-48 bg-gradient-to-br from-primary-500 to-primary-600',
+          'h-40 sm:h-48 bg-gradient-to-br from-primary-500 to-primary-600',
           featured && 'lg:h-64'
         )}>
           <div className="flex h-full items-center justify-center">
             <div className="text-center text-white">
-              <div className="text-4xl font-bold mb-2">
+              <div className="text-3xl sm:text-4xl font-bold mb-2">
                 {post.title.charAt(0)}
               </div>
-              <div className="text-sm opacity-90">
+              <div className="text-xs sm:text-sm opacity-90">
                 {post.tags[0]}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {/* Tags */}
-          <div className="mb-3 flex flex-wrap gap-2">
+          <div className="mb-2 sm:mb-3 flex flex-wrap gap-2">
             {post.tags.slice(0, 3).map((tag) => (
               <span
                 key={tag}
@@ -62,30 +62,30 @@ export default function BlogCard({ post, featured = false, className }: BlogCard
 
           {/* Title */}
           <h3 className={cn(
-            'mb-3 font-bold text-gray-900 group-hover:text-primary-600 dark:text-white dark:group-hover:text-primary-400',
-            featured ? 'text-2xl lg:text-3xl' : 'text-xl'
+            'mb-2 sm:mb-3 font-bold text-gray-900 group-hover:text-primary-600 dark:text-white dark:group-hover:text-primary-400',
+            featured ? 'text-xl sm:text-2xl lg:text-3xl' : 'text-lg sm:text-xl'
           )}>
             {post.title}
           </h3>
 
           {/* Excerpt */}
-          <p className="mb-4 text-gray-600 dark:text-gray-400">
+          <p className="mb-3 sm:mb-4 text-sm sm:text-base text-gray-600 dark:text-gray-400">
             {post.excerpt}
           </p>
 
           {/* Meta Information */}
-          <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-            <div className="flex items-center space-x-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-2 sm:gap-0 text-xs sm:text-sm text-gray-500 dark:text-gray-400">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
               <div className="flex items-center space-x-1">
-                <User className="h-4 w-4" />
+                <User className="h-3 w-3 sm:h-4 sm:w-4" />
                 <span>{post.author}</span>
               </div>
               <div className="flex items-center space-x-1">
-                <Calendar className="h-4 w-4" />
+                <Calendar className="h-3 w-3 sm:h-4 sm:w-4" />
                 <span>{formatDate(post.date)}</span>
               </div>
               <div className="flex items-center space-x-1">
-                <Clock className="h-4 w-4" />
+                <Clock className="h-3 w-3 sm:h-4 sm:w-4" />
                 <span>{readTime} min read</span>
               </div>
             </div>
@@ -95,7 +95,7 @@ export default function BlogCard({ post, featured = false, className }: BlogCard
               className="flex items-center space-x-1 text-primary-600 dark:text-primary-400"
             >
               <span>Read more</span>
-              <ArrowRight className="h-4 w-4" />
+              <ArrowRight className="h-3 w-3 sm:h-4 sm:w-4" />
             </motion.div>
           </div>
         </div>

@@ -163,13 +163,13 @@ export default function BlogPageClient({ allPosts, allTags, categories }: BlogPa
 
   return (
     <Layout>
-      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
         {/* Header */}
         <div className="text-center">
           <motion.h1
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-4xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-5xl"
+            className="text-3xl sm:text-4xl font-bold tracking-tight text-gray-900 dark:text-white lg:text-5xl"
           >
             Blog Articles
           </motion.h1>
@@ -177,7 +177,7 @@ export default function BlogPageClient({ allPosts, allTags, categories }: BlogPa
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="mx-auto mt-4 max-w-2xl text-lg text-gray-600 dark:text-gray-300"
+            className="mx-auto mt-3 sm:mt-4 max-w-2xl text-base sm:text-lg text-gray-600 dark:text-gray-300"
           >
             Discover insights, tutorials, and best practices in backend engineering, 
             AI, and tech innovations.
@@ -185,7 +185,7 @@ export default function BlogPageClient({ allPosts, allTags, categories }: BlogPa
         </div>
 
         {/* Search and Filters */}
-        <div className="mt-12">
+        <div className="mt-8 sm:mt-12">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             {/* Search Bar */}
             <div className="flex-1 max-w-md">
