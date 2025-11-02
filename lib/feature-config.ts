@@ -7,7 +7,6 @@ export interface FeatureConfig {
     premiumAccessLevel: 'premium' | 'vip' | 'free';
     vipEnabled: boolean;
     blogEnabled: boolean;
-    newsletterEnabled: boolean;
     contactFormEnabled: boolean;
     commentsEnabled: boolean;
     searchEnabled: boolean;
@@ -36,7 +35,6 @@ export const DEFAULT_CONFIG: FeatureConfig = {
     premiumAccessLevel: 'premium',
     vipEnabled: true,
     blogEnabled: true,
-    newsletterEnabled: true,
     contactFormEnabled: true,
     commentsEnabled: false,
     searchEnabled: true,

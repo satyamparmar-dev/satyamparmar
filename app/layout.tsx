@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-        url: 'https://satyamparmar-dev.github.io/satyamparmar',
+        url: process.env.NEXT_PUBLIC_BASE_URL || 'https://satyamparmar.blog',
     title: 'Satyverse',
     description: 'A modern technical blog focused on backend engineering, AI, tech innovations, and the startup world.',
     siteName: 'Satyverse',

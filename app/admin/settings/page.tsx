@@ -126,12 +126,6 @@ export default function AdminSettingsPage() {
       icon: Unlock
     },
     {
-      key: 'newsletterEnabled' as const,
-      name: 'Newsletter Enabled',
-      description: 'Enable newsletter subscriptions',
-      icon: Unlock
-    },
-    {
       key: 'contactFormEnabled' as const,
       name: 'Contact Form Enabled',
       description: 'Enable contact form',

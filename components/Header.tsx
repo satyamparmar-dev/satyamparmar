@@ -24,7 +24,6 @@ const navigation = [
   { name: 'Premium', href: '/premium', icon: Star },
   { name: 'About', href: '/about', icon: Building },
   { name: 'Contact', href: '/contact', icon: Rocket },
-  { name: 'Setup', href: '/setup', icon: Code },
 ];
 
 const categories = [

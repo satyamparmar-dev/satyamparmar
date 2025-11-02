@@ -28,22 +28,10 @@ export default function ContactForm() {
     setIsSubmitting(true);
     
     try {
-      // Formspree Configuration - Replace with your actual form ID
-      const FORMSPREE_FORM_ID = 'your_form_id'; // Replace with your Formspree form ID
-      
-      // For now, we'll simulate the form submission
-      // In production, replace this with actual Formspree call
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API call
-      
-      // Simulate success for demo
-      setSubmitStatus('success');
-      setFormData({ name: '', email: '', subject: '', message: '' });
-      
-      // Track contact form submission
-      trackContactForm();
-      
-      // TODO: Replace with actual Formspree implementation:
+      // Option 1: Formspree (requires free account - 50 submissions/month)
+      // Uncomment and configure if you want to use Formspree:
       /*
+      const FORMSPREE_FORM_ID = 'your_form_id'; // Get from formspree.io
       const response = await fetch(`https://formspree.io/f/${FORMSPREE_FORM_ID}`, {
         method: 'POST',
         headers: {
@@ -55,10 +43,31 @@ export default function ContactForm() {
       if (response.ok) {
         setSubmitStatus('success');
         setFormData({ name: '', email: '', subject: '', message: '' });
+        trackContactForm();
       } else {
         throw new Error('Form submission failed');
       }
       */
+
+      // Option 2: Mailto (FREE FOREVER - No limits, no service needed)
+      // This opens the user's email client with pre-filled message
+      const subject = encodeURIComponent(formData.subject || 'Contact Form Submission');
+      const body = encodeURIComponent(
+        `Name: ${formData.name}\nEmail: ${formData.email}\n\nMessage:\n${formData.message}`
+      );
+      // Update this email address to your actual contact email
+      const CONTACT_EMAIL = 'passingen6@gmail.com'; // Change this to your email
+      const mailtoLink = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`;
+      
+      // Try to open mailto link
+      window.location.href = mailtoLink;
+      
+      // Show success message (user will send email manually)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      setSubmitStatus('success');
+      setFormData({ name: '', email: '', subject: '', message: '' });
+      trackContactForm();
+      
     } catch (error) {
       setSubmitStatus('error');
     } finally {
