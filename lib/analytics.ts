@@ -33,14 +33,6 @@ export const event = ({
   }
 };
 
-// Track newsletter signups
-export const trackNewsletterSignup = (email: string) => {
-  event({
-    action: 'newsletter_signup',
-    category: 'engagement',
-    label: 'newsletter',
-  });
-};
 
 // Track contact form submissions
 export const trackContactForm = () => {

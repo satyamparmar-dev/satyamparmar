@@ -48,22 +48,82 @@ export default function PremiumGate({
   }, [category]);
 
   const handleAuth = (email: string) => {
-    // In a real app, this would verify with your premium user database
-    // For now, we'll use a simple check against a hardcoded list
-    const premiumEmails = [
-      'premium@example.com',
-      'vip@example.com',
-      'admin@example.com'
-    ];
+    // Check against admin-managed premium users
+    const savedUsers = localStorage.getItem('premium_users');
+    let isPremium = false;
+    let userSubscriptionType: 'premium' | 'vip' | null = null;
     
-    const isPremium = premiumEmails.includes(email.toLowerCase());
+    if (savedUsers) {
+      try {
+        const users = JSON.parse(savedUsers);
+        const user = users.find((u: any) => 
+          u.email.toLowerCase() === email.toLowerCase() && u.isActive
+        );
+        
+        if (user) {
+          // Check if subscription is expired
+          if (user.endDate) {
+            const endDate = new Date(user.endDate);
+            const now = new Date();
+            if (endDate < now) {
+              alert('Your subscription has expired. Please contact support to renew.');
+              return;
+            }
+          }
+          
+          isPremium = true;
+          userSubscriptionType = user.subscriptionType;
+        }
+      } catch (error) {
+        console.error('Error checking premium users:', error);
+      }
+    }
+    
+    // Fallback to hardcoded list for testing (can be removed later)
+    if (!isPremium) {
+      const hardcodedEmails = [
+        'premium@example.com',
+        'vip@example.com',
+        'admin@example.com'
+      ];
+      isPremium = hardcodedEmails.includes(email.toLowerCase());
+      if (isPremium) {
+        userSubscriptionType = email.toLowerCase().includes('vip') ? 'vip' : 'premium';
+      }
+    }
+    
+    // Verify access level for VIP content
+    if (category === 'vip' && userSubscriptionType !== 'vip') {
+      alert('This content requires VIP access. Your current subscription level does not have access.');
+      return;
+    }
     
     if (isPremium) {
       localStorage.setItem('user_email', email);
       setIsAuthorized(true);
       setShowAuthModal(false);
+      
+      // Optionally set premium user data
+      if (savedUsers) {
+        try {
+          const users = JSON.parse(savedUsers);
+          const user = users.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
+          if (user) {
+            // Import setPremiumUser if needed, or just use localStorage
+            const userData = {
+              email: user.email,
+              subscriptionType: user.subscriptionType,
+              isActive: user.isActive,
+              endDate: user.endDate
+            };
+            localStorage.setItem('premium_user_data', JSON.stringify(userData));
+          }
+        } catch (error) {
+          console.error('Error setting premium user data:', error);
+        }
+      }
     } else {
-      alert('This email is not in our premium user list. Please contact support.');
+      alert('This email is not in our premium user list. Please contact support or use the admin panel to add your email.');
     }
   };
 

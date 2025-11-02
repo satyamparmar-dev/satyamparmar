@@ -14,7 +14,6 @@ import {
 import Link from 'next/link';
 import Layout from '@/components/Layout';
 import BlogCard from '@/components/BlogCard';
-import NewsletterSignup from '@/components/NewsletterSignup';
 import type { BlogPost } from '@/lib/blog-client';
 
 interface HomePageClientProps {
@@ -242,12 +241,6 @@ export default function HomePageClient({ featuredPosts, categories }: HomePageCl
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="bg-primary-600 dark:bg-primary-700">
-        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-          <NewsletterSignup />
-        </div>
-      </section>
     </Layout>
   );
 }
