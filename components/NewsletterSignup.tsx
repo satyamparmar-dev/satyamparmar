@@ -4,60 +4,40 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Mail, CheckCircle, AlertCircle } from 'lucide-react';
 import { trackNewsletterSignup } from '@/lib/analytics';
+import { submitNewsletterEmail, type NewsletterMode, GOOGLE_FORMS_ACTION_URL, GOOGLE_FORMS_EMAIL_ENTRY } from '@/lib/newsletter';
+
+const REPO_ISSUE_SUBSCRIBE_URL = 'https://github.com/satyamparmar-dev/satyamparmar/issues/new?template=subscribe.yml&labels=subscribe';
 
 export default function NewsletterSignup() {
   const [email, setEmail] = useState('');
+  const [mode, setMode] = useState<NewsletterMode>('auto');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
 
+  const googleConfigured = Boolean(GOOGLE_FORMS_ACTION_URL && GOOGLE_FORMS_EMAIL_ENTRY);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (mode === 'google' && !googleConfigured) {
+      setStatus('error');
+      setMessage('Google Forms is not configured. Choose "Auto" or "Email App" or configure Google Forms in lib/newsletter.ts.');
+      return;
+    }
+
     setStatus('loading');
 
     try {
-      // EmailJS Configuration - Replace these with your actual IDs
-      const EMAILJS_SERVICE_ID = 'service_newsletter'; // Replace with your EmailJS service ID
-      const EMAILJS_TEMPLATE_ID = 'template_newsletter'; // Replace with your EmailJS template ID
-      const EMAILJS_USER_ID = 'your_user_id'; // Replace with your EmailJS user ID
-
-      // For now, we'll simulate the API call
-      // In production, replace this with actual EmailJS call
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-      
-      // Simulate success for demo
-      setStatus('success');
-      setMessage('Successfully subscribed! Check your email for confirmation.');
-      setEmail('');
-      
-      // Track newsletter signup
-      trackNewsletterSignup(email);
-      
-      // TODO: Replace with actual EmailJS implementation:
-      /*
-      const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          service_id: EMAILJS_SERVICE_ID,
-          template_id: EMAILJS_TEMPLATE_ID,
-          user_id: EMAILJS_USER_ID,
-          template_params: {
-            email: email,
-            to_email: 'your-email@example.com'
-          }
-        }),
-      });
-
-      if (response.ok) {
+      const result = await submitNewsletterEmail(email, mode);
+      if (result.ok) {
         setStatus('success');
-        setMessage('Successfully subscribed! Check your email for confirmation.');
+        setMessage(result.message || 'Successfully subscribed!');
+        trackNewsletterSignup(email);
         setEmail('');
       } else {
-        throw new Error('Subscription failed');
+        setStatus('error');
+        setMessage(result.message || 'Something went wrong. Please try again.');
       }
-      */
     } catch (error) {
       setStatus('error');
       setMessage('Something went wrong. Please try again.');
@@ -82,7 +62,7 @@ export default function NewsletterSignup() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Enter your email"
               required
-              className="w-full rounded-lg border-0 px-4 py-3 text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-primary-300"
+              className="w-full rounded-lg border border-transparent bg-white/95 text-gray-900 placeholder-gray-500 focus:border-primary-300 focus:ring-2 focus:ring-primary-300 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400"
             />
           </div>
           <motion.button
@@ -104,6 +84,29 @@ export default function NewsletterSignup() {
               </div>
             )}
           </motion.button>
+        </div>
+
+        <div className="mt-3 flex flex-col items-center justify-center gap-2 text-xs text-primary-100">
+          <div className="flex items-center gap-2">
+            <span>Method:</span>
+            <select
+              value={mode}
+              onChange={(e) => setMode(e.target.value as NewsletterMode)}
+              className="rounded-md bg-white/20 px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-white/40 dark:bg-gray-900/30"
+            >
+              <option value="auto">Auto (Google Forms if set, else Email)</option>
+              <option value="google">Google Forms (no login, free)</option>
+              <option value="mailto">Email App (mailto)</option>
+            </select>
+          </div>
+          <a
+            href={REPO_ISSUE_SUBSCRIBE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline text-primary-200 hover:text-white"
+          >
+            Or subscribe via GitHub (opens issue)
+          </a>
         </div>
         
         {message && (

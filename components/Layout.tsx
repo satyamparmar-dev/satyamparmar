@@ -3,6 +3,7 @@
 import { ReactNode } from 'react';
 import Header from './Header';
 import Footer from './Footer';
+import HomeButton from './HomeButton';
 
 interface LayoutProps {
   children: ReactNode;
@@ -16,6 +17,7 @@ export default function Layout({ children }: LayoutProps) {
         {children}
       </main>
       <Footer />
+      <HomeButton />
     </div>
   );
 }

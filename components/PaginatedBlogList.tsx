@@ -7,22 +7,7 @@ import Link from 'next/link';
 import Pagination from './Pagination';
 import BlogSearch from './BlogSearch';
 import { formatDate, truncateText } from '@/lib/utils';
-
-interface BlogPost {
-  id: string;
-  title: string;
-  slug: string;
-  date: string;
-  author: string;
-  tags: string[];
-  excerpt: string;
-  content: string;
-  category?: string;
-  readTime?: number;
-  views?: number;
-  isPremium?: boolean;
-  isVIP?: boolean;
-}
+import type { BlogPost } from '@/lib/blog-client';
 
 interface PaginatedBlogListProps {
   posts: BlogPost[];
@@ -64,10 +49,10 @@ export default function PaginatedBlogList({
       );
     }
 
-    // Category filter
+    // Category filter (using tags instead since BlogPost doesn't have category)
     if (filters.category) {
       filtered = filtered.filter(post => 
-        post.category?.toLowerCase() === filters.category.toLowerCase()
+        post.tags.some(tag => tag.toLowerCase() === filters.category.toLowerCase())
       );
     }
 
@@ -107,7 +92,7 @@ export default function PaginatedBlogList({
         case 'title':
           return a.title.localeCompare(b.title);
         case 'popular':
-          return (b.views || 0) - (a.views || 0);
+          return new Date(b.date).getTime() - new Date(a.date).getTime();
         default:
           return 0;
       }
@@ -190,7 +175,7 @@ export default function PaginatedBlogList({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
         {currentPosts.map((post, index) => (
           <motion.article
-            key={post.id}
+            key={post.slug}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
@@ -198,25 +183,13 @@ export default function PaginatedBlogList({
           >
             <Link href={`/blog/${post.slug}`}>
               <div className="p-6">
-                {/* Category and Premium Badges */}
+                {/* Tags */}
                 <div className="flex items-center justify-between mb-4">
-                  {post.category && (
-                    <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getCategoryColor(post.category)}`}>
-                      {post.category}
+                  {post.tags.length > 0 && (
+                    <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getCategoryColor(post.tags[0])}`}>
+                      {post.tags[0]}
                     </span>
                   )}
-                  <div className="flex space-x-2">
-                    {post.isVIP && (
-                      <span className="px-2 py-1 text-xs font-semibold bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full">
-                        VIP
-                      </span>
-                    )}
-                    {post.isPremium && !post.isVIP && (
-                      <span className="px-2 py-1 text-xs font-semibold bg-gradient-to-r from-yellow-400 to-orange-500 text-white rounded-full">
-                        Premium
-                      </span>
-                    )}
-                  </div>
                 </div>
 
                 {/* Title */}
@@ -238,15 +211,9 @@ export default function PaginatedBlogList({
                     </div>
                     <div className="flex items-center">
                       <Clock className="h-4 w-4 mr-1" />
-                      {post.readTime || 5} min read
+                      {Math.ceil(post.content.split(/\s+/).length / 200)} min read
                     </div>
                   </div>
-                  {post.views && (
-                    <div className="flex items-center">
-                      <Eye className="h-4 w-4 mr-1" />
-                      {post.views.toLocaleString()}
-                    </div>
-                  )}
                 </div>
 
                 {/* Tags */}

@@ -1,0 +1,153 @@
+# Artillery.io Load Test Configuration
+#
+# This file tests your website with concurrent users.
+#
+# Installation:
+#   npm install -g artillery
+#
+# Usage:
+#   artillery run loadtest-artillery.yml
+#
+# Customize:
+#   - Change target URL below
+#   - Adjust phases (duration, arrivalRate)
+#   - Modify scenarios to test different pages
+#   - Save results: artillery run loadtest-artillery.yml --output results.json
+
+config:
+  # Change this to your website URL
+  # For GitHub Pages: https://satyamparmar-dev.github.io/satyamparmar
+  # For local dev: http://localhost:3000
+  target: 'https://satyamparmar-dev.github.io/satyamparmar'
+  
+  # HTTP settings
+  http:
+    timeout: 10  # Request timeout in seconds
+  
+  # Phases: Define load patterns
+  phases:
+    # Phase 1: Warm up - Start slow
+    - duration: 30    # 30 seconds
+      arrivalRate: 5  # 5 new users per second
+      name: "Warm up"
+    
+    # Phase 2: Ramp up - Increase load
+    - duration: 60
+      arrivalRate: 20  # 20 new users per second
+      name: "Ramp up"
+    
+    # Phase 3: Sustained load - Peak load
+    - duration: 120
+      arrivalRate: 50  # 50 new users per second
+      name: "Sustained load"
+    
+    # Phase 4: Cool down - Decrease load
+    - duration: 30
+      arrivalRate: 10  # 10 new users per second
+      name: "Cool down"
+
+  # Processor: Generate random blog slugs (optional)
+  processor: './loadtest-processor.js'
+
+  # Default payload for all scenarios
+  defaults:
+    headers:
+      User-Agent: 'Artillery Load Test'
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      Accept-Language: 'en-US,en;q=0.5'
+      Accept-Encoding: 'gzip, deflate'
+      Connection: 'keep-alive'
+
+# Scenarios: What each virtual user does
+scenarios:
+  # Scenario 1: Browse homepage
+  - name: "Browse homepage"
+    weight: 30  # 30% of users do this
+    flow:
+      - get:
+          url: "/"
+          capture:
+            - json: "$.title"
+              as: "pageTitle"
+          expect:
+            - statusCode: 200
+            - contentType: html
+            - hasProperty: title
+            - responseTime: 2000  # Must respond in < 2 seconds
+      
+      # Simulate user waiting (reading page)
+      - think: 2  # Wait 2 seconds
+
+  # Scenario 2: View blog listing
+  - name: "View blog listing"
+    weight: 25  # 25% of users do this
+    flow:
+      - get:
+          url: "/blog"
+          expect:
+            - statusCode: 200
+            - contentType: html
+            - responseTime: 2000
+      
+      - think: 3  # User browsing list
+
+  # Scenario 3: Read a blog post
+  - name: "Read blog post"
+    weight: 25  # 25% of users do this
+    flow:
+      # First visit blog listing
+      - get:
+          url: "/blog"
+      
+      - think: 2
+      
+      # Then read a specific post (update slug list)
+      - get:
+          url: "/blog/incident-playbook-for-beginners"
+          expect:
+            - statusCode: 200
+            - contentType: html
+            - responseTime: 2000
+      
+      - think: 5  # User reading post
+
+  # Scenario 4: Browse by category
+  - name: "Browse category"
+    weight: 10  # 10% of users do this
+    flow:
+      - get:
+          url: "/category/backend-engineering"
+          expect:
+            - statusCode: 200
+            - contentType: html
+      
+      - think: 2
+      
+      - get:
+          url: "/category/ai"
+          expect:
+            - statusCode: 200
+
+  # Scenario 5: Visit about/contact pages
+  - name: "Visit about and contact"
+    weight: 10  # 10% of users do this
+    flow:
+      - get:
+          url: "/about"
+          expect:
+            - statusCode: 200
+      
+      - think: 2
+      
+      - get:
+          url: "/contact"
+          expect:
+            - statusCode: 200
+
+# Payload: Data for dynamic URLs (optional)
+# payload:
+#   path: "blog-slugs.csv"
+#   fields:
+#     - "slug"
+#   order: random
+

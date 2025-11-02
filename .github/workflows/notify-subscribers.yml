@@ -1,0 +1,47 @@
+name: Notify Subscribers
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'data/blogs/**.json'
+      - 'data/backend-engineering/**.json'
+      - 'data/ai/**.json'
+      - 'data/startup-world/**.json'
+      - 'data/tech-innovations/**.json'
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install mail deps
+        run: npm i nodemailer
+
+      - name: Compute changed files
+        id: diff
+        run: |
+          git fetch origin ${{ github.event.before }} --depth=1 || true
+          git diff --name-only ${{ github.event.before }} ${{ github.sha }} > changed.txt || true
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          cat changed.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Send notifications
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          FROM_NAME: Satyverse
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          CHANGED_FILES: ${{ steps.diff.outputs.files }}
+        run: node scripts/notify-subscribers.js
