@@ -18,6 +18,7 @@ import microservicesArchitecture from '@/data/blogs/microservices-architecture.j
 import startupTechStack from '@/data/blogs/startup-tech-stack.json';
 import incidentPlaybookForBeginners from '@/data/blogs/incident-playbook-for-beginners.json';
 import kafkaInterviewSimulation from '@/data/blogs/kafka-interview-simulation.json';
+import javaInterviewScenarioQuestions from '@/data/blogs/java-interview-scenario-questions.json';
 
 import databaseOptimization from '@/data/backend-engineering/database-optimization.json';
 import performanceMonitoring from '@/data/backend-engineering/performance-monitoring.json';
@@ -32,6 +33,8 @@ import techStackSelection from '@/data/startup-world/tech-stack-selection.json';
 import edgeComputing from '@/data/tech-innovations/edge-computing.json';
 
 import twoPointersPattern from '@/data/dsa-algo/two-pointers-pattern.json';
+
+import dailyTipOptimizingDatabaseQueries from '@/data/daily/daily-tip-2025-01-15.json';
 
 // All blog posts data (only complete posts, excluding todo folder)
 const allBlogPosts: BlogPost[] = [
@@ -50,6 +53,8 @@ const allBlogPosts: BlogPost[] = [
   incidentPlaybookForBeginners,
   kafkaInterviewSimulation,
   twoPointersPattern,
+  dailyTipOptimizingDatabaseQueries,
+  javaInterviewScenarioQuestions,
 ];
 
 // Cache for blog posts to improve performance
@@ -89,6 +94,7 @@ export function getBlogPostsByCategory(category: string): BlogPost[] {
     'dsa-algo': ['DSA', 'Algorithms', 'Data Structures', 'Interview Prep', 'Two Pointers'],
     'startup-world': ['Startup', 'Tech Stack'],
     'tech-innovations': ['Edge Computing', 'Innovation'],
+    'daily': ['Daily', 'Tips'],
   };
   
   const categoryTags = categoryMap[category] || [];
@@ -98,7 +104,7 @@ export function getBlogPostsByCategory(category: string): BlogPost[] {
 }
 
 export function getAllCategories(): string[] {
-  return ['backend-engineering', 'ai', 'dsa-algo', 'startup-world', 'tech-innovations'];
+  return ['backend-engineering', 'ai', 'dsa-algo', 'startup-world', 'tech-innovations', 'daily'];
 }
 
 export function searchBlogPosts(query: string): BlogPost[] {
@@ -135,7 +141,7 @@ export function getAllTags(): string[] {
 }
 
 export function getCategories(): string[] {
-  return ['Backend', 'AI', 'Startup', 'Architecture', 'DevOps', 'Cloud Native'];
+  return ['Backend', 'AI', 'Startup', 'Architecture', 'DevOps', 'Cloud Native', 'Daily Bytes'];
 }
 
 export function getEstimatedReadTime(content: string): number {

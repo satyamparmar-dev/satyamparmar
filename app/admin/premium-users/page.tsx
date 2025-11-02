@@ -4,8 +4,12 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Edit, Trash2, Save, X, Mail, Phone, Crown, Star } from 'lucide-react';
 import { PremiumUser, setPremiumUser } from '@/lib/premium';
+import { isAdminAuthenticated } from '@/lib/admin-auth';
+import AdminLogin from '@/components/AdminLogin';
 
 export default function PremiumUsersPage() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
   const [users, setUsers] = useState<PremiumUser[]>([]);
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [editingUser, setEditingUser] = useState<PremiumUser | null>(null);
@@ -19,8 +23,13 @@ export default function PremiumUsersPage() {
     isActive: true
   });
 
-  // Load users from localStorage on mount
+  // Check authentication and load users on mount
   useEffect(() => {
+    const authenticated = isAdminAuthenticated();
+    setIsAuthenticated(authenticated);
+    setShowLogin(!authenticated);
+
+    // Load users from localStorage
     const savedUsers = localStorage.getItem('premium_users');
     if (savedUsers) {
       setUsers(JSON.parse(savedUsers));
@@ -51,12 +60,22 @@ export default function PremiumUsersPage() {
     }
   }, []);
 
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+    setShowLogin(false);
+  };
+
   const saveUsers = (newUsers: PremiumUser[]) => {
     setUsers(newUsers);
     localStorage.setItem('premium_users', JSON.stringify(newUsers));
   };
 
   const handleAddUser = () => {
+    if (!isAdminAuthenticated()) {
+      setShowLogin(true);
+      return;
+    }
+
     const newUser: PremiumUser = {
       id: Date.now().toString(),
       ...formData,
@@ -80,6 +99,11 @@ export default function PremiumUsersPage() {
   };
 
   const handleEditUser = (user: PremiumUser) => {
+    if (!isAdminAuthenticated()) {
+      setShowLogin(true);
+      return;
+    }
+
     setEditingUser(user);
     setFormData({
       email: user.email,
@@ -93,6 +117,11 @@ export default function PremiumUsersPage() {
   };
 
   const handleUpdateUser = () => {
+    if (!isAdminAuthenticated()) {
+      setShowLogin(true);
+      return;
+    }
+
     if (!editingUser) return;
     
     const updatedUsers = users.map(user => 
@@ -117,6 +146,11 @@ export default function PremiumUsersPage() {
   };
 
   const handleDeleteUser = (userId: string) => {
+    if (!isAdminAuthenticated()) {
+      setShowLogin(true);
+      return;
+    }
+
     if (confirm('Are you sure you want to delete this user?')) {
       const newUsers = users.filter(user => user.id !== userId);
       saveUsers(newUsers);
@@ -124,6 +158,11 @@ export default function PremiumUsersPage() {
   };
 
   const toggleUserStatus = (userId: string) => {
+    if (!isAdminAuthenticated()) {
+      setShowLogin(true);
+      return;
+    }
+
     const newUsers = users.map(user => 
       user.id === userId 
         ? { ...user, isActive: !user.isActive }
@@ -134,6 +173,8 @@ export default function PremiumUsersPage() {
 
   return (
     <div className="py-12">
+      {showLogin && <AdminLogin onLoginSuccess={handleLoginSuccess} />}
+      
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
@@ -146,15 +187,17 @@ export default function PremiumUsersPage() {
             </p>
           </div>
           
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setIsAddingUser(true)}
-            className="bg-primary-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary-700 transition-colors flex items-center space-x-2"
-          >
-            <Plus className="h-5 w-5" />
-            <span>Add User</span>
-          </motion.button>
+          {isAuthenticated && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setIsAddingUser(true)}
+              className="bg-primary-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary-700 transition-colors flex items-center space-x-2"
+            >
+              <Plus className="h-5 w-5" />
+              <span>Add User</span>
+            </motion.button>
+          )}
         </div>
 
         {/* Users Table */}
@@ -223,16 +266,26 @@ export default function PremiumUsersPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <button
-                        onClick={() => toggleUserStatus(user.id)}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                      {isAuthenticated ? (
+                        <button
+                          onClick={() => toggleUserStatus(user.id)}
+                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            user.isActive
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                              : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                          }`}
+                        >
+                          {user.isActive ? 'Active' : 'Inactive'}
+                        </button>
+                      ) : (
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
                           user.isActive
                             ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
                             : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                        }`}
-                      >
-                        {user.isActive ? 'Active' : 'Inactive'}
-                      </button>
+                        }`}>
+                          {user.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       <div>
@@ -243,20 +296,24 @@ export default function PremiumUsersPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleEditUser(user)}
-                          className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteUser(user.id)}
-                          className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
+                      {isAuthenticated ? (
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => handleEditUser(user)}
+                            className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(user.id)}
+                            className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 dark:text-gray-500 text-xs">Login required</span>
+                      )}
                     </td>
                   </tr>
                 ))}

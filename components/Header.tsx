@@ -32,6 +32,7 @@ const categories = [
   { name: 'DSA & Algo', href: '/category/dsa-algo', color: 'bg-indigo-500' },
   { name: 'Startup World', href: '/category/startup-world', color: 'bg-green-500' },
   { name: 'Tech Innovations', href: '/category/tech-innovations', color: 'bg-orange-500' },
+  { name: 'Daily Bytes', href: '/category/daily', color: 'bg-yellow-500' },
 ];
 
 export default function Header() {
