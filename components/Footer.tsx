@@ -24,7 +24,7 @@ const navigation = {
   ],
   categories: [
     { name: 'Backend', href: '/blog?category=backend' },
-    { name: 'AI', href: '/blog?category=ai' },
+    { name: 'AI & ML', href: '/blog?category=ai' },
     { name: 'Startup', href: '/blog?category=startup' },
     { name: 'Architecture', href: '/blog?category=architecture' },
     { name: 'DevOps', href: '/blog?category=devops' },
@@ -290,7 +290,7 @@ export default function Footer() {
         </motion.div>
       </div>
 
-      {/* Scroll to Top Button */}
+      {/* Scroll to Top Button - Hidden on mobile when TOC is available */}
       <motion.button
         initial={{ opacity: 0, scale: 0 }}
         whileInView={{ opacity: 1, scale: 1 }}
@@ -298,7 +298,7 @@ export default function Footer() {
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
         onClick={scrollToTop}
-        className="fixed bottom-8 right-8 z-50 rounded-full bg-primary-600 p-3 text-white shadow-lg hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600"
+        className="fixed bottom-8 right-8 z-50 rounded-full bg-primary-600 p-3 text-white shadow-lg hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600 hidden lg:block"
       >
         <ArrowUp className="h-5 w-5" />
       </motion.button>

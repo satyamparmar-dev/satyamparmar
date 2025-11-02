@@ -353,17 +353,18 @@ export default function BlogTOC({ content, className }: BlogTOCProps) {
       {/* Mobile Toggle Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-primary-600 px-4 py-3 text-white shadow-lg transition-all hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600 lg:hidden"
+        className="fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-full bg-primary-600 px-4 py-3 text-white shadow-lg transition-all hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600 lg:hidden md:bottom-8 md:right-8"
         aria-label="Toggle table of contents"
       >
         <List className="h-5 w-5" />
-        <span className="font-medium">Contents</span>
+        <span className="font-medium sm:hidden">TOC</span>
+        <span className="font-medium hidden sm:inline">Contents</span>
       </button>
 
       {/* Mobile Overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          className="fixed inset-0 z-[55] bg-black/50 lg:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
@@ -373,7 +374,7 @@ export default function BlogTOC({ content, className }: BlogTOCProps) {
         <motion.nav
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="fixed top-20 right-8 z-50 w-64 max-h-[calc(100vh-8rem)] overflow-y-auto rounded-lg border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-800 lg:hidden"
+          className="fixed top-20 right-4 left-4 sm:right-8 sm:left-auto z-[60] w-auto sm:w-64 max-h-[calc(100vh-8rem)] overflow-y-auto rounded-lg border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-800 lg:hidden"
         >
           {/* Close Button */}
           <div className="mb-4 flex items-center justify-between">

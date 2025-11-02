@@ -31,6 +31,8 @@ import techStackSelection from '@/data/startup-world/tech-stack-selection.json';
 
 import edgeComputing from '@/data/tech-innovations/edge-computing.json';
 
+import twoPointersPattern from '@/data/dsa-algo/two-pointers-pattern.json';
+
 // All blog posts data (only complete posts, excluding todo folder)
 const allBlogPosts: BlogPost[] = [
   aiBackendIntegration,
@@ -47,6 +49,7 @@ const allBlogPosts: BlogPost[] = [
   edgeComputing,
   incidentPlaybookForBeginners,
   kafkaInterviewSimulation,
+  twoPointersPattern,
 ];
 
 // Cache for blog posts to improve performance
@@ -83,6 +86,7 @@ export function getBlogPostsByCategory(category: string): BlogPost[] {
   const categoryMap: { [key: string]: string[] } = {
     'backend-engineering': ['Backend Engineering', 'Backend', 'Node.js', 'Architecture', 'DevOps'],
     'ai': ['AI', 'Machine Learning', 'LLM', 'Vector Database'],
+    'dsa-algo': ['DSA', 'Algorithms', 'Data Structures', 'Interview Prep', 'Two Pointers'],
     'startup-world': ['Startup', 'Tech Stack'],
     'tech-innovations': ['Edge Computing', 'Innovation'],
   };
@@ -94,7 +98,7 @@ export function getBlogPostsByCategory(category: string): BlogPost[] {
 }
 
 export function getAllCategories(): string[] {
-  return ['backend-engineering', 'ai', 'startup-world', 'tech-innovations'];
+  return ['backend-engineering', 'ai', 'dsa-algo', 'startup-world', 'tech-innovations'];
 }
 
 export function searchBlogPosts(query: string): BlogPost[] {

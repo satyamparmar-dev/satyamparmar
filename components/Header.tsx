@@ -29,7 +29,8 @@ const navigation = [
 
 const categories = [
   { name: 'Backend Engineering', href: '/category/backend-engineering', color: 'bg-blue-500' },
-  { name: 'AI', href: '/category/ai', color: 'bg-purple-500' },
+  { name: 'AI & ML', href: '/category/ai', color: 'bg-purple-500' },
+  { name: 'DSA & Algo', href: '/category/dsa-algo', color: 'bg-indigo-500' },
   { name: 'Startup World', href: '/category/startup-world', color: 'bg-green-500' },
   { name: 'Tech Innovations', href: '/category/tech-innovations', color: 'bg-orange-500' },
 ];
@@ -83,21 +84,34 @@ export default function Header() {
         'fixed top-0 left-0 right-0 z-50 transition-all duration-300',
         isScrolled
           ? 'bg-white/80 dark:bg-gray-900/80 backdrop-blur-md shadow-lg'
-          : 'bg-transparent'
+          : 'bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm md:bg-transparent md:dark:bg-transparent'
       )}
     >
       <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center space-x-2" aria-label="Satyverse home">
+          <Link href="/" className="flex items-center space-x-2 z-10 relative" aria-label="Satyverse home">
             <motion.div
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="flex h-8 w-8 items-center justify-center rounded-lg"
+              className="flex h-8 w-8 items-center justify-center rounded-lg flex-shrink-0"
             >
-              <img src="/satyverse-logo.svg" alt="Satyverse logo" className="h-8 w-8" />
+              <img 
+                src="/satyverse-logo.svg" 
+                alt="Satyverse logo" 
+                className="h-8 w-8"
+                onError={(e) => {
+                  // Fallback if image fails to load
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  const parent = target.parentElement;
+                  if (parent) {
+                    parent.innerHTML = '<div class="h-8 w-8 rounded-lg bg-primary-600 flex items-center justify-center text-white font-bold text-sm">S</div>';
+                  }
+                }}
+              />
             </motion.div>
-            <span className="text-xl font-bold text-gray-900 dark:text-white">
+            <span className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white whitespace-nowrap">
               Satyverse
             </span>
           </Link>

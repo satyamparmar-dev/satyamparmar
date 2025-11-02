@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Filter, X, Tag, Calendar, User } from 'lucide-react';
+import { Filter, X, Tag, Calendar, User, ChevronRight } from 'lucide-react';
+import Link from 'next/link';
 import Layout from '@/components/Layout';
 import BlogCard from '@/components/BlogCard';
 import SearchBar from '@/components/SearchBar';
@@ -164,6 +165,24 @@ export default function BlogPageClient({ allPosts, allTags, categories }: BlogPa
   return (
     <Layout>
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+        {/* Breadcrumb Navigation */}
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="mb-6 sm:mb-8"
+        >
+          <nav className="flex items-center space-x-2 text-sm">
+            <Link
+              href="/"
+              className="text-gray-600 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400 transition-colors"
+            >
+              Home
+            </Link>
+            <ChevronRight className="h-4 w-4 text-gray-400" />
+            <span className="text-gray-900 dark:text-white font-medium">Blog</span>
+          </nav>
+        </motion.div>
+
         {/* Header */}
         <div className="text-center">
           <motion.h1

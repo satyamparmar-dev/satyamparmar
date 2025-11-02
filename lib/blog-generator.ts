@@ -24,7 +24,7 @@ const TOPICS = {
     'Caching Strategies', 'Load Balancing', 'Message Queues', 'Event Sourcing',
     'CQRS Implementation', 'Distributed Systems', 'Service Mesh'
   ],
-  'AI & Machine Learning': [
+  'AI & ML': [
     'Neural Networks', 'Deep Learning', 'Natural Language Processing',
     'Computer Vision', 'Reinforcement Learning', 'MLOps', 'Model Deployment',
     'Feature Engineering', 'Data Preprocessing', 'Model Optimization'

@@ -10,21 +10,21 @@ const contactInfo = [
     icon: Mail,
     title: 'Email',
     description: 'Get in touch via email',
-    value: 'contact@backendengineering.com',
-    href: 'mailto:contact@backendengineering.com'
+    value: '',
+    href: 'mailto:'
   },
   {
     icon: Phone,
     title: 'Phone',
     description: 'Call us directly',
-    value: '+1 (555) 123-4567',
-    href: 'tel:+15551234567'
+    value: '+91 (000) 123-4567',
+    href: 'tel:+910001234567'
   },
   {
     icon: MapPin,
     title: 'Location',
     description: 'Visit our office',
-    value: 'San Francisco, CA',
+    value: 'Indore, M.P, India',
     href: '#'
   }
 ];
