@@ -17,8 +17,13 @@ const http = require('http');
 
 // Configuration - CHANGE THESE
 const TARGET_URL = 'https://satyamparmar-dev.github.io/satyamparmar';
-const CONCURRENT_USERS = 50;  // Number of concurrent users
-const TOTAL_REQUESTS = 500;    // Total requests to send
+// Test with multiple concurrent user counts
+const TEST_CONFIGS = [
+  { users: 50, requests: 500 },
+  { users: 100, requests: 1000 },
+  { users: 150, requests: 1500 },
+  { users: 200, requests: 2000 }
+];
 const TIMEOUT = 5000;          // Request timeout (5 seconds)
 
 // Test endpoints - ALL PAGES
@@ -188,24 +193,32 @@ function calculateStats() {
 }
 
 /**
- * Run load test
+ * Reset statistics
  */
-async function runLoadTest() {
-  console.log('='.repeat(60));
-  console.log('Node.js Load Test (No Dependencies Required)');
-  console.log('='.repeat(60));
-  console.log('');
+function resetStats() {
+  stats.total = 0;
+  stats.success = 0;
+  stats.errors = 0;
+  stats.timeouts = 0;
+  stats.responseTimes = [];
+  stats.statusCodes = {};
+}
+
+/**
+ * Run a single load test configuration
+ */
+async function runSingleLoadTest(CONCURRENT_USERS, TOTAL_REQUESTS) {
+  console.log('\n');
+  console.log('='.repeat(80));
+  console.log(`Load Test: ${CONCURRENT_USERS} Concurrent Users, ${TOTAL_REQUESTS} Total Requests`);
+  console.log('='.repeat(80));
   console.log(`Target URL: ${TARGET_URL}`);
-  console.log(`Concurrent Users: ${CONCURRENT_USERS}`);
-  console.log(`Total Requests: ${TOTAL_REQUESTS}`);
   console.log(`Timeout: ${TIMEOUT}ms`);
-  console.log('');
-  console.log('Test Endpoints:');
-  ENDPOINTS.forEach(ep => console.log(`  - ${ep}`));
   console.log('');
   console.log('Starting load test...');
   console.log('');
   
+  resetStats();
   const startTime = Date.now();
   
   // Run requests in batches (concurrent users)
@@ -216,8 +229,8 @@ async function runLoadTest() {
     batches.push(Promise.all(batch));
     
     // Progress indicator
-    if ((i + batchSize) % CONCURRENT_USERS === 0) {
-      process.stdout.write(`\rProgress: ${Math.min(i + batchSize, TOTAL_REQUESTS)}/${TOTAL_REQUESTS} requests`);
+    if ((i + batchSize) % (CONCURRENT_USERS * 5) === 0 || i + batchSize >= TOTAL_REQUESTS) {
+      process.stdout.write(`\rProgress: ${Math.min(i + batchSize, TOTAL_REQUESTS)}/${TOTAL_REQUESTS} requests (${stats.success} success, ${stats.errors + stats.timeouts} errors)`);
     }
   }
   
@@ -227,10 +240,9 @@ async function runLoadTest() {
   const duration = (endTime - startTime) / 1000;
   
   console.log('\n');
-  console.log('='.repeat(60));
-  console.log('Test Results');
-  console.log('='.repeat(60));
-  console.log('');
+  console.log('-'.repeat(80));
+  console.log(`Test Results - ${CONCURRENT_USERS} Concurrent Users`);
+  console.log('-'.repeat(80));
   console.log(`Total Duration: ${duration.toFixed(2)} seconds`);
   console.log(`Total Requests: ${stats.total}`);
   console.log(`Successful: ${stats.success} (${((stats.success / stats.total) * 100).toFixed(2)}%)`);
@@ -252,13 +264,12 @@ async function runLoadTest() {
   
   console.log('Status Codes:');
   Object.entries(stats.statusCodes).forEach(([code, count]) => {
-    console.log(`  ${code}: ${count}`);
+    console.log(`  ${code}: ${count} (${((count / stats.total) * 100).toFixed(2)}%)`);
   });
   console.log('');
   
   console.log(`Throughput: ${(stats.total / duration).toFixed(2)} requests/second`);
   console.log('');
-  console.log('='.repeat(60));
   
   // Performance assessment
   if (stats.responseTimes.length > 0) {
@@ -293,9 +304,74 @@ async function runLoadTest() {
     }
   }
   
-  console.log('='.repeat(60));
+  return {
+    concurrentUsers: CONCURRENT_USERS,
+    totalRequests: TOTAL_REQUESTS,
+    duration,
+    ...stats,
+    timing: stats.responseTimes.length > 0 ? calculateStats() : null
+  };
 }
 
-// Run the test
+/**
+ * Run all load tests
+ */
+async function runLoadTest() {
+  console.log('='.repeat(80));
+  console.log('Node.js Load & Performance Test Suite');
+  console.log('='.repeat(80));
+  console.log('');
+  console.log(`Target URL: ${TARGET_URL}`);
+  console.log('Test Configurations:');
+  TEST_CONFIGS.forEach(config => {
+    console.log(`  - ${config.users} concurrent users, ${config.requests} total requests`);
+  });
+  console.log('');
+  console.log('Test Endpoints:');
+  ENDPOINTS.forEach(ep => console.log(`  - ${ep}`));
+  console.log('');
+  
+  const allResults = [];
+  
+  // Run each test configuration
+  for (const config of TEST_CONFIGS) {
+    const result = await runSingleLoadTest(config.users, config.requests);
+    allResults.push(result);
+    
+    // Wait a bit between tests to avoid overwhelming the server
+    if (config !== TEST_CONFIGS[TEST_CONFIGS.length - 1]) {
+      console.log('\nWaiting 5 seconds before next test...\n');
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+  }
+  
+  // Summary Report
+  console.log('\n');
+  console.log('='.repeat(80));
+  console.log('SUMMARY REPORT - All Load Tests');
+  console.log('='.repeat(80));
+  console.log('');
+  console.log('Performance Comparison Across Different User Loads:');
+  console.log('');
+  console.log('Concurrent Users | Mean (ms) | P95 (ms) | P99 (ms) | Success Rate | Throughput (req/s)');
+  console.log('-'.repeat(80));
+  
+  allResults.forEach(result => {
+    const mean = result.timing ? result.timing.mean.toFixed(0) : 'N/A';
+    const p95 = result.timing ? result.timing.p95.toFixed(0) : 'N/A';
+    const p99 = result.timing ? result.timing.p99.toFixed(0) : 'N/A';
+    const successRate = ((result.success / result.total) * 100).toFixed(2);
+    const throughput = (result.total / result.duration).toFixed(2);
+    
+    console.log(
+      `${String(result.concurrentUsers).padStart(16)} | ${String(mean).padStart(9)} | ${String(p95).padStart(7)} | ${String(p99).padStart(7)} | ${String(successRate + '%').padStart(12)} | ${String(throughput).padStart(18)}`
+    );
+  });
+  
+  console.log('');
+  console.log('='.repeat(80));
+}
+
+// Run the test suite
 runLoadTest().catch(console.error);
 
