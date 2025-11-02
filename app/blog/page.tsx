@@ -1,4 +1,6 @@
 import { Suspense } from 'react';
+import Link from 'next/link';
+import { ChevronRight } from 'lucide-react';
 import { getAllBlogPosts, getAllTags, getCategories } from '@/lib/blog-client';
 import PaginatedBlogList from '@/components/PaginatedBlogList';
 
@@ -15,6 +17,22 @@ export default function BlogPage() {
       </div>
     }>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        {/* Breadcrumb Navigation */}
+        <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <nav className="flex items-center space-x-2 text-sm">
+              <Link
+                href="/"
+                className="text-gray-600 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400 transition-colors"
+              >
+                Home
+              </Link>
+              <ChevronRight className="h-4 w-4 text-gray-400" />
+              <span className="text-gray-900 dark:text-white font-medium">Blog</span>
+            </nav>
+          </div>
+        </div>
+
         {/* Header */}
         <div className="bg-white dark:bg-gray-800 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">

@@ -139,7 +139,8 @@ export default function PaginatedBlogList({
   const getCategoryColor = (category?: string) => {
     const colors: { [key: string]: string } = {
       'Backend Engineering': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-      'AI & Machine Learning': 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+      'AI & ML': 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+      'DSA & Algo': 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200',
       'DevOps & Infrastructure': 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
       'Database & Performance': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
       'Security': 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',

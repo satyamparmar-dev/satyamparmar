@@ -40,7 +40,8 @@ export default function BlogSearch({
 
   const categories = [
     'Backend Engineering',
-    'AI & Machine Learning',
+    'AI & ML',
+    'DSA & Algo',
     'DevOps & Infrastructure',
     'Database & Performance',
     'Security',
@@ -52,7 +53,8 @@ export default function BlogSearch({
   const popularTags = [
     'Node.js', 'Python', 'JavaScript', 'TypeScript', 'React',
     'Microservices', 'Docker', 'Kubernetes', 'AWS', 'Azure',
-    'Database', 'Performance', 'Security', 'API', 'GraphQL'
+    'Database', 'Performance', 'Security', 'API', 'GraphQL',
+    'Kafka', 'Java 8', 'REST API', 'Distributed systems', 'JWT', 'OAuth'
   ];
 
   const sortOptions = [

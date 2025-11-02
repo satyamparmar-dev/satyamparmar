@@ -346,7 +346,7 @@ export function getRelatedPosts(currentPost: BlogPost, allPosts: BlogPost[]) {
 // lib/categories.ts
 export const CATEGORIES = {
   'backend-engineering': 'Backend Engineering',
-  'ai': 'AI & Machine Learning',
+  'ai': 'AI & ML',
   'devops': 'DevOps & Infrastructure',
   'database': 'Database & Performance',
   'security': 'Security',
