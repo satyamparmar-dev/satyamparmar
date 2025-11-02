@@ -3,7 +3,9 @@
 import { motion } from 'framer-motion';
 import { Calendar, Clock, User, ArrowLeft, Bookmark } from 'lucide-react';
 import Link from 'next/link';
+import { useRef } from 'react';
 import Layout from '@/components/Layout';
+import ProtectedContent from '@/components/ProtectedContent';
 import { getEstimatedReadTime, formatDate, generateHeadingId } from '@/lib/utils';
 import type { BlogPost } from '@/lib/blog-client';
 import ReactMarkdown from 'react-markdown';
@@ -18,6 +20,7 @@ interface BlogPostClientProps {
 
 export default function BlogPostClient({ post, relatedPosts }: BlogPostClientProps) {
   const readTime = getEstimatedReadTime(post.content);
+  const headingCounts = useRef<Record<string, number>>({}); // Track duplicate IDs for consistent generation
 
   return (
     <Layout>
@@ -91,55 +94,111 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
           </div>
         </motion.header>
 
-        {/* Article Content */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="prose prose-lg max-w-none dark:prose-invert"
-        >
-          <ReactMarkdown
+        {/* Article Content - Protected */}
+        <ProtectedContent watermarkText="Satyverse - Protected Content">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="prose prose-lg max-w-none dark:prose-invert protected-content"
+          >
+            <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
               h2: ({ children, ...props }: any) => {
-                const id = generateHeadingId(children);
-                return (
-                  <h2 id={id} className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-8 scroll-mt-20" {...props}>
-                    {children}
-                  </h2>
-                );
+                const baseId = generateHeadingId(children);
+                if (headingCounts.current[baseId]) {
+                  headingCounts.current[baseId]++;
+                  const uniqueId = `${baseId}-${headingCounts.current[baseId]}`;
+                  return (
+                    <h2 id={uniqueId} className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-8 scroll-mt-20" {...props}>
+                      {children}
+                    </h2>
+                  );
+                } else {
+                  headingCounts.current[baseId] = 1;
+                  return (
+                    <h2 id={baseId} className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-8 scroll-mt-20" {...props}>
+                      {children}
+                    </h2>
+                  );
+                }
               },
               h3: ({ children, ...props }: any) => {
-                const id = generateHeadingId(children);
-                return (
-                  <h3 id={id} className="text-xl font-semibold text-gray-900 dark:text-white mb-3 mt-6 scroll-mt-20" {...props}>
-                    {children}
-                  </h3>
-                );
+                const baseId = generateHeadingId(children);
+                if (headingCounts.current[baseId]) {
+                  headingCounts.current[baseId]++;
+                  const uniqueId = `${baseId}-${headingCounts.current[baseId]}`;
+                  return (
+                    <h3 id={uniqueId} className="text-xl font-semibold text-gray-900 dark:text-white mb-3 mt-6 scroll-mt-20" {...props}>
+                      {children}
+                    </h3>
+                  );
+                } else {
+                  headingCounts.current[baseId] = 1;
+                  return (
+                    <h3 id={baseId} className="text-xl font-semibold text-gray-900 dark:text-white mb-3 mt-6 scroll-mt-20" {...props}>
+                      {children}
+                    </h3>
+                  );
+                }
               },
               h4: ({ children, ...props }: any) => {
-                const id = generateHeadingId(children);
-                return (
-                  <h4 id={id} className="text-lg font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
-                    {children}
-                  </h4>
-                );
+                const baseId = generateHeadingId(children);
+                if (headingCounts.current[baseId]) {
+                  headingCounts.current[baseId]++;
+                  const uniqueId = `${baseId}-${headingCounts.current[baseId]}`;
+                  return (
+                    <h4 id={uniqueId} className="text-lg font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
+                      {children}
+                    </h4>
+                  );
+                } else {
+                  headingCounts.current[baseId] = 1;
+                  return (
+                    <h4 id={baseId} className="text-lg font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
+                      {children}
+                    </h4>
+                  );
+                }
               },
               h5: ({ children, ...props }: any) => {
-                const id = generateHeadingId(children);
-                return (
-                  <h5 id={id} className="text-base font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
-                    {children}
-                  </h5>
-                );
+                const baseId = generateHeadingId(children);
+                if (headingCounts.current[baseId]) {
+                  headingCounts.current[baseId]++;
+                  const uniqueId = `${baseId}-${headingCounts.current[baseId]}`;
+                  return (
+                    <h5 id={uniqueId} className="text-base font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
+                      {children}
+                    </h5>
+                  );
+                } else {
+                  headingCounts.current[baseId] = 1;
+                  return (
+                    <h5 id={baseId} className="text-base font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
+                      {children}
+                    </h5>
+                  );
+                }
               },
               h6: ({ children, ...props }: any) => {
-                const id = generateHeadingId(children);
-                return (
-                  <h6 id={id} className="text-sm font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
-                    {children}
-                  </h6>
-                );
+                const baseId = generateHeadingId(children);
+                if (headingCounts.current[baseId]) {
+                  headingCounts.current[baseId]++;
+                  const uniqueId = `${baseId}-${headingCounts.current[baseId]}`;
+                  return (
+                    <h6 id={uniqueId} className="text-sm font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
+                      {children}
+                    </h6>
+                  );
+                } else {
+                  headingCounts.current[baseId] = 1;
+                  return (
+                    <h6 id={baseId} className="text-sm font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
+                      {children}
+                    </h6>
+                  );
+                }
               },
               code({ className, children, ...props }: any) {
                 const match = /language-(\w+)/.exec(className || '');
@@ -227,7 +286,8 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
           >
             {post.content}
           </ReactMarkdown>
-        </motion.div>
+          </motion.div>
+        </ProtectedContent>
 
             {/* Related Articles */}
             {relatedPosts.length > 0 && (

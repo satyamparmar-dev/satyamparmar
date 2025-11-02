@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { CheckCircle, AlertCircle, ExternalLink, Copy } from 'lucide-react';
 
 export default function EmailServiceSetup() {
-  const [activeTab, setActiveTab] = useState<'emailjs' | 'formspree'>('emailjs');
+  const [activeTab, setActiveTab] = useState<'googleforms' | 'formspree'>('googleforms');
   const [copied, setCopied] = useState<string | null>(null);
 
   const copyToClipboard = (text: string, type: string) => {
@@ -14,90 +14,81 @@ export default function EmailServiceSetup() {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const emailjsSteps = [
+  const googleFormsSteps = [
     {
       step: 1,
-      title: "Sign up for EmailJS",
-      description: "Go to EmailJS.com and create a free account",
-      action: "Visit EmailJS",
-      url: "https://www.emailjs.com/",
-      code: null
+      title: 'Create a Google Form',
+      description: 'Add one Short answer field labeled "Email" and set it to Required.',
+      action: 'Open Google Forms',
+      url: 'https://forms.google.com/',
+      code: null,
     },
     {
       step: 2,
-      title: "Create Email Service",
-      description: "Add your email provider (Gmail, Outlook, etc.)",
-      action: "Create Service",
+      title: 'Get formResponse URL and entry name',
+      description: 'Open form preview → View page source → find the <form> action ending in /formResponse and the email input name like entry.123456789.',
+      action: null,
       url: null,
-      code: null
+      code: null,
     },
     {
       step: 3,
-      title: "Create Email Template",
-      description: "Use this template for newsletter subscriptions",
-      action: "Copy Template",
+      title: 'Update the site config',
+      description: 'Paste these values into lib/newsletter.ts so newsletter subscriptions post to your Google Form.',
+      action: 'Copy Code',
       url: null,
-      code: `Subject: New Newsletter Subscription
-
-Hello,
-
-A new person subscribed to your newsletter:
-
-Email: {{email}}
-
-Best regards,
-Your Blog`
+      code: `// lib/newsletter.ts
+export const GOOGLE_FORMS_ACTION_URL = 'https://docs.google.com/forms/d/e/.../formResponse';
+export const GOOGLE_FORMS_EMAIL_ENTRY = 'entry.123456789';
+export const NEWSLETTER_RECEIVE_EMAIL = 'you@example.com'; // fallback mailto`,
     },
     {
       step: 4,
-      title: "Get Your IDs",
-      description: "Copy these IDs and update the code",
-      action: "Copy IDs",
+      title: 'Use it on the site',
+      description: 'In the newsletter widget, choose Method = "Google Forms". Users can subscribe without opening an email app.',
+      action: null,
       url: null,
-      code: `// Replace these in components/NewsletterSignup.tsx
-const EMAILJS_SERVICE_ID = 'service_abc123'; // Your service ID
-const EMAILJS_TEMPLATE_ID = 'template_xyz789'; // Your template ID  
-const EMAILJS_USER_ID = 'user_abc123def456'; // Your user ID`
-    }
+      code: null,
+    },
   ];
 
   const formspreeSteps = [
     {
       step: 1,
-      title: "Sign up for Formspree",
-      description: "Go to Formspree.io and create a free account",
-      action: "Visit Formspree",
-      url: "https://formspree.io/",
-      code: null
+      title: 'Sign up for Formspree',
+      description: 'Go to Formspree.io and create a free account',
+      action: 'Visit Formspree',
+      url: 'https://formspree.io/',
+      code: null,
     },
     {
       step: 2,
-      title: "Create New Form",
-      description: "Create a new form and get your form ID",
-      action: "Create Form",
+      title: 'Create New Form',
+      description: 'Create a new form and copy your Form ID (e.g., xabcde).',
+      action: 'Create Form',
       url: null,
-      code: null
+      code: null,
     },
     {
       step: 3,
-      title: "Configure Form Settings",
-      description: "Set up your form settings and email notifications",
-      action: "Configure",
+      title: 'Update the site code',
+      description: 'Paste your Formspree ID into the contact form.',
+      action: 'Copy Code',
       url: null,
-      code: null
+      code: `// components/ContactForm.tsx
+const FORMSPREE_FORM_ID = 'xabcde'; // Your form ID`,
     },
     {
       step: 4,
-      title: "Update Code",
-      description: "Replace the form ID in your contact form",
-      action: "Copy Code",
+      title: 'Test',
+      description: 'Open /contact, submit a message, and verify email receipt from Formspree.',
+      action: null,
       url: null,
-      code: `// Replace this in components/ContactForm.tsx
-const FORMSPREE_FORM_ID = 'xpzgkqwe'; // Your form ID`
-    }
+      code: null,
+    },
   ];
 
-  const currentSteps = activeTab === 'emailjs' ? emailjsSteps : formspreeSteps;
+  const currentSteps = activeTab === 'googleforms' ? googleFormsSteps : formspreeSteps;
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -113,14 +104,14 @@ const FORMSPREE_FORM_ID = 'xpzgkqwe'; // Your form ID`
       {/* Tab Navigation */}
       <div className="flex space-x-1 mb-8 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
         <button
-          onClick={() => setActiveTab('emailjs')}
+          onClick={() => setActiveTab('googleforms')}
           className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-            activeTab === 'emailjs'
+            activeTab === 'googleforms'
               ? 'bg-white text-primary-600 shadow-sm dark:bg-gray-700 dark:text-primary-400'
               : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
           }`}
         >
-          📧 Newsletter (EmailJS)
+          📧 Newsletter (Google Forms)
         </button>
         <button
           onClick={() => setActiveTab('formspree')}

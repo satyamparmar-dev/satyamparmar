@@ -1,0 +1,47 @@
+name: Add Subscriber
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: read
+
+jobs:
+  add:
+    if: contains(github.event.issue.labels.*.name, 'subscribe')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract email from issue
+        id: extract
+        run: |
+          echo "ISSUE_BODY<<EOF" >> $GITHUB_ENV
+          echo "${{ github.event.issue.body }}" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          EMAIL=$(echo "${{ github.event.issue.body }}" | grep -E -o "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+          if [ -z "$EMAIL" ]; then echo "No email found" && exit 1; fi
+          echo "email=$EMAIL" >> $GITHUB_OUTPUT
+
+      - name: Append to subscribers.json
+        id: append
+        run: |
+          EMAIL="${{ steps.extract.outputs.email }}"
+          node -e '
+          const fs = require("fs");
+          const path = "data/subscribers.json";
+          const list = JSON.parse(fs.readFileSync(path, "utf8"));
+          if (!list.includes(process.env.EMAIL)) list.push(process.env.EMAIL);
+          fs.writeFileSync(path, JSON.stringify(list, null, 2) + "\n");
+          '
+        env:
+          EMAIL: ${{ steps.extract.outputs.email }}
+
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore(subscribers): add ${{ steps.extract.outputs.email }}"
+          file_pattern: data/subscribers.json

@@ -3,9 +3,8 @@
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Calendar, Clock, User, ArrowRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { formatDate, getEstimatedReadTime } from '@/lib/blog';
-import type { BlogPost } from '@/lib/blog';
+import { cn, formatDate, getEstimatedReadTime } from '@/lib/utils';
+import type { BlogPost } from '@/lib/blog-client';
 import { useState } from 'react';
 
 interface BlogCardProps {

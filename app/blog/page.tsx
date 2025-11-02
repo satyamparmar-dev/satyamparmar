@@ -1,12 +1,10 @@
 import { Suspense } from 'react';
 import { getAllBlogPosts, getAllTags, getCategories } from '@/lib/blog-client';
-import { generateBlogPosts, BLOG_SCALES } from '@/lib/blog-generator';
 import PaginatedBlogList from '@/components/PaginatedBlogList';
 
 export default function BlogPage() {
-  // For testing with large dataset, use generated posts
-  // For production, use: const allPosts = getAllBlogPosts();
-  const allPosts = generateBlogPosts(BLOG_SCALES.MEDIUM); // 1,000 posts for testing
+  // Use only actual blog posts (no generated content)
+  const allPosts = getAllBlogPosts();
   const allTags = getAllTags();
   const categories = getCategories();
 
