@@ -1,11 +1,12 @@
 export type NewsletterResult = { ok: boolean; message: string };
 export type NewsletterMode = 'auto' | 'google' | 'mailto';
 
-// Configure one of the modes below. Both are free.
+// Newsletter subscription modes (in order of preference):
 // 1) Google Forms (recommended): Create a Google Form with one short-answer field (email),
 //    then set GOOGLE_FORMS_ACTION_URL to the form "formResponse" action URL and
 //    GOOGLE_FORMS_EMAIL_ENTRY to the input name like "entry.123456789".
 // 2) Mailto fallback: Opens the user's email client to send you an email.
+// Note: API routes are not available in static export builds (like GitHub Pages).
 
 export const GOOGLE_FORMS_ACTION_URL = '';
 export const GOOGLE_FORMS_EMAIL_ENTRY = '';
@@ -26,18 +27,20 @@ function doMailto(email: string): NewsletterResult {
 }
 
 export async function submitNewsletterEmail(email: string, mode: NewsletterMode = 'auto'): Promise<NewsletterResult> {
-  const wantGoogle = mode === 'google' || (mode === 'auto' && googleConfigured());
+  // Determine which method to use
+  let useMethod: 'google' | 'mailto' = 'mailto';
 
-  // If explicitly set to Google but not configured, fall back to mailto with a helpful message
-  if (mode === 'google' && !googleConfigured()) {
-    const res = doMailto(email);
-    return res.ok
-      ? { ok: true, message: 'Google Forms not configured. Using Email app instead.' }
-      : { ok: false, message: 'Google Forms not configured and email app could not be opened.' };
+  if (mode === 'google') {
+    useMethod = googleConfigured() ? 'google' : 'mailto';
+  } else if (mode === 'mailto') {
+    useMethod = 'mailto';
+  } else {
+    // Auto mode: prefer Google Forms if configured, then mailto
+    useMethod = googleConfigured() ? 'google' : 'mailto';
   }
 
   // Google Forms path
-  if (typeof window !== 'undefined' && wantGoogle && googleConfigured()) {
+  if (useMethod === 'google' && googleConfigured()) {
     try {
       const form = new FormData();
       form.append(GOOGLE_FORMS_EMAIL_ENTRY, email);
@@ -49,7 +52,7 @@ export async function submitNewsletterEmail(email: string, mode: NewsletterMode 
       // no-cors => opaque; assume success
       return { ok: true, message: 'Thanks! You are subscribed via Google Forms.' };
     } catch (e) {
-      // If Google submission fails, fall back to mailto in auto or google mode
+      // If Google submission fails, fall back to mailto
       const res = doMailto(email);
       return res.ok
         ? { ok: true, message: 'Could not reach Google Forms. Using Email app instead.' }
@@ -57,8 +60,8 @@ export async function submitNewsletterEmail(email: string, mode: NewsletterMode 
     }
   }
 
-  // Mailto path (auto or explicit)
-  if (mode === 'mailto' || mode === 'auto') {
+  // Mailto path (explicit mode or fallback)
+  if (useMethod === 'mailto') {
     return doMailto(email);
   }
 

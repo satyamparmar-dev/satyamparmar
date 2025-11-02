@@ -151,13 +151,13 @@ export default function AboutPageClient() {
               </div>
               <div className="flex-1">
                 <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                  Pass Gen
+                  Satyam Parmar
                 </h3>
                 <p className="text-lg text-primary-600 dark:text-primary-400 mb-4">
                   Senior Backend Engineer & Tech Writer
                 </p>
                 <p className="text-gray-700 dark:text-gray-300 leading-relaxed mb-6">
-                  With over 15 years of experience in backend engineering, I&apos;ve built scalable systems 
+                  With over 10 years of experience in backend engineering, I&apos;ve built scalable systems 
                   for startups and enterprises alike. I&apos;m passionate about sharing knowledge and helping 
                   developers navigate the complex world of backend development, AI integration, and 
                   modern software architecture.

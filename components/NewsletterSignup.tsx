@@ -94,9 +94,9 @@ export default function NewsletterSignup() {
               onChange={(e) => setMode(e.target.value as NewsletterMode)}
               className="rounded-md bg-white/20 px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-white/40 dark:bg-gray-900/30"
             >
-              <option value="auto">Auto (Google Forms if set, else Email)</option>
-              <option value="google">Google Forms (no login, free)</option>
-              <option value="mailto">Email App (mailto)</option>
+              <option value="auto">Auto (Google Forms → Email)</option>
+              <option value="google">Google Forms (Recommended - no login needed)</option>
+              <option value="mailto">Email App (mailto - always works)</option>
             </select>
           </div>
           <a
