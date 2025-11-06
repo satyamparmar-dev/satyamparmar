@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
+import Script from 'next/script';
+import Analytics from '@/components/Analytics';
+import ConsentBanner from '@/components/ConsentBanner';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -57,32 +60,46 @@ export default function RootLayout({
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
         <link rel="manifest" href="/site.webmanifest" />
         <meta name="theme-color" content="#0ea5e9" />
-        
+
         {/* Google Analytics */}
         {process.env.NEXT_PUBLIC_GA_ID && (
           <>
-            <script
-              async
+            <Script id="ga-consent-defaults" strategy="beforeInteractive">
+              {`
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);} 
+                gtag('consent', 'default', {
+                  ad_storage: 'denied',
+                  analytics_storage: 'granted',
+                  functionality_storage: 'granted',
+                  personalization_storage: 'denied',
+                  security_storage: 'granted'
+                });
+              `}
+            </Script>
+            <Script
               src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_GA_ID}`}
+              strategy="afterInteractive"
             />
-            <script
-              dangerouslySetInnerHTML={{
-                __html: `
-                  window.dataLayer = window.dataLayer || [];
-                  function gtag(){dataLayer.push(arguments);} 
-                  gtag('js', new Date());
-                  gtag('config', '${process.env.NEXT_PUBLIC_GA_ID}', {
-                    page_title: document.title,
-                    page_location: window.location.href,
-                  });
-                `,
-              }}
-            />
+            <Script id="ga-init" strategy="afterInteractive">
+              {`
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);} 
+                const dnt = navigator.doNotTrack === '1' || window.doNotTrack === '1' || navigator.msDoNotTrack === '1';
+                if (dnt) {
+                  gtag('consent', 'update', { analytics_storage: 'denied' });
+                }
+                gtag('js', new Date());
+                gtag('config', '${process.env.NEXT_PUBLIC_GA_ID}', { anonymize_ip: true });
+              `}
+            </Script>
           </>
         )}
       </head>
       <body className={inter.className}>
         {children}
+        {process.env.NEXT_PUBLIC_GA_ID ? <Analytics /> : null}
+        {process.env.NEXT_PUBLIC_GA_ID ? <ConsentBanner /> : null}
       </body>
     </html>
   );
