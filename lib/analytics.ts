@@ -1,7 +1,7 @@
 // Google Analytics 4 integration for static sites
 // This is a lightweight, privacy-focused implementation
 
-export const GA_TRACKING_ID = process.env.NEXT_PUBLIC_GA_ID || '';
+export const GA_TRACKING_ID = process.env.NEXT_PUBLIC_GA_ID || 'G-G8BMZ7QX5M';
 
 // Track page views
 export const pageview = (url: string) => {

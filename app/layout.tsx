@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import Script from 'next/script';
 import Analytics from '@/components/Analytics';
 import ConsentBanner from '@/components/ConsentBanner';
+import { GA_TRACKING_ID } from '@/lib/analytics';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -62,7 +63,7 @@ export default function RootLayout({
         <meta name="theme-color" content="#0ea5e9" />
 
         {/* Google Analytics */}
-        {process.env.NEXT_PUBLIC_GA_ID && (
+        {GA_TRACKING_ID && (
           <>
             <Script id="ga-consent-defaults" strategy="beforeInteractive">
               {`
@@ -78,7 +79,7 @@ export default function RootLayout({
               `}
             </Script>
             <Script
-              src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_GA_ID}`}
+              src={`https://www.googletagmanager.com/gtag/js?id=${GA_TRACKING_ID}`}
               strategy="afterInteractive"
             />
             <Script id="ga-init" strategy="afterInteractive">
@@ -90,7 +91,7 @@ export default function RootLayout({
                   gtag('consent', 'update', { analytics_storage: 'denied' });
                 }
                 gtag('js', new Date());
-                gtag('config', '${process.env.NEXT_PUBLIC_GA_ID}', { anonymize_ip: true });
+                gtag('config', '${GA_TRACKING_ID}', { anonymize_ip: true });
               `}
             </Script>
           </>
@@ -98,8 +99,8 @@ export default function RootLayout({
       </head>
       <body className={inter.className}>
         {children}
-        {process.env.NEXT_PUBLIC_GA_ID ? <Analytics /> : null}
-        {process.env.NEXT_PUBLIC_GA_ID ? <ConsentBanner /> : null}
+        {GA_TRACKING_ID ? <Analytics /> : null}
+        {GA_TRACKING_ID ? <ConsentBanner /> : null}
       </body>
     </html>
   );
