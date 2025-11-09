@@ -19,11 +19,18 @@ import startupTechStack from '@/data/blogs/startup-tech-stack.json';
 import incidentPlaybookForBeginners from '@/data/blogs/incident-playbook-for-beginners.json';
 import kafkaInterviewSimulation from '@/data/blogs/kafka-interview-simulation.json';
 import javaInterviewScenarioQuestions from '@/data/blogs/java-interview-scenario-questions.json';
+import systemDesignResources2025 from '@/data/blogs/system-design-resources-2025.json';
+import dsaPatternsMasterGuide from '@/data/blogs/dsa-patterns-master-guide.json';
+import searchingSortingMasterGuide from '@/data/blogs/searching-sorting-master-guide.json';
+import seniorJavaBackendArchitectureGuide from '@/data/blogs/senior-java-backend-architecture-guide.json';
 
 import databaseOptimization from '@/data/backend-engineering/database-optimization.json';
 import performanceMonitoring from '@/data/backend-engineering/performance-monitoring.json';
 import restApiBestPractices from '@/data/backend-engineering/rest-api-best-practices.json';
 import securityBestPractices from '@/data/backend-engineering/security-best-practices.json';
+import distributedTransactionsSagaScenarios from '@/data/backend-engineering/distributed-transactions-saga-scenarios.json';
+import backendDistributedSystemsRoadmap from '@/data/backend-engineering/backend-distributed-systems-roadmap.json';
+import systemDesign45ProblemsRoadmap from '@/data/backend-engineering/system-design-45-problems-roadmap.json';
 
 import llmIntegrationGuide from '@/data/ai/llm-integration-guide.json';
 import vectorDatabases from '@/data/ai/vector-databases.json';
@@ -55,6 +62,13 @@ const allBlogPosts: BlogPost[] = [
   twoPointersPattern,
   dailyTipOptimizingDatabaseQueries,
   javaInterviewScenarioQuestions,
+  systemDesignResources2025,
+  dsaPatternsMasterGuide,
+  searchingSortingMasterGuide,
+  seniorJavaBackendArchitectureGuide,
+  distributedTransactionsSagaScenarios,
+  backendDistributedSystemsRoadmap,
+  systemDesign45ProblemsRoadmap,
 ];
 
 // Cache for blog posts to improve performance
