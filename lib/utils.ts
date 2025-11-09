@@ -63,6 +63,7 @@ export function getEstimatedReadTime(content: string): number {
  * This ensures TOC items match exactly with rendered heading IDs.
  */
 export function generateHeadingId(text: string | React.ReactNode): string {
+
   // Convert React nodes to string
   let textStr: string;
   if (typeof text === 'string') {
@@ -85,8 +86,13 @@ export function generateHeadingId(text: string | React.ReactNode): string {
     textStr = String(text || '');
   }
 
+  // Normalize common connector symbols to words for stable IDs
+  const normalized = textStr
+    .replace(/&/g, ' and ')
+    .replace(/\+/g, ' and ');
+
   // Clean and generate ID
-  return textStr
+  return normalized
     .toLowerCase()
     .replace(/[^\w\s-]/g, '') // Remove special characters
     .replace(/\s+/g, '-') // Replace spaces with hyphens

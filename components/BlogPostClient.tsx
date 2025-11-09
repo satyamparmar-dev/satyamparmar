@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion';
 import { Calendar, Clock, User, ArrowLeft, Bookmark, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
-import { useRef } from 'react';
+import { useMemo } from 'react';
 import Layout from '@/components/Layout';
 import ProtectedContent from '@/components/ProtectedContent';
 import { getEstimatedReadTime, formatDate, generateHeadingId } from '@/lib/utils';
@@ -20,7 +20,8 @@ interface BlogPostClientProps {
 
 export default function BlogPostClient({ post, relatedPosts }: BlogPostClientProps) {
   const readTime = getEstimatedReadTime(post.content);
-  const headingCounts = useRef<Record<string, number>>({}); // Track duplicate IDs for consistent generation
+  // Use a fresh map per render to avoid StrictMode double-render mismatches between server/client
+  const headingCounts = useMemo<Record<string, number>>(() => ({}), [post.content]);
 
   return (
     <Layout>
@@ -117,16 +118,16 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
             components={{
               h2: ({ children, ...props }: any) => {
                 const baseId = generateHeadingId(children);
-                if (headingCounts.current[baseId]) {
-                  headingCounts.current[baseId]++;
-                  const uniqueId = `${baseId}-${headingCounts.current[baseId]}`;
+                if (headingCounts[baseId]) {
+                  headingCounts[baseId]++;
+                  const uniqueId = `${baseId}-${headingCounts[baseId]}`;
                   return (
                     <h2 id={uniqueId} className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-8 scroll-mt-20" {...props}>
                       {children}
                     </h2>
                   );
                 } else {
-                  headingCounts.current[baseId] = 1;
+                  headingCounts[baseId] = 1;
                   return (
                     <h2 id={baseId} className="text-2xl font-bold text-gray-900 dark:text-white mb-4 mt-8 scroll-mt-20" {...props}>
                       {children}
@@ -136,16 +137,16 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
               },
               h3: ({ children, ...props }: any) => {
                 const baseId = generateHeadingId(children);
-                if (headingCounts.current[baseId]) {
-                  headingCounts.current[baseId]++;
-                  const uniqueId = `${baseId}-${headingCounts.current[baseId]}`;
+                if (headingCounts[baseId]) {
+                  headingCounts[baseId]++;
+                  const uniqueId = `${baseId}-${headingCounts[baseId]}`;
                   return (
                     <h3 id={uniqueId} className="text-xl font-semibold text-gray-900 dark:text-white mb-3 mt-6 scroll-mt-20" {...props}>
                       {children}
                     </h3>
                   );
                 } else {
-                  headingCounts.current[baseId] = 1;
+                  headingCounts[baseId] = 1;
                   return (
                     <h3 id={baseId} className="text-xl font-semibold text-gray-900 dark:text-white mb-3 mt-6 scroll-mt-20" {...props}>
                       {children}
@@ -155,16 +156,16 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
               },
               h4: ({ children, ...props }: any) => {
                 const baseId = generateHeadingId(children);
-                if (headingCounts.current[baseId]) {
-                  headingCounts.current[baseId]++;
-                  const uniqueId = `${baseId}-${headingCounts.current[baseId]}`;
+                if (headingCounts[baseId]) {
+                  headingCounts[baseId]++;
+                  const uniqueId = `${baseId}-${headingCounts[baseId]}`;
                   return (
                     <h4 id={uniqueId} className="text-lg font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
                       {children}
                     </h4>
                   );
                 } else {
-                  headingCounts.current[baseId] = 1;
+                  headingCounts[baseId] = 1;
                   return (
                     <h4 id={baseId} className="text-lg font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
                       {children}
@@ -174,16 +175,16 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
               },
               h5: ({ children, ...props }: any) => {
                 const baseId = generateHeadingId(children);
-                if (headingCounts.current[baseId]) {
-                  headingCounts.current[baseId]++;
-                  const uniqueId = `${baseId}-${headingCounts.current[baseId]}`;
+                if (headingCounts[baseId]) {
+                  headingCounts[baseId]++;
+                  const uniqueId = `${baseId}-${headingCounts[baseId]}`;
                   return (
                     <h5 id={uniqueId} className="text-base font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
                       {children}
                     </h5>
                   );
                 } else {
-                  headingCounts.current[baseId] = 1;
+                  headingCounts[baseId] = 1;
                   return (
                     <h5 id={baseId} className="text-base font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
                       {children}
@@ -193,16 +194,16 @@ export default function BlogPostClient({ post, relatedPosts }: BlogPostClientPro
               },
               h6: ({ children, ...props }: any) => {
                 const baseId = generateHeadingId(children);
-                if (headingCounts.current[baseId]) {
-                  headingCounts.current[baseId]++;
-                  const uniqueId = `${baseId}-${headingCounts.current[baseId]}`;
+                if (headingCounts[baseId]) {
+                  headingCounts[baseId]++;
+                  const uniqueId = `${baseId}-${headingCounts[baseId]}`;
                   return (
                     <h6 id={uniqueId} className="text-sm font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
                       {children}
                     </h6>
                   );
                 } else {
-                  headingCounts.current[baseId] = 1;
+                  headingCounts[baseId] = 1;
                   return (
                     <h6 id={baseId} className="text-sm font-semibold text-gray-900 dark:text-white mb-2 mt-4 scroll-mt-20" {...props}>
                       {children}

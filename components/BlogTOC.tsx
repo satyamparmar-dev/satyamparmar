@@ -29,66 +29,75 @@ export default function BlogTOC({ content, className }: BlogTOCProps) {
 
   useEffect(() => {
     // Extract headings from markdown content (H2-H6, skip H1 as it's usually the title)
-    // Supports headings with optional trailing spaces and special characters
+    // Also extract top-level ordered list items (the 45 problems) and include them as subsections
     const headingRegex = /^(#{2,6})\s+(.+?)(?:\s*#+\s*)?$/gm;
+    const orderedItemRegex = /^\s*\d+\.\s+(.+)$/gm; // Capture text of top-level ordered items
     const items: TOCItem[] = [];
-    let match;
     const idCounts: Record<string, number> = {}; // Track duplicate IDs
 
-    // Reset regex lastIndex to avoid issues with multiple calls
+    // 1) Collect headings first (to establish sections)
     headingRegex.lastIndex = 0;
-
+    let match;
+    const headingPositions: { index: number; level: number; title: string }[] = [];
     while ((match = headingRegex.exec(content)) !== null) {
-      const level = match[1].length; // Number of # symbols
+      const level = match[1].length;
       const title = match[2].trim();
-      
-      // Skip empty titles
       if (!title) continue;
-      
-      // Generate consistent ID using utility function
-      const baseId = generateHeadingId(title);
-      
-      // Make ID unique if duplicate exists
-      if (idCounts[baseId]) {
-        idCounts[baseId]++;
-        const id = `${baseId}-${idCounts[baseId]}`;
-        items.push({ id, title, level });
-      } else {
-        idCounts[baseId] = 1;
-        items.push({ id: baseId, title, level });
-      }
+      headingPositions.push({ index: match.index, level, title });
     }
 
-    // Group items into sections (H2 = main section, H3+ = subsections)
+    // 2) Collect ordered list items with their positions
+    orderedItemRegex.lastIndex = 0;
+    const orderedPositions: { index: number; level: number; title: string }[] = [];
+    while ((match = orderedItemRegex.exec(content)) !== null) {
+      const rawTitle = match[1].trim();
+      // Strip trailing spaces and hashes if user typed like "Problem ###"
+      const cleanTitle = rawTitle.replace(/\s*#+\s*$/, '').trim();
+      if (!cleanTitle) continue;
+      orderedPositions.push({ index: match.index, level: 3, title: cleanTitle });
+    }
+
+    // 3) Build TOC structure: H2 as main sections; H3+ and ordered items as subsections under the nearest preceding H2
     const sections: TOCSection[] = [];
     let currentSection: TOCSection | null = null;
 
-    for (const item of items) {
-      if (item.level === 2) {
-        // Start a new main section
-        if (currentSection) {
-          sections.push(currentSection);
+    // Merge and sort by position to maintain document order
+    const merged = [
+      ...headingPositions.map((h) => ({ type: 'heading' as const, ...h })),
+      ...orderedPositions.map((o) => ({ type: 'ordered' as const, ...o })),
+    ].sort((a, b) => a.index - b.index);
+
+    for (const node of merged) {
+      if (node.type === 'heading') {
+        const baseId = generateHeadingId(node.title);
+        const id = idCounts[baseId] ? `${baseId}-${++idCounts[baseId]}` : (idCounts[baseId] = 1, baseId);
+        const item: TOCItem = { id, title: node.title, level: node.level };
+
+        if (node.level === 2) {
+          if (currentSection) sections.push(currentSection);
+          currentSection = { mainItem: item, subsections: [] };
+        } else if (currentSection && node.level > 2) {
+          currentSection.subsections.push(item);
+        } else if (!currentSection) {
+          currentSection = { mainItem: item, subsections: [] };
         }
-        currentSection = {
-          mainItem: item,
-          subsections: [],
-        };
-      } else if (currentSection && item.level > 2) {
-        // Add to current section's subsections
-        currentSection.subsections.push(item);
-      } else if (!currentSection && item.level > 2) {
-        // If we encounter a subsection before any main section, create a dummy section
-        currentSection = {
-          mainItem: item, // Treat it as main item
-          subsections: [],
-        };
+      } else {
+        // ordered list item becomes a subsection under the current H2 section
+        if (!currentSection) {
+          // If an ordered item appears before any H2, create a synthetic section
+          const syntheticId = 'section';
+          currentSection = {
+            mainItem: { id: syntheticId, title: 'Contents', level: 2 },
+            subsections: [],
+          };
+        }
+        const baseId = generateHeadingId(node.title);
+        const id = idCounts[baseId] ? `${baseId}-${++idCounts[baseId]}` : (idCounts[baseId] = 1, baseId);
+        currentSection.subsections.push({ id, title: node.title, level: 3 });
       }
     }
 
-    // Push the last section
-    if (currentSection) {
-      sections.push(currentSection);
-    }
+    if (currentSection) sections.push(currentSection);
 
     setTocSections(sections);
   }, [content]);
@@ -105,21 +114,36 @@ export default function BlogTOC({ content, className }: BlogTOCProps) {
       });
 
       allItems.forEach((item) => {
-        // First, try to find by ID
+        // Try headings first
         let element = document.getElementById(item.id);
-        
+
         if (!element && typeof window !== 'undefined') {
-          // If not found by ID, find by text content and assign ID
           const headings = Array.from(document.querySelectorAll('h2, h3, h4, h5, h6')) as HTMLElement[];
           const heading = headings.find((h) => {
             const headingText = h.textContent?.trim() || '';
-            return generateHeadingId(headingText) === item.id || 
+            return generateHeadingId(headingText) === item.id ||
                    headingText.toLowerCase() === item.title.toLowerCase();
           });
-          
           if (heading) {
             heading.id = item.id;
             element = heading as HTMLElement;
+          }
+        }
+
+        // If still not found, try to match top-level ordered list items (<ol> > <li>)
+        if (!element && typeof window !== 'undefined') {
+          const articleRoot = document.querySelector('article, .prose, [class*="prose"]') || document;
+          const listItems = Array.from(articleRoot.querySelectorAll('ol > li')) as HTMLElement[];
+          const candidate = listItems.find((li) => {
+            // Only consider top-level list items (avoid nested lists)
+            const isNested = !!li.closest('li li');
+            if (isNested) return false;
+            const text = (li.textContent || '').trim();
+            return text.toLowerCase().startsWith(item.title.toLowerCase());
+          });
+          if (candidate) {
+            candidate.id = item.id;
+            element = candidate;
           }
         }
       });
@@ -217,11 +241,10 @@ export default function BlogTOC({ content, className }: BlogTOCProps) {
 
     const element = document.getElementById(id);
     if (element) {
-      const offsetTop = element.offsetTop - 80; // Account for sticky header
-      window.scrollTo({
-        top: offsetTop,
-        behavior: 'smooth',
-      });
+      const rect = element.getBoundingClientRect();
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const target = rect.top + scrollTop - 80; // Account for sticky header
+      window.scrollTo({ top: target, behavior: 'smooth' });
       setIsOpen(false); // Close mobile menu after click
     }
   };

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Share2, Twitter, Linkedin, Facebook, Link2, Check } from 'lucide-react';
 
@@ -18,12 +18,23 @@ export default function SocialShare({
   className,
 }: SocialShareProps) {
   const [copied, setCopied] = useState(false);
-
-  const fullUrl = typeof window !== 'undefined' ? `${window.location.origin}${url}` : url;
+  // Ensure deterministic SSR: compute client values after mount
+  const [fullUrl, setFullUrl] = useState<string>(url);
+  const [canNativeShare, setCanNativeShare] = useState<boolean>(false);
   const shareText = description || title;
   const encodedUrl = encodeURIComponent(fullUrl);
   const encodedTitle = encodeURIComponent(title);
   const encodedText = encodeURIComponent(shareText);
+
+  useEffect(() => {
+    // Safe client-only computations
+    try {
+      setFullUrl(`${window.location.origin}${url}`);
+      setCanNativeShare(!!navigator.share);
+    } catch {
+      // no-op for SSR
+    }
+  }, [url]);
 
   const shareLinks = {
     twitter: `https://twitter.com/intent/tweet?url=${encodedUrl}&text=${encodedTitle}`,
@@ -80,7 +91,7 @@ export default function SocialShare({
       icon: Share2,
       onClick: handleNativeShare,
       className: 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600',
-      show: typeof window !== 'undefined' && navigator.share,
+      show: canNativeShare,
     },
     {
       id: 'twitter',
@@ -110,7 +121,7 @@ export default function SocialShare({
       onClick: handleCopyLink,
       className: 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600',
     },
-  ].filter((btn) => btn.show !== false);
+  ];
 
   return (
     <div className={className}>
@@ -126,6 +137,9 @@ export default function SocialShare({
               ${button.className}
             `}
             aria-label={`Share on ${button.label}`}
+            style={button.show === false ? { display: 'none' } : undefined}
+            aria-hidden={button.show === false}
+            disabled={button.show === false}
           >
             <button.icon className="h-4 w-4" />
             <span className="hidden sm:inline">{button.label}</span>
