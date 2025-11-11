@@ -36,6 +36,19 @@ export default function PaginatedBlogList({
   // Filter and search posts
   const filteredPosts = useMemo(() => {
     let filtered = [...posts];
+    
+    // Map UI categories to underlying tag groups
+    const categoryTagMap: { [key: string]: string[] } = {
+      'Backend Engineering': ['Backend Engineering', 'Backend', 'Node.js', 'Architecture', 'DevOps', 'Cloud Native'],
+      'AI & ML': ['AI', 'Machine Learning', 'LLM', 'Vector Database', 'Vector Databases'],
+      'DSA & Algo': ['DSA', 'Algorithms', 'Data Structures', 'Two Pointers', 'Sliding Window', 'Prefix Sum', 'Binary Search', 'Intervals'],
+      'DevOps & Infrastructure': ['DevOps', 'Infrastructure', 'Kubernetes', 'Docker', 'CI/CD'],
+      'Database & Performance': ['Database', 'Performance', 'Optimization'],
+      'Security': ['Security', 'Auth', 'JWT', 'OAuth'],
+      'Architecture': ['Architecture', 'System Design', 'Microservices'],
+      'Startup & Business': ['Startup', 'Tech Stack'],
+      'Tech Innovations': ['Edge Computing', 'Innovation', 'Tech Innovations']
+    };
 
     // Search filter
     if (searchQuery) {
@@ -49,11 +62,24 @@ export default function PaginatedBlogList({
       );
     }
 
-    // Category filter (using tags instead since BlogPost doesn't have category)
+    // Category filter (map display category to associated tags)
     if (filters.category) {
-      filtered = filtered.filter(post => 
-        post.tags.some(tag => tag.toLowerCase() === filters.category.toLowerCase())
-      );
+      const mappedTags = categoryTagMap[filters.category] || [filters.category];
+      const mappedLower = mappedTags.map(t => t.toLowerCase());
+      // Define DSA tags to prevent bleed into Backend Engineering
+      const dsaTags = ['DSA', 'Algorithms', 'Data Structures', 'Two Pointers', 'Sliding Window', 'Prefix Sum', 'Binary Search', 'Intervals'];
+      const dsaLower = dsaTags.map(t => t.toLowerCase());
+
+      filtered = filtered.filter(post => {
+        const hasMapped = post.tags.some(tag => mappedLower.includes(tag.toLowerCase()));
+        if (!hasMapped) return false;
+        // Exclude DSA posts when filtering Backend Engineering
+        if (filters.category === 'Backend Engineering') {
+          const isDSA = post.tags.some(tag => dsaLower.includes(tag.toLowerCase()));
+          if (isDSA) return false;
+        }
+        return true;
+      });
     }
 
     // Tags filter

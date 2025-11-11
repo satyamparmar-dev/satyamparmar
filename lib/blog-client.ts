@@ -40,6 +40,7 @@ import techStackSelection from '@/data/startup-world/tech-stack-selection.json';
 import edgeComputing from '@/data/tech-innovations/edge-computing.json';
 
 import twoPointersPattern from '@/data/dsa-algo/two-pointers-pattern.json';
+import dsaFivePatternsJavaGuide from '@/data/dsa-algo/dsa-five-patterns-java-guide.json';
 
 import dailyTipOptimizingDatabaseQueries from '@/data/daily/daily-tip-2025-01-15.json';
 
@@ -60,6 +61,7 @@ const allBlogPosts: BlogPost[] = [
   incidentPlaybookForBeginners,
   kafkaInterviewSimulation,
   twoPointersPattern,
+  dsaFivePatternsJavaGuide,
   dailyTipOptimizingDatabaseQueries,
   javaInterviewScenarioQuestions,
   systemDesignResources2025,
@@ -105,7 +107,10 @@ export function getBlogPostsByCategory(category: string): BlogPost[] {
   const categoryMap: { [key: string]: string[] } = {
     'backend-engineering': ['Backend Engineering', 'Backend', 'Node.js', 'Architecture', 'DevOps'],
     'ai': ['AI', 'Machine Learning', 'LLM', 'Vector Database'],
-    'dsa-algo': ['DSA', 'Algorithms', 'Data Structures', 'Interview Prep', 'Two Pointers'],
+    'dsa-algo': [
+      'DSA', 'Algorithms', 'Data Structures', 'Interview Prep', 'Java',
+      'Two Pointers', 'Sliding Window', 'Prefix Sum', 'Binary Search', 'Intervals'
+    ],
     'startup-world': ['Startup', 'Tech Stack'],
     'tech-innovations': ['Edge Computing', 'Innovation'],
     'daily': ['Daily', 'Tips'],

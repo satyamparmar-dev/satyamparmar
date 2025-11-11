@@ -1,14 +1,14 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
-import { getAllBlogPosts, getAllTags, getCategories } from '@/lib/blog-client';
+import { getAllBlogPosts, getAllTags, getAllCategories } from '@/lib/blog-client';
 import PaginatedBlogList from '@/components/PaginatedBlogList';
 
 export default function BlogPage() {
   // Use only actual blog posts (no generated content)
   const allPosts = getAllBlogPosts();
   const allTags = getAllTags();
-  const categories = getCategories();
+  const categories = getAllCategories();
 
   return (
     <Suspense fallback={
