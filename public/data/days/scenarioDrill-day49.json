@@ -1,0 +1,232 @@
+{
+  "day": 49,
+  "title": "REST API Design Principles",
+  "phaseId": "phase6",
+  "tags": [
+    "resources",
+    "HTTP verbs",
+    "idempotency",
+    "status codes",
+    "pagination",
+    "versioning",
+    "RFC 7807",
+    "keyset pagination",
+    "rate limiting"
+  ],
+  "scenarios": [
+    {
+      "id": "d49-s1",
+      "question": "A code review shows `POST /orders/create`. What is wrong and how do you fix it?",
+      "signals": [
+        "verbs in URL",
+        "noun-oriented resources",
+        "RPC smell",
+        "uniform interface"
+      ],
+      "answer": "**`POST /orders/create`** is an **RPC-style** URL — the verb `create` in the path is redundant because the HTTP method `POST` already communicates the action. REST uses **nouns** to identify resources; **HTTP verbs** define the operation. The fix is `POST /orders` — the collection URI with `POST` implies creation. The only acceptable exception is a **documented domain action** that has no direct CRUD equivalent, such as `POST /orders/{id}/cancel` (cancellation is not a simple delete). Using verbs in URLs makes the API inconsistent, harder to document in OpenAPI, and breaks the **uniform interface** constraint — you end up with `POST /createOrder`, `GET /getOrder`, `PUT /updateOrder`, which is just HTTP-tunnelled RPC.",
+      "followUps": [
+        {
+          "question": "Is `POST /orders/{id}/cancel` acceptable even though it has a verb?",
+          "answer": "Yes — **documented domain actions** are an accepted exception. `cancel` is a **state transition** with no equivalent DELETE or PUT semantics (you are not deleting the order; you are transitioning its state). Document it explicitly in the OpenAPI spec, return the updated resource (or 204), and treat it as idempotent if cancelling an already-cancelled order is a no-op. The key rule: **noun-oriented URLs by default**, verb paths only for clearly-named domain events with written justification."
+        },
+        {
+          "question": "Safe vs idempotent — what is the difference?",
+          "answer": "**Safe** means the operation has **no observable side effects** on server state — GET, HEAD, OPTIONS are safe. Caches, prefetchers, and monitoring tools assume they can call safe methods freely. **Idempotent** means calling N times produces the **same server state** as calling once — GET, HEAD, PUT, DELETE are idempotent. The response code may differ (first DELETE returns 200 or 204; second returns 404) but the **state** is identical. POST and PATCH are neither safe nor idempotent by default. An operation can be idempotent without being safe (PUT changes state, but the same PUT twice converges to the same state)."
+        }
+      ]
+    },
+    {
+      "id": "d49-s2",
+      "question": "A service returns `200 OK` with `{ \"error\": \"out_of_stock\" }`. What is wrong and what should it return instead?",
+      "signals": [
+        "HTTP status must reflect outcome",
+        "intermediary behavior",
+        "retry logic",
+        "monitoring",
+        "caching",
+        "RFC 7807"
+      ],
+      "answer": "**Returning 200 for a logical failure is a critical anti-pattern.** The HTTP status code is the primary signal that every layer of the stack uses to classify the response: (1) **API gateways** log it as a success, so error rate dashboards show 0% error when the API is actually failing. (2) **CDN/proxies** may **cache** a `200 OK` response — future clients get a cached 'out of stock' error. (3) **Client retry logic** does not trigger on 200 — the client thinks the request succeeded. (4) **Circuit breakers** do not open on 200 errors. **Fix**: return `422 Unprocessable Entity` (business rule violated) or `409 Conflict` (state conflict) with an **RFC 7807 Problem Details** body: `{\"type\":\"https://api.example.com/problems/insufficient-stock\",\"title\":\"Insufficient Stock\",\"status\":422,\"detail\":\"SKU PROD-42: requested 10, available 3\",\"instance\":\"/orders/ord-789\",\"traceId\":\"abc123\"}`. The status code must match the `status` field in the body.",
+      "followUps": [
+        {
+          "question": "What is RFC 7807 and what fields does it define?",
+          "answer": "**RFC 7807 Problem Details for HTTP APIs** defines a standard error body with: `type` (URI identifying the problem class — clients can switch on this), `title` (short human-readable summary), `status` (HTTP status code mirrored in the body), `detail` (specific human-readable explanation), `instance` (URI of the specific occurrence). You can extend it with custom fields: `traceId`, `errors[]` for multiple validation failures, `retryAfter`. Spring 6 ships `ProblemDetail` natively — `ResponseEntityExceptionHandler` emits it automatically for `@Valid` failures. The key benefit over a custom error shape: **one SDK handles all errors across all services** because the field names are standardised."
+        },
+        {
+          "question": "When is 409 vs 422 the right choice?",
+          "answer": "**422 Unprocessable Entity** — the request is structurally valid JSON but **business rules** prevent processing: insufficient stock, invalid state transition (ship a cancelled order), amount below minimum. The problem is with the **payload content**. **409 Conflict** — the request is valid but conflicts with **current server state**: duplicate unique key, concurrent edit (optimistic lock violation), idempotency-key reused with a different payload. The distinction: 422 = 'your data is wrong'; 409 = 'your data is right but it clashes with what already exists'. Some teams use 409 for both; what matters is **consistency across the API** documented in the OpenAPI spec."
+        }
+      ]
+    },
+    {
+      "id": "d49-s3",
+      "question": "The team debates `/v1/` in URL vs versioning via `Accept` header. Which do you choose and why?",
+      "signals": [
+        "URL visibility",
+        "caching",
+        "routing",
+        "content negotiation",
+        "deprecation policy"
+      ],
+      "answer": "Both work — what matters more is **picking one standard org-wide and sticking to it**. **URL versioning** (`/v1/orders`): version is visible in browser, logs, and gateway routing rules. Easy to route, test in curl, and document. Downside: `/v1/` and `/v2/` are treated as **different resources** by HTTP caches (ETags are not shared). Good for public APIs with partners who bookmark URLs. **Header versioning** (`Accept: application/vnd.example.orders.v2+json`): keeps URIs **stable and clean** — the resource is the same, only the representation changes. Semantically more correct per HTTP spec. Downside: invisible in browser address bar, harder to test ad hoc, gateway routing must inspect headers. Good for internal services where clients are controlled. **My default**: URL versioning for public/partner APIs (discoverability + simplicity), Accept header for internal APIs with controlled clients. **Deprecation policy matters more than the strategy itself**: Sunset header + 3–6 month window + consumer contract tests in CI + usage analytics to find who is still on v1.",
+      "followUps": [
+        {
+          "question": "What is a non-breaking change that does NOT require a version bump?",
+          "answer": "**Additive changes** are non-breaking: adding a **new optional field** to the response (clients that follow Postel's Law ignore unknown fields), adding a **new endpoint**, adding a **new optional query parameter**, adding a **new enum value** (if clients do not switch exhaustively), relaxing a **validation constraint** (accepting longer strings). **Breaking changes** that require a new version: removing or renaming a field, changing a field's type (string → integer), adding a **required** request field, changing status code semantics, removing an endpoint. Good API governance: run **Optic or Spectral** in CI to diff the OpenAPI spec on every PR and flag breaking changes before they merge."
+        },
+        {
+          "question": "How do you signal deprecation to clients without breaking them?",
+          "answer": "Four mechanisms in parallel: (1) **`Sunset` header** (RFC 8594) on deprecated endpoint responses: `Sunset: Sat, 01 Jun 2026 00:00:00 GMT` — programmatically readable; some API clients log a warning. (2) **`Deprecation` header**: `Deprecation: true` or the deprecation date. (3) **OpenAPI spec**: set `deprecated: true` on the operation — generated SDKs mark the method deprecated with IDE warnings. (4) **Access log analysis**: query which API keys hit deprecated endpoints weekly; email/ticket their owners 90/60/30 days before sunset. After the sunset date: return **410 Gone** (not 404) so clients get a clear 'this was deliberately removed' signal rather than 'never existed'."
+        }
+      ]
+    },
+    {
+      "id": "d49-s4",
+      "question": "Explain `PUT /orders/123` vs `PATCH /orders/123` for updating a customer's shipping address.",
+      "signals": [
+        "idempotent",
+        "merge vs replace",
+        "JSON Patch vs Merge Patch",
+        "optimistic locking",
+        "ETag"
+      ],
+      "answer": "**PUT** = **replace the full resource**. The client sends the complete order representation; the server replaces it entirely. Missing fields are treated as deleted/null. **Idempotent**: sending the same PUT twice converges to the same state — safe to retry on timeout. **PATCH** = **partial update**. The client sends only the fields to change. The server merges the patch into the existing resource. **Not automatically idempotent** — if PATCH means 'append to a list', doing it twice appends twice. You must define semantics: **JSON Merge Patch (RFC 7396)** — send `{\"shippingAddress\":{\"city\":\"London\"}}`, present fields overwrite, null fields delete. Simple but cannot distinguish 'set to null' from 'skip'. **JSON Patch (RFC 6902)** — send `[{\"op\":\"replace\",\"path\":\"/shippingAddress/city\",\"value\":\"London\"}]` — precise, atomic, handles arrays. **Concurrency**: both should support `If-Match: ETag` — if another user modified the order meanwhile, the server returns **412 Precondition Failed** instead of a lost update.",
+      "followUps": [
+        {
+          "question": "How does optimistic locking with ETag prevent lost updates?",
+          "answer": "The server includes `ETag: \"v5a3c\"` in GET responses (a hash of the resource state). When a client updates, it sends `If-Match: \"v5a3c\"` in the PATCH/PUT. The server checks: if current ETag matches the `If-Match` value → proceed with update and return new ETag. If current ETag differs (someone else updated) → **412 Precondition Failed** — the client must re-fetch, re-apply their change, and retry. This prevents the **lost update problem**: without ETag, two clients can GET the same order, both modify a different field, and the second PATCH silently overwrites the first client's change. In Spring: `eTag(currentEtag)` in the response builder, `@RequestHeader(\"If-Match\") String ifMatch` in the controller."
+        },
+        {
+          "question": "When should you use PUT over PATCH for an update API?",
+          "answer": "Use **PUT** when: the client always has the full resource (e.g. a settings page that loads and saves the whole form), the resource is small, and you want the simplicity of 'replace entirely'. Use **PATCH** when: the resource is large (many fields), clients typically update one or two fields at a time, or when you want to reduce bandwidth. **Rule of thumb**: PATCH for incremental field updates in a running system; PUT for configuration-style replace-all operations. Regardless of choice: document the semantics clearly in OpenAPI, and support `If-Match` for concurrency control."
+        }
+      ]
+    },
+    {
+      "id": "d49-s5",
+      "question": "A partner's checkout page sometimes double-charges customers. Investigation shows `POST /payments` is called twice. How do you fix this?",
+      "signals": [
+        "Idempotency-Key",
+        "Redis dedup store",
+        "scope",
+        "TTL",
+        "409 vs 200 replay",
+        "network retry"
+      ],
+      "answer": "**Root cause**: the partner's client retries `POST /payments` on network timeout without checking if the original request succeeded. Two requests reach the server → two charges. **Fix**: require `Idempotency-Key` header (UUID v4, client-generated). **Server implementation**: (1) On receipt, check Redis for `idem:{userId}:{key}`. (2) Miss: set key to 'PROCESSING' (SETNX + EXPIRE 86400), run payment, update key to serialized `{status, paymentId, amount}`. (3) Hit: return the cached response **without re-running payment**. Use a **Lua script** in Redis to make the check-and-set atomic — two simultaneous retries with the same key must not both reach the payment processor. **Scope**: key is scoped to `(userId, key)` — the same UUID from two different users is NOT a dedup match. **TTL 24 h**: after expiry, retrying with the same key triggers a new charge — document this; clients should generate a new key for genuinely new attempts. **Conflict**: if the same key is reused with a different amount → 409 Conflict, not a replay (signals a client bug). **Downstream**: pass an idempotency key to the payment processor too (Stripe, Adyen accept it natively).",
+      "followUps": [
+        {
+          "question": "What is the TOCTOU race and how does the Lua script solve it?",
+          "answer": "**TOCTOU (Time of Check to Time of Use)** race: two simultaneous retries both check Redis, both get a miss, both proceed to charge the customer. The window between the GET (check) and SET (claim) allows two threads to 'win' the check simultaneously. **Lua script** in Redis executes **atomically** — Redis is single-threaded for script execution. The script: `if redis.call('EXISTS', key) == 0 then redis.call('SETEX', key, 86400, 'PROCESSING'); return 'NEW' else return redis.call('GET', key) end`. Only one caller gets 'NEW'; the other gets the existing value. This guarantees exactly-once processing at the dedup layer regardless of concurrent retries."
+        },
+        {
+          "question": "How do you handle the case where the payment succeeds but the server crashes before caching the result?",
+          "answer": "This is the **at-least-once vs exactly-once** dilemma. If the server crashes after charging but before writing to Redis, the next retry will charge again (Redis miss = new charge). Mitigation: (1) Write the idempotency key to a **durable store** (Postgres) in the **same transaction** as the payment record — if the DB commit succeeds, the key is persisted even if Redis is down. Redis is then a cache over the DB. (2) **Two-phase approach**: write 'PROCESSING' to DB/Redis **before** calling the payment processor; if the call succeeds, update to the result. On retry during PROCESSING state: query the payment processor with the idempotency key to check if it completed. (3) Use the **payment processor's idempotency key** as the primary dedup — most processors like Stripe guarantee exactly-once if you reuse the same key."
+        }
+      ]
+    },
+    {
+      "id": "d49-s6",
+      "question": "Your `GET /orders` endpoint is slow for power users who have 500,000 orders. Offset pagination at page 5000 takes 30 seconds. How do you fix it?",
+      "signals": [
+        "offset pagination pitfall",
+        "keyset pagination",
+        "index",
+        "stable sort key",
+        "opaque cursor",
+        "SQL"
+      ],
+      "answer": "**Root cause**: `OFFSET 5000 * 100` = SQL `OFFSET 500000` forces the DB to scan and discard 500,000 rows before returning 100. On a B-tree index this is O(N) — time grows linearly with depth. Also **unstable**: if a row is inserted between page 4 and page 5 requests, items shift and the client sees duplicates or misses. **Fix: keyset (cursor) pagination**. SQL: `SELECT * FROM orders WHERE customer_id = :cid AND (created_at, id) < (:lastCreatedAt, :lastId) ORDER BY created_at DESC, id DESC LIMIT 100`. The `(created_at, id)` composite index makes this O(log N) regardless of depth — the DB jumps directly to the cursor position. **API contract**: response includes an **opaque** `nextCursor` (Base64 of the sort key values, not raw values — clients must not parse or construct cursors). Client sends `?cursor=<value>` on the next request. **Trade-off**: cannot jump to page 500 arbitrarily — only sequential forward/backward navigation. For use cases needing random page access (admin search tables), keyset is unsuitable — add search/filter instead. **Index**: add `CREATE INDEX idx_orders_customer_cursor ON orders (customer_id, created_at DESC, id DESC)` — covering index eliminates table heap lookups for the common fields.",
+      "followUps": [
+        {
+          "question": "How do you make the cursor stable when rows can be deleted?",
+          "answer": "Keyset cursor is based on **column values**, not row position, so deleting a row between pages does not shift other results — the next page starts at 'values less than the cursor', and the deleted row was already past that threshold. The instability of **offset** is that deleting row N shifts row N+1 to offset N — keyset has no such dependency. The cursor should be on a **stable sort key** that does not change after insert (e.g. `created_at` + `id`). Never use a mutable column like `status` or `updated_at` as the sole sort/cursor key — sorting by it creates instability when rows change state."
+        },
+        {
+          "question": "How do you support both forward and backward pagination with keyset?",
+          "answer": "Forward: `WHERE (created_at, id) < (cursorCreatedAt, cursorId) ORDER BY created_at DESC, id DESC LIMIT n`. Backward: `WHERE (created_at, id) > (cursorCreatedAt, cursorId) ORDER BY created_at ASC, id ASC LIMIT n` — then reverse the result set in application code. Store both `nextCursor` and `prevCursor` in the response. A common pattern is to embed the **direction** in the opaque cursor token itself (Base64 of `{createdAt, id, direction}`). Most APIs only need forward pagination (infinite scroll, feed); backward is needed for bi-directional table UIs."
+        }
+      ]
+    },
+    {
+      "id": "d49-s7",
+      "question": "Your API returns `404 Not Found` for resources the caller is not authorised to see. A security review flags this. What should you return and why?",
+      "signals": [
+        "403 vs 404",
+        "enumeration attack",
+        "information disclosure",
+        "IDOR",
+        "security by obscurity vs proper authz"
+      ],
+      "answer": "Returning **404 for forbidden resources** is a deliberate **security choice** that prevents **enumeration attacks** (Insecure Direct Object Reference — IDOR): if the API returned 403, an attacker who guessed `GET /orders/ord-123456` would know the order exists but they cannot access it — they can then enumerate IDs to map the system. Returning 404 discloses nothing about whether the resource exists. **Trade-off**: 404 for 'exists but forbidden' is harder to debug for legitimate developers — the error message 'not found' is misleading. **When to use 404**: public-facing APIs where resource existence is sensitive (financial data, user profiles, internal order IDs). **When to use 403**: internal APIs between services where the caller is authenticated and knowing the resource exists is not a risk (e.g. admin tools). **Best practice for public APIs**: return 404 for any resource the caller cannot access, **regardless of whether it exists** — document this in the API spec and in error messages ('resource not found or not accessible'). Add traceId so support can diagnose legitimate debugging failures without leaking data in the response.",
+      "followUps": [
+        {
+          "question": "What is IDOR and how do stable opaque IDs help?",
+          "answer": "**IDOR (Insecure Direct Object Reference)**: an attacker guesses or increments a resource ID to access data they should not see. Example: `GET /invoices/1001` → try `/invoices/1002`, `/invoices/1003` to harvest other customers' invoices. **Opaque IDs mitigate this**: UUIDs or ULIDs (`ord-01HXK3...`) are unguessable — there is no sequential pattern to enumerate. Auto-increment integers in URLs (`/orders/42`) expose record count and enable easy enumeration. Note: opaque IDs are **not a substitute for authorisation** — they raise the bar for enumeration attacks but a determined attacker with a leaked ID can still attempt access. Proper fix: authorisation check (`order.customerId == currentUser.id`) on every request, regardless of ID scheme."
+        }
+      ]
+    },
+    {
+      "id": "d49-s8",
+      "question": "A mobile client complains that the API sends too much data — every GET /products/{id} returns 80 fields but the app uses 5. How do you solve this without breaking other consumers?",
+      "signals": [
+        "over-fetching",
+        "field projection",
+        "sparse fieldsets",
+        "BFF pattern",
+        "GraphQL trade-off",
+        "backward compatibility"
+      ],
+      "answer": "**Several options at different complexity levels**: (1) **`?fields=` query parameter** (Sparse Fieldsets, common in JSON:API): `GET /products/1?fields=id,name,price,thumbnailUrl,stock` — server returns only requested fields. Implement in a `@ModelAttribute FieldProjection` or manually in the service layer. Low complexity, backward compatible (omitting `fields` returns all). (2) **BFF (Backend for Frontend)**: a thin Spring service that calls the full product API internally and returns a mobile-specific projection. Mobile team controls the BFF; no changes to the product API. Good for sustained different shapes across multiple endpoints. (3) **GraphQL layer** (if over-fetching is pervasive across many resources): GraphQL query specifies exact fields, eliminates N+1 fetching for nested data. Adds schema, resolver, and caching complexity — worth it at scale. (4) **Response profile versioning**: `Accept: application/vnd.example.product.summary+json` returns a trimmed projection; `full+json` returns all fields. **Recommendation**: start with `?fields=` — it is backward compatible, zero new infrastructure, and solves 80% of over-fetching. If mobile consistently needs cross-resource queries, move to BFF. GraphQL only if BFF proliferates.",
+      "followUps": [
+        {
+          "question": "What are the trade-offs of GraphQL vs REST BFF for mobile over-fetching?",
+          "answer": "**GraphQL advantages**: (1) Client declares exactly which fields it needs — zero over/under-fetching. (2) Multiple resources in one round trip (`order + user + items` in one query). (3) Frontend team iterates queries without backend changes. **GraphQL trade-offs**: (1) HTTP GET caching breaks — most GraphQL uses POST, not cacheable by CDN. Workarounds: persisted queries + GET. (2) All errors return 200 — breaks HTTP monitoring. (3) Field-level authorisation is complex to implement and audit. (4) N+1 resolver problem — requires DataLoader. (5) Schema governance and versioning. **REST BFF advantages**: uses all HTTP semantics; cacheable; simple status codes; easier security model. Trade-off: a new service to maintain per client type. **Rule**: use GraphQL for **federated data** across many domains at high query diversity; use BFF REST for **2–3 well-known client shapes** that change infrequently."
+        }
+      ]
+    },
+    {
+      "id": "d49-s9",
+      "question": "Your team is designing a bulk order import endpoint that creates up to 500 orders from a CSV upload. How do you design the API?",
+      "signals": [
+        "207 Multi-Status",
+        "async job pattern",
+        "202 Accepted",
+        "idempotency at item level",
+        "partial success semantics",
+        "timeout risk"
+      ],
+      "answer": "**Synchronous bulk endpoint is wrong for 500 items** — a single HTTP request processing 500 DB inserts risks timeout (30s gateway limit), partial success with no clear client recovery path, and no progress visibility. **Recommended design — async job**: (1) `POST /import-jobs` with the CSV file (multipart/form-data) → server validates the file format (not the items), creates a job record, returns **202 Accepted** with `Location: /import-jobs/job-a1b2`. Response time: < 100ms. (2) A background worker processes items. Each item is individually validated and created. Failures are recorded per item. (3) Client polls `GET /import-jobs/job-a1b2` → returns `{\"status\":\"PROCESSING\",\"progress\":150,\"total\":500}`. On completion: `{\"status\":\"DONE\",\"created\":480,\"failed\":20,\"failedItems\":[{\"row\":3,\"error\":\"duplicate SKU\"},{...}]}`. (4) Optional: **webhook** callback when job completes — client registers `callbackUrl` in the POST body. **Idempotency**: include a client-provided `jobRef` in the POST body; server deduplicates on `(userId, jobRef)` — re-uploading the same CSV does not create duplicate orders.",
+      "followUps": [
+        {
+          "question": "When is synchronous bulk (207 Multi-Status) appropriate over async jobs?",
+          "answer": "**207 Multi-Status** works well when: (1) **batch size is small** (< 50 items), (2) each item is independently fast (no downstream calls, simple DB insert), (3) the client needs **immediate per-item feedback** (batch update UI, not a background import). Design: `POST /orders/batch` with an array of requests; response: `[{\"status\":201,\"orderId\":\"ord-1\"},{\"status\":422,\"error\":\"items required\"}]`. Overall HTTP status: 201 if all succeeded, **207 Multi-Status** if any failed, 400 if the entire batch was malformed. Never return 200 when some items failed — 207 signals 'partial success, inspect each item'. Cap batch size and document it (e.g. max 50); return 413 or 400 if exceeded. **Async** is mandatory when processing involves slow operations (payment calls, email sends, warehouse API) or large volumes."
+        }
+      ]
+    },
+    {
+      "id": "d49-s10",
+      "question": "A new engineer asks: 'Why not just use POST for everything and put the operation name in the body?' How do you explain the value of HTTP method semantics?",
+      "signals": [
+        "safe methods",
+        "caching",
+        "idempotency",
+        "monitoring",
+        "retries",
+        "uniform interface",
+        "HTTP infrastructure"
+      ],
+      "answer": "**'POST for everything' is RPC over HTTP — it wastes the entire HTTP infrastructure.** Concretely: (1) **Caching**: GET responses can be cached by CDN, browser, and API gateway based on URL + headers. A POST-for-read cannot be cached by intermediaries — every read hits your origin server even for static product catalogs. (2) **Idempotency and retries**: load balancers, service meshes (Envoy, Istio), and API gateways know GET and PUT are safe to retry on timeout. POST is not — they do not retry it. With 'POST for everything', a gateway timeout on your 'GET order' POST means the client manually retries and may accidentally double-create. (3) **Monitoring and alerting**: APM tools classify 4xx/5xx by method. A `GET /orders/{id}` returning 404 triggers 'resource not found' semantics; a `POST` returning 200 with an error body is invisible to standard monitors. (4) **Security**: GET requests have no body — accidental logging of request details cannot leak payment data. POST bodies with sensitive data need extra care. (5) **Contracts**: OpenAPI, client SDK generators, and API gateways all understand HTTP method semantics — you get authentication, rate limiting, and retry policy for free when you use correct methods.",
+      "followUps": [
+        {
+          "question": "Is it ever OK to use POST for a read operation?",
+          "answer": "Yes — in specific documented cases: (1) **Complex search queries** where filter criteria are too large or sensitive for URL query params (`POST /search` with a structured filter body). The response is still safe to cache on the server side with a normalised cache key. (2) **GraphQL** — POST is standard because the query is in the body. (3) **RPC frameworks** (gRPC-HTTP transcoding, JSON-RPC) where POST is the transport. In all cases: **document it explicitly**, acknowledge the loss of GET cacheability, and do not use side effects inside the handler. The uniform interface principle is a guideline — breaking it is a conscious trade-off, not a mistake, if you document why."
+        },
+        {
+          "question": "How does a service mesh like Istio use HTTP method semantics for retry policy?",
+          "answer": "Istio's `VirtualService` retry policy has a `retryOn` condition that by default includes `5xx` errors **only for idempotent methods** (GET, HEAD, PUT, DELETE, OPTIONS, TRACE). POST and PATCH are excluded from automatic retries because the mesh cannot know if they are safe to retry. This means: if you implement a `GET /orders?filter=...` as `POST /search`, Istio will NOT retry it on a 503 — you lose the built-in resilience that correct HTTP semantics provide for free. Similarly, API gateways like Kong and AWS API Gateway apply different retry, timeout, and caching policies per HTTP method. Using correct methods means your API automatically inherits all of this infrastructure behavior without configuration."
+        }
+      ]
+    }
+  ]
+}
