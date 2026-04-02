@@ -72,7 +72,7 @@ Use this to deploy from a **private** GitHub repo without paying for GitHub Pro 
    | **Build command** | `npm run build` |
    | **Build output directory** | `dist` |
    | **Root directory** | `/` (repo root) |
-   | **Deploy command** | *(leave empty)* — Pages publishes **`dist/`** after the build. Do **not** set `npx wrangler deploy` unless you are using a Workers/Pages advanced setup; that step is unnecessary for this static app and can fail the pipeline.
+   | **Deploy command** | *(leave empty)* for standard Pages (recommended). If you use **`npx wrangler deploy`**, this repo’s **`wrangler.jsonc`** must include **`assets.directory`: `dist`** (already set) so Wrangler can upload the Vite output.
 
 4. **Environment variables** (optional but recommended): add **`NODE_VERSION`** = **`20`** so the build matches `.nvmrc` / `package.json` engines.
 5. Save and deploy. Cloudflare will run **`npm ci`** (or install) then your build command.
