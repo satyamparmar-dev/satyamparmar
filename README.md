@@ -4,7 +4,7 @@
 
 ## Overview
 
-**Satyverse(Satyam Parmar)** is a fully static SPA (Single Page Application) for mastering Java from absolute beginner through to Senior/Staff Engineer interview readiness. No backend required — deploy directly to GitHub Pages.
+**Satyverse(Satyam Parmar)** is a fully static SPA (Single Page Application) for mastering Java from absolute beginner through to Senior/Staff Engineer interview readiness. No backend required — deploy as a static site (e.g. **Cloudflare Pages** or GitHub Pages).
 
 ## Features
 
@@ -57,6 +57,32 @@ Output is written to **`dist/`**.
 5. After the first successful run, the site URL is **`https://<username>.github.io/<repository>/`** (or your custom domain if configured).
 
 The app uses **HashRouter** (`#/…` URLs) and a **relative Vite base**, so client-side routes and `public/data/` JSON load correctly on project Pages without extra `404.html` tricks. **`public/.nojekyll`** disables Jekyll so static assets are served as-is.
+
+### Cloudflare Pages (recommended for private repo + free hosting)
+
+Use this to deploy from a **private** GitHub repo without paying for GitHub Pro Pages.
+
+1. Sign in to [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**.
+2. Authorize **GitHub** and select this repository (**Java-preparation-app**).
+3. Configure the build:
+
+   | Setting | Value |
+   |---------|--------|
+   | **Framework preset** | None (or Vite) |
+   | **Build command** | `npm run build` |
+   | **Build output directory** | `dist` |
+   | **Root directory** | `/` (repo root) |
+
+4. **Environment variables** (optional but recommended): add **`NODE_VERSION`** = **`20`** so the build matches `.nvmrc` / `package.json` engines.
+5. Save and deploy. Cloudflare will run **`npm ci`** (or install) then your build command.
+
+After the first deploy, your site will be on a **`*.pages.dev`** URL. You can add a **custom domain** under the project’s **Custom domains**.
+
+**Notes**
+
+- **HashRouter** means routes look like `https://yoursite.pages.dev/#/…` — no `SPA` rewrite file is required.
+- **GitHub Actions** (`.github/workflows/deploy.yml`) is optional; you can disable Pages deployment on GitHub if you only use Cloudflare, or keep both for redundancy.
+- This repo includes **`.nvmrc`** (`20`) and **`engines.node`** in `package.json` to align local and CI builds.
 
 ## Keyboard Shortcuts
 
