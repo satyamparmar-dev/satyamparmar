@@ -23,7 +23,19 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../auth/useAuthStore';
+import { useAllowlistGateStore } from '../auth/useAllowlistGateStore';
+import { AUTH_LOGIN_ENABLED, EMAIL_ALLOWLIST_GATE_ENABLED } from '../auth/authConfig';
 import { APP_DISPLAY_NAME } from '../constants/branding';
+
+function initialsFromEmail(email: string): string {
+  const local = (email.split('@')[0] ?? 'U').replace(/[._-]+/g, ' ');
+  const parts = local.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
+  }
+  const w = parts[0] ?? 'U';
+  return w.slice(0, 2).toUpperCase();
+}
 
 const DRAWER_WIDTH = 280;
 
@@ -34,6 +46,32 @@ interface Props {
 const Header: React.FC<Props> = ({ onMenuToggle }) => {
   const { theme, toggleTheme, setSearchOpen, progress, sidebarOpen } = useAppStore();
   const { currentUser, logout } = useAuthStore();
+  const gateEmail = useAllowlistGateStore((s) => s.gateEmail);
+  const clearGate = useAllowlistGateStore((s) => s.clearGate);
+
+  const sessionUser =
+    EMAIL_ALLOWLIST_GATE_ENABLED && gateEmail
+      ? {
+          displayName: gateEmail.split('@')[0] ?? gateEmail,
+          email: gateEmail,
+          initials: initialsFromEmail(gateEmail),
+        }
+      : AUTH_LOGIN_ENABLED && currentUser
+        ? {
+            displayName: currentUser.displayName,
+            email: currentUser.email,
+            initials: currentUser.displayName
+              .split(' ')
+              .slice(0, 2)
+              .map((w) => w[0]?.toUpperCase() ?? '')
+              .join(''),
+          }
+        : null;
+
+  const handleSignOut = () => {
+    if (EMAIL_ALLOWLIST_GATE_ENABLED) clearGate();
+    else logout();
+  };
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('md'));
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -146,9 +184,9 @@ const Header: React.FC<Props> = ({ onMenuToggle }) => {
         </Tooltip>
 
         {/* User Avatar + Menu */}
-        {currentUser && (
+        {sessionUser && (
           <>
-            <Tooltip title={currentUser.displayName}>
+            <Tooltip title={sessionUser.displayName}>
               <Avatar
                 onClick={(e) => setAnchorEl(e.currentTarget)}
                 sx={{
@@ -164,11 +202,7 @@ const Header: React.FC<Props> = ({ onMenuToggle }) => {
                   transition: 'border-color 0.2s',
                 }}
               >
-                {currentUser.displayName
-                  .split(' ')
-                  .slice(0, 2)
-                  .map((w) => w[0]?.toUpperCase() ?? '')
-                  .join('')}
+                {sessionUser.initials}
               </Avatar>
             </Tooltip>
 
@@ -193,10 +227,10 @@ const Header: React.FC<Props> = ({ onMenuToggle }) => {
             >
               <Box sx={{ px: 2, py: 1.5 }}>
                 <Typography variant="subtitle2" fontWeight={700} noWrap>
-                  {currentUser.displayName}
+                  {sessionUser.displayName}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" noWrap>
-                  {currentUser.email}
+                  {sessionUser.email}
                 </Typography>
               </Box>
               <Divider />
@@ -211,7 +245,7 @@ const Header: React.FC<Props> = ({ onMenuToggle }) => {
                 <Typography variant="body2">Profile</Typography>
               </MenuItem>
               <MenuItem
-                onClick={() => { setAnchorEl(null); logout(); }}
+                onClick={() => { setAnchorEl(null); handleSignOut(); }}
                 dense
                 sx={{ color: 'error.main', mb: 0.5 }}
               >
