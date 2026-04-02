@@ -1,0 +1,114 @@
+{
+  "day": 1,
+  "title": "Introduction to Java - JDK vs JRE vs JVM",
+  "phaseId": "phase1",
+  "tags": [
+    "JVM",
+    "JDK",
+    "setup"
+  ],
+  "scenarios": [
+    {
+      "id": "d1-s1",
+      "question": "A new hire runs `java Hello` and gets 'Error: Could not find or load main class Hello'. Walk them through how you debug this on their machine.",
+      "signals": [
+        "classpath",
+        "package",
+        "working directory",
+        "javac then java",
+        "class name vs file name"
+      ],
+      "answer": "## In simple terms\nThe JVM cannot find the compiled class file where it expects it, or the class name you pass does not match the real class (especially if a `package` is declared).\n\n## Step-by-step debugging\n1. **Did they compile?** Run `javac Hello.java` and confirm `Hello.class` appears (or under `out/` if using `-d`).\n2. **Is there a `package`?** If the file starts with `package com.example;`, the full name is `com.example.Hello`. You must run `java com.example.Hello` from the folder that **contains** the `com` directory (the source root for classes), not `java Hello`.\n3. **Are they in the right folder?** Default classpath is `.`. If `Hello.class` is under `out/com/example/`, run from the parent of `com` with `java -cp out com.example.Hello`.\n4. **Does the public class name match the file?** `public class Hello` must live in `Hello.java`.\n\n## Quick fix commands\n```bash\njavac -d out src/com/example/Hello.java\njava -cp out com.example.Hello\n```\n\n## Interview tip\nMention **classpath**, **fully qualified name**, and **module path** (Java 9+) if the project uses modules.",
+      "followUps": [
+        {
+          "question": "What's the difference between JDK and JRE in one sentence?",
+          "answer": "**JDK** = everything to develop and run Java (compiler `javac`, tools, JVM). **JRE** used to mean “runtime only”; since Java 11, Oracle stopped separate public JREs—most people install a **JDK** and use the bundled runtime."
+        },
+        {
+          "question": "What does the JVM actually do?",
+          "answer": "It **loads** `.class` bytecode, **verifies** it, **executes** it (interpreted then JIT-compiled for hot code), manages the **heap** and **GC**, and provides threads and native interaction. It is the engine; bytecode is the fuel."
+        },
+        {
+          "question": "What is bytecode?",
+          "answer": "A **platform-neutral** instruction set produced by `javac`. The same bytecode runs on any OS that has a compatible JVM. That is the practical meaning of “write once, run anywhere”—not that all native libraries work everywhere."
+        },
+        {
+          "question": "How would you explain `JAVA_HOME` to a junior?",
+          "answer": "`JAVA_HOME` points to the **root of the JDK install**. Build tools (Maven, Gradle, IDEs) use it to find `bin/javac` and libraries. On servers, pin one JDK version and set `JAVA_HOME` consistently in CI and production images."
+        }
+      ]
+    },
+    {
+      "id": "d1-s2",
+      "question": "Production logs show JDK 11 on some pods and JDK 17 on others. How do you standardize safely?",
+      "signals": [
+        "Docker base image",
+        "JAVA_HOME",
+        "CI JDK",
+        "bytecode --release",
+        "behavior differences"
+      ],
+      "answer": "## In simple terms\nMixed runtimes mean **subtle bugs**: different default GC, removed APIs, stricter modules, or different performance. You want **one supported LTS** per service unless you are deliberately dual-testing.\n\n## What to do\n1. **Pick one LTS** (e.g. 17) and document it in the README and runbook.\n2. **Pin the container image** (e.g. `eclipse-temurin:17-jre` with digest) so rebuilds do not drift.\n3. **CI must use the same JDK** to compile and test; fail the pipeline if `java -version` does not match.\n4. Set **`maven.compiler.release`** or `javac --release 17` so bytecode matches what you run.\n5. **Roll out** with a canary; watch for `NoSuchMethodError` (jar built for newer JDK on older runtime).\n\n## Why it matters\nEliminates “works on pod A, fails on pod B” and makes security patches predictable.",
+      "followUps": [
+        {
+          "question": "What is `--release` and why use it?",
+          "answer": "`javac --release N` compiles against the **API of that Java version**, not whatever JDK happens to be installed. That stops you from accidentally using Java 17-only APIs while claiming you support 11."
+        },
+        {
+          "question": "Can you run bytecode compiled with JDK 8 on JDK 17?",
+          "answer": "Usually **yes**—newer JVMs are backward compatible for normal bytecode. The reverse (17 bytecode on 8 JVM) **fails**. Always align **minimum runtime** with your lowest deployment target."
+        },
+        {
+          "question": "Where do teams usually mess this up?",
+          "answer": "**Local machines** on JDK 21 while **Docker** uses 11, or **Gradle toolchain** not applied in CI. Fix by making the **container** the source of truth and matching CI to it."
+        }
+      ]
+    },
+    {
+      "id": "d1-s3",
+      "question": "Someone asks: \"Is Java compiled or interpreted?\" How do you give an accurate interview answer?",
+      "signals": [
+        "javac bytecode",
+        "JIT",
+        "mixed model",
+        "not purely one"
+      ],
+      "answer": "## Clear answer\n**Both, in practice.** Source is **compiled** to bytecode by `javac`. The JVM **starts** by interpreting bytecode and **JIT-compiles** hot methods to native machine code for speed.\n\n## One-liner for interviews\n“Java is **compiled to bytecode**, then **executed by the JVM**, which uses a **JIT** for performance.”\n\n## Optional depth\nMention **AOT** (GraalVM native image) as a different deployment shape—still not “interpreted source at runtime” like classic scripting.",
+      "followUps": [
+        {
+          "question": "What is the JIT?",
+          "answer": "**Just-In-Time compiler**: the JVM watches which methods run often and compiles them to **native code** so repeated execution is fast. Cold code may stay interpreted longer."
+        },
+        {
+          "question": "Does that mean Java is as fast as C++?",
+          "answer": "**Sometimes close** on long-running server workloads after warmup; **not always** for short processes or allocation-heavy patterns. Interviewers care that you understand **warmup**, **GC**, and **measurement**, not slogans."
+        },
+        {
+          "question": "What is the difference between JVM and JRE again?",
+          "answer": "**JVM** = the virtual machine that runs bytecode. **JRE** (classic meaning) = JVM + standard libraries + launcher—enough to run apps, not compile. Today many teams only ship a **JDK**."
+        }
+      ]
+    },
+    {
+      "id": "d1-s4",
+      "question": "`java -version` shows a different vendor string on laptop vs server (e.g. Temurin vs Corretto). Should you care?",
+      "signals": [
+        "OpenJDK builds",
+        "support SLAs",
+        "certification",
+        "security patches"
+      ],
+      "answer": "## In simple terms\nThey are usually **the same OpenJDK codebase** with different **builds, support, and patch cadence**. For production you care about **patch level**, **LTS**, and **vendor SLA**—not the marketing name.\n\n## Practical guidance\n1. **Standardize** one vendor per org if possible (simpler support).\n2. Ensure **same major version** and recent **security** updates.\n3. For cloud, **Corretto / Temurin / Azul** are common—pick one and pin versions in IaC.\n\n## Interview angle\nShows you know Java is **spec + compatible implementations**, not a single binary from one company.",
+      "followUps": [
+        {
+          "question": "What is OpenJDK?",
+          "answer": "The **open-source reference implementation** of the Java platform. Vendors produce **certified builds** (Temurin, Corretto, Zulu, etc.) that pass the TCK and add packaging/support."
+        },
+        {
+          "question": "Any downside to mixing vendors across environments?",
+          "answer": "Minor differences in **default crypto providers**, **timezone data**, or **packaging paths** can cause confusion. Easier to use **one line of images** everywhere."
+        }
+      ]
+    }
+  ]
+}

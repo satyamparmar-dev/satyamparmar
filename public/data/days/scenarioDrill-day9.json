@@ -1,0 +1,72 @@
+{
+  "day": 9,
+  "title": "Exception Handling Basics",
+  "phaseId": "phase1",
+  "tags": [
+    "exceptions",
+    "try-with-resources",
+    "logging"
+  ],
+  "scenarios": [
+    {
+      "id": "d9-s1",
+      "question": "Empty `catch` blocks in production code—your review comment?",
+      "signals": [
+        "swallowing errors",
+        "logging",
+        "rethrow with cause"
+      ],
+      "answer": "## Why it is bad\nFailures become **invisible**—bad data, stuck jobs, silent user impact.\n\n## Minimum fix\n```java\ncatch (Exception e) {\n    log.error(\"context={}\", contextId, e);\n    throw new ServiceException(\"friendly message\", e);\n}\n```\nUse **try-with-resources** for `AutoCloseable` to avoid leaked handles.\n\n## Principle\n**Fail fast** at boundaries; never pretend success.",
+      "followUps": [
+        {
+          "question": "Checked vs unchecked exceptions?",
+          "answer": "**Checked** (`IOException`): compiler forces handle/declare—good for **recoverable** external failures. **Unchecked** (`RuntimeException`): usually **programming bugs** or wrap for API cleanliness. Modern apps often bias toward **unchecked** + domain error types."
+        },
+        {
+          "question": "Why chain causes?",
+          "answer": "`initCause` / constructor **`Throwable cause`** preserves the **original stack** for debugging while throwing a **domain** exception at your boundary."
+        },
+        {
+          "question": "What is try-with-resources?",
+          "answer": "Syntax that **auto-closes** resources (`try (var in = Files.newInputStream(p)) { ... }`) even if an exception occurs—implements **`AutoCloseable`**."
+        }
+      ]
+    },
+    {
+      "id": "d9-s2",
+      "question": "API returns HTTP 200 with `{ \"ok\": false }` on internal errors. Users think it succeeded. Better design?",
+      "signals": [
+        "correct status codes",
+        "ControllerAdvice",
+        "correlation id"
+      ],
+      "answer": "## Fix\nMap failures to **4xx/5xx** with a **stable error JSON** (`code`, `message`, `traceId`). Use **`@ControllerAdvice`** in Spring or equivalent filters.\n\n## UX\nFor idempotent retries, document **which errors are safe to retry** (429/503) vs not (400).\n\n## Observability\nAlways log server-side with **correlation ID** passed to clients.",
+      "followUps": [
+        {
+          "question": "Should you expose stack traces to clients?",
+          "answer": "**No** in production responses—**security** and noise. Log full trace server-side; return **generic** message + id for support lookup."
+        },
+        {
+          "question": "`Error` vs `Exception`?",
+          "answer": "**`Error`** (e.g. `OutOfMemoryError`) is for **serious JVM problems**—almost never catch. **`Exception`** is for conditions apps might handle."
+        }
+      ]
+    },
+    {
+      "id": "d9-s3",
+      "question": "Multi-catch: `catch (IOException | SQLException e)`—any limitation?",
+      "signals": [
+        "final effectively",
+        "common supertype",
+        "cannot assign incompatible fields"
+      ],
+      "answer": "The caught variable is **effectively final**. You can only call methods on the **common supertype** (`Throwable`/`Exception`) unless you **rethrow** with pattern matching (newer Java) or recast carefully.\n\nGood for **duplicated handlers** that do the same logging/wrap.",
+      "followUps": [
+        {
+          "question": "Pattern matching for switch on exceptions?",
+          "answer": "Modern Java allows **typed patterns** in some contexts; in interviews, showing awareness of **sealed exception hierarchies** + exhaustive handling is a plus."
+        }
+      ]
+    }
+  ]
+}

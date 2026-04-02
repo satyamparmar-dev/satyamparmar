@@ -1,0 +1,86 @@
+{
+  "day": 2,
+  "title": "Data Types and Variables",
+  "phaseId": "phase1",
+  "tags": [
+    "primitives",
+    "overflow",
+    "wrappers"
+  ],
+  "scenarios": [
+    {
+      "id": "d2-s1",
+      "question": "A service uses `double` for money. Why is that risky, and what do you use instead?",
+      "signals": [
+        "IEEE-754 binary float",
+        "BigDecimal",
+        "long cents",
+        "rounding mode"
+      ],
+      "answer": "## In simple terms\n`float` and `double` store numbers in **binary**. Many decimals (like 0.1) **cannot be represented exactly**, so you get tiny errors that **add up**—bad for invoices, tax, and balances.\n\n## Better options\n1. **`BigDecimal`** with a fixed **scale** and explicit **`RoundingMode`** (e.g. `HALF_UP`) for business math.\n2. **Integer minor units**: store **cents** as `long` (avoid `double` when converting from strings—parse carefully).\n\n## Tiny example\n```java\nBigDecimal price = new BigDecimal(\"19.99\");\nBigDecimal tax = price.multiply(new BigDecimal(\"0.07\"))\n    .setScale(2, RoundingMode.HALF_UP);\n```\n\n## Interview line\n“Never use binary floating point for **money**; use **decimal arithmetic** or **integer cents**.”",
+      "followUps": [
+        {
+          "question": "Why not `BigDecimal` everywhere?",
+          "answer": "It is **slower** and more verbose than primitives. For **non-money** science/engineering, `double` is often fine. Choose the type for the **domain** (exact decimal vs approximate real numbers)."
+        },
+        {
+          "question": "What goes wrong with `new BigDecimal(0.1)`?",
+          "answer": "The `double` literal is already **binary-approximate**. Prefer **`new BigDecimal(\"0.1\")`** or `BigDecimal.valueOf` where appropriate so the value matches human decimals."
+        },
+        {
+          "question": "When do wrapper types like `Integer` hurt performance?",
+          "answer": "**Autoboxing** creates heap objects. In tight loops or huge collections, prefer **`int`** or libraries like **Eclipse Collections** primitive lists. Use `Integer` when you need **null** (missing value)."
+        },
+        {
+          "question": "What is `var` and when is it OK?",
+          "answer": "`var` asks the compiler to **infer** the type from the right-hand side. It is still **statically typed**. Good for long generic types; avoid when the RHS does not make the type obvious to readers."
+        }
+      ]
+    },
+    {
+      "id": "d2-s2",
+      "question": "A batch counter uses `int` and silently wraps negative after billions of iterations. How do you prevent that?",
+      "signals": [
+        "integer overflow",
+        "long",
+        "Math.addExact",
+        "static analysis"
+      ],
+      "answer": "## In simple terms\n`int` overflows **silently** in Java (it wraps). Bugs show up as **negative sizes** or wrong totals with no exception.\n\n## Fixes\n1. Use **`long`** for counts and sizes that can exceed ~2 billion.\n2. Use **`Math.addExact` / `multiplyExact`** to **throw** on overflow instead of wrapping.\n3. Enable **SpotBugs / Error Prone** in CI for suspicious arithmetic.\n\n## Example\n```java\nlong total = 0;\nfor (long x : values) {\n    total = Math.addExact(total, x);\n}\n```",
+      "followUps": [
+        {
+          "question": "Does `long` overflow too?",
+          "answer": "**Yes**, silently as well. For unbounded integers you need **`BigInteger`**—rare except crypto / huge combinatorics."
+        },
+        {
+          "question": "Why not use `unsigned` like C?",
+          "answer": "Java 8+ has **`Integer.toUnsignedString`** and some unsigned **APIs** for `int` bits, but no separate unsigned `int` type. Use **`long`** to hold larger positive ranges when needed."
+        },
+        {
+          "question": "What is widening vs narrowing?",
+          "answer": "**Widening** (`int` → `long`) is safe and implicit. **Narrowing** (`long` → `int`) can **truncate**; requires explicit cast—watch for data loss."
+        }
+      ]
+    },
+    {
+      "id": "d2-s3",
+      "question": "`boolean flag = (Boolean) null;` — what happens at runtime?",
+      "signals": [
+        "NPE",
+        "unboxing",
+        "null Boolean"
+      ],
+      "answer": "## Answer\n**`NullPointerException`** when unboxing `null` to a primitive `boolean`.\n\n## Explanation\n`Boolean` is a reference type and can be **`null`**. Assigning to `boolean` triggers **unboxing** (`booleanValue()`), which throws on null.\n\n## Safe pattern\n```java\nboolean flag = Boolean.TRUE.equals(maybeNull);\n```\nor null-check explicitly.",
+      "followUps": [
+        {
+          "question": "Same question but `int x = (Integer) null`?",
+          "answer": "Also **NPE** on unboxing to `int`. Primitives cannot hold null—use **`Integer`** or **`OptionalInt`** if absence matters."
+        },
+        {
+          "question": "What does `Objects.requireNonNull` buy you?",
+          "answer": "It **fails fast** with a clear message when a reference is null, instead of NPE deep inside library code. Use at API boundaries."
+        }
+      ]
+    }
+  ]
+}

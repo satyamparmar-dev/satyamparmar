@@ -1,0 +1,412 @@
+{
+  "day": 30,
+  "title": "Streams API",
+  "estimatedHours": 3,
+  "difficulty": "Intermediate",
+  "level": "Intermediate",
+  "track": "Mid-Level",
+  "tags": [
+    "Mid-Level",
+    "Intermediate",
+    "Phase 4",
+    "Interview Prep",
+    "Satyverse(Satyam Parmar)"
+  ],
+  "prerequisites": [
+    "Day 29",
+    "Day 28"
+  ],
+  "learningObjectives": [
+    "Explain Streams API with advanced interview clarity",
+    "Implement Streams API in Java with clean design",
+    "Identify runtime and maintainability trade-offs",
+    "Avoid high-frequency failure patterns in Streams API",
+    "Apply this concept to production-oriented scenarios",
+    "Communicate decisions with concise technical reasoning"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Streams API matters",
+      "content": "Streams encourage declarative transformations and are powerful when state and side-effects are controlled.\n\nDay 30 is an inflection point between writing code that \"works\" and writing code that scales in maintainability and production reliability.\n\nInterviewers at this stage evaluate:\n1. Internal understanding (how it works, not only syntax)\n2. Trade-off reasoning (why this approach over alternatives)\n3. Runtime impact (performance, memory, contention, failure behavior)\n\nThis topic should be explained with one minimal example, one realistic failure mode, and one mitigation strategy.\n\nIf you can defend your design choices clearly, you will stand out from syntax-only answers."
+    },
+    {
+      "type": "theory",
+      "title": "Theory and Internals - Streams API",
+      "content": "### Day 30: Streams API\nStreams encourage declarative transformations and are powerful when state and side-effects are controlled.\n\n### Java 8+ stream vocabulary (practice each)\n- **Source:** `stream()`, `Stream.of`, `IntStream.range`, `Files.lines` (close with try-with-resources).\n- **Intermediate:** `filter`, `map`, `flatMap`, `distinct`, `sorted`, `peek` (debug only), `limit`, `skip`, `takeWhile`/`dropWhile` (Java 9+).\n- **Terminal:** `forEach`, `collect`, `reduce`, `min`/`max`, `count`, `anyMatch`/`allMatch`/`noneMatch`, `findFirst`/`findAny`.\n- **Collectors:** `toList()` (Java 16+) or `toCollection(ArrayList::new)`, `joining`, `groupingBy`, `partitioningBy`, `mapping`, `summarizingInt`, `averagingInt`, `toMap`, `collectingAndThen`.\n\n### Deep understanding goal\nYou should understand the mechanism, its boundaries, and when to avoid it.\n\n### Practical workflow\n1. Implement baseline.\n2. Add correctness checks and edge handling.\n3. Evaluate runtime cost.\n4. Refactor for readability and team adoption.\n\n### Interview quality bar\n- Explain what problem it solves.\n- Show concise Java example.\n- Name one pitfall and one mitigation.\n- State complexity/runtime implication.\n- Compare with one alternative.\n\n### Production angle\nIn backend systems, this concept influences throughput, reliability, and debugging speed. A good implementation must support operations, not just local correctness.\n\n### Quick self-check\n- Can I explain this in <60 seconds?\n- Can I code it from memory?\n- Can I describe a failure scenario and fix?\n\n### Satyverse — deeper path (theory → practice)\n**Lambda = functional interface instance** — target type inferred from context; effectively final variables captured.\n\n**Method references** shorten code when signature matches (`String::length`).\n\n**Streams are not always faster** — overhead for tiny collections; parallel streams need CPU-bound work and thread-safe operations.\n\n**Avoid side effects** in `map` — use `peek` only for debugging; collect with clear combiners for parallel."
+    },
+    {
+      "type": "code",
+      "title": "Basic Walkthrough",
+      "language": "java",
+      "filename": "Day30Basic.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Basic {\n    public static void main(String[] args) {\n        List<Integer> xs = List.of(1, 2, 3, 4, 5);\n        int s = xs.stream().filter(x -> x % 2 == 0).mapToInt(x -> x).sum();\n        System.out.println(s);\n    }\n}",
+      "level": "basic",
+      "output": "6\n",
+      "description": "Stream pipeline: filter + map + collect — declarative collection processing."
+    },
+    {
+      "type": "code",
+      "title": "Intermediate Implementation",
+      "language": "java",
+      "filename": "Day30Intermediate.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Intermediate {\n    record Emp(String dept, String name) {}\n\n    public static void main(String[] args) {\n        List<Emp> es = List.of(new Emp(\"eng\", \"a\"), new Emp(\"eng\", \"b\"), new Emp(\"hr\", \"c\"));\n        Map<String, List<Emp>> g = es.stream().collect(Collectors.groupingBy(Emp::dept));\n        System.out.println(g.get(\"eng\").size());\n    }\n}",
+      "level": "intermediate",
+      "output": "2\n",
+      "description": "groupingBy: partition employees by department string."
+    },
+    {
+      "type": "code",
+      "title": "Advanced Production Pattern",
+      "language": "java",
+      "filename": "Day30Advanced.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Advanced {\n    public static void main(String[] args) {\n        List<String> lines = List.of(\"a b\", \"c\");\n        List<String> words = lines.stream()\n            .flatMap(line -> Arrays.stream(line.split(\"\\\\s+\")))\n            .toList();\n        System.out.println(words);\n    }\n}",
+      "level": "advanced",
+      "output": "[a, b, c]\n",
+      "description": "flatMap: one-to-many transform — lines to words."
+    },
+    {
+      "type": "code",
+      "title": "Problem: distinct and sorted",
+      "language": "java",
+      "filename": "Day30DistinctSorted.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30DistinctSorted {\n    public static void main(String[] args) {\n        List<Integer> xs = Arrays.asList(3, 1, 2, 1, 3);\n        List<Integer> u = xs.stream().distinct().sorted().toList();\n        System.out.println(u);\n        List<String> words = Arrays.asList(\"banana\", \"apple\", \"pear\");\n        List<String> byLen = words.stream()\n            .sorted(Comparator.comparing(String::length).thenComparing(Comparator.naturalOrder()))\n            .toList();\n        System.out.println(byLen);\n    }\n}",
+      "level": "intermediate",
+      "output": "[1, 2, 3]\n[pear, apple, banana]\n",
+      "description": "distinct uses equals/hashCode; sorted is encounter-order sort (stateful — may buffer)."
+    },
+    {
+      "type": "code",
+      "title": "Problem: limit, skip, takeWhile (Java 9+)",
+      "language": "java",
+      "filename": "Day30LimitSkip.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30LimitSkip {\n    public static void main(String[] args) {\n        List<Integer> xs = IntStream.rangeClosed(1, 20).boxed().toList();\n        List<Integer> page = xs.stream().skip(5).limit(3).toList();\n        System.out.println(page);\n        // takeWhile: Java 9+\n        List<Integer> head = xs.stream().takeWhile(n -> n < 4).toList();\n        System.out.println(head);\n    }\n}",
+      "level": "intermediate",
+      "output": "[6, 7, 8]\n[1, 2, 3]\n",
+      "description": "Pagination pattern with skip+limit; takeWhile short-circuits while predicate holds (ordered streams)."
+    },
+    {
+      "type": "code",
+      "title": "Problem: peek — debug only, not business logic",
+      "language": "java",
+      "filename": "Day30PeekDebug.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30PeekDebug {\n    public static void main(String[] args) {\n        int sum = IntStream.of(1, 2, 3)\n            .peek(v -> System.out.println(\"see \" + v))\n            .sum();\n        System.out.println(\"sum=\" + sum);\n    }\n}",
+      "level": "basic",
+      "output": "see 1\nsee 2\nsee 3\nsum=6\n",
+      "description": "peek is for debugging; do not rely on it for required side effects — optimization may elide or reorder."
+    },
+    {
+      "type": "code",
+      "title": "Problem: reduce — sum and combine",
+      "language": "java",
+      "filename": "Day30Reduce.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Reduce {\n    public static void main(String[] args) {\n        OptionalInt o = IntStream.of(2, 3, 4).reduce(Integer::sum);\n        System.out.println(o.getAsInt());\n        String folded = Stream.of(\"a\", \"b\", \"c\").reduce(\"\", String::concat);\n        System.out.println(folded);\n        Optional<String> longest = Stream.of(\"x\", \"abcd\", \"yz\")\n            .reduce((a, b) -> a.length() >= b.length() ? a : b);\n        System.out.println(longest.orElse(\"\"));\n    }\n}",
+      "level": "intermediate",
+      "output": "9\nabc\nabcd\n",
+      "description": "One-arg reduce returns Optional for empty; two-arg reduce uses identity; combiner used in parallel."
+    },
+    {
+      "type": "code",
+      "title": "Problem: Collectors.joining",
+      "language": "java",
+      "filename": "Day30Joining.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Joining {\n    public static void main(String[] args) {\n        List<String> xs = Arrays.asList(\"one\", \"two\", \"three\");\n        String csv = xs.stream().collect(Collectors.joining(\",\"));\n        String json = xs.stream().collect(Collectors.joining(\"\\\",\\\"\", \"\\\"\", \"\\\"\"));\n        System.out.println(csv);\n        System.out.println(json);\n    }\n}",
+      "level": "intermediate",
+      "output": "one,two,three\n\"one\",\"two\",\"three\"\n",
+      "description": "Delimiter, optional prefix/suffix — builds strings without manual StringBuilder loops."
+    },
+    {
+      "type": "code",
+      "title": "Problem: groupingBy + counting",
+      "language": "java",
+      "filename": "Day30GroupingCount.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30GroupingCount {\n    record Sale(String region, String sku) {}\n\n    public static void main(String[] args) {\n        List<Sale> sales = Arrays.asList(\n            new Sale(\"EU\", \"A\"), new Sale(\"US\", \"A\"), new Sale(\"EU\", \"B\"), new Sale(\"EU\", \"A\")\n        );\n        Map<String, Long> byRegion = sales.stream()\n            .collect(Collectors.groupingBy(Sale::region, Collectors.counting()));\n        System.out.println(byRegion);\n    }\n}",
+      "level": "intermediate",
+      "output": "{EU=3, US=1}\n",
+      "description": "Downstream collector counting() — frequency map pattern for interviews."
+    },
+    {
+      "type": "code",
+      "title": "Problem: groupingBy + mapping + toSet",
+      "language": "java",
+      "filename": "Day30GroupingMapping.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30GroupingMapping {\n    record Emp(String dept, String skill) {}\n\n    public static void main(String[] args) {\n        List<Emp> es = Arrays.asList(\n            new Emp(\"eng\", \"java\"), new Emp(\"eng\", \"sql\"), new Emp(\"eng\", \"java\"), new Emp(\"hr\", \"excel\")\n        );\n        Map<String, Set<String>> skillsByDept = es.stream()\n            .collect(Collectors.groupingBy(\n                Emp::dept,\n                Collectors.mapping(Emp::skill, Collectors.toSet())));\n        System.out.println(skillsByDept.get(\"eng\"));\n    }\n}",
+      "level": "advanced",
+      "output": "[java, sql]\n",
+      "description": "Nested collector: group keys, then map each group to another reduction (unique skills per dept)."
+    },
+    {
+      "type": "code",
+      "title": "Problem: partitioningBy",
+      "language": "java",
+      "filename": "Day30Partitioning.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Partitioning {\n    public static void main(String[] args) {\n        List<Integer> xs = Arrays.asList(1, 2, 3, 4, 5, 6);\n        Map<Boolean, List<Integer>> parts = xs.stream()\n            .collect(Collectors.partitioningBy(n -> n % 2 == 0));\n        System.out.println(\"even \" + parts.get(true));\n        System.out.println(\"odd \" + parts.get(false));\n    }\n}",
+      "level": "intermediate",
+      "output": "even [2, 4, 6]\nodd [1, 3, 5]\n",
+      "description": "Special case of groupingBy for Predicate — always exactly two buckets: true / false."
+    },
+    {
+      "type": "code",
+      "title": "Problem: summarizingInt / averagingDouble",
+      "language": "java",
+      "filename": "Day30Summarizing.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Summarizing {\n    record Item(String cat, int price) {}\n\n    public static void main(String[] args) {\n        List<Item> items = Arrays.asList(new Item(\"book\", 12), new Item(\"book\", 18), new Item(\"pen\", 3));\n        Map<String, IntSummaryStatistics> stats = items.stream()\n            .collect(Collectors.groupingBy(Item::cat, Collectors.summarizingInt(Item::price)));\n        IntSummaryStatistics book = stats.get(\"book\");\n        System.out.println(\"count=\" + book.getCount() + \" avg=\" + book.getAverage());\n    }\n}",
+      "level": "advanced",
+      "output": "count=2 avg=15.0\n",
+      "description": "IntSummaryStatistics bundles count, sum, min, max, average — one pass per group."
+    },
+    {
+      "type": "code",
+      "title": "Problem: toMap and duplicate keys",
+      "language": "java",
+      "filename": "Day30ToMapMerge.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30ToMapMerge {\n    record Pair(String k, int v) {}\n\n    public static void main(String[] args) {\n        List<Pair> rows = Arrays.asList(new Pair(\"a\", 1), new Pair(\"b\", 2), new Pair(\"a\", 3));\n        Map<String, Integer> lastWins = rows.stream()\n            .collect(Collectors.toMap(Pair::k, Pair::v, (v1, v2) -> v2));\n        System.out.println(lastWins);\n    }\n}",
+      "level": "advanced",
+      "output": "{a=3, b=2}\n",
+      "description": "Third argument merge function resolves key collisions — without it, duplicate key throws IllegalStateException."
+    },
+    {
+      "type": "code",
+      "title": "Problem: anyMatch / allMatch / noneMatch",
+      "language": "java",
+      "filename": "Day30Matching.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Matching {\n    public static void main(String[] args) {\n        List<String> xs = Arrays.asList(\"\", \"ab\", \"c\");\n        System.out.println(xs.stream().anyMatch(String::isEmpty));\n        System.out.println(xs.stream().allMatch(s -> s.length() > 0));\n        System.out.println(xs.stream().noneMatch(s -> s.length() > 5));\n    }\n}",
+      "level": "basic",
+      "output": "true\nfalse\ntrue\n",
+      "description": "Short-circuiting search — may stop before consuming entire stream (efficient for large sources)."
+    },
+    {
+      "type": "code",
+      "title": "Problem: collectingAndThen — finish with unmodifiableList",
+      "language": "java",
+      "filename": "Day30CollectingAndThen.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30CollectingAndThen {\n    public static void main(String[] args) {\n        List<Integer> xs = Arrays.asList(3, 1, 2);\n        List<Integer> ro = xs.stream()\n            .sorted()\n            .collect(Collectors.collectingAndThen(\n                Collectors.toList(),\n                Collections::unmodifiableList));\n        System.out.println(ro);\n    }\n}",
+      "level": "advanced",
+      "output": "[1, 2, 3]\n",
+      "description": "Finisher runs after collection — wrap or transform result (immutable view, first element, etc.)."
+    },
+    {
+      "type": "code",
+      "title": "Problem: flatMap — chars and nested lists",
+      "language": "java",
+      "filename": "Day30FlatMapNested.java",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30FlatMapNested {\n    public static void main(String[] args) {\n        List<List<Integer>> nested = Arrays.asList(Arrays.asList(1, 2), Arrays.asList(3));\n        List<Integer> flat = nested.stream().flatMap(List::stream).toList();\n        System.out.println(flat);\n        long letters = \"a,b\".chars().filter(ch -> ch != ',').count();\n        System.out.println(letters);\n    }\n}",
+      "level": "intermediate",
+      "output": "[1, 2, 3]\n2\n",
+      "description": "flatMap flattens Stream<Stream<T>> to Stream<T>; IntStream.chars for primitive char codes."
+    },
+    {
+      "type": "diagram",
+      "title": "Architecture View - Day 30",
+      "diagramType": "sequence",
+      "description": "Visual model for Streams API",
+      "plantuml": "@startuml\ntitle Day 30 - Streams API\nactor Learner\nrectangle \"Satyverse(Satyam Parmar) Lesson Engine\" {\n  component \"Theory\"\n  component \"Code\"\n  component \"Exercise\"\n  component \"Interview Drill\"\n}\nLearner --> \"Theory\" : Understand concept\nLearner --> \"Code\" : Implement\nLearner --> \"Exercise\" : Practice\nLearner --> \"Interview Drill\" : Explain\n@enduml"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Pitfalls",
+      "items": [
+        "Using streams with side effects that break declarative style.",
+        "Forgetting terminal operation and expecting execution.",
+        "Overusing parallel streams without profiling.",
+        "Collecting inefficiently for large datasets.",
+        "Using stream chains where simple loops are clearer."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Exercise - Streams API Applied Drill",
+      "problem": "Implement a Java solution demonstrating **Streams API** in a realistic scenario.\n\nRequirements:\n1. Include one baseline approach and one improvement.\n2. Handle one edge/failure case.\n3. Add short explanation of trade-off.\n4. Keep code readable and testable.\n5. Show sample output.",
+      "hints": [
+        "Start with correctness before optimization.",
+        "Use explicit naming for intent clarity.",
+        "Write one failure-case test and expected result."
+      ],
+      "solution": "package arch.day30;\nimport java.util.*;\n\npublic class Day30Advanced {\n    static record Review(String topic, int confidence, boolean needsRevision) {}\n\n    public static void main(String[] args) {\n        List<Review> reviews = List.of(\n            new Review(\"Streams API\", 72, true),\n            new Review(\"Coding Practice\", 81, false),\n            new Review(\"Interview Explanation\", 68, true)\n        );\n\n        long reviseCount = reviews.stream().filter(Review::needsRevision).count();\n        int avg = (int) reviews.stream().mapToInt(Review::confidence).average().orElse(0);\n\n        System.out.println(\"avgConfidence = \" + avg);\n        System.out.println(\"needsRevision = \" + reviseCount);\n    }\n}\n",
+      "difficulty": "Intermediate"
+    },
+    {
+      "type": "interview",
+      "title": "Interview Drill",
+      "conceptual": [
+        {
+          "question": "What is the Streams API?",
+          "answer": "Declarative pipeline on data: source, intermediate ops (lazy), terminal op (eager)."
+        },
+        {
+          "question": "Lazy vs eager?",
+          "answer": "Intermediate ops build pipeline; nothing runs until terminal like collect/count/forEach."
+        },
+        {
+          "question": "What is spliterator?",
+          "answer": "Splitting iterator backing parallel streams—correct splitting affects speedup."
+        },
+        {
+          "question": "Parallel stream pitfalls?",
+          "answer": "Side effects, order, wrong data structures (LinkedList), fork/join overhead small data."
+        },
+        {
+          "question": "map vs flatMap?",
+          "answer": "map 1:1; flatMap one-to-many flattening streams."
+        },
+        {
+          "question": "collect Collectors.groupingBy?",
+          "answer": "Downstream collectors for aggregation—powerful but verbose."
+        },
+        {
+          "question": "Optional from findFirst?",
+          "answer": "Represents absence safely—avoid get without isPresent or orElse."
+        },
+        {
+          "question": "Primitive streams IntStream?",
+          "answer": "Avoid boxing in numeric pipelines—mapToInt etc."
+        },
+        {
+          "question": "What is Stream builder?",
+          "answer": "When source not standard collection—Stream.builder()."
+        },
+        {
+          "question": "Short-circuit operations?",
+          "answer": "anyMatch, findFirst may not process entire stream—lazy benefit."
+        },
+        {
+          "question": "Stateful intermediate operations distinct/sorted?",
+          "answer": "May buffer entire stream—memory cost."
+        },
+        {
+          "question": "peek for debugging?",
+          "answer": "Side-effect only debugging—not guaranteed to execute if optimized away—don’t rely for logic."
+        },
+        {
+          "question": "Iterator vs Stream?",
+          "answer": "Stream not reusable; Iterator imperative—choose per style and performance."
+        },
+        {
+          "question": "try-with-resources on streams?",
+          "answer": "Files.lines must be closed—use try-with-resources."
+        },
+        {
+          "question": "Custom collector?",
+          "answer": "Collector.of supplier/accumulator/combiner/finisher for domain aggregation."
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Filter map collect to list.",
+          "answer": "list.stream().filter(...).map(...).toList() (Java 16+)."
+        },
+        {
+          "question": "groupingBy count frequency.",
+          "answer": "Collectors.groupingBy(Function.identity(), Collectors.counting())"
+        },
+        {
+          "question": "partitioningBy predicate.",
+          "answer": "Map<Boolean, List<T>> split."
+        },
+        {
+          "question": "reduce sum ints.",
+          "answer": "IntStream.of(1,2,3).sum()"
+        },
+        {
+          "question": "flatMap lines to words.",
+          "answer": "lines.stream().flatMap(line -> Arrays.stream(line.split(\"\\\\s+\")))"
+        },
+        {
+          "question": "distinct sort limit pipeline.",
+          "answer": "Know order of ops matters."
+        },
+        {
+          "question": "findFirst Optional handling.",
+          "answer": "ifPresent or orElseThrow."
+        },
+        {
+          "question": "parallel stream wrong for LinkedList why?",
+          "answer": "Poor splitting—use ArrayList."
+        },
+        {
+          "question": "Collect joining delimiter.",
+          "answer": "Collectors.joining(\",\")"
+        },
+        {
+          "question": "mapToObj boxed to List<String>.",
+          "answer": "IntStream.range(0,n).mapToObj(i -> ...)"
+        },
+        {
+          "question": "groupingBy classifier + downstream averagingInt?",
+          "answer": "Collectors.groupingBy(Emp::dept, Collectors.averagingInt(Emp::getSalary))"
+        },
+        {
+          "question": "partitioningBy vs groupingBy(Boolean)?",
+          "answer": "partitioningBy is for Predicate → Map<Boolean,List>; clearer for two buckets."
+        },
+        {
+          "question": "Collectors.mapping in nested grouping?",
+          "answer": "groupingBy(key, mapping(field, toSet())) for sets per group."
+        },
+        {
+          "question": "Stream.iterate seed UnaryOperator?",
+          "answer": "Stream.iterate(0, n -> n+1) infinite until limit — Java 9+ iterate with hasNext."
+        },
+        {
+          "question": "reduce identity vs Optional?",
+          "answer": "Two-arg reduce never empty Optional; one-arg empty stream → Optional.empty()."
+        },
+        {
+          "question": "Why not collect(Collectors.toMap) without merge on dup keys?",
+          "answer": "IllegalStateException — supply merge function or use groupingBy."
+        },
+        {
+          "question": "IntStream.boxed() when?",
+          "answer": "Need Stream<Integer> for collect toList with generic collectors."
+        },
+        {
+          "question": "Files.lines Stream close?",
+          "answer": "try (Stream<String> s = Files.lines(path)) { ... } — terminal op closes in try-with-resources pattern."
+        },
+        {
+          "question": "sorted(Comparator) stable?",
+          "answer": "TimSort stable for reference types — equal elements keep relative order."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Production OOM on giant Stream distinct?",
+          "answer": "Buffered uniqueness or external sort—don’t hold all keys in memory."
+        },
+        {
+          "question": "Parallel stream in web request—risk?",
+          "answer": "Steals common ForkJoinPool—may starve other work; use custom pool."
+        },
+        {
+          "question": "Database pagination vs Stream of all rows?",
+          "answer": "Don’t load entire table into Stream without chunking."
+        },
+        {
+          "question": "Logging inside stream peek in prod?",
+          "answer": "Noise and ordering issues—use proper tracing."
+        },
+        {
+          "question": "Migration from loops to streams readability?",
+          "answer": "Not always clearer—team style guide."
+        },
+        {
+          "question": "Stream closed twice exception?",
+          "answer": "IllegalStateException—streams single-use."
+        }
+      ],
+      "wrongAnswers": [
+        "Intermediate stream operations execute immediately when called.",
+        "Parallel streams always make code faster.",
+        "You can reuse a Stream after terminal operation.",
+        "peek is intended for business logic side effects.",
+        "map and flatMap are identical for collections of collections.",
+        "findAny always returns the first element in encounter order."
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "title": "Cheatsheet",
+      "content": "| Area | Phase 4 Focus | Quick Rule | Gotcha |\n|---|---|---|---|\n| Concept | Streams API | Explain mechanism + boundary | Syntax-only answers |\n| Runtime | Performance/memory/concurrency | Mention impact explicitly | Hidden runtime costs |\n| Code | Clean composable units | Prefer readability first | Over-chained complexity |\n| Failure | Known pitfall + mitigation | Name one concrete case | Hand-wavy debugging |\n| Interview | Decision reasoning | Compare alternatives | No trade-off discussion |"
+    }
+  ]
+}

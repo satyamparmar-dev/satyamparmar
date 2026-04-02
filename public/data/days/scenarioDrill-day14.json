@@ -1,0 +1,95 @@
+{
+  "day": 14,
+  "title": "Java Collections Framework",
+  "phaseId": "phase2",
+  "tags": [
+    "List",
+    "Set",
+    "Map",
+    "Big O"
+  ],
+  "scenarios": [
+    {
+      "id": "d14-s1",
+      "question": "Team picks `LinkedList` for a cache “because inserts are O(1)”. What do you challenge?",
+      "signals": [
+        "cache locality",
+        "iterator cost",
+        "ArrayList vs LinkedList",
+        "real profiles"
+      ],
+      "answer": "## In simple terms\n**Asymptotic** insert cost ignores **constants**, **allocation**, and **pointer chasing**. For most Java workloads, **`ArrayList`** wins due to **contiguous memory** and **CPU cache**.\n\n## Step-by-step reasoning\n1. **Random access** in `LinkedList` is **O(n)**—many APIs accidentally do it.\n2. **Iterator** is fine, but each node is an object—**GC pressure**.\n3. **`ArrayList`** amortized append is **O(1)** at end; middle inserts rare in services.\n\n## Interview line\n“I’d **measure**; default to `ArrayList` unless proven **frequent middle inserts** at scale.”",
+      "followUps": [
+        {
+          "question": "When is LinkedList justified?",
+          "answer": "**Deque** operations at both ends at large size **and** you truly avoid indexed access—rare in typical Spring services; still profile."
+        },
+        {
+          "question": "HashMap load factor and initial capacity?",
+          "answer": "**Load factor** trades space vs collision risk; **initial capacity** avoids **rehash** if you know approximate size—important for **bulk loads**."
+        },
+        {
+          "question": "TreeMap vs HashMap interview answer?",
+          "answer": "`HashMap` **O(1)** average lookup, **unordered**. `TreeMap` **sorted keys**, **O(log n)**—use when you need **range queries** or **ordering**."
+        }
+      ]
+    },
+    {
+      "id": "d14-s2",
+      "question": "`Set` dedupes `Person` objects but duplicates remain—two objects with same name. Fix?",
+      "signals": [
+        "equals",
+        "hashCode",
+        "contract",
+        "identity"
+      ],
+      "answer": "## Root cause\n`HashSet` uses **`hashCode` + `equals`**. Default `Object` identity means **two distinct instances** are not equal.\n\n## Fix\n1. Implement **`equals`** consistent with **business key** (e.g. `id` or email).\n2. Implement matching **`hashCode`** (same fields).\n3. If entities use **generated DB id**, be careful with **transient** objects before persist—consider **natural key** for collections.\n\n## Pitfall\n**Mutable** fields used in `hashCode` → **broken set** if mutated after insert.",
+      "followUps": [
+        {
+          "question": "Can you use Lombok `@EqualsAndHashCode`?",
+          "answer": "**Yes**—specify **`onlyExplicitlyIncluded`** or **`of`** to pin fields; avoid including **lazy** associations that trigger fetches."
+        },
+        {
+          "question": "What about Comparator for TreeSet?",
+          "answer": "`TreeSet` uses **`compareTo`/`compare`**—must be **consistent with equals** or you violate `Set` contract weirdly."
+        }
+      ]
+    },
+    {
+      "id": "d14-s3",
+      "question": "You need thread-safe increments to a shared counter—`Collections.synchronizedList` around `ArrayList` good enough?",
+      "signals": [
+        "compound actions",
+        "ConcurrentHashMap",
+        "AtomicLong"
+      ],
+      "answer": "## In simple terms\n**Synchronized collections** guard **single** method calls—not **check-then-act** across calls.\n\n## Better tools\n- **`AtomicLong` / `LongAdder`** for counters.\n- **`ConcurrentHashMap.merge`** for per-key counts.\n- **`Collections.synchronizedList`** only if iteration is also **externally synchronized** or you use **copy snapshot**.\n\n## Interview tip\nSay **“compound operations are not atomic”** with examples (`if (!list.contains(x)) list.add(x)`).",
+      "followUps": [
+        {
+          "question": "CopyOnWriteArrayList trade-off?",
+          "answer": "**Reads cheap**, **writes** copy entire array—great for **read-heavy** listener lists; terrible for **write-heavy**."
+        },
+        {
+          "question": "BlockingQueue vs synchronized list?",
+          "answer": "**BlockingQueue** gives **producer-consumer** semantics with **backpressure**—the right abstraction for pipelines."
+        }
+      ]
+    },
+    {
+      "id": "d14-s4",
+      "question": "When do you choose `EnumSet` or `EnumMap`?",
+      "signals": [
+        "bit vector",
+        "domain modeling",
+        "performance"
+      ],
+      "answer": "## In simple terms\nFor **enum keys**, these are **compact and fast**—often **better than `HashSet`/`HashMap`** for the same logical job.\n\n## Interview angle\nShows you know the **specialized** implementations in `java.util` beyond the basics.",
+      "followUps": [
+        {
+          "question": "Are enum sets ordered?",
+          "answer": "`EnumSet` iteration order is **enum declaration order**—predictable and useful for **deterministic** behavior."
+        }
+      ]
+    }
+  ]
+}

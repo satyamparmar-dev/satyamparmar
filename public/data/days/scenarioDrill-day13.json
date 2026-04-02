@@ -1,0 +1,77 @@
+{
+  "day": 13,
+  "title": "Nested and Inner Classes",
+  "phaseId": "phase2",
+  "tags": [
+    "inner class",
+    "static nested",
+    "enclosing instance"
+  ],
+  "scenarios": [
+    {
+      "id": "d13-s1",
+      "question": "A junior writes `new Outer().new Inner()` and asks why `Outer.Inner` without `new Outer()` fails for a non-static inner class. How do you explain it?",
+      "signals": [
+        "enclosing instance",
+        "implicit outer reference",
+        "memory"
+      ],
+      "answer": "## In simple terms\nA **non-static inner class** is tied to a **specific outer object**. The JVM must know **which** `Outer` the `Inner` belongs to—so you need an outer instance first.\n\n## Step-by-step\n1. **Inner** holds an implicit reference to the enclosing `Outer` instance.\n2. **`Outer.Inner x = outer.new Inner();`** is the idiomatic form (Java 16+ can use simplified syntax in some contexts, but the rule is the same: outer instance required).\n3. From **inside** `Outer` instance code, `new Inner()` already has `this` as the outer.\n\n## Interview tip\nMention **memory**: long-lived `Inner` can **pin** the outer from GC if the inner escapes.\n\n## Static nested\n`Outer.Nested` with **`static`** is just a type namespaced in `Outer`—**no** enclosing instance.",
+      "followUps": [
+        {
+          "question": "Can an inner class extend another class?",
+          "answer": "**Yes**—inner vs static nested is about **enclosing instance**, not inheritance. You still have single inheritance for classes in Java."
+        },
+        {
+          "question": "Why might you prefer static nested class?",
+          "answer": "**No hidden outer reference** → smaller lifetime, clearer ownership, often better for **builders** and **public API** types that should not capture `this`."
+        },
+        {
+          "question": "Local and anonymous classes—what captures?",
+          "answer": "They can capture **final or effectively final** locals from the enclosing method, plus the outer instance if defined in an instance method—classic **callback leak** source."
+        }
+      ]
+    },
+    {
+      "id": "d13-s2",
+      "question": "Production leak: handlers registered with an anonymous `ActionListener` on a long-lived frame—heap grows. What pattern causes this and how do you fix it?",
+      "signals": [
+        "implicit reference",
+        "static nested",
+        "weak reference",
+        "unregister"
+      ],
+      "answer": "## In simple terms\nIf the listener is a **non-static inner or anonymous inner** of a short-lived object, or vice versa, **strong references** keep objects alive unexpectedly.\n\n## What to do\n1. Prefer **`static` nested** listener + explicit **`WeakReference`** or **unregister** on dispose.\n2. Avoid capturing **heavy outer** in lambdas/anonymous classes when the handler outlives the UI element.\n3. Use **lifecycle** hooks (`removeListener`, `onDestroy`) in frameworks.\n\n## Why it matters\nInterviewers want **reference graph** thinking, not “Java is broken.”",
+      "followUps": [
+        {
+          "question": "Do lambdas always capture `this`?",
+          "answer": "Only if they reference **instance members** or **instance methods**—then they capture the receiver. A `static` context lambda capturing only static state behaves differently."
+        },
+        {
+          "question": "When is WeakReference appropriate?",
+          "answer": "When you want **associated metadata** without forcing the key object to stay alive—**caches**, **listeners**. Wrong default for domain invariants—use normal strong refs."
+        }
+      ]
+    },
+    {
+      "id": "d13-s3",
+      "question": "When would you use a local class inside a method instead of a private static nested class?",
+      "signals": [
+        "encapsulation",
+        "scope",
+        "readability"
+      ],
+      "answer": "## In simple terms\nA **local class** hides implementation detail **inside one method**—readers see one cohesive algorithm.\n\n## When it fits\n- Small helper implementing an interface **used only in that method**.\n- Needs access to **method parameters** and locals (effectively final).\n\n## When to avoid\nReuse across methods → **private static nested** or top-level package-private type.\n\nModern code often uses **lambdas** instead, but local classes still matter for **multiple methods** or **heavy logic**.",
+      "followUps": [
+        {
+          "question": "Can local classes be static?",
+          "answer": "**No**—local classes cannot be declared `static`. For static-like behavior, use a **static nested** type at class level."
+        },
+        {
+          "question": "Serialization of non-static inner classes?",
+          "answer": "Often **awkward**—synthetic fields and outer reference. Prefer **static nested** DTOs for serializable shapes or mapping layers."
+        }
+      ]
+    }
+  ]
+}

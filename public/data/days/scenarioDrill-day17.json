@@ -1,0 +1,68 @@
+{
+  "day": 17,
+  "title": "File I/O and NIO.2",
+  "phaseId": "phase2",
+  "tags": [
+    "Files",
+    "Path",
+    "charset"
+  ],
+  "scenarios": [
+    {
+      "id": "d17-s1",
+      "question": "Service reads config with `Files.readAllLines(path)`—works on laptop, mojibake in prod Linux. What happened?",
+      "signals": [
+        "Charset",
+        "UTF-8",
+        "Files.newBufferedReader"
+      ],
+      "answer": "## Likely cause\n**Default charset** differs (`windows-1252` vs **UTF-8**). `readAllLines(Path)` uses **`UTF_8` in modern Java**—but older code or **`FileReader` without charset** picks **platform default**.\n\n## Fix\nAlways specify **`StandardCharsets.UTF_8`** (or config) with **`Files.newBufferedReader(path, UTF_8)`** / **`readString`** with charset overload.\n\n## Ops tip\nEnforce **UTF-8** in **CI**, **Docker**, and **JVM** (`file.encoding` awareness).",
+      "followUps": [
+        {
+          "question": "NIO.2 vs old File API?",
+          "answer": "**`Path`/`Files`** are modern—better **exceptions**, **atomic moves**, **directory streams**, **watch service**."
+        },
+        {
+          "question": "Large file—readAllBytes bad?",
+          "answer": "**Memory** blow—use **`lines()`** or **buffered** streaming with **backpressure** in reactive stacks."
+        }
+      ]
+    },
+    {
+      "id": "d17-s2",
+      "question": "Need atomic replace of file on disk for config—how with NIO.2?",
+      "signals": [
+        "ATOMIC_MOVE",
+        "StandardCopyOption",
+        "temp file"
+      ],
+      "answer": "## Pattern\nWrite to **temp** in same directory, then **`Files.move(tmp, target, ATOMIC_MOVE, REPLACE_EXISTING)`**.\n\n## Why\nReaders see **old or new**, not **half-written** file.\n\n## Caveats\n**Same filesystem** required for atomicity; **Windows** file locking quirks—close streams before move.",
+      "followUps": [
+        {
+          "question": "Walk directory tree?",
+          "answer": "**`Files.walkFileTree`** with **`FileVisitor`** or **`walk()`** stream—watch **symlink** options (`FOLLOW_LINKS`)."
+        },
+        {
+          "question": "WatchService use case?",
+          "answer": "**Hot reload** configs or **trigger** processing—**not** ultra-low-latency on some OSes; poll fallback."
+        }
+      ]
+    },
+    {
+      "id": "d17-s3",
+      "question": "Logs show `NoSuchFileException` intermittently when deleting a file another process creates—race handling?",
+      "signals": [
+        "existence check",
+        "Files.deleteIfExists",
+        "retry"
+      ],
+      "answer": "## Principle\n**Check-then-act** is racy—another thread/process can interleave.\n\n## Approach\nUse **`deleteIfExists`**, tolerate **absence**, or **retry** with backoff for known transient patterns.\n\n## Interview\nConnect to **distributed systems**: **idempotent** cleanup, **at-least-once** workers.",
+      "followUps": [
+        {
+          "question": "Symbolic links and Path.normalize?",
+          "answer": "Understand **`toRealPath`** vs **`normalize`**—security: avoid **path traversal** by resolving against **base** directory."
+        }
+      ]
+    }
+  ]
+}
