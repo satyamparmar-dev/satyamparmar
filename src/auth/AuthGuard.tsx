@@ -14,7 +14,33 @@ const AuthGuard: React.FC<Props> = ({ children }) => {
 
   useEffect(() => {
     if (!AUTH_LOGIN_ENABLED) return;
-    validateSession().finally(() => setChecking(false));
+
+    let cancelled = false;
+    const doneChecking = () => {
+      if (!cancelled) setChecking(false);
+    };
+
+    const runValidate = () => {
+      validateSession().finally(doneChecking);
+    };
+
+    // Persist rehydrates localStorage async; validating before hydration looks like
+    // "no session" and leaves isAuthenticated false even when a token exists.
+    if (useAuthStore.persist.hasHydrated()) {
+      runValidate();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const unsub = useAuthStore.persist.onFinishHydration(() => {
+      runValidate();
+    });
+
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, [validateSession]);
 
   if (!AUTH_LOGIN_ENABLED) {
