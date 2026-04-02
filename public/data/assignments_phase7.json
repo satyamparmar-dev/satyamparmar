@@ -1,0 +1,852 @@
+{
+  "phase": 7,
+  "title": "Phase 7 · Kafka & Messaging",
+  "assignments": {
+    "59": {
+      "type": "assignment",
+      "title": "Day 59 Assignment: Kafka Architecture",
+      "description": "Practice kafka architecture with incident-style messaging scenarios, reliability trade-offs, and code-focused interview drills.",
+      "totalPoints": 100,
+      "questions": [
+        {
+          "id": "d59q1",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Kafka Architecture: Explain It Like an Interviewer",
+          "question": "A panel asks you to explain **Kafka Architecture** without buzzwords. Give a clean explanation, one concrete production example, and one thing people usually get wrong.",
+          "hints": [
+            "Define the core terms in Kafka Architecture before giving examples.",
+            "Contrast a correct approach with a common but flawed approach.",
+            "Mention one runtime, scaling, or maintainability impact."
+          ],
+          "solution": "## In one minute\n**Kafka** is a distributed **append-only log** implemented as topics split into **partitions**. Producers append **records**; consumers read with an **offset** cursor. Brokers replicate partitions for fault tolerance.\n\n## Concrete production example\nAn **order-events** topic with key = `orderId` gives **per-order ordering** (single partition for that key) while scaling horizontally across many keys.\n\n## What people get wrong\nThey say \"Kafka is a queue.\" It is closer to a **durable log**: consumers **pull** and **advance offsets**; replay and retention are first-class, unlike a typical AMQP queue that deletes on ack.\n\n## Failure mode to name\n**Hot partition**: one key dominates traffic → one broker/partition becomes the bottleneck while others are idle.",
+          "points": 15
+        },
+        {
+          "id": "d59q2",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Kafka Architecture Trade-offs Under Pressure",
+          "question": "You have two messaging approaches for **Kafka Architecture**. Compare them for reliability, replay behavior, and failure recovery during an incident.",
+          "hints": [
+            "Compare behavior for normal case and failure case.",
+            "Discuss complexity and maintenance cost, not only speed.",
+            "Tie decision to team context and production constraints."
+          ],
+          "solution": "## Option A: Few topics, many partitions\nGood for **uniform** throughput; ops is simpler.\n\n## Option B: Many topics (domain boundaries)\nGood for **ACLs**, **retention**, and **team ownership** per bounded context; more metadata to manage.\n\n## Incident lens (reliability / replay / recovery)\n- **Replay**: log retention + reset offsets vs **dead-letter** topic — trade data volume vs operational clarity.\n- **Recovery**: more partitions can absorb parallelism but **cannot** fix a **hot key** without changing the partitioning strategy.\n\n## Interview line\n\"Partitions are the unit of parallelism **and** ordering — design keys with that law in mind.\"",
+          "points": 15
+        },
+        {
+          "id": "d59q3",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Kafka Architecture Interview Scenario",
+          "question": "A production incident lands in your queue for **Kafka Architecture**: Partition assignment with consumer crash behavior.\n\nWalk through what you check first, what you would NOT do immediately, and how you prove recovery.",
+          "hints": [
+            "Start with symptoms and blast radius before proposing fixes.",
+            "Explain what you would measure to validate your decision.",
+            "Include rollback/degradation strategy for risky changes."
+          ],
+          "solution": "## First 5 minutes (do not skip)\n1. **Consumer lag** per partition vs end-to-end latency — is the problem **consume** or **produce**?\n2. **Group state**: is the group **rebalancing** constantly? (symptom: stop-the-world consumption)\n3. **Broker health**: under-replicated partitions? leader elections?\n\n## What NOT to do immediately\n- Blindly **scale consumers** past **partition count** (useless parallelism).\n- **Flush** configs (acks, linger) without understanding producer batching side effects.\n\n## Prove recovery\n- Show **lag trending down** after fix, **rebalance rate** flat, and **error budget** style check: no sustained **consumer-time** behind **max.poll.interval**.\n\n## Concrete failure mode\n**Sticky assignor + crash**: partitions migrate; if processing is slow, members get kicked → rebalance storm → lag explodes.",
+          "points": 20
+        },
+        {
+          "id": "d59q4",
+          "type": "coding",
+          "difficulty": "Advanced",
+          "title": "Kafka Architecture Coding Challenge",
+          "question": "Implement this coding task for **Kafka Architecture**:\n\nPartition assignment with consumer crash behavior.",
+          "hints": [
+            "Start with a minimal correct implementation, then refine naming and edge handling.",
+            "Keep output deterministic and easy to verify.",
+            "For interviews, explain algorithm/architecture choice before code details."
+          ],
+          "solution": "## What interviewers want\nYou can explain **assignment** (which consumer owns which partition) and what happens on **crash**: partitions **reassign**, **in-flight** messages may be **redelivered** (at-least-once).\n\n## Snippet: consumer subscription + poll loop (conceptual Java)\n```java\n// Pseudo-Kafka consumer — interview: \"poll is the heartbeat + fetch driver\"\nProperties p = new Properties();\np.put(\"bootstrap.servers\", \"kafka:9092\");\np.put(\"group.id\", \"orders-consumers\");\np.put(\"key.deserializer\", \"org.apache.kafka.common.serialization.StringDeserializer\");\np.put(\"value.deserializer\", \"org.apache.kafka.common.serialization.StringDeserializer\");\n// max.poll.interval.ms must exceed your per-batch processing time\nKafkaConsumer<String, String> c = new KafkaConsumer<>(p);\nc.subscribe(List.of(\"orders\"));\nwhile (true) {\n  ConsumerRecords<String, String> records = c.poll(Duration.ofMillis(500));\n  for (ConsumerRecord<String, String> r : records) {\n    process(r); // if this is too slow → rebalance risk\n  }\n}\n```\n\n## Failure mode cheat sheet\n- **Rebalance loop**: processing > **max.poll.interval** → member removed → replay/duplicates.\n- **Zombie consumer**: old member still processing after reassignment → duplicate side effects without idempotency.",
+          "codeTemplate": "// Day 59 — Kafka consumer sketch (fill TODOs for interview discussion)\nimport java.util.*;\n\npublic class Day59Assignment {\n  public static void main(String[] args) {\n    // TODO: name three consumer configs you tune when you see rebalance storms\n    // TODO: what metric proves a partition is \"hot\"?\n    System.out.println(\"configs: max.poll.interval.ms, session.timeout.ms, fetch.max.wait.ms\");\n    System.out.println(\"metric: consumer-lag per partition + rebalance rate\");\n  }\n}",
+          "expectedOutput": "configs: max.poll.interval.ms, session.timeout.ms, fetch.max.wait.ms\nmetric: consumer-lag per partition + rebalance rate",
+          "points": 30
+        },
+        {
+          "id": "d59q5",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Kafka Architecture Follow-up Case",
+          "question": "Your first fix for **Kafka Architecture** improved latency but increased duplicate processing risk. How do you redesign for resilience without sacrificing throughput?\n\nContext: Partition assignment with consumer crash behavior.",
+          "hints": [
+            "Name one non-obvious side effect of your first solution.",
+            "Separate short-term mitigation from long-term architecture change.",
+            "Include one rollback or guardrail."
+          ],
+          "solution": "## The tension\nYou reduced fetch wait or batch size → lower latency, but consumers **commit** more often or **process smaller batches** → higher duplicate probability on crash + more broker round trips.\n\n## Redesign (interview answer)\n1. **Idempotent sink**: primary key / dedupe table / outbox with **event id**.\n2. **Processing + commit contract**: commit **after** idempotent apply, or use **transactions** where justified.\n3. **Isolate slow poison messages** to **DLQ** so they do not stall the partition.\n\n## Concrete failure mode\n**At-least-once + non-idempotent insert** → duplicate rows after rebalance replay.\n\n## Guardrail\nAlert on **DLQ depth** + **duplicate-key violations** (should be near zero with idempotency).",
+          "points": 10
+        },
+        {
+          "id": "d59q6",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Kafka Architecture Rapid-Fire Concepts",
+          "question": "Define these quickly for **Kafka Architecture** and give one line each: ordering guarantees, idempotency, offset/ack semantics, and replay strategy.",
+          "hints": [
+            "Keep each definition short and exact.",
+            "Use terms interviewers expect (not vague paraphrases).",
+            "End with one concrete anti-pattern."
+          ],
+          "solution": "## One-liners (Kafka architecture)\n- **Ordering**: per-partition **total order**; across partitions **no global order** without extra design.\n- **Idempotency**: producer **idempotence** + broker dedupe window; consumer must still be **business-idempotent**.\n- **Offset/ack**: offset is **consumer progress**; committing offset acknowledges progress (strategy: auto vs manual sync/async).\n- **Replay**: reset offsets or restore from compacted topic / rebuild projection — trade **cost** vs **correctness**.\n\n## Anti-pattern\nTreating **commit** as \"message deleted\" like a queue — you will mis-design error handling and replay.",
+          "points": 10
+        }
+      ]
+    },
+    "60": {
+      "type": "assignment",
+      "title": "Day 60 Assignment: Kafka Producers Deep Dive",
+      "description": "Practice kafka producers deep dive with incident-style messaging scenarios, reliability trade-offs, and code-focused interview drills.",
+      "totalPoints": 100,
+      "questions": [
+        {
+          "id": "d60q1",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Kafka Producers Deep Dive: Explain It Like an Interviewer",
+          "question": "A panel asks you to explain **Kafka Producers Deep Dive** without buzzwords. Give a clean explanation, one concrete production example, and one thing people usually get wrong.",
+          "hints": [
+            "Define the core terms in Kafka Producers Deep Dive before giving examples.",
+            "Contrast a correct approach with a common but flawed approach.",
+            "Mention one runtime, scaling, or maintainability impact."
+          ],
+          "solution": "## Plain explanation\nA **Kafka producer** batches records, compresses optionally, and sends to the **leader** partition broker. **acks** controls durability acknowledgement; **retries** handle transient failures; **idempotence** reduces duplicates during retries.\n\n## Production example\nHigh-throughput ingestion: tune **linger.ms** and **batch.size** to trade latency for throughput; watch **buffer-exhaustion** if the broker is slow.\n\n## Common mistake\n\"acks=all is always best\" — it is **safer** but adds **latency** and can amplify tail latency during broker issues.\n\n## Failure mode\n**Infinite retries** on non-transient errors → **retry storm** amplifying an outage.",
+          "points": 15
+        },
+        {
+          "id": "d60q2",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Kafka Producers Deep Dive Trade-offs Under Pressure",
+          "question": "You have two messaging approaches for **Kafka Producers Deep Dive**. Compare them for reliability, replay behavior, and failure recovery during an incident.",
+          "hints": [
+            "Compare behavior for normal case and failure case.",
+            "Discuss complexity and maintenance cost, not only speed.",
+            "Tie decision to team context and production constraints."
+          ],
+          "solution": "## Compare: throughput-first vs durability-first\n| | Throughput-first | Durability-first |\n|--|--|--|\n| acks | often `1` or tuned | `all` |\n| latency | lower | higher |\n| risk | more data loss window on crash | fewer acknowledged writes lost |\n\n## Replay / recovery\nIdempotent producer helps **retry duplicates** at the protocol level; you still need **business keys** for consumer-side duplicates.\n\n## Interview pivot\nMention **min.insync.replicas** with **acks=all** — without ISR, you do not get the durability you think you have.",
+          "points": 15
+        },
+        {
+          "id": "d60q3",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Kafka Producers Deep Dive Interview Scenario",
+          "question": "A production incident lands in your queue for **Kafka Producers Deep Dive**: Acks, retries, idempotent producer configuration.\n\nWalk through what you check first, what you would NOT do immediately, and how you prove recovery.",
+          "hints": [
+            "Start with symptoms and blast radius before proposing fixes.",
+            "Explain what you would measure to validate your decision.",
+            "Include rollback/degradation strategy for risky changes."
+          ],
+          "solution": "## Triage order\n1. **Producer metrics**: record-error-rate, request-latency, batch-size, buffer-available-bytes.\n2. **Broker**: under-replicated partitions? controller churn?\n3. **Client logs**: `NOT_LEADER_FOR_PARTITION`, `TIMEOUT`, auth/TLS issues.\n\n## Do NOT immediately\nTurn **retries** to max without **jitter** caps — you can DDOS your own cluster during brownouts.\n\n## Recovery proof\nStable **p99 produce latency**, error rate ~0, and **no growing** `metadata age` / stale leader cache.\n\n## Failure mode\n**Idempotence disabled + aggressive retries** → duplicate events that look like distinct business actions downstream.",
+          "points": 20
+        },
+        {
+          "id": "d60q4",
+          "type": "coding",
+          "difficulty": "Advanced",
+          "title": "Kafka Producers Deep Dive Coding Challenge",
+          "question": "Implement this coding task for **Kafka Producers Deep Dive**:\n\nAcks, retries, idempotent producer configuration.",
+          "hints": [
+            "Start with a minimal correct implementation, then refine naming and edge handling.",
+            "Keep output deterministic and easy to verify.",
+            "For interviews, explain algorithm/architecture choice before code details."
+          ],
+          "solution": "## Snippet: producer settings candidates should know\n```java\nProperties p = new Properties();\np.put(\"bootstrap.servers\", \"kafka:9092\");\np.put(\"acks\", \"all\");                 // durability\np.put(\"enable.idempotence\", \"true\"); // requires acks=all in practice\np.put(\"retries\", Integer.toString(Integer.MAX_VALUE));\np.put(\"delivery.timeout.ms\", \"120000\");\np.put(\"linger.ms\", \"5\");\np.put(\"batch.size\", \"32768\");\nKafkaProducer<String, String> producer = new KafkaProducer<>(p);\n```\n\n## Failure mode: \"acks=all but ISR=1\"\nIf **min.insync.replicas** is not enforced, you can acknowledge while replication is unhealthy — **silent durability loss** risk during broker failure.",
+          "codeTemplate": "// Day 60 — Producer interview snippet\npublic class Day60Assignment {\n  public static void main(String[] args) {\n    // TODO: print the three settings you pair with acks=all for real durability\n    System.out.println(\"acks=all + min.insync.replicas + replication factor\");\n  }\n}",
+          "expectedOutput": "acks=all + min.insync.replicas + replication factor",
+          "points": 30
+        },
+        {
+          "id": "d60q5",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Kafka Producers Deep Dive Follow-up Case",
+          "question": "Your first fix for **Kafka Producers Deep Dive** improved latency but increased duplicate processing risk. How do you redesign for resilience without sacrificing throughput?\n\nContext: Acks, retries, idempotent producer configuration.",
+          "hints": [
+            "Name one non-obvious side effect of your first solution.",
+            "Separate short-term mitigation from long-term architecture change.",
+            "Include one rollback or guardrail."
+          ],
+          "solution": "## What went wrong\nYou lowered **linger** and increased **request rate** → better latency but more **small batches** → higher CPU on brokers and more **duplicate exposure windows** if retries overlap with slow brokers.\n\n## Better approach\n- Keep **idempotence** on; tune **delivery.timeout** vs **request.timeout** deliberately.\n- Use **circuit breaker** on the producing service if brokers are unhealthy (fail fast vs hammer).\n\n## Failure mode\n**Producer buffer full** (`RecordAccumulator`) → publish thread blocks → cascading latency in the service.",
+          "points": 10
+        },
+        {
+          "id": "d60q6",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Kafka Producers Deep Dive Rapid-Fire Concepts",
+          "question": "Define these quickly for **Kafka Producers Deep Dive** and give one line each: ordering guarantees, idempotency, offset/ack semantics, and replay strategy.",
+          "hints": [
+            "Keep each definition short and exact.",
+            "Use terms interviewers expect (not vague paraphrases).",
+            "End with one concrete anti-pattern."
+          ],
+          "solution": "## Ordering / idempotency / offsets / replay (producer angle)\n- **Ordering**: same **key** → same partition → producer ordering preserved unless retries reorder (idempotence fixes Kafka protocol duplicates).\n- **Idempotency**: `enable.idempotence=true` + proper acks; still not EOS end-to-end.\n- **Offsets**: producer does not commit consumer offsets — but **transactions** can write to Kafka + consume offsets atomically in advanced setups.\n- **Replay**: re-read topic — producers do not \"replay\" consumers; fix **downstream dedupe**.\n\n## Anti-pattern\nSetting **retries=0** to \"avoid duplicates\" — you often just **lose** messages on transient failures.",
+          "points": 10
+        }
+      ]
+    },
+    "61": {
+      "type": "assignment",
+      "title": "Day 61 Assignment: Kafka Consumers Deep Dive",
+      "description": "Practice kafka consumers deep dive with incident-style messaging scenarios, reliability trade-offs, and code-focused interview drills.",
+      "totalPoints": 100,
+      "questions": [
+        {
+          "id": "d61q1",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Kafka Consumers Deep Dive: Explain It Like an Interviewer",
+          "question": "A panel asks you to explain **Kafka Consumers Deep Dive** without buzzwords. Give a clean explanation, one concrete production example, and one thing people usually get wrong.",
+          "hints": [
+            "Define the core terms in Kafka Consumers Deep Dive before giving examples.",
+            "Contrast a correct approach with a common but flawed approach.",
+            "Mention one runtime, scaling, or maintainability impact."
+          ],
+          "solution": "## Consumer in plain terms\nConsumers read partitions sequentially via **poll()**. Offsets track progress. A **group** coordinates partition assignment so each partition is consumed by **one** consumer in the group (for typical subscribe API).\n\n## Example\nScale consumers up to partition count for **parallelism**; beyond that, idle consumers.\n\n## Misunderstanding\n\"More consumers always speeds up consumption\" — **false** if partitions are fewer than consumers.\n\n## Failure mode\n**Long GC** or blocking `process()` → **max.poll.interval** exceeded → rebalance.",
+          "points": 15
+        },
+        {
+          "id": "d61q2",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Kafka Consumers Deep Dive Trade-offs Under Pressure",
+          "question": "You have two messaging approaches for **Kafka Consumers Deep Dive**. Compare them for reliability, replay behavior, and failure recovery during an incident.",
+          "hints": [
+            "Compare behavior for normal case and failure case.",
+            "Discuss complexity and maintenance cost, not only speed.",
+            "Tie decision to team context and production constraints."
+          ],
+          "solution": "## Auto commit vs manual commit\n| | Auto | Manual |\n|--|--|--|\n| ease | high | lower |\n| duplicate risk on crash | higher | lower if commit after process |\n| latency | fewer sync commits | explicit control |\n\n## Recovery story\nManual commit pairs with **idempotent** processing: commit only after side effects are durable.\n\n## Failure mode\n**Commit-before-process** → never lose offset but may **skip** messages on crash.",
+          "points": 15
+        },
+        {
+          "id": "d61q3",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Kafka Consumers Deep Dive Interview Scenario",
+          "question": "A production incident lands in your queue for **Kafka Consumers Deep Dive**: Offset commit strategy and rebalance handling.\n\nWalk through what you check first, what you would NOT do immediately, and how you prove recovery.",
+          "hints": [
+            "Start with symptoms and blast radius before proposing fixes.",
+            "Explain what you would measure to validate your decision.",
+            "Include rollback/degradation strategy for risky changes."
+          ],
+          "solution": "## First checks\n1. **Consumer group lag** per partition — hot partition?\n2. **Rebalance reason** in logs (poll timeout vs voluntary join)\n3. **Processing time histogram** inside poll loop\n\n## Avoid\nImmediately increasing **max.poll.interval** without fixing slow handler — you mask poison messages.\n\n## Prove recovery\nLag slope negative for 15–30 min + **no** constant rebalance churn.\n\n## Failure mode\n**Cooperative rebalance** still hurts if one partition stuck on poison message.",
+          "points": 20
+        },
+        {
+          "id": "d61q4",
+          "type": "coding",
+          "difficulty": "Advanced",
+          "title": "Kafka Consumers Deep Dive Coding Challenge",
+          "question": "Implement this coding task for **Kafka Consumers Deep Dive**:\n\nOffset commit strategy and rebalance handling.",
+          "hints": [
+            "Start with a minimal correct implementation, then refine naming and edge handling.",
+            "Keep output deterministic and easy to verify.",
+            "For interviews, explain algorithm/architecture choice before code details."
+          ],
+          "solution": "## Manual commit sketch\n```java\nconsumer.subscribe(List.of(\"orders\"));\nwhile (true) {\n  var records = consumer.poll(Duration.ofMillis(500));\n  for (var r : records) {\n    try {\n      applyIdempotent(r);\n      consumer.commitSync(); // or batch commits\n    } catch (PoisonException e) {\n      sendToDlq(r, e);\n      consumer.commitSync(); // advance past poison with audit\n    }\n  }\n}\n```\n\n## Failure mode\nCommitting every message synchronously under high throughput → **throughput collapse**; batch commits carefully.",
+          "codeTemplate": "public class Day61Assignment {\n  public static void main(String[] args) {\n    // TODO: name offset commit modes and one failure scenario for each\n    System.out.println(\"auto: may commit before process; sync manual: slow; async manual: ordering risks\");\n  }\n}",
+          "expectedOutput": "auto: may commit before process; sync manual: slow; async manual: ordering risks",
+          "points": 30
+        },
+        {
+          "id": "d61q5",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Kafka Consumers Deep Dive Follow-up Case",
+          "question": "Your first fix for **Kafka Consumers Deep Dive** improved latency but increased duplicate processing risk. How do you redesign for resilience without sacrificing throughput?\n\nContext: Offset commit strategy and rebalance handling.",
+          "hints": [
+            "Name one non-obvious side effect of your first solution.",
+            "Separate short-term mitigation from long-term architecture change.",
+            "Include one rollback or guardrail."
+          ],
+          "solution": "## Duplicate risk after your \"fix\"\nIf you increased batching or prefetch, you might process **larger** batches per poll — any crash mid-batch without idempotency duplicates partial work.\n\n## Fix pattern\n- **Batch id** + transactional writes OR\n- **Per-message id** dedupe table\n\n## Failure mode\n**Async commit** callbacks arriving out of order → offset leapfrogging → **skipped** messages.",
+          "points": 10
+        },
+        {
+          "id": "d61q6",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Kafka Consumers Deep Dive Rapid-Fire Concepts",
+          "question": "Define these quickly for **Kafka Consumers Deep Dive** and give one line each: ordering guarantees, idempotency, offset/ack semantics, and replay strategy.",
+          "hints": [
+            "Keep each definition short and exact.",
+            "Use terms interviewers expect (not vague paraphrases).",
+            "End with one concrete anti-pattern."
+          ],
+          "solution": "## Consumer rapid fire\n- **Ordering**: per partition order preserved in one consumer thread model.\n- **Idempotency**: at-least-once delivery implies **retry duplicates** — handle in sink.\n- **Offsets**: committed offset defines restart position — must match business durability.\n- **Replay**: reset offsets / restore compacted topic — reprocess projections idempotently.\n\n## Anti-pattern\nUsing **pause()** forever on error without DLQ — stalls partition forever.",
+          "points": 10
+        }
+      ]
+    },
+    "62": {
+      "type": "assignment",
+      "title": "Day 62 Assignment: Delivery Semantics & EOS",
+      "description": "Practice delivery semantics & eos with incident-style messaging scenarios, reliability trade-offs, and code-focused interview drills.",
+      "totalPoints": 100,
+      "questions": [
+        {
+          "id": "d62q1",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Delivery Semantics & EOS: Explain It Like an Interviewer",
+          "question": "A panel asks you to explain **Delivery Semantics & EOS** without buzzwords. Give a clean explanation, one concrete production example, and one thing people usually get wrong.",
+          "hints": [
+            "Define the core terms in Delivery Semantics & EOS before giving examples.",
+            "Contrast a correct approach with a common but flawed approach.",
+            "Mention one runtime, scaling, or maintainability impact."
+          ],
+          "solution": "## Semantics in practice\n- **At-most-once**: commit early → possible loss.\n- **At-least-once**: commit after processing → duplicates on crash.\n- **Exactly-once**: requires **end-to-end** definition — often **EOS Kafka + transactional writes** plus **idempotent** app.\n\n## Example\nPayment charge: use **idempotency key** + ledger uniqueness — Kafka alone cannot \"EOS\" your DB.\n\n## Misunderstanding\n\"Exactly-once everywhere\" — usually **exactly-once effect** in the business sense via **keys** and **dedupe**.\n\n## Failure mode\n**EOS enabled** but consumer still **double-writes** to DB without transaction boundaries.",
+          "points": 15
+        },
+        {
+          "id": "d62q2",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Delivery Semantics & EOS Trade-offs Under Pressure",
+          "question": "You have two messaging approaches for **Delivery Semantics & EOS**. Compare them for reliability, replay behavior, and failure recovery during an incident.",
+          "hints": [
+            "Compare behavior for normal case and failure case.",
+            "Discuss complexity and maintenance cost, not only speed.",
+            "Tie decision to team context and production constraints."
+          ],
+          "solution": "## Compare EOS vs at-least-once + idempotent sink\nEOS adds broker/client complexity; idempotent sink is often simpler and portable across systems.\n\n## Incident recovery\nEOS reduces some classes of duplicates but **external side effects** (email) still need **outbox** or **compensation**.\n\n## Failure mode\n**Zombie fencing** scenarios when consumers write externally — EOS in Kafka does not fence your Postgres row.",
+          "points": 15
+        },
+        {
+          "id": "d62q3",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Delivery Semantics & EOS Interview Scenario",
+          "question": "A production incident lands in your queue for **Delivery Semantics & EOS**: Exactly-once charge semantics with idempotency.\n\nWalk through what you check first, what you would NOT do immediately, and how you prove recovery.",
+          "hints": [
+            "Start with symptoms and blast radius before proposing fixes.",
+            "Explain what you would measure to validate your decision.",
+            "Include rollback/degradation strategy for risky changes."
+          ],
+          "solution": "## Triage\n1. Duplicate charges? correlate **consumer instance id** + **offset** + **idempotency key** collisions.\n2. Are you using **transactions** correctly (timeout too low)?\n3. External system **timeouts** causing client-side retries?\n\n## Do not\nDisable idempotency to \"stop duplicates\" — you usually increase **data loss** risk.\n\n## Proof\nReconciliation job matches **Kafka offsets processed** == **ledger rows** for time window.",
+          "points": 20
+        },
+        {
+          "id": "d62q4",
+          "type": "coding",
+          "difficulty": "Advanced",
+          "title": "Delivery Semantics & EOS Coding Challenge",
+          "question": "Implement this coding task for **Delivery Semantics & EOS**:\n\nExactly-once charge semantics with idempotency.",
+          "hints": [
+            "Start with a minimal correct implementation, then refine naming and edge handling.",
+            "Keep output deterministic and easy to verify.",
+            "For interviews, explain algorithm/architecture choice before code details."
+          ],
+          "solution": "## Idempotent consumer pattern (interview gold)\n```java\nvoid handle(OrderEvent e) {\n  if (processedEvents.insertIfAbsent(e.getId())) { // unique constraint\n    charge(e);\n  }\n}\n```\n\nPair with **at-least-once** Kafka delivery — duplicates become **harmless**.\n\n## Failure mode\n**Clock skew** + time-based dedupe only → duplicates slip through.",
+          "codeTemplate": "public class Day62Assignment {\n  public static void main(String[] args) {\n    // TODO: print the minimum fields for a consumer dedupe key\n    System.out.println(\"topic+partition+offset OR business eventId (preferred)\");\n  }\n}",
+          "expectedOutput": "topic+partition+offset OR business eventId (preferred)",
+          "points": 30
+        },
+        {
+          "id": "d62q5",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Delivery Semantics & EOS Follow-up Case",
+          "question": "Your first fix for **Delivery Semantics & EOS** improved latency but increased duplicate processing risk. How do you redesign for resilience without sacrificing throughput?\n\nContext: Exactly-once charge semantics with idempotency.",
+          "hints": [
+            "Name one non-obvious side effect of your first solution.",
+            "Separate short-term mitigation from long-term architecture change.",
+            "Include one rollback or guardrail."
+          ],
+          "solution": "## After \"fix\"\nYou reduced duplicates in Kafka but **downstream email** still fires twice — EOS does not cover SMTP.\n\n## Fix\n**Outbox** table in the same DB transaction as state change + async sender.\n\n## Failure mode\n**Two active consumers** during network partition writing same external resource — needs **fencing token** or **single writer** pattern.",
+          "points": 10
+        },
+        {
+          "id": "d62q6",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Delivery Semantics & EOS Rapid-Fire Concepts",
+          "question": "Define these quickly for **Delivery Semantics & EOS** and give one line each: ordering guarantees, idempotency, offset/ack semantics, and replay strategy.",
+          "hints": [
+            "Keep each definition short and exact.",
+            "Use terms interviewers expect (not vague paraphrases).",
+            "End with one concrete anti-pattern."
+          ],
+          "solution": "## Definitions\n- **Ordering**: per key via partition; EOS does not create global order.\n- **Idempotency**: produce **idempotence** + consumer **dedupe**.\n- **Offsets**: consumer offset commits define read progress.\n- **Replay**: rebuild state from log — must be deterministic + idempotent.\n\n## Anti-pattern\nUsing **message timestamp** as sole idempotency key under retries.",
+          "points": 10
+        }
+      ]
+    },
+    "63": {
+      "type": "assignment",
+      "title": "Day 63 Assignment: Kafka Streams",
+      "description": "Practice kafka streams with incident-style messaging scenarios, reliability trade-offs, and code-focused interview drills.",
+      "totalPoints": 100,
+      "questions": [
+        {
+          "id": "d63q1",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Kafka Streams: Explain It Like an Interviewer",
+          "question": "A panel asks you to explain **Kafka Streams** without buzzwords. Give a clean explanation, one concrete production example, and one thing people usually get wrong.",
+          "hints": [
+            "Define the core terms in Kafka Streams before giving examples.",
+            "Contrast a correct approach with a common but flawed approach.",
+            "Mention one runtime, scaling, or maintainability impact."
+          ],
+          "solution": "## Kafka Streams mental model\n**KStream** is an event stream; **KTable** is a changelog table (materialized view). Stateful ops (aggregate, join) use **RocksDB** state stores + changelog topics for fault tolerance.\n\n## Example\n**Windowed word count** for 1-minute tumbling windows for abuse detection.\n\n## Misunderstanding\n\"Streams removes operational complexity\" — you still operate **state size**, **rebalancing**, and **disk** on app nodes.\n\n## Failure mode\n**Rebalance** during heavy state restore → long downtime for that task.",
+          "points": 15
+        },
+        {
+          "id": "d63q2",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Kafka Streams Trade-offs Under Pressure",
+          "question": "You have two messaging approaches for **Kafka Streams**. Compare them for reliability, replay behavior, and failure recovery during an incident.",
+          "hints": [
+            "Compare behavior for normal case and failure case.",
+            "Discuss complexity and maintenance cost, not only speed.",
+            "Tie decision to team context and production constraints."
+          ],
+          "solution": "## Streams DSL vs Processor API\nDSL faster to write; Processor API for custom timing/control.\n\n## Recovery\nState stores restore from changelog — **restore time** is your incident variable.\n\n## Failure mode\n**Aggressive compaction** misconfigured → state rebuild pulls huge history.",
+          "points": 15
+        },
+        {
+          "id": "d63q3",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Kafka Streams Interview Scenario",
+          "question": "A production incident lands in your queue for **Kafka Streams**: Word count per 1-minute window topology.\n\nWalk through what you check first, what you would NOT do immediately, and how you prove recovery.",
+          "hints": [
+            "Start with symptoms and blast radius before proposing fixes.",
+            "Explain what you would measure to validate your decision.",
+            "Include rollback/degradation strategy for risky changes."
+          ],
+          "solution": "## First checks\n1. **Restore rate** / **rocksdb** disk usage\n2. **Rebalance storm** (long GC pauses in stream threads)\n3. **Input topic** lag vs **punctuate** timers\n\n## Avoid\nImmediately scaling pods without understanding **state assignment** — can increase churn.\n\n## Proof\nStable **processed-rate** and **zero** under-replicated internal changelog topics.",
+          "points": 20
+        },
+        {
+          "id": "d63q4",
+          "type": "coding",
+          "difficulty": "Advanced",
+          "title": "Kafka Streams Coding Challenge",
+          "question": "Implement this coding task for **Kafka Streams**:\n\nWord count per 1-minute window topology.",
+          "hints": [
+            "Start with a minimal correct implementation, then refine naming and edge handling.",
+            "Keep output deterministic and easy to verify.",
+            "For interviews, explain algorithm/architecture choice before code details."
+          ],
+          "solution": "## Topology sketch (interview)\n```java\nStreamsBuilder b = new StreamsBuilder();\nKStream<String, String> text = b.stream(\"lines\");\ntext.flatMapValues(v -> Arrays.asList(v.toLowerCase().split(\"\\\\W+\")))\n    .groupBy((k, word) -> word)\n    .windowedBy(TimeWindows.ofSizeWithNoGrace(Duration.ofMinutes(1)))\n    .count(Materialized.as(\"counts-store\"));\n```\n\n## Failure mode\n**Late data** after grace period dropped — business surprise if you did not document **allowed lateness**.",
+          "codeTemplate": "public class Day63Assignment {\n  public static void main(String[] args) {\n    // TODO: name two stateful operations that explode disk if key space is huge\n    System.out.println(\"aggregate, join (materialized state + changelog)\");\n  }\n}",
+          "expectedOutput": "aggregate, join (materialized state + changelog)",
+          "points": 30
+        },
+        {
+          "id": "d63q5",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Kafka Streams Follow-up Case",
+          "question": "Your first fix for **Kafka Streams** improved latency but increased duplicate processing risk. How do you redesign for resilience without sacrificing throughput?\n\nContext: Word count per 1-minute window topology.",
+          "hints": [
+            "Name one non-obvious side effect of your first solution.",
+            "Separate short-term mitigation from long-term architecture change.",
+            "Include one rollback or guardrail."
+          ],
+          "solution": "## Second-order issue\nWindowed count looks right but **repartition topic** exploded traffic due to bad key — cost + lag.\n\n## Fix\nPre-filter / map to **coarser key**; increase partitions only with evidence.\n\n## Failure mode\n**Changelog retention** too short → cannot rebuild state after long downtime.",
+          "points": 10
+        },
+        {
+          "id": "d63q6",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Kafka Streams Rapid-Fire Concepts",
+          "question": "Define these quickly for **Kafka Streams** and give one line each: ordering guarantees, idempotency, offset/ack semantics, and replay strategy.",
+          "hints": [
+            "Keep each definition short and exact.",
+            "Use terms interviewers expect (not vague paraphrases).",
+            "End with one concrete anti-pattern."
+          ],
+          "solution": "## Streams rapid fire\n- **Ordering**: per partition in source topics; joins add **co-partitioning** requirements.\n- **Idempotency**: processing is deterministic; failures replay changelog — still need **exactly-once** config for cross-topic EOS if used.\n- **Offsets**: internal **consumer** offsets for changelog consumption.\n- **Replay**: reset application + rebuild state from changelog.\n\n## Anti-pattern\nJoining topics with **different partition counts** without repartitioning.",
+          "points": 10
+        }
+      ]
+    },
+    "64": {
+      "type": "assignment",
+      "title": "Day 64 Assignment: Schema Registry & Kafka Connect",
+      "description": "Practice schema registry & kafka connect with incident-style messaging scenarios, reliability trade-offs, and code-focused interview drills.",
+      "totalPoints": 100,
+      "questions": [
+        {
+          "id": "d64q1",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Schema Registry & Kafka Connect: Explain It Like an Interviewer",
+          "question": "A panel asks you to explain **Schema Registry & Kafka Connect** without buzzwords. Give a clean explanation, one concrete production example, and one thing people usually get wrong.",
+          "hints": [
+            "Define the core terms in Schema Registry & Kafka Connect before giving examples.",
+            "Contrast a correct approach with a common but flawed approach.",
+            "Mention one runtime, scaling, or maintainability impact."
+          ],
+          "solution": "## Schema Registry role\nCentralizes **Avro/JSON/Protobuf** schemas with **versioning** so producers and consumers evolve safely.\n\n## Example\nAdd optional field with **BACKWARD** compatibility for consumers that can read older payloads.\n\n## Misunderstanding\n\"Registry prevents bad data\" — it prevents **incompatible** schema changes; **business validation** is still yours.\n\n## Failure mode\n**Breaking change** deployed → deserialization failures across services.",
+          "points": 15
+        },
+        {
+          "id": "d64q2",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Schema Registry & Kafka Connect Trade-offs Under Pressure",
+          "question": "You have two messaging approaches for **Schema Registry & Kafka Connect**. Compare them for reliability, replay behavior, and failure recovery during an incident.",
+          "hints": [
+            "Compare behavior for normal case and failure case.",
+            "Discuss complexity and maintenance cost, not only speed.",
+            "Tie decision to team context and production constraints."
+          ],
+          "solution": "## BACKWARD vs FORWARD vs FULL\n- **Backward**: new schema, old readers (common rolling deploy)\n- **Forward**: old schema, new readers (less common)\n- **Full**: both directions\n\n## Recovery\nUse **schema id** embedded in wire format (Confluent wire format) to pin exact writer schema.\n\n## Failure mode\n**Multiple schema versions** in one topic without compatibility discipline → consumer hell.",
+          "points": 15
+        },
+        {
+          "id": "d64q3",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Schema Registry & Kafka Connect Interview Scenario",
+          "question": "A production incident lands in your queue for **Schema Registry & Kafka Connect**: Schema evolution and compatibility modes.\n\nWalk through what you check first, what you would NOT do immediately, and how you prove recovery.",
+          "hints": [
+            "Start with symptoms and blast radius before proposing fixes.",
+            "Explain what you would measure to validate your decision.",
+            "Include rollback/degradation strategy for risky changes."
+          ],
+          "solution": "## Triage\n1. **Deserialization errors** metric + dead letters\n2. **Connector task** failures (auth, network, DB)\n3. **Schema compatibility** check failures in CI\n\n## Do not\nDelete old schema versions that still exist in Kafka retention.\n\n## Proof\nConnector **lag** decreasing + **error tuples** ~0.\n\n## Failure mode\n**Auto-register** in prod allows accidental incompatible schemas.",
+          "points": 20
+        },
+        {
+          "id": "d64q4",
+          "type": "coding",
+          "difficulty": "Advanced",
+          "title": "Schema Registry & Kafka Connect Coding Challenge",
+          "question": "Implement this coding task for **Schema Registry & Kafka Connect**:\n\nSchema evolution and compatibility modes.",
+          "hints": [
+            "Start with a minimal correct implementation, then refine naming and edge handling.",
+            "Keep output deterministic and easy to verify.",
+            "For interviews, explain algorithm/architecture choice before code details."
+          ],
+          "solution": "## Connect sink snippet (conceptual)\n```json\n{\n  \"connector.class\": \"io.confluent.connect.jdbc.JdbcSinkConnector\",\n  \"topics\": \"orders\",\n  \"connection.url\": \"jdbc:postgresql://db/orders\",\n  \"auto.create\": \"true\",\n  \"pk.mode\": \"record_key\",\n  \"insert.mode\": \"upsert\"\n}\n```\n\n## Failure mode\n**At-least-once sink** without primary keys → duplicate rows in DB.",
+          "codeTemplate": "public class Day64Assignment {\n  public static void main(String[] args) {\n    // TODO: print one reason Connect tasks restart in a loop\n    System.out.println(\"DB auth failure, schema mismatch, or deserialization error\");\n  }\n}",
+          "expectedOutput": "DB auth failure, schema mismatch, or deserialization error",
+          "points": 30
+        },
+        {
+          "id": "d64q5",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Schema Registry & Kafka Connect Follow-up Case",
+          "question": "Your first fix for **Schema Registry & Kafka Connect** improved latency but increased duplicate processing risk. How do you redesign for resilience without sacrificing throughput?\n\nContext: Schema evolution and compatibility modes.",
+          "hints": [
+            "Name one non-obvious side effect of your first solution.",
+            "Separate short-term mitigation from long-term architecture change.",
+            "Include one rollback or guardrail."
+          ],
+          "solution": "## After schema fix\nThroughput improved but **DB upsert** contention spiked — connector can outpace DB.\n\n## Fix\nThrottle **tasks**, batch settings, or scale DB / partition input.\n\n## Failure mode\n**Single-threaded** sink task hotspot on huge partition.",
+          "points": 10
+        },
+        {
+          "id": "d64q6",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Schema Registry & Kafka Connect Rapid-Fire Concepts",
+          "question": "Define these quickly for **Schema Registry & Kafka Connect** and give one line each: ordering guarantees, idempotency, offset/ack semantics, and replay strategy.",
+          "hints": [
+            "Keep each definition short and exact.",
+            "Use terms interviewers expect (not vague paraphrases).",
+            "End with one concrete anti-pattern."
+          ],
+          "solution": "## Registry rapid fire\n- **Ordering**: not a schema concern — but evolution must not break readers.\n- **Idempotency**: upsert keys in sink; dedupe on business id.\n- **Offsets**: Connect tracks offsets in **internal topic**.\n- **Replay**: reset connector offsets — dangerous without idempotent sink.\n\n## Anti-pattern\nSharing one **global** schema subject for unrelated events.",
+          "points": 10
+        }
+      ]
+    },
+    "65": {
+      "type": "assignment",
+      "title": "Day 65 Assignment: Spring Kafka",
+      "description": "Practice spring kafka with incident-style messaging scenarios, reliability trade-offs, and code-focused interview drills.",
+      "totalPoints": 100,
+      "questions": [
+        {
+          "id": "d65q1",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Spring Kafka: Explain It Like an Interviewer",
+          "question": "A panel asks you to explain **Spring Kafka** without buzzwords. Give a clean explanation, one concrete production example, and one thing people usually get wrong.",
+          "hints": [
+            "Define the core terms in Spring Kafka before giving examples.",
+            "Contrast a correct approach with a common but flawed approach.",
+            "Mention one runtime, scaling, or maintainability impact."
+          ],
+          "solution": "## Spring Kafka at a glance\n`@KafkaListener` runs consumer loop in managed threads; `KafkaTemplate` sends messages with transaction support optional. Error handlers decide **retry vs DLQ**.\n\n## Example\nManual ack with `Acknowledgment` interface for **at-least-once** with your DB transaction.\n\n## Misunderstanding\n\"Spring hides Kafka\" — you still must tune **concurrency**, **poll**, and **commit**.\n\n## Failure mode\n**Default concurrency** too low → one thread processes all partitions sequentially in some configs.",
+          "points": 15
+        },
+        {
+          "id": "d65q2",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Spring Kafka Trade-offs Under Pressure",
+          "question": "You have two messaging approaches for **Spring Kafka**. Compare them for reliability, replay behavior, and failure recovery during an incident.",
+          "hints": [
+            "Compare behavior for normal case and failure case.",
+            "Discuss complexity and maintenance cost, not only speed.",
+            "Tie decision to team context and production constraints."
+          ],
+          "solution": "## @KafkaListener vs reactive KafkaReceiver\nBlocking listener simpler; reactive for pipeline backpressure — but complexity rises.\n\n## Recovery\nUse **SeekToCurrentErrorHandler** / custom **ErrorHandlingDeserializer** patterns consciously.\n\n## Failure mode\n**Serialization exception** poison pill retries forever without DLQ.",
+          "points": 15
+        },
+        {
+          "id": "d65q3",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Spring Kafka Interview Scenario",
+          "question": "A production incident lands in your queue for **Spring Kafka**: @KafkaListener with manual commit and error handler.\n\nWalk through what you check first, what you would NOT do immediately, and how you prove recovery.",
+          "hints": [
+            "Start with symptoms and blast radius before proposing fixes.",
+            "Explain what you would measure to validate your decision.",
+            "Include rollback/degradation strategy for risky changes."
+          ],
+          "solution": "## First checks\n1. **Listener container** logs: commit failures?\n2. **Retry topic** / DLQ accumulation\n3. **Thread pool** saturation in @KafkaListener method\n\n## Avoid\nCatching **Throwable** and swallowing — hides poison messages.\n\n## Proof\nStable **processing rate**, DLQ near zero, **lag** down.\n\n## Failure mode\n**Transactional listener** + slow DB → producer send blocked → poll starvation.",
+          "points": 20
+        },
+        {
+          "id": "d65q4",
+          "type": "coding",
+          "difficulty": "Advanced",
+          "title": "Spring Kafka Coding Challenge",
+          "question": "Implement this coding task for **Spring Kafka**:\n\n@KafkaListener with manual commit and error handler.",
+          "hints": [
+            "Start with a minimal correct implementation, then refine naming and edge handling.",
+            "Keep output deterministic and easy to verify.",
+            "For interviews, explain algorithm/architecture choice before code details."
+          ],
+          "solution": "## Manual ack listener (interview)\n```java\n@KafkaListener(topics = \"orders\", groupId = \"spring-group\")\npublic void onMessage(ConsumerRecord<String, String> r, Acknowledgment ack) {\n  try {\n    service.apply(r.value());\n    ack.acknowledge();\n  } catch (TransientException e) {\n    // retry policy / backoff — do not ack yet\n  }\n}\n```\n\n## Failure mode\nAcking before DB commit → message loss on process crash.",
+          "codeTemplate": "public class Day65Assignment {\n  public static void main(String[] args) {\n    // TODO: print the pair: listener concurrency vs topic partitions\n    System.out.println(\"concurrency should relate to partitions, not infinite threads\");\n  }\n}",
+          "expectedOutput": "concurrency should relate to partitions, not infinite threads",
+          "points": 30
+        },
+        {
+          "id": "d65q5",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Spring Kafka Follow-up Case",
+          "question": "Your first fix for **Spring Kafka** improved latency but increased duplicate processing risk. How do you redesign for resilience without sacrificing throughput?\n\nContext: @KafkaListener with manual commit and error handler.",
+          "hints": [
+            "Name one non-obvious side effect of your first solution.",
+            "Separate short-term mitigation from long-term architecture change.",
+            "Include one rollback or guardrail."
+          ],
+          "solution": "## After tuning concurrency\nYou improved throughput but hit **ordering** issues for same key processed by multiple threads.\n\n## Fix\n**Single-threaded** listener per partition OR **partition-aware** routing to ordered workers.\n\n## Failure mode\n**Out-of-order DB updates** for same aggregate.",
+          "points": 10
+        },
+        {
+          "id": "d65q6",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Spring Kafka Rapid-Fire Concepts",
+          "question": "Define these quickly for **Spring Kafka** and give one line each: ordering guarantees, idempotency, offset/ack semantics, and replay strategy.",
+          "hints": [
+            "Keep each definition short and exact.",
+            "Use terms interviewers expect (not vague paraphrases).",
+            "End with one concrete anti-pattern."
+          ],
+          "solution": "## Spring Kafka rapid fire\n- **Ordering**: per partition order preserved in single-threaded processing.\n- **Idempotency**: still required — Spring does not dedupe business logic.\n- **Offsets**: ack drives committed offset when using manual ack.\n- **Replay**: seek APIs in container — operational, dangerous without guards.\n\n## Anti-pattern\nThrowing from listener without error handler → poison retry loop.",
+          "points": 10
+        }
+      ]
+    },
+    "66": {
+      "type": "assignment",
+      "title": "Day 66 Assignment: RabbitMQ & AWS Messaging",
+      "description": "Practice rabbitmq & aws messaging with incident-style messaging scenarios, reliability trade-offs, and code-focused interview drills.",
+      "totalPoints": 100,
+      "questions": [
+        {
+          "id": "d66q1",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "RabbitMQ & AWS Messaging: Explain It Like an Interviewer",
+          "question": "A panel asks you to explain **RabbitMQ & AWS Messaging** without buzzwords. Give a clean explanation, one concrete production example, and one thing people usually get wrong.",
+          "hints": [
+            "Define the core terms in RabbitMQ & AWS Messaging before giving examples.",
+            "Contrast a correct approach with a common but flawed approach.",
+            "Mention one runtime, scaling, or maintainability impact."
+          ],
+          "solution": "## Rabbit vs Kafka (interview)\n**RabbitMQ**: flexible routing (exchanges), push-oriented consumers, per-message ack, great for **task queues**.\n**Kafka**: durable log, replay, high throughput streaming, consumer groups.\n\n## Example\n**Order tasks** on Rabbit with priority queues; **analytics events** on Kafka.\n\n## Misunderstanding\n\"Kafka replaces Rabbit\" — often they solve different messaging UX problems.\n\n## Failure mode\n**Kafka consumer** used for RPC-style request/response without timeouts → operational pain.",
+          "points": 15
+        },
+        {
+          "id": "d66q2",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "RabbitMQ & AWS Messaging Trade-offs Under Pressure",
+          "question": "You have two messaging approaches for **RabbitMQ & AWS Messaging**. Compare them for reliability, replay behavior, and failure recovery during an incident.",
+          "hints": [
+            "Compare behavior for normal case and failure case.",
+            "Discuss complexity and maintenance cost, not only speed.",
+            "Tie decision to team context and production constraints."
+          ],
+          "solution": "## SNS/SQS vs Kafka\nSQS: managed queue, at-least-once, simple ops; limited ordering (FIFO constraints). Kafka: log-centric streaming.\n\n## Recovery\nSQS visibility timeout tuning is your **rebalance analog** — poison messages rotate visibility.\n\n## Failure mode\n**FIFO throughput** limited without partition strategy.",
+          "points": 15
+        },
+        {
+          "id": "d66q3",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "RabbitMQ & AWS Messaging Interview Scenario",
+          "question": "A production incident lands in your queue for **RabbitMQ & AWS Messaging**: SNS/SQS vs RabbitMQ vs Kafka selection.\n\nWalk through what you check first, what you would NOT do immediately, and how you prove recovery.",
+          "hints": [
+            "Start with symptoms and blast radius before proposing fixes.",
+            "Explain what you would measure to validate your decision.",
+            "Include rollback/degradation strategy for risky changes."
+          ],
+          "solution": "## Triage\n1. **Redeliveries** / poison messages\n2. **Broker memory** watermarks (Rabbit)\n3. **SQS approximate age of oldest message**\n\n## Avoid\nBlindly increasing **prefetch** without consumer capacity.\n\n## Proof\nQueue depth stable near 0 under steady load.\n\n## Failure mode\n**Unacked** messages pile up → memory pressure on Rabbit.",
+          "points": 20
+        },
+        {
+          "id": "d66q4",
+          "type": "coding",
+          "difficulty": "Advanced",
+          "title": "RabbitMQ & AWS Messaging Coding Challenge",
+          "question": "Implement this coding task for **RabbitMQ & AWS Messaging**:\n\nSNS/SQS vs RabbitMQ vs Kafka selection.",
+          "hints": [
+            "Start with a minimal correct implementation, then refine naming and edge handling.",
+            "Keep output deterministic and easy to verify.",
+            "For interviews, explain algorithm/architecture choice before code details."
+          ],
+          "solution": "## SQS long polling sketch (pseudo)\n```java\nReceiveMessageRequest req = new ReceiveMessageRequest()\n  .withQueueUrl(queueUrl)\n  .withWaitTimeSeconds(20)\n  .withMaxNumberOfMessages(10);\n```\n\n## Failure mode\n**Short polling** hot loop → AWS bill + CPU burn.",
+          "codeTemplate": "public class Day66Assignment {\n  public static void main(String[] args) {\n    // TODO: when pick SQS vs Kafka in one line each\n    System.out.println(\"SQS: managed queue/task; Kafka: log streaming/replay\");\n  }\n}",
+          "expectedOutput": "SQS: managed queue/task; Kafka: log streaming/replay",
+          "points": 30
+        },
+        {
+          "id": "d66q5",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "RabbitMQ & AWS Messaging Follow-up Case",
+          "question": "Your first fix for **RabbitMQ & AWS Messaging** improved latency but increased duplicate processing risk. How do you redesign for resilience without sacrificing throughput?\n\nContext: SNS/SQS vs RabbitMQ vs Kafka selection.",
+          "hints": [
+            "Name one non-obvious side effect of your first solution.",
+            "Separate short-term mitigation from long-term architecture change.",
+            "Include one rollback or guardrail."
+          ],
+          "solution": "## Cross-cloud complexity\nYou unified on one bus but **latency SLO** regressed due to cross-region links.\n\n## Fix\nRegion-local topics + **aggregation**; avoid chatty cross-region RPC.\n\n## Failure mode\n**Duplicate processing** when bridging systems without idempotency keys.",
+          "points": 10
+        },
+        {
+          "id": "d66q6",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "RabbitMQ & AWS Messaging Rapid-Fire Concepts",
+          "question": "Define these quickly for **RabbitMQ & AWS Messaging** and give one line each: ordering guarantees, idempotency, offset/ack semantics, and replay strategy.",
+          "hints": [
+            "Keep each definition short and exact.",
+            "Use terms interviewers expect (not vague paraphrases).",
+            "End with one concrete anti-pattern."
+          ],
+          "solution": "## Rapid fire\n- **Ordering**: FIFO queues / Kafka partitions — different guarantees.\n- **Idempotency**: visibility timeout extensions vs Kafka retries — both need idempotent handlers.\n- **Offsets**: SQS **receipt handle**; Kafka offsets — different operational playbooks.\n- **Replay**: Kafka native; SQS replay via **redrive** / new copies.\n\n## Anti-pattern\nUsing SQS as an **infinite** event store.",
+          "points": 10
+        }
+      ]
+    },
+    "67": {
+      "type": "assignment",
+      "title": "Day 67 Assignment: Distributed Systems Theory",
+      "description": "Practice distributed systems theory with incident-style messaging scenarios, reliability trade-offs, and code-focused interview drills.",
+      "totalPoints": 100,
+      "questions": [
+        {
+          "id": "d67q1",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Distributed Systems Theory: Explain It Like an Interviewer",
+          "question": "A panel asks you to explain **Distributed Systems Theory** without buzzwords. Give a clean explanation, one concrete production example, and one thing people usually get wrong.",
+          "hints": [
+            "Define the core terms in Distributed Systems Theory before giving examples.",
+            "Contrast a correct approach with a common but flawed approach.",
+            "Mention one runtime, scaling, or maintainability impact."
+          ],
+          "solution": "## CAP in one breath\nIn a **partition**, you must choose between **consistency** and **availability** for reads/writes; **partition tolerance** is mandatory in distributed systems.\n\n## Example\n**Cassandra** availability-oriented tunable consistency; **HBase** CP-oriented with Hadoop dependencies.\n\n## Misunderstanding\n\"CA systems exist\" — in practice networks fail; you always plan for **P**.\n\n## Failure mode\n**Split-brain writes** when two sides both accept writes.",
+          "points": 15
+        },
+        {
+          "id": "d67q2",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Distributed Systems Theory Trade-offs Under Pressure",
+          "question": "You have two messaging approaches for **Distributed Systems Theory**. Compare them for reliability, replay behavior, and failure recovery during an incident.",
+          "hints": [
+            "Compare behavior for normal case and failure case.",
+            "Discuss complexity and maintenance cost, not only speed.",
+            "Tie decision to team context and production constraints."
+          ],
+          "solution": "## Strong consistency vs eventual\nStrong: simpler mental model, harder availability under partitions. Eventual: better uptime, harder app invariants.\n\n## Recovery\nUse **version vectors**, **CRDTs**, or **leader election** consciously.\n\n## Failure mode\n**Last-write-wins** without causal context loses data silently.",
+          "points": 15
+        },
+        {
+          "id": "d67q3",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Distributed Systems Theory Interview Scenario",
+          "question": "A production incident lands in your queue for **Distributed Systems Theory**: CAP theorem trade-offs with examples.\n\nWalk through what you check first, what you would NOT do immediately, and how you prove recovery.",
+          "hints": [
+            "Start with symptoms and blast radius before proposing fixes.",
+            "Explain what you would measure to validate your decision.",
+            "Include rollback/degradation strategy for risky changes."
+          ],
+          "solution": "## Triage\n1. **Split-brain symptoms**: divergent counters in two regions\n2. **Clock skew** breaking ordering assumptions\n3. **Quorum** loss in consensus systems\n\n## Avoid\nTurning off safety checks to \"restore availability\" without understanding **durability** trade-offs.\n\n## Proof\n**Linearizable test** harness or business reconciliation passes.\n\n## Failure mode\n**Dual writes** to two stores without saga/outbox.",
+          "points": 20
+        },
+        {
+          "id": "d67q4",
+          "type": "coding",
+          "difficulty": "Advanced",
+          "title": "Distributed Systems Theory Coding Challenge",
+          "question": "Implement this coding task for **Distributed Systems Theory**:\n\nCAP theorem trade-offs with examples.",
+          "hints": [
+            "Start with a minimal correct implementation, then refine naming and edge handling.",
+            "Keep output deterministic and easy to verify.",
+            "For interviews, explain algorithm/architecture choice before code details."
+          ],
+          "solution": "## Interview snippet: explicit version conflict handling\n```java\nvoid save(Order o) {\n  int rows = jdbc.update(\n    \"UPDATE orders SET state=?, version=version+1 WHERE id=? AND version=?\",\n    o.state(), o.id(), o.version());\n  if (rows == 0) throw new OptimisticLockException();\n}\n```\n\n## Failure mode\nRetry storm on optimistic conflicts without backoff.",
+          "codeTemplate": "public class Day67Assignment {\n  public static void main(String[] args) {\n    // TODO: print CAP: during partition, tradeoff between which two?\n    System.out.println(\"Consistency vs Availability (Partition tolerance assumed)\");\n  }\n}",
+          "expectedOutput": "Consistency vs Availability (Partition tolerance assumed)",
+          "points": 30
+        },
+        {
+          "id": "d67q5",
+          "type": "scenario",
+          "difficulty": "Advanced",
+          "title": "Distributed Systems Theory Follow-up Case",
+          "question": "Your first fix for **Distributed Systems Theory** improved latency but increased duplicate processing risk. How do you redesign for resilience without sacrificing throughput?\n\nContext: CAP theorem trade-offs with examples.",
+          "hints": [
+            "Name one non-obvious side effect of your first solution.",
+            "Separate short-term mitigation from long-term architecture change.",
+            "Include one rollback or guardrail."
+          ],
+          "solution": "## After \"high availability\"\nYou routed writes to both DCs for speed — now **inconsistent** reads across users.\n\n## Fix\nChoose **active-passive** for writer, **async replication** with clear staleness SLAs, or **CRDT** for specific domains.\n\n## Failure mode\n**Read-your-writes** violated for session-sensitive flows.",
+          "points": 10
+        },
+        {
+          "id": "d67q6",
+          "type": "conceptual",
+          "difficulty": "Advanced",
+          "title": "Distributed Systems Theory Rapid-Fire Concepts",
+          "question": "Define these quickly for **Distributed Systems Theory** and give one line each: ordering guarantees, idempotency, offset/ack semantics, and replay strategy.",
+          "hints": [
+            "Keep each definition short and exact.",
+            "Use terms interviewers expect (not vague paraphrases).",
+            "End with one concrete anti-pattern."
+          ],
+          "solution": "## Rapid fire\n- **Ordering**: causal ordering needs clocks + careful design; not automatic in distributed systems.\n- **Idempotency**: mandatory for retries across partitions.\n- **Offsets**: not universal — Kafka-specific; distributed systems use **vector clocks**, **Lamport**, etc.\n- **Replay**: event log rebuild — requires deterministic processing.\n\n## Anti-pattern\nAssuming **DB transactions** span microservices without distributed protocol.",
+          "points": 10
+        }
+      ]
+    }
+  }
+}
