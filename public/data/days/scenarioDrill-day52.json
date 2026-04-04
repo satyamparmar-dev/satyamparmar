@@ -3,56 +3,225 @@
   "title": "Service Discovery & API Gateway",
   "phaseId": "phase6",
   "tags": [
+    "service discovery",
+    "API gateway",
+    "load balancing",
+    "health checks",
+    "Spring Cloud Gateway",
+    "Kubernetes Service",
     "Eureka",
-    "gateway",
-    "health"
+    "Consul",
+    "mTLS",
+    "client-side discovery"
   ],
   "scenarios": [
     {
       "id": "d52-s1",
-      "question": "Client-side discovery vs gateway—pros/cons?",
+      "question": "Code review: a junior registers every pod IP directly in a public **DNS A record** that mobile apps query on every request, and rotates IPs manually after deploys. What is wrong?",
       "signals": [
-        "load balancing",
-        "TLS",
-        "coupling"
+        "DNS TTL",
+        "caching",
+        "staleness",
+        "operational toil"
       ],
-      "answer": "**Gateway** centralizes **auth**, **rate limit**, **TLS termination**, **routing**; **client-side** fewer hops but **leaks** infra into clients—**Kubernetes** often uses **Service + Ingress** instead.",
+      "answer": "**Root cause:** **DNS** is being used as a **fine-grained service registry** with **slow propagation** and **aggressive client caching**. Mobile OSes and corporate networks cache A records for minutes or hours depending on **TTL**, so users keep hitting **dead IPs** after a deploy long after Kubernetes has moved workloads. **Manual rotation** does not scale and guarantees human error during incidents. **What breaks in production:** elevated **4xx/5xx** right after rollouts, impossible **fast rollback**, and support tickets that “clear after a while” when caches expire — which is invisible in your **APM** until user geography spreads the pain. **Fix:** put a **gateway** or **managed load balancer** behind a **stable DNS name**, and let **in-cluster discovery** (Kubernetes **Endpoints**, **Service**, or a real registry) track pod churn. **Interview angle:** you separate **stable edge DNS** from **volatile instance sets**.",
       "followUps": [
         {
-          "question": "Split brain in discovery?",
-          "answer": "**Partition** tolerance trade-offs—instances **stale**—**health checks** + **TTL** + **gossip** behavior (tool-specific)."
+          "question": "What TTL would you set if you were forced to use DNS for internal Java clients?",
+          "answer": "You are choosing between **churn visibility** and **resolver load**. A **very low TTL** (few seconds) reduces stale routing but increases **DNS QPS** and can **throttle** managed DNS or local resolvers; many teams end up at **30–60s** as a compromise and still accept **brief** post-deploy errors. **Better pattern:** **SRV** or **multiple A records** with **short TTL only at the edge** plus **client-side retry** with backoff on connect failure — but the honest senior answer is “**do not use DNS as the only discovery for volatile instances**.” In **Kubernetes**, `kubectl get endpoints orders -n prod -o wide` is how you verify what the **Service** actually targets after a rollout; pair that with **CoreDNS** metrics (`coredns_dns_requests_total`) if DNS becomes hot."
+        },
+        {
+          "question": "How does a gateway hide instance churn from mobile clients?",
+          "answer": "The **public DNS name** points to the **gateway’s stable VIP** or **cloud load balancer**, which rarely changes. The gateway’s **route table** maps `/api/orders` to an internal **Kubernetes Service** name or **Consul** service that resolves to **current** pods. When pods restart, only **internal** resolution updates; **mobile apps** keep the same **base URL**. Operationally you watch **gateway upstream health** (`5xx` from upstream, **Envoy** cluster health, or **Spring Cloud Gateway** actuator routes) and **readiness probes** so bad pods leave the pool before traffic lands."
         }
       ]
     },
     {
       "id": "d52-s2",
-      "question": "Gateway route to unhealthy instance—what to check?",
+      "question": "Production incident: after a deploy, **30% of checkout calls** fail with **502** from the **API gateway**. `kubectl get pods` shows all pods **Running**, and service logs look quiet. Where do you look first?",
       "signals": [
-        "readiness",
-        "passive health",
-        "retries"
+        "readiness vs liveness",
+        "endpoints",
+        "upstream pool",
+        "gateway metrics"
       ],
-      "answer": "Align **readiness** with **real dependencies**; **outlier detection**; **retry budgets**—don’t **retry** on non-idempotent without **dedup**.",
+      "answer": "**Root cause (most common):** pods are **Running** but **not Ready**, so **Endpoints** are empty or partial while the **gateway** still routes to **stale IPs** or a **degraded subset**. Another frequent cause: **rolling update** removed old endpoints before new ones passed **readiness**, producing a **capacity gap**. **Monitoring to open first:** **Kubernetes Endpoints/EndpointSlice** (`kubectl get endpoints <svc> -n <ns> -o yaml`), **gateway upstream health** dashboards, and **502 rate by route** in **Grafana** or **Datadog**. **Java/Spring angle:** if the gateway uses **Spring Cloud LoadBalancer**, stale **cache** (`spring.cloud.loadbalancer.cache.ttl`) can briefly point at dead instances — tune TTL and prefer **health-aware** sources. **Fix:** align **readiness** with **real dependencies** (DB, feature flags), ensure **minReadySeconds** / **maxUnavailable** policy avoids draining all backends, and **drain** old pods only after new ones are **Ready**.",
       "followUps": [
         {
-          "question": "Blue-green at gateway?",
-          "answer": "**Traffic switch** between **deploy groups**—**cookie** or **header** pinning for **session** apps."
+          "question": "Give exact kubectl commands you would run in the first five minutes.",
+          "answer": "Start with **namespace context**: `kubectl config set-context --current --namespace=checkout`. Then **`kubectl get pods -l app=payments -o wide`** for node and IP layout, **`kubectl get endpoints payments -o yaml`** to see which pod IPs are actually in the Service, and **`kubectl describe pod <name>`** on one new pod to read **Readiness probe** failures. On the gateway side, if it is **Ingress-NGINX**, check **`kubectl logs -n ingress-nginx deploy/ingress-controller --tail=200`** for **upstream connect** errors; for **Envoy/Istio**, `istioctl proxy-config endpoints` on the gateway workload shows **EDS** membership. Correlate with **`histogram_quantile`** on **gateway latency** and **upstream_rq_5xx** metrics so you know whether the failure is **connect** or **timeout**."
+        },
+        {
+          "question": "How do you tell a liveness vs readiness misconfiguration?",
+          "answer": "**Liveness** should only fail when the process is **stuck** and should be **restarted**; if you put **dependency checks** there, a slow DB can **kill** every pod in a loop (**crashloop**) and amplify outages. **Readiness** should fail when the pod **cannot serve traffic** (migrations running, cannot reach DB, warming cache) so **Endpoints** remove it from rotation. In incidents, if **kubectl describe pod** shows **Readiness probe failed: HTTP 503** on `/ready` while **liveness** stays green, traffic should **stop** — if it does not, your **Service** might be selecting the wrong labels or you bypassed the Service with **Pod IP** routing."
         }
       ]
     },
     {
       "id": "d52-s3",
-      "question": "mTLS between gateway and services—who holds certs?",
+      "question": "Design choice: **Greenfield** on **Kubernetes** — do you adopt **Spring Cloud Netflix Eureka** or rely on **Kubernetes Services + Ingress** for discovery and routing?",
       "signals": [
-        "PKI",
-        "rotation",
-        "SPIFFE"
+        "operational simplicity",
+        "multi-cluster",
+        "non-K8s workloads",
+        "Spring Cloud"
       ],
-      "answer": "**PKI** with **short-lived** certs, **automated rotation** (cert-manager, mesh)—**central** identity **SPIFFE** IDs for **policy**.",
+      "answer": "**Recommendation for most pure-K8s greenfields:** use **Kubernetes Services** for **east-west** discovery (`http://payments.prod.svc.cluster.local:8080` or short names inside namespace) and an **Ingress** or **Gateway API** for **north-south**. **Why:** the **control plane** already maintains **Endpoints** from **kubelet**; you avoid running **another registry** that can **partition**, **stale**, or **mis-version** with **Spring Boot** upgrades. **Trade-off named:** Eureka shines when you have **heterogeneous** runtimes or **multi-cluster** service identity needs where **K8s DNS** alone is awkward — but you pay **ops tax** (clusters, backups, client libs). **Spring mapping:** prefer **`spring.cloud.kubernetes`** discovery or **WebClient** to **Service** DNS; use **Spring Cloud Gateway** as an **edge** if you need **JWT validation**, **rate limits**, and **path rewrites** in Java.",
       "followUps": [
         {
-          "question": "WAF placement?",
-          "answer": "**Edge** before gateway—**L7** rules; **don’t** replace **input validation** in apps."
+          "question": "When would you still add Consul or Eureka on top of Kubernetes?",
+          "answer": "Common cases: **VM + Kubernetes** mixed estate needing **one catalog**, **multi-cluster** failover with a **portable** registration model, **external** clients that cannot use **cluster DNS**, or **blue/green** traffic shifting coordinated **outside** Ingress controllers. **Cost:** you now operate **two sources of truth** unless you **sync** carefully — many teams instead standardize on **mesh** (Istio **ServiceEntry**) or **external-dns + gateway** patterns. If you choose **Consul**, health checks and **KV** for feature config are part of the value prop — justify that **explicitly** versus **CoreDNS + Prometheus + Gateway**."
+        },
+        {
+          "question": "How does Spring Cloud LoadBalancer fit if you skip Eureka?",
+          "answer": "With **Kubernetes**, the **DiscoveryClient** implementation lists **Endpoints** for a **Service** name; **@LoadBalanced WebClient** or **RestTemplate** resolves `http://payments` to a **live pod IP** and applies **round-robin** or **custom** `ReactorLoadBalancer`. You still need **timeouts**, **retries** only where **safe**, and **circuit breakers** (**Resilience4j**) because **client-side discovery** means your app **chooses** an instance that might die mid-request. **Interview tip:** mention **`spring.cloud.kubernetes.discovery.enabled=true`** and **`kubectl`** verification of **Endpoints** when debugging **No instances available** errors."
+        }
+      ]
+    },
+    {
+      "id": "d52-s4",
+      "question": "Internal deep dive: explain how **Kubernetes Service ClusterIP** turns the name `payments` into pod IPs for a Java pod calling `http://payments:8080`.",
+      "signals": [
+        "kube-proxy",
+        "Endpoints",
+        "iptables or IPVS",
+        "CoreDNS"
+      ],
+      "answer": "**Mechanism in plain terms:** your pod’s **/etc/resolv.conf** points **CoreDNS**, which answers **`payments.<namespace>.svc.cluster.local`** with the **ClusterIP** (virtual) of the **Service**. When your **Java** process opens a TCP connection to that **VIP**, **kube-proxy** (or **CNI** dataplane in some clusters) **load-balances** to one of the **Endpoint** IPs backing the Service using **iptables/IPVS/eBPF** rules that mirror **Endpoints** updates from the **API server**. **Why it matters:** resolution is **eventually consistent** with the **control plane**; during rollouts, **EndpointSlices** change and rules **update**, but **existing connections** stay pinned. **Production consequence:** long-lived **HTTP keep-alive** pools can stick to **draining** pods unless you **recycle** clients or use **connection max age**; **readiness** gates membership so **unready** pods should not receive **new** connections.",
+      "followUps": [
+        {
+          "question": "What breaks if selectors on the Service do not match pod labels?",
+          "answer": "**Endpoints** stay **empty** while pods look healthy — clients see **connection refused** or **timeouts** depending on whether the **ClusterIP** still routes somewhere. **`kubectl get endpoints payments`** shows **no subsets**; **`kubectl describe svc payments`** lists **Selector** vs actual pod labels. This is a **silent** misconfig because **kubectl get pods** looks fine. **Fix:** align **`spec.selector`** with **`metadata.labels`** on pods (often a **Helm** typo). **Verification:** `kubectl get pods --show-labels` and diff against the Service YAML committed in **Git**."
+        },
+        {
+          "question": "How does headless Service discovery differ (`clusterIP: None`)?",
+          "answer": "**DNS** returns **multiple A records** (pod IPs) directly instead of a single **ClusterIP**, which helps **StatefulSet** identity (`pod-0`, `pod-1`) and some **client-side** load-balancing patterns. **Trade-off:** clients must handle **DNS TTL** and **re-resolve** on failure; many databases and **gRPC** clients use this for **direct pod** fan-out. **Operational note:** **debug** with `nslookup payments.prod.svc.cluster.local` from a **debug pod** (`kubectl run -it --rm debug --image=busybox --restart=Never -- sh`)."
+        }
+      ]
+    },
+    {
+      "id": "d52-s5",
+      "question": "Trade-off analysis: **Client-side discovery** with **Spring Cloud LoadBalancer** vs **Server-side discovery** behind a **Layer-4/Layer-7 load balancer** in front of all instances.",
+      "signals": [
+        "coupling",
+        "latency hops",
+        "TLS",
+        "language diversity"
+      ],
+      "answer": "**Client-side discovery** lets the **service** choose an instance after querying a **registry** or **DNS** list — **fewer middle boxes**, can implement **custom balancing** and **retry** policies in **Java**, but **every language** duplicates logic and **library upgrades** become fleet-wide work. **Server-side** discovery centralizes **health-aware** balancing at an **LB** or **gateway**: **simpler clients** (plain `curl`), **consistent TLS** termination, easier **WAF** and **rate limits**, but adds **latency** and a **hot path** you must **scale** and **patch**. **Pros/cons summary:** client-side optimizes **east-west** mesh-style traffic; server-side optimizes **operational uniformity** and **security policy** at the edge. **Production pick:** **gateway + Kubernetes Service** is default for **HTTP APIs**; client-side fits **high-QPS internal** microservices with mature **platform** support.",
+      "followUps": [
+        {
+          "question": "Where does API Gateway fit relative to an internal L4 LB?",
+          "answer": "**L4** balances **TCP** streams — it does not understand **JWT**, **path-based routing**, or **JSON** errors. **API Gateway** is **L7**: terminates **TLS**, validates **OAuth2** tokens, applies **per-route** rate limits, **strips** paths, adds **trace headers** (`traceparent`, `X-Request-Id`), and routes `/mobile/**` vs `/partner/**` to different clusters. In **AWS**, **NLB** might front **EKS** nodes while **AWS API Gateway** or **ALB Ingress** handles **HTTP** concerns — interviews reward naming **two layers** and **who owns certs**."
+        },
+        {
+          "question": "What is the biggest hidden cost of client-side discovery?",
+          "answer": "**Thundering herd** on **registry outages** — every instance **refreshes** subscriptions; **cache stampedes** after TTL expiry; and **debuggability**: a bad **LoadBalancer** rule is distributed across **hundreds** of pods. Mitigate with **local caching**, **zone-aware** routing, and **standard** observability (**Micrometer** + **tracing**) on **every** client. **Server-side** concentrates failure — if the **gateway** is down, **everything** is down — so you **horizontal scale** gateways, use **multi-AZ**, and monitor **p99** and **error budget** aggressively."
+        }
+      ]
+    },
+    {
+      "id": "d52-s6",
+      "question": "Gotcha: integration tests pass because they call **`http://localhost:8080`**, but production uses **service names** through the gateway and **randomly** gets **timeouts**. Tests stayed green — why?",
+      "signals": [
+        "different topology",
+        "DNS",
+        "timeouts",
+        "connection pools"
+      ],
+      "answer": "**Root cause:** tests **bypassed** the **real network path**: no **gateway hop**, no **Service** DNS, no **connection pool** behavior under **multi-instance** fan-out, and often **no TLS** or **mTLS** handshakes. **Production** adds **extra RTT**, **DNS caching**, **SYN retries** to **draining** pods, and **default connect timeouts** that are too low when **cold JVM** or **GC** pauses hit. **Why tests miss it:** **Testcontainers** or **WireMock** on loopback do not model **kube-proxy** rule churn or **half-open** connections during rollouts. **Fix:** add **contract tests** through the **gateway** URL in **staging**, run **smoke** `curl -m 2 https://api.example.com/health` from **outside** the cluster, and tune **`spring.mvc.async.request-timeout`** / **WebClient** `responseTimeout` with **retry** only on **idempotent** reads.",
+      "followUps": [
+        {
+          "question": "What metric proves the gateway is the bottleneck vs upstream?",
+          "answer": "Compare **gateway** `upstream_response_time` vs **total request duration** in **NGINX Ingress** metrics, or **Envoy** `upstream_rq_time` vs `downstream_rq_time`. If **upstream** is fast but **total** is large, look at **TLS**, **WAF**, or **transformation** filters. If **upstream** is slow, **trace** one **traceId** across **gateway → service → DB** in **Tempo/Jaeger**. **kubectl top pod** on gateway vs service helps spot **CPU** saturation from **JWT crypto** or **JSON** rewriting."
+        },
+        {
+          "question": "Give a concrete WebClient timeout configuration sketch.",
+          "answer": "In **Spring Boot 3**, builders often set **`HttpClient`** connect/read timeouts: `ConnectionProvider.builder(\"pool\").maxConnections(200).build()` plus `HttpClient.create(provider).responseTimeout(Duration.ofSeconds(3))` wired into **`WebClient.builder().clientConnector(new ReactorClientHttpConnector(httpClient))`**. **Interview point:** **separate** connect vs response timeout — **connect** catches **bad discovery**, **response** catches **slow SQL**. Always pair with **circuit breakers** so one slow service does not exhaust **threads** or **event loop** workers."
+        }
+      ]
+    },
+    {
+      "id": "d52-s7",
+      "question": "Senior architecture: design **edge routing** for **10M daily active users** on a **mobile app** hitting **REST APIs** backed by **50 microservices** on **Kubernetes**.",
+      "signals": [
+        "global edge",
+        "WAF",
+        "gateway fleet",
+        "caching"
+      ],
+      "answer": "**(1) Edge:** **Geo-routed DNS** to **regional** entry points (cloud **Global Accelerator** or **Anycast**) terminating **TLS** at **managed** cert rotation. **(2) Gateway fleet:** **stateless** **Spring Cloud Gateway** or **Envoy** behind **NLB/ALB**, **autoscale** on **CPU + RPS + p99**, **zone spread**. **(3) Routing:** **path-based** routes (`/commerce/**`, `/identity/**`) to **cluster-internal** **Services**; **JWT validation** once at edge, **opaque internal tokens** optional. **(4) Policies:** **rate limit per API key**, **WAF** rules, **request size caps**, **circuit breaking** to fragile dependencies. **(5) Observability:** **traceId** injection, **SLO** per route, **synthetic probes** from **outside** VPC. **Trade-off:** **BFF per client** vs **generic API** — often **one mobile BFF** reduces chattiness but must not become a **monolith**.",
+      "followUps": [
+        {
+          "question": "How do you avoid the gateway becoming a single brain for all business rules?",
+          "answer": "Keep **policy** (authN/Z, quotas, routing) at the **gateway**, keep **domain rules** in **services**. Publish **OpenAPI** per service and **lint** gateway routes in **CI** so path ownership is explicit. **Anti-pattern:** gateway calls **five services** and **joins** data for every screen — that becomes a **distributed monolith front**. Prefer **event-driven read models** or a **thin BFF** owned by the **mobile team** with **strict** SLAs. **Org:** **platform team** runs gateway **templates**; **product teams** supply **route snippets** via **GitOps** pull requests reviewed by **SRE**."
+        },
+        {
+          "question": "What is your canary story at the gateway?",
+          "answer": "Use **weighted routes** (Istio **VirtualService**, **Flagger**, or **NGINX canary annotations**) to send **1% → 5% → 25%** traffic to **new** service version while comparing **golden signals**: **error rate**, **latency p99**, and **business KPI** (checkout success). **Rollback** is flipping weight to **0%** — must be **one command** in a runbook (`kubectl argo rollouts promote/abort` or **Git revert** on **Helm** values). **Prevention:** **automate** promotion on **SLO** gates, never **hand-tune** weights under stress without **metrics**."
+        }
+      ]
+    },
+    {
+      "id": "d52-s8",
+      "question": "Security / correctness: engineers expose **internal service DNS names** (`http://inventory.internal.svc`) to a **partner** over **VPN** “because it is simple.” What do they miss?",
+      "signals": [
+        "trust boundary",
+        "authZ",
+        "network policy",
+        "data exfiltration"
+      ],
+      "answer": "**Root cause:** they collapsed **cluster trust** with **external trust** — partners can now **reach pod IPs** or **Services** without **application-level authZ**, **audit**, or **rate limits** appropriate for **untrusted** callers. **Correctness:** internal names **change** with **namespace** refactors; partners **couple** to **implementation topology**. **Security:** **lateral movement** if VPN creds leak; no **per-client** **scopes** at HTTP layer unless you add **mTLS + JWT** anyway — at which point an **API gateway** or **public** **Ingress** with **WAF** was the right seam. **Fix:** terminate at **gateway**, issue **client credentials** or **mTLS certs**, **log** `sub` + `azp`, **quota** per partner, and **network policy** default-deny with explicit **allow** to gateway only.",
+      "followUps": [
+        {
+          "question": "How would you prove in audit that each partner call is attributable?",
+          "answer": "Require **OAuth2 client credentials** or **mutual TLS** with **SPIFFE** IDs; log **`client_id`**, **cert serial**, **traceId**, and **route** at **gateway** to **immutable** store (**SIEM**). **Avoid** shared service accounts. **Runbook:** on incident, **`grep traceId=...`** across **gateway** and **service** logs — if you skipped gateway, partners hit pods **directly** and **log correlation** fragments. **Spring:** **`ServerOAuth2AuthorizedClientFilterFunction`** patterns for outbound, **`oauth2ResourceServer`** for inbound at gateway."
+        },
+        {
+          "question": "Does mTLS between gateway and services replace JWT validation at the gateway?",
+          "answer": "**No — different jobs.** **mTLS** proves **which service** is talking (SPIFFE **identity**), while **JWT** proves **which user or client** initiated the **request** for **authZ**. You often want **both**: gateway validates **JWT**, forwards **signed internal headers** only if you **trust** the gateway (**network policy** + **mTLS**). **Mesh** can enforce **mTLS** automatically; **application** still needs **role checks** (`@PreAuthorize`) on sensitive operations."
+        }
+      ]
+    },
+    {
+      "id": "d52-s9",
+      "question": "Scale: **p99 latency** at the **gateway** jumps when **catalog** instances scale from **10 → 200** pods. **CPU** on gateway is moderate. What do you investigate?",
+      "signals": [
+        "DNS churn",
+        "LB algorithm",
+        "connection pools",
+        "watch fanout"
+      ],
+      "answer": "**Root cause candidates:** (1) **Discovery watch** traffic and **serialization** cost — **gateway** or **sidecar** **reloads** huge **endpoint lists** frequently. (2) **Client-side** **connection pool** **thrash** if every pod change **closes** connections. (3) **Least-request** balancing **hot spots** if **health** flaps. (4) **TLS session** resumption disabled causing **full handshakes**. **Investigation:** **Envoy admin** `/clusters` **version** change rate, **CoreDNS** **QPS**, **gateway** **GC** logs, **Micrometer** `connection pool` metrics. **Fix:** **subset** endpoints (pick **N random** backends), **incremental** **EDS**, **warm** pools, **tune** **max connections per host**, and ensure **readiness** stops **flapping**.",
+      "followUps": [
+        {
+          "question": "What is endpoint subsetting and when does Kubernetes do it?",
+          "answer": "**Subsetting** limits how many **backend IPs** each **proxy** tracks to reduce **memory** and **update churn** — **kube-proxy** and **Envoy** have evolved behavior; large **Services** historically hurt **iptables** performance (sometimes **O(n)** rules). **Mitigation:** split **traffic** via **multiple Services**, use **headless** only when needed, or rely on **service mesh** **EDS** with **automatic subsetting**. **Measure:** **syscall** count, **iptables-restore** duration on nodes (`kubectl logs` for **kube-proxy** in **verbose** mode in staging), **CPU** on **gateway** during **rolling deploy** of **200** pods."
+        },
+        {
+          "question": "How does Spring Cloud Gateway behave under many instances with reactive Netty?",
+          "answer": "**WebFlux** gateways scale **horizontally** well, but **filters** that block (**default Reactor scheduler**) hurt — keep **JWT** validation **non-blocking** where possible, cache **JWKS** keys with **TTL**, and avoid **synchronous** **RestTemplate** in filters. **Backpressure:** configure **`spring.cloud.gateway.httpclient`** pool sizes and **timeouts**. **Profile:** **Java Flight Recorder** in staging with **realistic** **endpoint churn** before blaming **Netty**."
+        }
+      ]
+    },
+    {
+      "id": "d52-s10",
+      "question": "Misconception: “We deployed **Spring Cloud Gateway**, so we **don’t need Kubernetes Services** — the gateway discovers pods directly.” Why is this shaky?",
+      "signals": [
+        "Kubernetes model",
+        "labels",
+        "kubelet",
+        "platform contracts"
+      ],
+      "answer": "**Correction:** in **Kubernetes**, the **Service** is the **platform contract** that defines **which pods** are **eligible**, **ports**, and **session affinity** — **kubelet** and **control plane** maintain that truth from **readiness**. A gateway **can** watch **Pod** objects via the **API**, but you **reimplement** **kube-proxy** concerns: **label selectors**, **port mapping**, **dual-stack**, **NetworkPolicy** expectations, and **headless** quirks — usually **wrong**. **Typical pattern:** gateway routes to **`http://catalog:8080`** **Service DNS**; **Kubernetes** keeps **Endpoints** fresh. **Why it matters in prod:** bypassing **Services** breaks **policy** tooling that assumes **ClusterIP**, complicates **Istio** **sidecar** capture, and creates **RBAC** to **list pods** everywhere — a **security** smell.",
+      "followUps": [
+        {
+          "question": "When is direct Pod IP routing ever justified?",
+          "answer": "**Advanced** cases: **performance debugging**, **StatefulSet** with **predictable identity**, or **CNI** features that integrate with **eBPF** **load balancing** — still usually hidden behind a **Service** abstraction. **Service mesh** **locality-aware** LB may use **endpoint metadata** but **not** raw **Pod** REST calls from app code. **Interview safe line:** “**Application code targets Services; the platform translates to Pod IPs.**”"
+        },
+        {
+          "question": "How does Spring Cloud Kubernetes change the picture?",
+          "answer": "`spring-cloud-kubernetes` can **discover** **Endpoints** via the **Kubernetes API** server from **inside** the cluster — functionally aligned with **Service** membership, **not** random **Pod** scraping. You still respect **RBAC** (`get/list/watch` on **endpoints**) and **namespace** boundaries. **Fabric8** **KubernetesClient** watches are **reactive**; **misconfigured RBAC** shows up as **403** in logs at **startup** — always **check** **`kubectl auth can-i watch endpoints -n app`**. **Trade-off:** **API server** **watch** load grows with **many** clients — **prefer** **shared** informers or **gateway** consolidation."
         }
       ]
     }

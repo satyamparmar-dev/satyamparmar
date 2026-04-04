@@ -3,54 +3,223 @@
   "title": "Inter-Service Communication Patterns",
   "phaseId": "phase6",
   "tags": [
+    "Kafka",
+    "outbox",
+    "Saga",
+    "choreography",
     "sync",
     "async",
-    "events"
+    "DLQ",
+    "idempotency"
   ],
   "scenarios": [
     {
       "id": "d55-s1",
-      "question": "Sync chain A→B→C for user request—operational risk?",
+      "question": "Code review: **service** **publishes** **OrderPlaced** **before** **DB** **commit**.",
       "signals": [
-        "latency multiply",
-        "failure multiply"
+        "ghost",
+        "outbox",
+        "atomicity",
+        "race"
       ],
-      "answer": "**Latency** sums; **failure** multiplies—prefer **async** for **non-critical** paths, **caching**, **parallel** where possible, **timeouts** everywhere.",
+      "answer": "**Root cause:** **Non-atomic** **publish** **with** **write**. **What breaks in production:** **Consumers** **act** on **non-existent** **orders**. **Fix:** **Transactional** **outbox** **pattern**. **Interview angle:** Mention **two-phase** **commit** **alternatives** **rare** **in** **microservices**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast.",
       "followUps": [
         {
-          "question": "Outbox pattern purpose?",
-          "answer": "**Atomically** write DB + **event** row—**publisher** drains—**no** dual-write inconsistency."
+          "question": "Test?",
+          "answer": "**Integration** **test** **kill** **broker** **mid-TX**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+        },
+        {
+          "question": "Metric?",
+          "answer": "**Outbox** **lag** **histogram**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
         }
       ]
     },
     {
       "id": "d55-s2",
-      "question": "When use message broker vs direct HTTP between services?",
+      "question": "**Incident:** **duplicate** **charges** after **Kafka** **rebalance**.",
       "signals": [
-        "decoupling",
-        "load leveling",
-        "sagas"
+        "at-least-once",
+        "idempotent",
+        "consumer",
+        "offset"
       ],
-      "answer": "**Broker** for **temporal decoupling**, **fan-out**, **load leveling**, **event-driven** sagas; **HTTP** for **query/response** needing **immediate** answer.",
+      "answer": "**Root cause:** **Consumer** **reprocessed** **offsets**. **What breaks in production:** **Financial** **integrity** **broken**. **Fix:** **Idempotency** **key** **table** **with** **unique** **constraint**. **Interview angle:** Explain **offset** **commit** **strategies**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast.",
       "followUps": [
         {
-          "question": "Message ordering guarantees?",
-          "answer": "**Single partition** per **entity** for order; **global** order expensive—design **idempotent** consumers."
+          "question": "Prevention?",
+          "answer": "**Chaos** **rebalance** **during** **load** **tests**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+        },
+        {
+          "question": "Communication?",
+          "answer": "**Finance** **must** **approve** **replay** **policy**. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
         }
       ]
     },
     {
       "id": "d55-s3",
-      "question": "Dual write DB and Kafka without transaction—fix?",
+      "question": "**Design:** **real-time** **dashboard** **needs** **fresh** **order** **counts**.",
       "signals": [
-        "outbox",
-        "CDC"
+        "CQRS",
+        "projection",
+        "cache",
+        "sync"
       ],
-      "answer": "**Transactional outbox** or **CDC** from DB log—**avoid** post-commit **best-effort** publish as **only** guarantee.",
+      "answer": "**Root cause:** **Poll** **sync** **chain** **too** **slow**. **What breaks in production:** **DB** **load** **from** **N** **services**. **Fix:** **Materialized** **view** **via** **events**. **Interview angle:** Mention **WebSocket** **push** **from** **projection**. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
       "followUps": [
         {
-          "question": "Request/response over queue?",
-          "answer": "Possible with **correlation id**—**complex**—often **HTTP**/`gRPC` simpler for **RPC** shape."
+          "question": "Consistency?",
+          "answer": "**Seconds** **lag** **acceptable** **per** **product**. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+        },
+        {
+          "question": "Fallback?",
+          "answer": "**Stale** **banner** **if** **projection** **lag** **high**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+        }
+      ]
+    },
+    {
+      "id": "d55-s4",
+      "question": "Explain **consumer** **group** **rebalance** **impact**.",
+      "signals": [
+        "kafka",
+        "lag",
+        "stop",
+        "partition"
+      ],
+      "answer": "**Root cause:** **Partitions** **reassigned** **pause** **processing**. **What breaks in production:** **Temporary** **lag** **spike**. **Fix:** **Sticky** **assignor**, **tune** **session** **timeout**. **Interview angle:** Cooperative vs eager rebalance. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
+      "followUps": [
+        {
+          "question": "K8s **relation**?",
+          "answer": "**Min** **in-sync** **replicas** **and** **gradual** **rollout**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+        },
+        {
+          "question": "Mitigation?",
+          "answer": "undefined Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+        }
+      ]
+    },
+    {
+      "id": "d55-s5",
+      "question": "**Trade-off:** **RabbitMQ** **queue** vs **Kafka** **topic** for **order** **events**.",
+      "signals": [
+        "ordering",
+        "replay",
+        "ops",
+        "scale"
+      ],
+      "answer": "**Root cause:** **Kafka** **log** **replay** **vs** **Rabbit** **competing** **consumers**. **What breaks in production:** **Wrong** **tool** **increases** **cost**. **Fix:** Map **retention** **and** **ordering** **needs**. **Interview angle:** **Managed** **service** **comparison**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**.",
+      "followUps": [
+        {
+          "question": "When **Rabbit** **wins**?",
+          "answer": "**Complex** **routing** **per** **message** **with** **low** **volume**. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**."
+        },
+        {
+          "question": "When **Kafka** **wins**?",
+          "answer": "**High** **throughput** **event** **sourcing** **backbone**. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+        }
+      ]
+    },
+    {
+      "id": "d55-s6",
+      "question": "**Gotcha:** **BFF** **awaits** **fifteen** **Feign** **calls** **per** **page**.",
+      "signals": [
+        "fanout",
+        "timeout",
+        "p99",
+        "BFF"
+      ],
+      "answer": "**Root cause:** **Accidental** **mega** **sync** **graph**. **What breaks in production:** **Page** **timeouts**. **Fix:** **Aggregate** **API** **or** **projection** **read** **model**. **Interview angle:** **GraphQL** **or** **backend** **for** **frontend** **patterns**. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**.",
+      "followUps": [
+        {
+          "question": "Metric?",
+          "answer": "**Waterfall** **span** **count** **per** **trace**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+        },
+        {
+          "question": "Long-term?",
+          "answer": "**Domain** **events** **feeding** **read** **store**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+        }
+      ]
+    },
+    {
+      "id": "d55-s7",
+      "question": "**Senior:** **standardize** **async** **error** **envelope** **company-wide**.",
+      "signals": [
+        "schema",
+        "platform",
+        "DLQ",
+        "version"
+      ],
+      "answer": "**Root cause:** **Ad-hoc** **JSON** **blobs** **per** **team**. **What breaks in production:** **No** **shared** **tooling** **for** **replay**. **Fix:** **CloudEvents** **+** **registry** **+** **lint**. **Interview angle:** **Golden** **library** **per** **language**. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations.",
+      "followUps": [
+        {
+          "question": "Rollout?",
+          "answer": "**Strangler** **new** **topics** **first**. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail."
+        },
+        {
+          "question": "Success?",
+          "answer": "**Mean** **time** **to** **replay** **drops**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+        }
+      ]
+    },
+    {
+      "id": "d55-s8",
+      "question": "**Security:** **events** **carry** **full** **credit** **card** **PAN**.",
+      "signals": [
+        "PCI",
+        "PII",
+        "encryption",
+        "topic"
+      ],
+      "answer": "**Root cause:** **Broker** **compromise** **=** **breach**. **What breaks in production:** **Compliance** **failure**. **Fix:** **Tokenize** **card**; **encrypt** **fields**. **Interview angle:** **Topic** **ACLs** **per** **environment**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**.",
+      "followUps": [
+        {
+          "question": "Audit?",
+          "answer": "**Schema** **review** **blocks** **PAN** **fields**. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+        },
+        {
+          "question": "Testing?",
+          "answer": "**Static** **scanner** **on** **producers**. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**."
+        }
+      ]
+    },
+    {
+      "id": "d55-s9",
+      "question": "**Scale:** **single** **partition** **hot** **key** **orders** **topic**.",
+      "signals": [
+        "hotspot",
+        "ordering",
+        "shard",
+        "kafka"
+      ],
+      "answer": "**Root cause:** **One** **merchant** **dominates** **traffic**. **What breaks in production:** **Partition** **bottleneck**. **Fix:** **Sub-partition** **by** **store** **id** **or** **shed** **ordering** **requirement**. **Interview angle:** **Accept** **unordered** **where** **safe**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**.",
+      "followUps": [
+        {
+          "question": "Detection?",
+          "answer": "**Per-partition** **byte** **rate** **dashboard**. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work."
+        },
+        {
+          "question": "Trade-off?",
+          "answer": "**Global** **order** **impossible** **without** **sequential** **lane**. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+        }
+      ]
+    },
+    {
+      "id": "d55-s10",
+      "question": "**Misconception:** \"**Messaging** **removes** **need** for **timeouts**.\"",
+      "signals": [
+        "poison",
+        "processing",
+        "stall",
+        "DLQ"
+      ],
+      "answer": "**Root cause:** **Consumers** **still** **hang** **on** **bad** **code**. **What breaks in production:** **Lag** **grows** **unbounded**. **Fix:** **Processing** **deadlines** **+** **virtual** **threads** **or** **watchdog**. **Interview angle:** **max.poll.interval** **Kafka** **setting**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail.",
+      "followUps": [
+        {
+          "question": "Alert?",
+          "answer": "**Consumer** **processing** **time** **p99**. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work."
+        },
+        {
+          "question": "Fix?",
+          "answer": "**Circuit** **break** **external** **calls** **inside** **consumer**. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**."
         }
       ]
     }

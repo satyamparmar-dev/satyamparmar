@@ -4,54 +4,226 @@
   "phaseId": "phase6",
   "tags": [
     "bounded context",
+    "ubiquitous language",
     "aggregate",
-    "autonomy"
+    "anti-corruption layer",
+    "context map",
+    "domain events",
+    "decomposition",
+    "team ownership",
+    "consistency",
+    "strategic DDD"
   ],
   "scenarios": [
     {
       "id": "d51-s1",
-      "question": "When is microservices the wrong choice?",
+      "question": "Code review: `CustomerService` in the **Orders** microservice injects `ProductRepository` from **Catalog** through Spring. Both use the **same database schema**. What is wrong?",
       "signals": [
-        "distributed monolith",
-        "team size",
-        "ops"
+        "leaky boundary",
+        "shared database",
+        "wrong split",
+        "ownership"
       ],
-      "answer": "**Small team**, unclear **boundaries**, no **platform** maturity → **distributed monolith** pain. Start **modular monolith** then **extract** proven seams.",
+      "answer": "**What went wrong:** **Orders** and **Catalog** are two **business areas** (bounded contexts), but the code and database treat them as one blob. The Orders team can change Catalog tables “because it is easy,” so **nobody truly owns** the model. When you deploy separately, you still get **blocked releases**, risky rollbacks, and slow checkout if someone adds a heavy catalog query in the order path. **Fix in plain terms:** agree on **APIs or messages** between areas, stop sharing JPA entities across areas, and aim for **separate databases** over time. If you must share data for a while, make **one writer**, clear **read contracts**, and add a **translator** (**anti-corruption layer**) so your core names stay yours. **Interview tip:** say **who owns the data** before you talk about REST or Kafka.",
       "followUps": [
         {
-          "question": "Bounded context example?",
-          "answer": "**Billing** vs **Shipping**—different **ubiquitous language** and **invariants**—integrate via **events** or **APIs** with **anti-corruption** layer."
+          "question": "When is a shared database ever acceptable temporarily?",
+          "answer": "During a **slow migration** from a monolith, some teams keep one database for a while. The rule is **discipline**: pick **one system of record** that may write each table; others read through **views** or **APIs** with a written plan to split. **Tools that show pain:** Flyway/Liquibase history with **many teams** touching the same schema, and database dashboards showing **locks** or **slow queries** on deploy days. **Long term:** split data and sync with **events** or **APIs**, and accept **eventual consistency** where the business can. Without an exit plan, “temporary” shared DB becomes permanent coupling."
+        },
+        {
+          "question": "How do you express this boundary in Spring without splitting repos on day one?",
+          "answer": "Split **Maven/Gradle modules** so `orders.domain` cannot import `catalog.domain`. Add **ArchUnit** tests that fail the build on illegal imports. Call catalog through a small **client class** (`WebClient`/`RestTemplate`) behind an interface like `CatalogProductLookup` — not through **shared `@Entity`** classes. That gives you **real seams** inside one deployable app, so extracting a service later is mostly **moving a module**, not archaeology."
         }
       ]
     },
     {
       "id": "d51-s2",
-      "question": "Aggregate root responsibility in DDD?",
+      "question": "Production incident: **order totals** and **finance invoices** differ by pennies. Logs show **Pricing** and **Orders** both calculate **tax**, but rounding differs. What do you do?",
       "signals": [
-        "consistency boundary",
-        "transactions"
+        "same word different meaning",
+        "duplicate rules",
+        "money rounding",
+        "single owner"
       ],
-      "answer": "**Cluster** of entities updated **atomically** through **root**—external references by **id** only—keeps **transaction** scope small.",
+      "answer": "**Root cause:** **Tax** is not owned by **one team** with **one clear definition**. Each service rounded or scaled money a little differently, so both looked “right” alone and wrong together. **Tools that surface it:** nightly **reconciliation jobs**, finance **exception queues**, and business metrics in **APM** comparing order totals to invoice lines. **Fix:** pick **one owner** (often billing/pricing), **version** the tax rules, expose **clear money types** (amount + currency + scale), and store **frozen prices** on the order when the customer commits — do not recompute tax on every read from two places. **Prevention:** a short **glossary** for money fields and **contract tests** on totals so drift fails CI instead of month-end.",
       "followUps": [
         {
-          "question": "Anemic microservice?",
-          "answer": "CRUD service with **no domain rules**—question if separate deployable adds value."
+          "question": "Should Orders ever call Pricing synchronously during checkout?",
+          "answer": "**Sometimes yes** if the UI needs a live quote, but still **save the quoted numbers** on the order so finance replays do not depend on live price changes. **Trade-off:** sync calls mean **if Pricing is down, checkout may fail** unless you cache quotes with a clear **stale** rule. For changing prices mid-checkout, model **states** (quoted → paid) and consider **sagas** with undo steps. Use **correlation ids** in logs so **Grafana/Tempo/Honeycomb** traces show the full path."
+        },
+        {
+          "question": "How does DDD help beyond “use BigDecimal”?",
+          "answer": "DDD pushes you to model **Money** as a **value object** with simple rules (same currency to add) and to place **pricing policy** in the **domain layer**, not random `double` math in controllers. It also makes you draw **who is upstream**: Pricing leads; Orders **maps** external DTOs through a small translator. That is how you avoid **two truths** without one hero engineer remembering all the corners."
         }
       ]
     },
     {
       "id": "d51-s3",
-      "question": "Shared database between two services—why avoid?",
+      "question": "Design choice: a team wants **one microservice per database table** for reuse. What do you recommend, and what trade-off do you name?",
       "signals": [
-        "coupling",
-        "evolution",
-        "scaling"
+        "service size",
+        "cohesion",
+        "chatty calls",
+        "transactions"
       ],
-      "answer": "**Schema** changes **couple** deployments; **hidden** dependencies; harder **independent scaling**—prefer **service-owned** data with **integration** contracts.",
+      "answer": "**Recommendation:** split by **business capability** and **who maintains it**, not by physical tables. A service should be **one team’s natural unit of work** for normal features. **Trade-off to say out loud:** more services mean **more pipelines, more partial failures, and more tracing** — they can **reduce blast radius**, but they can also **hurt latency** if everything calls everything. **Better first step:** a **modular monolith** with **clear areas**, then extract the **first boundary** that has different scale, compliance, or release pressure. **One-liner:** microservices are a **team and scale** tool, not a medal.",
       "followUps": [
         {
-          "question": "Strangler fig pattern?",
-          "answer": "**Gradually** route traffic from **legacy** to **new** service behind **facade**—low risk migration."
+          "question": "How do you decide the first slice to extract?",
+          "answer": "Look for **different needs**: search that needs huge read scale, **PCI** isolation, or a part that **must ship** without waiting on another team. Check **git history** and incidents: if two modules always change together, maybe they are **not** the first cut. **Conway’s Law:** if no team owns a service, the split usually fails."
+        },
+        {
+          "question": "What is the main downside of “medium-sized” services?",
+          "answer": "They can grow into **big balls of mud** inside if you skip internal rules. Use **layering**, **module tests**, and occasional reviews. **Trade-off:** fewer services are **easier to operate** but need **discipline** inside the codebase."
+        }
+      ]
+    },
+    {
+      "id": "d51-s4",
+      "question": "Internal deep dive: why must an **aggregate** enforce rules, and why reference other aggregates by **id** only?",
+      "signals": [
+        "aggregate root",
+        "consistency",
+        "transaction",
+        "lazy loading"
+      ],
+      "answer": "An **aggregate** is the smallest bunch of objects that must stay **true together** in **one database transaction**. The **aggregate root** is the **front door** so outside code cannot sneak past your rules. **Ids instead of loaded objects** avoid **huge graphs**, accidental **N+1** calls across services, and fake **distributed locks** during checkout. **Spring/JPA note:** deep `@ManyToOne` links across areas hide coupling — prefer **ids** plus explicit **services** or **clients** for cross-area work. **Production pain if you skip this:** weird partial states that unit tests miss but **concurrency** exposes.",
+      "followUps": [
+        {
+          "question": "What if two aggregates must update together?",
+          "answer": "Usually you **commit one**, send an **event** (often with **outbox**), then update the other in a **later transaction**. If the business truly needs **one atomic step** across areas, your **boundary** may be wrong, or you need a **saga** with **undo** steps. **Two-phase commit** across many REST services is rare because it is **fragile** and **slow**."
+        },
+        {
+          "question": "How does this map to REST APIs?",
+          "answer": "Expose resources that match **aggregate roots** like `/orders/{id}`. Avoid “grab inside another area’s internals” URLs. For reads across areas, use a **BFF** or a **read model**, not hidden entity navigation."
+        }
+      ]
+    },
+    {
+      "id": "d51-s5",
+      "question": "Trade-off: **sync REST chain** vs **async events** between **Inventory** and **Shipping** after an order is placed.",
+      "signals": [
+        "coupling",
+        "eventual consistency",
+        "latency",
+        "saga"
+      ],
+      "answer": "**Sync REST** is easy to reason about and gives an **immediate** answer, but if Shipping is down, **checkout fails** — and retries can **amplify** load. **Async events** loosen that coupling and absorb spikes, but you must handle **duplicates**, **dead-letter queues**, and **tracing** across steps. **Practical blend:** save the **Order**, publish **OrderPlaced** with **outbox**, let Shipping react async; keep **sync** only for **must-block** checks (fraud, hard stock rules) with **timeouts** and **circuit breakers**. **Trade-off to name:** **immediate consistency** vs **availability** — can shipment creation lag a few seconds?",
+      "followUps": [
+        {
+          "question": "How do you handle “I need shipping cost before payment”?",
+          "answer": "Model it as a **multi-step process**: either a **sync quote** with strict timeouts and a fallback policy, or **quote now, adjust later** with clear customer messaging and payment capture rules. Use **explicit states** on the order instead of hiding everything in one controller. **Metrics** on “stuck in QUOTED” help operations see workflow health."
+        },
+        {
+          "question": "What breaks if events are at-least-once?",
+          "answer": "The same **OrderPlaced** message twice can **reserve stock twice** or create **two shipments** unless consumers use **business dedup keys** and **database unique constraints**. Production needs **durable dedup**, not only logs."
+        }
+      ]
+    },
+    {
+      "id": "d51-s6",
+      "question": "Gotcha: tests pass, but production **double-posts loyalty points** after retries. Logs say “processed,” but Kafka redelivery still credits twice.",
+      "signals": [
+        "idempotent consumer",
+        "at-least-once",
+        "ack order",
+        "unique key"
+      ],
+      "answer": "**Root cause:** the consumer **confirms the message** before the **database commit** finishes, or dedup lives **only in RAM**. After a crash, the broker **delivers again** and the handler runs twice. **Why tests missed it:** tests sent **one message** and never simulated **crash between DB write and offset commit**. **Fix:** use a **stable business key** in a **unique database row**, do ledger update + “seen” marker in **one transaction**, then ack; or publish from an **outbox** tied to the writer’s transaction. **Monitoring:** consumer lag, **duplicate ignored** counters, **redelivery** rate, traces with the same **order id** twice.",
+      "followUps": [
+        {
+          "question": "Is “exactly-once” Kafka the answer?",
+          "answer": "End-to-end **exactly-once** is hard because **your database** and **other systems** must all participate. Most Java teams rely on **idempotent writes** + **dedup tables** + **outbox**, not on broker magic alone. Kafka transactions help some cases but add **ops cost** and **latency** — say that trade-off in interviews."
+        },
+        {
+          "question": "Where does DDD fit?",
+          "answer": "Model **LoyaltyCredited** as a fact with a **business id** from orders, and enforce **one credit per order** as a **domain rule**, backed by the database — not only by a log line."
+        }
+      ]
+    },
+    {
+      "id": "d51-s7",
+      "question": "Senior architecture: **subscription billing** for **10M users**, **PCI isolation**, **monthly invoices**, **usage add-ons**. Where do bounded contexts go?",
+      "signals": [
+        "context map",
+        "data ownership",
+        "PCI",
+        "async billing",
+        "BFF"
+      ],
+      "answer": "**Plain layout:** **Subscriptions** (plan and status), **Usage** (meter events), **Pricing/Tax** (rules and versions), **Payments** (cards, charges, dunning), **Customer profile** (PII), **Notifications** (email/SMS). **Ownership:** **Payments** holds **card tokens**; other areas never see full card numbers. **Scale path:** ingest usage on a **partitioned stream**, build **read models** for the portal, use **outbox** from subscription changes to invoicing. **Trade-offs:** a **BFF** can simplify the UI; **strong global consistency** is rare — use **sagas** for upgrades with **clear proration rules** owned by Pricing. **Interview win:** draw arrows and say **customer–supplier** in normal words (“billing depends on pricing roadmap”).",
+      "followUps": [
+        {
+          "question": "How do you avoid a god “Billing” service?",
+          "answer": "Split **rules** (pricing/tax) from **money movement** (payments) from **lifecycle** (subscription state). Share **stable types** and **versioned events** between them. Record decisions in short **ADRs** so new hires see **why** the lines exist."
+        },
+        {
+          "question": "What metrics prove the design works operationally?",
+          "answer": "**Invoice delay** (p99), **usage backlog**, **payment success rate**, **dead-letter depth** for rating jobs, and **reconciliation** between your ledger and the **card processor** — each area gets **SLOs** you can alert on."
+        }
+      ]
+    },
+    {
+      "id": "d51-s8",
+      "question": "Security/correctness: exposing **internal database ids** in public APIs across areas. Why risky, and what to expose instead?",
+      "signals": [
+        "tight coupling",
+        "guessing ids",
+        "translator",
+        "public id"
+      ],
+      "answer": "**Risk:** other teams store **your internal keys** as if they were stable public contracts. If ids are **sequential**, attackers can **guess** rows. If you refactor, **silent breaks** spread. **Fix:** hand out **opaque public ids** (UUID/ULID) at boundaries; keep **internal ids** private. Translate in the **ACL**. **Spring habit:** return **DTOs**, not raw **`@Entity`**. **Monitoring:** unusual **403/404** spikes and **audit logs** for access patterns — security reviews care about this story.",
+      "followUps": [
+        {
+          "question": "Does DDD ban surrogate keys in the database?",
+          "answer": "No — **internal ids** are fine for speed inside your database. The rule is what you **export** to other areas. Wrap public ids in **value objects** if it helps readability."
+        },
+        {
+          "question": "How do partners correlate events without internal ids?",
+          "answer": "Use **business keys** like `orderPublicId` in **event payloads** and document them in **schema registry / AsyncAPI** with compatibility rules."
+        }
+      ]
+    },
+    {
+      "id": "d51-s9",
+      "question": "Scale: **order search** is slow because one SQL **joins many tables** from **Customers**, **Orders**, **Shipments** in the monolith. After splitting services, how do you fix reads without breaking boundaries?",
+      "signals": [
+        "CQRS",
+        "read model",
+        "materialized view",
+        "projection",
+        "denormalization"
+      ],
+      "answer": "**Root cause:** the fast path relied on **one shared database join** across areas. After split, that join is either **impossible** or becomes **many HTTP calls** (slow and fragile). **Fix:** build a **search or reporting store** (index, materialized table) owned by the **read side**, fed by **events** or **CDC**. **Trade-off:** search may lag writes slightly — agree **how stale** is OK and **measure lag**. **Tools:** Kafka Connect, Debezium, OpenSearch — with dashboards for **projection lag**. **DDD angle:** this is a **practical read/write split** for a hot path, not a rule for every table.",
+      "followUps": [
+        {
+          "question": "When is API composition (BFF fan-out) enough?",
+          "answer": "For **low traffic** admin pages with a few parallel calls, a **BFF** plus **caching** can be enough. When traffic or filter complexity grows, push work into a **dedicated search service**."
+        },
+        {
+          "question": "What breaks if the projection lags?",
+          "answer": "Users might not see a new order instantly. Mitigate with **short-lived read-your-writes** tricks or honest UI text — product chooses, engineering **measures** lag."
+        }
+      ]
+    },
+    {
+      "id": "d51-s10",
+      "question": "Misconception: “We did DDD, so every entity gets its own microservice.” How do you correct that kindly?",
+      "signals": [
+        "strategic vs tactical",
+        "context vs entity",
+        "monolith first",
+        "Conway"
+      ],
+      "answer": "**Gentle correction:** **DDD** is mainly **how you think and model**. **Microservices** are **how you deploy**. One **bounded context** usually contains **many entities** that change together. **One entity = one service** creates **chatty** systems with little business meaning. **Tactical patterns** (aggregates, events) work great inside a **modular monolith**. **Better path:** draw **business areas**, match **teams**, measure pain, then extract services where **independence** clearly wins. **Maturity signal:** you can explain **strategic** (lines between areas) vs **tactical** (code inside an area) without mixing them up.",
+      "followUps": [
+        {
+          "question": "What is a one-line interview answer?",
+          "answer": "**Contexts bundle what changes together; services should follow those bundles when the ops cost is worth it — not one service per table.**"
+        },
+        {
+          "question": "How do you teach juniors to spot a context boundary?",
+          "answer": "Look for **different words** for the same English term, **different lifecycles**, **different rules**, or **different scale needs**. A **workshop** (like event storming) aligns names **before** code hardens the wrong lines."
         }
       ]
     }

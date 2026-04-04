@@ -10,89 +10,94 @@
     "Advanced",
     "Phase 6",
     "Interview Prep",
-    "Satyverse(Satyam Parmar)"
+    "Satyverse(Satyam Parmar)",
+    "Saga",
+    "transactions"
   ],
   "prerequisites": [
     "Day 55",
     "Day 54"
   ],
   "learningObjectives": [
-    "Explain Saga Pattern & Distributed Transactions with phase-6 depth and clarity",
-    "Implement Java examples for Saga Pattern & Distributed Transactions with production awareness",
-    "Identify failure risks and mitigation strategies",
-    "Reason about trade-offs under realistic constraints",
-    "Design or optimize solutions with maintainability in mind",
-    "Present interview answers with concrete evidence and structure"
+    "Explain why **two-phase** **commit** **scales** **poorly** and how **Sagas** **trade** **strong** **consistency** for **business** **workflows**",
+    "Design **forward** and **compensating** **steps** for **checkout** **flows** with **explicit** **ordering** **rules**",
+    "Compare **orchestrated** and **choreographed** **Sagas** using **debuggability** and **team** **autonomy** **criteria**",
+    "Apply **idempotency** **to** **payments** **and** **refunds** **when** **brokers** **or** **clients** **retry**",
+    "Persist **saga** **instance** **state** **for** **crash** **recovery** and **support** **tooling**",
+    "Relate **transactional** **outbox** **events** to **saga** **transitions** **and** **audit** **requirements**"
   ],
   "sections": [
     {
       "type": "why",
       "title": "Why Saga Pattern & Distributed Transactions matters",
-      "content": "Saga Pattern & Distributed Transactions is a high-value Day 56 topic in Phase 6 (REST APIs and microservice communication trade-offs).\n\nAt this stage, interviewers evaluate whether you can connect implementation details with reliability, scalability, and maintainability outcomes.\n\nWhat strong answers include:\n1. precise concept framing,\n2. operational implications,\n3. one realistic failure pattern,\n4. one practical mitigation.\n\nThis topic is not just about code that compiles. It is about decisions that survive production traffic and team ownership."
+      "content": "**Distributed** **transactions** **without** **discipline** **become** **silent** **data** **corruption** **stories** **in** **post-mortems**. **Sagas** **trade** **ACID** **illusions** for **explicit** **compensation** **paths** you can **test**, **observe**, and **audit**.\n\nInterviewers want **you** **to** **explain** **forward** **steps**, **compensating** **steps**, **failure** **ordering**, and **why** **2PC** **does** **not** **scale** **across** **teams**.\n\nThis day connects **Day** **55** **events** **to** **money** **movements**: **inventory**, **payments**, **shipping**.\n\nYou should **sound** **comfortable** **with** **partial** **failure** **and** **human** **escalation** **paths**.\n\nFinally, **idempotency** **everywhere** **is** **non-negotiable** **when** **brokers** **redeliver** **messages**."
     },
     {
       "type": "theory",
       "title": "Theory and Internals - Saga Pattern & Distributed Transactions",
-      "content": "### Day 56: Saga Pattern & Distributed Transactions\nPhase context: REST APIs and microservice communication trade-offs.\n\n### What to understand deeply\n- mechanism and boundaries\n- runtime behavior and cost\n- operational failure modes\n- trade-offs vs alternatives\n\n### Implementation workflow\n1. Build a clear baseline solution.\n2. Validate edge/failure paths.\n3. Measure impact (latency, memory, throughput, or complexity).\n4. Refactor for readability and maintainability.\n\n### Interview framing template\n- \"The problem this solves is...\"\n- \"I chose this approach because...\"\n- \"The key trade-off is...\"\n- \"A failure case is... and mitigation is...\"\n\n### Production perspective\nFor Saga Pattern & Distributed Transactions, quality is judged by correctness + resilience + debuggability, not just API usage.\n\n### Satyverse — deeper path (theory → practice)\n**Service mesh (e.g. Istio)** — mTLS, traffic split, retries with budgets — operational cost vs library-level resilience.\n\n**Canary / blue-green** releases — metric-driven promotion; automatic rollback on SLO breach.\n\n**Feature flags** decouple deploy from release — targeting and kill switches without redeploy.\n\n**Chaos engineering** in non-prod — validate timeouts and fallbacks actually work."
+      "content": "### Day 56 — **Saga** **pattern** **and** **distributed** **transactions**\n\n### 1. Problem\nCross-service **strong** **consistency** is rare without tight coupling.\n\n### 2. Saga basics\nSequence of local transactions plus compensations.\n\n### 3. Orchestration\nCentral coordinator issues commands.\n\n### 4. Choreography\nServices react to events.\n\n### 5. Compensation\nSemantic undo—not always a SQL delete.\n\n### 6. Idempotency\nForward and backward steps must tolerate retries.\n\n### 7. Persistence\nSaga instance row or event journal.\n\n### 8. Story\nPayment captured, inventory failed → refund compensation with audit trail."
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "Basic — Saga vocabulary",
       "language": "java",
       "filename": "Day56Basic.java",
-      "code": "package arch.day56;\n\nimport java.util.*;\n\npublic class Day56Basic {\n    public static void main(String[] args) {\n        List<String> forward = List.of(\"reserve\", \"charge\", \"ship\");\n        List<String> compensate = List.of(\"unship\", \"refund\", \"release\");\n        Collections.reverse(compensate);\n        System.out.println(compensate);\n    }\n}",
+      "code": "package arch.day56;\n\npublic class Day56Basic {\n    public static void main(String[] args) {\n        System.out.println(\"=== Saga forward steps (example checkout) ===\");\n        System.out.println(\"1. Reserve inventory (local TX in inventory service)\");\n        System.out.println(\"2. Capture payment (local TX in payments service)\");\n        System.out.println(\"3. Create shipment (local TX in shipping service)\");\n        System.out.println();\n        System.out.println(\"=== Compensations (reverse order) ===\");\n        System.out.println(\"3c. Cancel shipment if created\");\n        System.out.println(\"2c. Refund payment if captured\");\n        System.out.println(\"1c. Release inventory reservation\");\n        System.out.println();\n        System.out.println(\"=== Styles ===\");\n        System.out.println(\"Orchestration: coordinator issues commands + stores state\");\n        System.out.println(\"Choreography: services publish facts; peers react\");\n    }\n}\n",
       "level": "basic",
-      "output": "[release, refund, unship]\n",
-      "description": "Saga steps: each has compensating action for rollback."
+      "output": "=== Saga forward steps (example checkout) ===\n1. Reserve inventory (local TX in inventory service)\n2. Capture payment (local TX in payments service)\n3. Create shipment (local TX in shipping service)\n\n=== Compensations (reverse order) ===\n3c. Cancel shipment if created\n2c. Refund payment if captured\n1c. Release inventory reservation\n\n=== Styles ===\nOrchestration: coordinator issues commands + stores state\nChoreography: services publish facts; peers react\n",
+      "description": "Forward steps vs compensations; orchestration vs choreography."
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "Intermediate — State machine trace",
       "language": "java",
       "filename": "Day56Intermediate.java",
-      "code": "package arch.day56;\n\nimport java.util.*;\n\npublic class Day56Intermediate {\n    public static void main(String[] args) {\n        List<Boolean> votes = List.of(true, true, false);\n        boolean commit = votes.stream().allMatch(Boolean::booleanValue);\n        System.out.println(commit ? \"COMMIT\" : \"ABORT\");\n    }\n}",
+      "code": "package arch.day56;\n\npublic class Day56Intermediate {\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Happy path trace ===\");\n        System.out.println(\"START -> RESERVE_OK -> PAY_OK -> SHIP_OK -> DONE\");\n        System.out.println();\n        System.out.println(\"=== Failure after payment (inventory short) ===\");\n        System.out.println(\"START -> RESERVE_OK -> PAY_OK -> INVENTORY_FAIL\");\n        System.out.println(\"COMPENSATE -> REFUND_OK -> RELEASE_OK -> ABORTED\");\n    }\n}\n",
       "level": "intermediate",
-      "output": "ABORT\n",
-      "description": "2PC sketch: prepare phase all vote commit or abort."
+      "output": "=== Happy path trace ===\nSTART -> RESERVE_OK -> PAY_OK -> SHIP_OK -> DONE\n\n=== Failure after payment (inventory short) ===\nSTART -> RESERVE_OK -> PAY_OK -> INVENTORY_FAIL\nCOMPENSATE -> REFUND_OK -> RELEASE_OK -> ABORTED\n",
+      "description": "Prints saga transitions for success vs inventory failure path."
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "Advanced — Compensation ordering check",
       "language": "java",
       "filename": "Day56Advanced.java",
-      "code": "package arch.day56;\n\nimport java.util.*;\n\npublic class Day56Advanced {\n    public static void main(String[] args) {\n        List<String> tx = new ArrayList<>();\n        tx.add(\"INSERT order\");\n        tx.add(\"INSERT outbox(event)\");\n        System.out.println(tx);\n    }\n}",
+      "code": "package arch.day56;\n\npublic class Day56Advanced {\n\n    static String compensationOrder(boolean shipped) {\n        StringBuilder b = new StringBuilder();\n        if (shipped) {\n            b.append(\"cancelShipment;\");\n        }\n        b.append(\"refundPayment;\");\n        b.append(\"releaseInventory;\");\n        return b.toString();\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"order_if_shipped=\" + compensationOrder(true));\n        System.out.println(\"order_if_not_shipped=\" + compensationOrder(false));\n    }\n}\n",
       "level": "advanced",
-      "output": "[INSERT order, INSERT outbox(event)]\n",
-      "description": "Outbox pattern: write business row + outbox event in same DB transaction."
+      "output": "order_if_shipped=cancelShipment;refundPayment;releaseInventory;\norder_if_not_shipped=refundPayment;releaseInventory;\n",
+      "description": "Validates compensation list order string for toy saga."
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 56",
-      "diagramType": "sequence",
-      "description": "Visual model for Saga Pattern & Distributed Transactions",
-      "plantuml": "@startuml\ntitle Day 56 - Saga Pattern & Distributed Transactions\nactor Learner\nrectangle \"Satyverse(Satyam Parmar) Lesson Engine\" {\n  component \"Theory\"\n  component \"Code\"\n  component \"Exercise\"\n  component \"Interview Drill\"\n}\nLearner --> \"Theory\" : Understand concept\nLearner --> \"Code\" : Implement\nLearner --> \"Exercise\" : Practice\nLearner --> \"Interview Drill\" : Explain\n@enduml"
+      "title": "Orchestrated saga with compensations",
+      "diagramType": "component",
+      "description": "Coordinator drives forward steps; failures trigger reverse compensations.",
+      "plantuml": "@startuml\ntitle Day 56 — Saga compensation\nparticipant Orchestrator\nparticipant Inventory\nparticipant Payments\n\nOrchestrator -> Inventory : reserve\nInventory --> Orchestrator : ok\nOrchestrator -> Payments : capture\nPayments --> Orchestrator : ok\nOrchestrator -> Inventory : ship\nInventory --> Orchestrator : fail\nOrchestrator -> Payments : refund (compensate)\nOrchestrator -> Inventory : release (compensate)\n@enduml"
     },
     {
       "type": "pitfalls",
       "title": "Common Pitfalls",
       "items": [
-        "Designing APIs without idempotency and failure semantics.",
-        "Coupling services tightly through synchronous chains.",
-        "Skipping resilience policies (retry/circuit/bulkhead/rate limits).",
-        "Ignoring consistency boundaries in distributed workflows.",
-        "Treating microservice decomposition as purely technical refactor."
+        "**Compensating** **in** **wrong** **order**, **leaving** **money** **refunded** **but** **inventory** **still** **locked**.",
+        "**Treating** **HTTP** **502** **as** **failure** **when** **payment** **actually** **settled**, **triggering** **wrong** **refund**.",
+        "**Missing** **idempotency** **on** **refund** **API**, **double** **crediting** **customers** **during** **retries**.",
+        "**No** **persistent** **saga** **state**, **so** **process** **crash** **restarts** **workflow** **from** **scratch** **duplicating** **charges**.",
+        "**Choreography** **without** **correlation** **ids**, **impossible** **to** **debug** **which** **order** **instance** **failed**.",
+        "**Compensation** **that** **throws** **unchecked** **exceptions** **without** **retry** **policy**, **stuck** **sagas** **forever**.",
+        "**Skipping** **audit** **logs** **for** **money** **movements**, **failing** **SOC2** **reviews**.",
+        "**Assuming** **cancel** **shipment** **always** **possible** **after** **carrier** **picked** **up**—**business** **rules** **differ**."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - Saga Pattern & Distributed Transactions Applied Scenario",
-      "problem": "Implement a realistic solution for **Saga Pattern & Distributed Transactions**.\n\nRequirements:\n1. Define assumptions and constraints first.\n2. Include one failure-path handling strategy.\n3. Provide one improvement over baseline.\n4. State complexity or runtime impact.\n5. Keep implementation review-friendly.",
+      "title": "Exercise — Compensating payment after inventory failure (Day 56 assignment)",
+      "problem": "Align with **Day 56 Assignment**: **Compensating payment after inventory failure**.\n\n1. Implement **`runCheckout(boolean inventoryOk)`** building a **single** **semicolon-separated** **log** **string** **exactly** as the **reference** **`main()`** prints.\n2. **Happy** **path** (`inventoryOk == true`): `reserve:OK;pay:CAPTURED;inventory:OK;ship:OK;final:DONE`\n3. **Failure** **path**: after **`pay:CAPTURED`**, **`inventory` fails**, then **`compensate:REFUND;compensate:RELEASE;final:ABORTED`**.\n4. **Deterministic** **only**—no **random** **or** **clock** **logic**.",
       "hints": [
-        "State constraints before coding.",
-        "Add one observability/debug aid in output or comments.",
-        "Document one trade-off clearly."
+        "**Append** **segments** **in** **order** with **`StringBuilder`**.",
+        "**Branch** **only** **on** **the** **boolean** **parameter**.",
+        "**Match** **reference** **string** **exactly**."
       ],
-      "solution": "package arch.day56;\nimport java.util.*;\n\npublic class Day56Advanced {\n    static record Review(String topic, int confidence, boolean needsRevision) {}\n\n    public static void main(String[] args) {\n        List<Review> reviews = List.of(\n            new Review(\"Saga Pattern & Distributed Transactions\", 72, true),\n            new Review(\"Coding Practice\", 81, false),\n            new Review(\"Interview Explanation\", 68, true)\n        );\n\n        long reviseCount = reviews.stream().filter(Review::needsRevision).count();\n        int avg = (int) reviews.stream().mapToInt(Review::confidence).average().orElse(0);\n\n        System.out.println(\"avgConfidence = \" + avg);\n        System.out.println(\"needsRevision = \" + reviseCount);\n    }\n}\n",
+      "solution": "package arch.day56;\n\n/**\n * Day 56 assignment: compensate payment after inventory failure (toy saga log).\n */\npublic class Day56Exercise {\n\n    static String runCheckout(boolean inventoryOk) {\n        StringBuilder log = new StringBuilder();\n        log.append(\"reserve:OK;\");\n        log.append(\"pay:CAPTURED;\");\n        if (!inventoryOk) {\n            log.append(\"inventory:FAIL;\");\n            log.append(\"compensate:REFUND;\");\n            log.append(\"compensate:RELEASE;\");\n            log.append(\"final:ABORTED\");\n        } else {\n            log.append(\"inventory:OK;\");\n            log.append(\"ship:OK;\");\n            log.append(\"final:DONE\");\n        }\n        return log.toString();\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Saga assignment trace ===\");\n        System.out.println(\"happy=\" + runCheckout(true));\n        System.out.println(\"fail=\" + runCheckout(false));\n    }\n}\n",
       "difficulty": "Advanced"
     },
     {
@@ -100,147 +105,459 @@
       "title": "Interview Drill",
       "conceptual": [
         {
-          "question": "What is saga pattern?",
-          "answer": "Long-lived transaction split into local transactions with compensating actions."
+          "question": "What is a **Saga** **pattern**?",
+          "answer": "A **Saga** **splits** a **business** **transaction** into **local** **transactions** with **compensating** **actions** **instead** of **two-phase** **commit** **across** **databases**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. A **Saga** **splits** a **business** **transaction** into **local** **transactions** with **compensa Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. A **Saga** **splits** a **business** **transaction** into **local** **transactions** with Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+            }
+          ]
         },
         {
-          "question": "What is choreography saga?",
-          "answer": "Each service reacts to events—no central brain—harder to trace."
+          "question": "**Choreography** **Saga** vs **orchestration** **Saga**?",
+          "answer": "**Choreography** **uses** **events** **between** **services**; **orchestration** **uses** **central** **coordinator** **issuing** **commands**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **Choreography** **uses** **events** **between** **services**; **orchestration** **uses** **central* For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **Choreography** **uses** **events** **between** **services**; **orchestration** **uses** Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            }
+          ]
         },
         {
-          "question": "What is orchestration saga?",
-          "answer": "Orchestrator drives steps—clear flow central point of failure mitigation."
+          "question": "What is a **compensating** **transaction**?",
+          "answer": "A **business** **operation** **that** **semantically** **undoes** **effects** **of** **a** **prior** **forward** **step**—not always **SQL** **ROLLBACK**. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. A **business** **operation** **that** **semantically** **undoes** **effects** **of** **a** **prior** For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. A **business** **operation** **that** **semantically** **undoes** **effects** **of** **a** Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "What is compensating transaction?",
-          "answer": "Undo business action—like refund after reserve—must be designed idempotent."
+          "question": "Why not **2PC** **everywhere**?",
+          "answer": "**Two-phase** **commit** **locks** **resources** **long** **time**, **hurts** **availability**, **hard** **across** **heterogeneous** **systems**. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **Two-phase** **commit** **locks** **resources** **long** **time**, **hurts** **availability**, **ha For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **Two-phase** **commit** **locks** **resources** **long** **time**, **hurts** **availabili When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations."
+            }
+          ]
         },
         {
-          "question": "What is two-phase commit 2PC?",
-          "answer": "Distributed atomic commit—blocking availability concerns—avoid in microservices often."
+          "question": "What is **pivot** **transaction** in **Saga** **terms**?",
+          "answer": "The **step** **after** **which** **the** **workflow** **commits** **forward** **unless** **compensation** **runs**—defines **business** **commit** **point**. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. The **step** **after** **which** **the** **workflow** **commits** **forward** **unless** **compensat Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. The **step** **after** **which** **the** **workflow** **commits** **forward** **unless** * When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations."
+            }
+          ]
         },
         {
-          "question": "What is TCC Try-Confirm-Cancel?",
-          "answer": "Reserves resources then confirms—explicit three phases—complex."
+          "question": "How handle **compensation** **failure**?",
+          "answer": "**Retry** **with** **idempotency**, **manual** **intervention** **queue**, **audit** **trail** **for** **finance** **reconciliation**. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **Retry** **with** **idempotency**, **manual** **intervention** **queue**, **audit** **trail** **for Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **Retry** **with** **idempotency**, **manual** **intervention** **queue**, **audit** **tra Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+            }
+          ]
         },
         {
-          "question": "What is eventual consistency?",
-          "answer": "System becomes consistent over time—UX handles temporary inconsistency."
+          "question": "What **idempotency** **means** for **compensate** **refund**?",
+          "answer": "Calling **refund** **twice** **must** **not** **double** **credit**—**provider** **keys** **help**. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Calling **refund** **twice** **must** **not** **double** **credit**—**provider** **keys** **help**. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Calling **refund** **twice** **must** **not** **double** **credit**—**provider** **keys** Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+            }
+          ]
         },
         {
-          "question": "What is idempotency key in payments?",
-          "answer": "Duplicate request detection—critical for sagas."
+          "question": "What is **Saga** **log** / **state** **table**?",
+          "answer": "**Orchestrator** **persists** **current** **step** **and** **last** **completed** **actions** **for** **crash** **recovery**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **Orchestrator** **persists** **current** **step** **and** **last** **completed** **actions** **for* Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **Orchestrator** **persists** **current** **step** **and** **last** **completed** **action Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            }
+          ]
         },
         {
-          "question": "What is SAGA timeout handling?",
-          "answer": "Compensate incomplete steps—timeouts per step saga state machine."
+          "question": "How **timeouts** interact with **Saga**?",
+          "answer": "Each **step** **needs** **deadline**; **on** **timeout** **decide** **retry** **vs** **compensate** **based** **on** **known** **state**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Each **step** **needs** **deadline**; **on** **timeout** **decide** **retry** **vs** **compensate** Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Each **step** **needs** **deadline**; **on** **timeout** **decide** **retry** **vs** **com Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+            }
+          ]
         },
         {
-          "question": "What is distributed deadlock?",
-          "answer": "Circular waits across services—avoid lock ordering global IDs."
+          "question": "What **event** **naming** **helps** **Sagas**?",
+          "answer": "Past-tense **facts** **like** **PaymentCaptured** **vs** **imperative** **ChargeCard** **commands**—clarity **for** **consumers**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Past-tense **facts** **like** **PaymentCaptured** **vs** **imperative** **ChargeCard** **commands**— Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Past-tense **facts** **like** **PaymentCaptured** **vs** **imperative** **ChargeCard** **c Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "What is outbox + process manager?",
-          "answer": "Reliable events + orchestration state—robust combo."
+          "question": "What **anti-pattern** in **distributed** **transactions**?",
+          "answer": "**Distributed** **database** **joins** **across** **services** **pretending** **ACID** **globally**. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **Distributed** **database** **joins** **across** **services** **pretending** **ACID** **globally**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **Distributed** **database** **joins** **across** **services** **pretending** **ACID** **g Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**."
+            }
+          ]
         },
         {
-          "question": "What is human intervention in saga?",
-          "answer": "Manual compensation for complex failures—operations runbooks."
+          "question": "How **Saga** **relates** to **outbox**?",
+          "answer": "**Outbox** **ensures** **events** **emit** **reliably** **after** **local** **commit**—**feeds** **Saga** **steps**. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **Outbox** **ensures** **events** **emit** **reliably** **after** **local** **commit**—**feeds** **S Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **Outbox** **ensures** **events** **emit** **reliably** **after** **local** **commit**—**f Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**."
+            }
+          ]
         },
         {
-          "question": "What is CDC change data capture relation?",
-          "answer": "Event sourcing adjacent—capture DB changes to events."
+          "question": "What **testing** **strategy** for **Sagas**?",
+          "answer": "**State** **machine** **tests** **with** **injected** **failures** **per** **transition**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **State** **machine** **tests** **with** **injected** **failures** **per** **transition**. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **State** **machine** **tests** **with** **injected** **failures** **per** **transition**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            }
+          ]
         },
         {
-          "question": "What is CAP in distributed transactions?",
-          "answer": "Partition tolerance forces trade-off C vs A—2PC blocks."
+          "question": "What **observability** for **Sagas**?",
+          "answer": "**Correlation** **id** **per** **saga** **instance**, **metrics** **on** **stuck** **states** **> SLA**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **Correlation** **id** **per** **saga** **instance**, **metrics** **on** **stuck** **states** **> SL Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **Correlation** **id** **per** **saga** **instance**, **metrics** **on** **stuck** **state Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**."
+            }
+          ]
         },
         {
-          "question": "What is business invariant across services?",
-          "answer": "Cannot rely on ACID cross DB—design sagas carefully."
+          "question": "What **business** **risk** **without** **Saga** **audit**?",
+          "answer": "**Finance** **cannot** **reconcile** **partial** **shipments** **with** **failed** **payments**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Saga and distributed transactions**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **Finance** **cannot** **reconcile** **partial** **shipments** **with** **failed** **payments**. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **Finance** **cannot** **reconcile** **partial** **shipments** **with** **failed** **payme Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**."
+            }
+          ]
         }
       ],
       "codeBased": [
         {
-          "question": "State machine states PENDING RESERVED PAID SHIPPED",
-          "answer": "Transitions with events."
+          "question": "**State** **enum** for **orchestrator**",
+          "answer": "// enum Step { RESERVED, PAID, SHIPPED, COMPENSATING }",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "Compensate cancelReservation after payment fail",
-          "answer": "Saga step example."
+          "question": "**Spring** **@Transactional** **local** **step**",
+          "answer": "// void reserveInventory() { jdbc.update(...); }",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "Orchestrator calls REST then on failure call compensate",
-          "answer": "Pseudo flow."
+          "question": "**Compensate** **method** **signature**",
+          "answer": "// void releaseInventory(String reservationId);",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "Idempotency store table request_id primary key",
-          "answer": "Dedup."
+          "question": "**Kafka** **command** **topic** pattern",
+          "answer": "// saga.commands OrderSaga.CompensatePayment",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "2PC XA DataSource sketch",
-          "answer": "Rare modern—know existence."
+          "question": "**Idempotent** **refund** **pseudo**",
+          "answer": "// if (!refunds.exists(key)) provider.refund(key);",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "Choreography event OrderCreated PaymentReserved",
-          "answer": "Event names past tense."
+          "question": "**Temporal** **workflow** mention",
+          "answer": "// Workflow.sleep + signals for long-running saga",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "Timeout scheduled job saga stuck detection",
-          "answer": "Alert ops."
+          "question": "**Axon** **@SagaEventHandler** comment",
+          "answer": "// reacts to domain events, persists association values",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "Transactional outbox relay polling",
-          "answer": "Separate process."
+          "question": "**Database** **row** **lock** **for** **saga** **instance**",
+          "answer": "// SELECT ... FOR UPDATE on saga_instance row",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "Saga log append-only audit",
-          "answer": "Replay debugging."
+          "question": "**MapStruct** irrelevant—skip",
+          "answer": "// compensation DTO mapping from legacy monolith",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "REST POST retry safe if idempotent PUT semantics",
-          "answer": "Design payment APIs carefully."
+          "question": "**Dead** **letter** for **failed** **compensation**",
+          "answer": "// publish CompensationFailed event to ops topic",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         }
       ],
       "seniorScenario": [
         {
-          "question": "Partial saga failure money taken not shipped—ops?",
-          "answer": "Manual reconciliation compensating transactions customer support tools."
+          "question": "**Incident:** **inventory** **reserved** but **payment** **failed**—**shipment** **started**.",
+          "answer": "**(1) Immediate response** **Stop** **fulfillment**; **freeze** **SKU**.\n\n**(2) Root cause** **Missing** **gate** **between** **steps** **or** **race** **in** **choreography**.\n\n**(3) Fix** **Run** **compensating** **shipment** **cancel** **+** **inventory** **release** **with** **audit**.\n\n**(4) Prevention** **Saga** **state** **table** **with** **explicit** **invariants**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail.",
+          "followUps": [
+            {
+              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
+              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "Which **post-incident** **action** items are **non-negotiable**?",
+              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "2PC in microservices outage?",
-          "answer": "Coordinator failure blocks participants—availability hit—why sagas preferred."
+          "question": "**Design:** **hotel** **booking** **across** **three** **services**.",
+          "answer": "**(1) Immediate response** Pick **orchestrator** **with** **timeouts**.\n\n**(2) Root cause** **Choreography** **hard** **for** **customer** **support** **to** **trace**.\n\n**(3) Fix** **Orchestrated** **Saga** **+** **support** **dashboard**.\n\n**(4) Prevention** **E2E** **tests** **for** **each** **failure** **branch**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls.",
+          "followUps": [
+            {
+              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
+              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "Which **post-incident** **action** items are **non-negotiable**?",
+              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "Exactly-once myth marketing?",
-          "answer": "End-to-end exactly-once is composite idempotency + dedupe + offsets."
+          "question": "**Compensation** **fails** **with** **provider** **timeout**.",
+          "answer": "**(1) Immediate response** **Retry** **exponential**; **open** **sev** **2**.\n\n**(2) Root cause** **External** **API** **flaky** **during** **peak**.\n\n**(3) Fix** **Persist** **compensation** **job** **with** **next** **run** **time**.\n\n**(4) Prevention** **Partner** **SLA** **playbook**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**.",
+          "followUps": [
+            {
+              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
+              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "Which **post-incident** **action** items are **non-negotiable**?",
+              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "Regulatory audit saga logs retention?",
-          "answer": "Immutable store compliance—years."
+          "question": "**Audit:** **finance** **needs** **proof** **of** **refund** **attempts**.",
+          "answer": "**(1) Immediate response** Export **immutable** **log**.\n\n**(2) Root cause** **Saga** **logs** **in** **mutable** **tables** **only**.\n\n**(3) Fix** **Append-only** **event** **store** **for** **money** **steps**.\n\n**(4) Prevention** **Quarterly** **reconciliation** **jobs**. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims.",
+          "followUps": [
+            {
+              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
+              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "Which **post-incident** **action** items are **non-negotiable**?",
+              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "Cross-border payment saga compliance steps?",
-          "answer": "Additional verification steps asynchronous—long-running."
+          "question": "**Scale:** **10k** **Sagas** **per** **minute** **on** **single** **DB** **orchestrator**.",
+          "answer": "**(1) Immediate response** **Shard** **saga** **instances**.\n\n**(2) Root cause** **Lock** **contention** **on** **coordinator** **row**.\n\n**(3) Fix** **Partition** **by** **tenant** **or** **hash**.\n\n**(4) Prevention** **Benchmark** **before** **black** **Friday**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail.",
+          "followUps": [
+            {
+              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
+              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "Which **post-incident** **action** items are **non-negotiable**?",
+              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "Testing sagas?",
-          "answer": "Model-based tests fault injection simulate failures each step."
+          "question": "**Legal:** **compensation** **cannot** **delete** **PII** **already** **shipped** **to** **warehouse**.",
+          "answer": "**(1) Immediate response** **Legal** **review**.\n\n**(2) Root cause** **GDPR** **vs** **operational** **data** **retention**.\n\n**(3) Fix** **Anonymize** **where** **possible**; **document** **holds**.\n\n**(4) Prevention** **Policy** **as** **code** **on** **compensation** **paths**. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work.",
+          "followUps": [
+            {
+              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
+              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "Which **post-incident** **action** items are **non-negotiable**?",
+              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         }
       ],
       "wrongAnswers": [
-        "Saga means you have ACID transactions across all microservices.",
-        "Compensating actions can always perfectly undo any real-world effect.",
-        "Two-phase commit is the default approach in Spring Cloud.",
-        "Choreography sagas are always simpler than orchestration.",
-        "Distributed transactions are free from performance overhead.",
-        "Eventual consistency means the system is always wrong."
+        "**Saga** **equals** **2PC** — **Correction:** **Saga** **avoids** **global** **locks** **with** **compensations**.",
+        "**Compensating** **always** **means** **SQL** **ROLLBACK** — **Correction:** **Business** **undo** **may** **call** **APIs**.",
+        "**Choreography** **needs** **no** **correlation** **id** — **Correction:** **Tracing** **requires** **shared** **ids**.",
+        "**Saga** **guarantees** **strong** **consistency** — **Correction:** **Eventual** **consistency** **with** **business** **rules**.",
+        "**Orchestrator** **cannot** **fail** — **Correction:** **Must** **persist** **state** **and** **recover**.",
+        "**Compensation** **order** **irrelevant** — **Correction:** **Depends** **on** **business** **dependencies**.",
+        "**Events** **remove** **need** for **timeouts** — **Correction:** **Each** **step** **still** **bounded**.",
+        "**Saga** **only** **for** **payments** — **Correction:** **Any** **multi-step** **cross-service** **workflow**."
       ]
     },
     {
       "type": "cheatsheet",
       "title": "Cheatsheet",
-      "content": "| Area | Phase 6 Expectation | Quick Rule | Gotcha |\n|---|---|---|---|\n| Framing | Explain intent + constraints | Start from problem | API-only answer |\n| Design | State trade-off explicitly | Compare alternatives | One-solution bias |\n| Runtime | Mention cost impact | Time + space/ops | No performance reasoning |\n| Failure | Name one incident pattern | Mitigation path | Happy-path only thinking |\n| Communication | Be concise + concrete | Use one example | Generic buzzwords |"
+      "content": "| Topic | Rule | One-liner |\n|---|---|---|\n| Saga | Local TX + compensate | No global 2PC |\n| Orchestration | Coordinator | Easier ops traces |\n| Choreography | Domain events | Needs correlation id |\n| Compensation | Semantic undo | Not always DELETE row |\n| Idempotency | All steps | Survives redelivery |\n| Pivot step | Business commit point | Defines when forward-only |\n| Audit | Append-only money log | Compliance requirement |\n| Timeout | Per step | Retry vs compensate decision |\n| Outbox | Reliable events | Feeds saga transitions |\n| Testing | Inject failures | State machine coverage |"
     }
   ]
 }

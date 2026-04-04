@@ -1,58 +1,222 @@
 {
   "day": 50,
-  "title": "REST Best Practices & OpenAPI",
+  "title": "REST Best Practices and OpenAPI",
   "phaseId": "phase6",
   "tags": [
     "OpenAPI",
-    "pagination",
-    "errors"
+    "springdoc",
+    "Spectral",
+    "codegen",
+    "breaking changes",
+    "Swagger UI",
+    "contract testing",
+    "GroupedOpenApi",
+    "Problem Details",
+    "API governance"
   ],
   "scenarios": [
     {
       "id": "d50-s1",
-      "question": "Offset pagination deep page 10k—problem and alternative?",
+      "question": "Code review: `@Operation(summary=\"Get\")` on every method and missing `operationId`. What is wrong?",
       "signals": [
-        "keyset",
-        "cursor",
-        "performance"
+        "operationId",
+        "codegen",
+        "springdoc",
+        "lint"
       ],
-      "answer": "**Large offsets** expensive in SQL—use **keyset/cursor** pagination on **stable sort key** (`(created_at,id)`).",
+      "answer": "Omitting **`operationId`** forces generators to **synthesise names**, which change when you reorder methods or upgrade plugins — **Feign** and **OpenAPI Generator** clients then get unstable method names and noisy diffs. A vague **`summary`** does not fix that. **Root cause:** treat documentation annotations as cosmetic. **Fix:** require a unique, stable **`operationId`** per path+verb (review checklist + **Spectral** rule `operation-operationId-unique`). **Production impact:** without this, a harmless refactor renames generated interfaces and breaks **Android** builds even when REST paths never changed.",
       "followUps": [
         {
-          "question": "OpenAPI codegen vs hand DTOs?",
-          "answer": "**Contract-first** for **public** APIs; ensure **generator** matches **runtime** validation."
+          "question": "Which Spectral rule would you enable first for a Java shop?",
+          "answer": "Start with **`operation-operationId`** and uniqueness rules, then **`operation-success-response`** (document errors), then **`oas3-valid-media-example`**. **Why:** those three kill the highest-volume incidents: codegen drift, undocumented **4xx/5xx**, and copy-paste examples that fail **Bean Validation**. Tie failures to **CI** annotations on the PR so authors fix YAML before merge, not after partners escalate."
+        },
+        {
+          "question": "How does stable `operationId` interact with multiple controller classes?",
+          "answer": " **`operationId` must be globally unique in the document**, not per class — duplicate IDs merge incorrectly in **Swagger UI** and break codegen. **Pattern:** prefix with domain (`orders_getOrder`) or use **`x-codegen-operation-id`** if the public id must stay pretty. **Senior angle:** align IDs with **gateway operation names** for **observability** dashboards so traces, metrics, and docs share one identifier."
         }
       ]
     },
     {
       "id": "d50-s2",
-      "question": "Standardize error body across microservices—shape?",
+      "question": "Production: partner says their SDK now throws on every `GET /orders/{id}` after your deploy. Your service tests are green. Diagnose.",
       "signals": [
-        "problem+json",
-        "traceId",
-        "code"
+        "OpenAPI Generator",
+        "required field",
+        "DTO",
+        "breaking change"
       ],
-      "answer": "**RFC 7807 Problem Details** + **`traceId`** + **machine-readable `code`**—**no** stack traces to clients.",
+      "answer": "**Hypothesis:** a **required** JSON field was added to the `Order` DTO without a **major** version bump; server always sent it, but **OpenAPI** still described the old optional shape — or vice versa: you removed a field clients deserialize as **non-null**. **Monitoring:** **APM** (`4xx` rate flat) can miss this if HTTP **200** returns and parsing fails client-side; partner **logs** show `JsonMappingException`. **Root cause:** **spec drift** or unpinned **generator** upgrade. **Fix:** restore field as **deprecated**, ship **patched SDK**, run **openapi-diff** on PRs, add **consumer Pact** for the partner. **Prevention:** publish **immutable** `openapi.json` per **release tag** in an artefact repo.",
       "followUps": [
         {
-          "question": "`If-Match` ETag concurrency?",
-          "answer": "**Optimistic** concurrency for **updates**—**412** on mismatch."
+          "question": "How would you prove spec drift in post-mortem?",
+          "answer": "Diff **`openapi.json`** from **artifact storage** between versions `1.2.0` and `1.2.1` and highlight **required** array changes under `components.schemas.Order`. Attach **Gradle dependency** graph showing **generator** version movement. **Why:** blame attaches to process, not a single engineer. **Tooling:** **Bump.sh** or **Optic** render the diff for executives; engineering uses **git** on the spec file."
+        },
+        {
+          "question": "Should you fix forward by loosening Kotlin nullability?",
+          "answer": "Only as a **temporary** hotfix if you control both sides — long term, **align the contract** and **semver** the SDK. **Why:** loosening types masks the fact that **business data** is missing; mobile might now hide corrupted totals. **Senior:** prefer **feature flags** on the field plus **dual-write** documentation until clients ship."
         }
       ]
     },
     {
       "id": "d50-s3",
-      "question": "Bulk export endpoint returns huge JSON—better design?",
+      "question": "Design choice: single giant `openapi.yaml` vs multiple files merged in CI for 60 microservices.",
       "signals": [
-        "streaming",
-        "CSV",
-        "async job"
+        "monorepo",
+        "ownership",
+        "merge",
+        "bounded context"
       ],
-      "answer": "**Streaming** response, **paged** export, or **async job** + **download URL** when long-running—avoid **single** giant payload.",
+      "answer": "**Recommendation:** **per-service** OpenAPI documents owned by each team, published to a **catalog** (Backstage, portal) with **UUID** service ids — not one giant file. **Why:** merge conflicts destroy velocity; **ownership** boundaries blur. **Trade-off:** cross-service **choreography** links (`links` objects, shared **Problem** schema) need a **shared** `components` package versioned like a library. **Alternative:** **federated** specs with tooling (**Redocly**, **Swagger Hub**) if marketing wants a unified **partner PDF**. **Senior:** optimise for **CI isolation** — each repo runs **Spectral** independently.",
       "followUps": [
         {
-          "question": "Content-Type versioning?",
-          "answer": "Rare—prefer **explicit API version**; **vendor media types** if needed."
+          "question": "How do you reuse the Problem Details schema?",
+          "answer": "Publish **`problem-detail.yaml`** as a versioned **Maven**/npm package or git submodule; reference via `$ref` in each service spec. **Why:** identical error UX across services. **Guardrail:** **Spectral** rule ensuring `problem+json` responses reference the shared component, not ad-hoc duplicates."
+        },
+        {
+          "question": "When is a unified bundle actually worth it?",
+          "answer": "When **legal/compliance** requires a single downloadable contract for **regulators**, or a **gateway** vendor accepts only one file for **policy** generation. Generate the **bundle** in CI from sources — never hand-edit the **megafile**."
+        }
+      ]
+    },
+    {
+      "id": "d50-s4",
+      "question": "Explain how springdoc builds the OpenAPI model at runtime.",
+      "signals": [
+        "HandlerMethod",
+        "javadoc",
+        "annotations",
+        "WebFlux"
+      ],
+      "answer": "**springdoc** scans **Spring MVC** `HandlerMethod` metadata (class + method annotations, generic types) and builds an **`OpenAPI`** object graph. **`@Operation`**, **`@Parameter`**, **`@Schema`** supply documentation; return types and **`ResponseEntity`** generics inform **response** schemas. **Customisers** (`OpenApiCustomiser`, **`PropertyCustomizer`**) tweak the model before serialization to JSON. **WebFlux** needs **`@RouterOperation`** for functional routes or they may be absent. **Why interviewers ask:** to see if you know **introspection** limits — undocumented **validation** (`@Min`, `@Pattern`) appears only if configured via **`springdoc` + Bean Validation** integration.",
+      "followUps": [
+        {
+          "question": "Why might documented query params differ from reality?",
+          "answer": "Custom **`HandlerMethodArgumentResolver`** or **`@ModelAttribute`** binding may accept parameters not visible as **`@RequestParam`**, so **springdoc** omits them. **Fix:** add **`@Parameter`** manually or a **customiser**. **Production:** partners send `filter` and get **400** despite docs — support tickets spike."
+        },
+        {
+          "question": "How do you document file upload multipart?",
+          "answer": "Use **`@RequestPart`** + **`content multipart` with `schema type: string format: binary`** in **`@Operation`**. **Why:** codegen clients need correct **OkHttp** / **WebClient** parts. **Senior:** cap size at gateway and repeat limit in **`description`**."
+        }
+      ]
+    },
+    {
+      "id": "d50-s5",
+      "question": "Trade-off: strict Spectral rules vs team velocity.",
+      "signals": [
+        "lint",
+        "exceptions",
+        "governance"
+      ],
+      "answer": "**Pros of strict rules:** fewer **production** incidents, consistent **SDKs**, easier **SRE** dashboards. **Cons:** teams game checks, bypass with `# noqa`-style ignores, or stop writing specs. **Balance:** **tiered** rules — **ERROR** for breaking doc gaps (`operationId`, documented **401/403/429** on public ops), **WARN** for style. Allow **time-boxed waivers** tracked in **Backstage** with owner + expiry. **Metric:** **mean time to green** first-time contributor under 10 minutes using **copy-paste** templates.",
+      "followUps": [
+        {
+          "question": "How do you prevent ignore sprawl?",
+          "answer": "Central **Spectral** config; **CODEOWNERS** on overrides; monthly report of **ignored** rules per team. **Why:** ignores become permanent **debt**. **Senior:** tie waivers to **risk class** — **PCI** services cannot ignore auth documentation rules."
+        },
+        {
+          "question": "Do you lint generated specs?",
+          "answer": "Lint **after** generation in CI; failures assign to the **source** PR author, not docs team. **Why:** generated JSON can violate organisation rules (missing **servers**). **Exception:** vendor **third-party** specs lint separately with relaxed profile."
+        }
+      ]
+    },
+    {
+      "id": "d50-s6",
+      "question": "Integration tests pass but staging Swagger shows admin endpoints. Why can this happen?",
+      "signals": [
+        "profiles",
+        "GroupedOpenApi",
+        "security misconfig"
+      ],
+      "answer": "**Root cause:** **springdoc** scans **all** beans in the staging profile, including **actuator** or **debug** controllers, because **`@Profile` filtering** was not applied to **GroupedOpenApi** or **packagesToScan** is too broad. Another pattern: **feature-flag** exposes a bean in staging not present locally. **Why tests miss:** **WebMvcTest** slices do not load those controllers, but **full** staging does. **Fix:** explicit **`pathsToMatch`** for public groups, separate **`internal` group** behind auth, disable admin routes on external interfaces. **Detection:** **OWASP ZAP** baseline scan in staging **CI** alerts on new paths.",
+      "followUps": [
+        {
+          "question": "Should Actuator appear in OpenAPI at all?",
+          "answer": "Usually **no** in partner bundles; **yes** sometimes in **internal** docs with **strong auth**. **Spring Boot 3** + **springdoc** may need **`ManagementServerProperties`** separation — expose docs on **management port** only. **Senior:** **network policy** beats annotation tricks."
+        },
+        {
+          "question": "How to verify externally?",
+          "answer": "Scheduled job hits **`/v3/api-docs`** from **public internet** and asserts **JSON** does not contain `/internal/` paths — store **hash** in **Datadog** monitor."
+        }
+      ]
+    },
+    {
+      "id": "d50-s7",
+      "question": "Architect OpenAPI governance for 200 services consumed by web, mobile, and 30 partners.",
+      "signals": [
+        "portal",
+        "Pact",
+        "semver",
+        "artifact"
+      ],
+      "answer": "Establish **three layers:** (1) **Authoring** — springdoc + **Spectral** in each repo **PR**. (2) **Publication** — on **release**, upload **`openapi.json` + checksum** to **artifact storage** keyed by **service name + semver**. (3) **Consumption** — **developer portal** renders latest **major**, **SDK** pipelines pull pinned minors. **Cross-cutting:** **Pact** for top 10 consumers, **breaking-change** committee for shared models. **Trade-off:** central gate adds latency — mitigate with **self-service** generators and **templates**.",
+      "followUps": [
+        {
+          "question": "How do partners pin versions?",
+          "answer": "Expose **`/v3/api-docs?group=public` per release tag** URL or **static** `https://developer.example.com/specs/orders-2.3.0.json`. **Legal:** contract references exact **hash**. **Senior:** **Sunset** header + email automation when `<` 90 days."
+        },
+        {
+          "question": "Who approves shared `Money` schema changes?",
+          "answer": "**Architecture council** or **domain working group** with representatives from **billing** and **checkout** teams; change merged only with **dual** code owners. **Why:** prevents subtle **rounding** disagreements across services."
+        }
+      ]
+    },
+    {
+      "id": "d50-s8",
+      "question": "Security: engineers paste production JWTs into Swagger examples. What breaks?",
+      "signals": [
+        "secrets",
+        "git history",
+        "compliance"
+      ],
+      "answer": "**Risk:** tokens live in **git history**, **Splunk** logs, and **browser local storage** on shared machines — violates **least privilege** and **PCI** logging rules. **Attackers** scrape **Swagger** pages for **Bearer** strings. **Root cause:** examples treated as **debug scratchpad**. **Fix:** use **obviously fake** JWTs, **redact** in **pre-commit** hooks (**gitleaks**), rotate exposed secrets, educate on **`Try it out`**. **Prevention:** **Spectral** custom rule banning `Bearer eyJ` pattern in literals.",
+      "followUps": [
+        {
+          "question": "How should auth work in Try-it-out?",
+          "answer": "Configure **Swagger UI** `persistAuthorization` carefully; prefer **OAuth2** **PKCE** flow against **staging** **IdP**, never static tokens in YAML. **Senior:** disable **Try-it-out** for **production** URLs entirely."
+        },
+        {
+          "question": "Are `$ref` secrets safer?",
+          "answer": "No — inlined on bundle. **Never** reference secret vaults from spec; use **environment** injection at **runtime** only."
+        }
+      ]
+    },
+    {
+      "id": "d50-s9",
+      "question": "Performance: `/v3/api-docs` takes 8 seconds on a large app. Mitigate.",
+      "signals": [
+        "cache",
+        "lazy",
+        "startup"
+      ],
+      "answer": "**Profiling:** **Java Flight Recorder** shows reflection scanning **thousands** of endpoints or **regex** in customisers. **Mitigations:** enable **springdoc** **cache** (`springdoc.cache.disabled=false`), split **`GroupedOpenApi`** so each doc is smaller, move **rare** internal endpoints behind separate app, lazy-load **swagger-ui** assets from CDN. **Trade-off:** caching stale docs until restart — acceptable if docs are not security-critical **dynamic**. **Gateway:** rate-limit **`/v3/api-docs`** to stop scrapers.",
+      "followUps": [
+        {
+          "question": "Would static spec be faster?",
+          "answer": "Yes — **contract-first** file served from **nginx** is O(1); choose it when **runtime** introspection cost dominates **P99** during **load tests** accidentally hitting docs path."
+        },
+        {
+          "question": "Metric to alert?",
+          "answer": "**histogram** on `/v3/api-docs` latency in **Prometheus**; page if **P95 > 2s** — indicates scanning regression."
+        }
+      ]
+    },
+    {
+      "id": "d50-s10",
+      "question": "Misconception: 'We export Postman collections, so we do not need OpenAPI.'",
+      "signals": [
+        "Postman",
+        "single source",
+        "CI"
+      ],
+      "answer": "**Correction:** **Postman collections** excel at **manual** sequences but are weak as **schema-first contracts** — duplicate **examples**, hard to **diff** breaking changes, and **codegen** support lags **OpenAPI**. **OpenAPI** powers **type-safe** clients, **gateway** policies, and **lint**. **Pragmatic path:** generate **Postman** from **OpenAPI** via **`openapi-to-postmanv2`** in CI so **one source** rules. **Why teams slip:** PMs want clickable demos fast; without governance, **two truths** diverge.",
+      "followUps": [
+        {
+          "question": "When is Postman primary acceptable?",
+          "answer": "Early **prototype** before public launch — migrate to **OpenAPI** before **first** partner signs contract. **Senior:** legally, attach **PDF** generated from **OAS**, not **collection**."
+        },
+        {
+          "question": "Can GraphQL replace both?",
+          "answer": "Different trade-offs — **GraphQL** needs **schema registry** similar governance; does not remove need for **machine-readable** contracts and **CI** checks."
         }
       ]
     }

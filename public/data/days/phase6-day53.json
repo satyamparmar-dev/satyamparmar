@@ -10,89 +10,95 @@
     "Advanced",
     "Phase 6",
     "Interview Prep",
-    "Satyverse(Satyam Parmar)"
+    "Satyverse(Satyam Parmar)",
+    "OpenFeign",
+    "WebClient",
+    "Resilience4j"
   ],
   "prerequisites": [
     "Day 52",
     "Day 51"
   ],
   "learningObjectives": [
-    "Explain Feign, WebClient & Resilience with phase-6 depth and clarity",
-    "Implement Java examples for Feign, WebClient & Resilience with production awareness",
-    "Identify failure risks and mitigation strategies",
-    "Reason about trade-offs under realistic constraints",
-    "Design or optimize solutions with maintainability in mind",
-    "Present interview answers with concrete evidence and structure"
+    "Compare **OpenFeign** vs **WebClient** and pick the stack that matches **servlet** vs **reactive** constraints",
+    "Configure **Resilience4j** **circuit breakers**, **retries**, and **bulkheads** with **metrics** you can defend in interviews",
+    "Explain **timeout** **nesting** across **client**, **gateway**, and **upstream** and why **misalignment** creates **orphan** work",
+    "Design **safe** **retries** for **idempotent** calls and **avoid** **duplicate** **side effects** on **POST**",
+    "Map **Feign** **ErrorDecoder** / **WebClient** filters to **typed** errors and **observability** tags",
+    "Diagnose **thread** **pool** **saturation** and **retry** **storms** using **Micrometer** and **distributed** **traces**"
   ],
   "sections": [
     {
       "type": "why",
       "title": "Why Feign, WebClient & Resilience matters",
-      "content": "Feign, WebClient & Resilience is a high-value Day 53 topic in Phase 6 (REST APIs and microservice communication trade-offs).\n\nAt this stage, interviewers evaluate whether you can connect implementation details with reliability, scalability, and maintainability outcomes.\n\nWhat strong answers include:\n1. precise concept framing,\n2. operational implications,\n3. one realistic failure pattern,\n4. one practical mitigation.\n\nThis topic is not just about code that compiles. It is about decisions that survive production traffic and team ownership."
+      "content": "Outbound HTTP is where **microservices** lose **SLOs**: a **small** **timeout** mistake or **retry** policy turns a **blip** into a **company-wide** **outage**. **Feign** and **WebClient** are the **default** **Spring** tools interviewers expect you to **reason** about with **Resilience4j** **patterns**, not just **annotations**.\n\n**Strong** answers connect **declarative** clients to **load balancing**, **observability**, and **failure** **containment**. Weak answers stop at \"I added **@FeignClient**\" without **timeouts**, **retries**, or **idempotency** **thinking**.\n\nThis day focuses on **client-side** **resilience**: **circuit** **breakers**, **bulkheads**, **retries** with **jitter**, and **graceful** **degradation**—each with **measurable** **trade-offs** in **latency** and **correctness**.\n\nProduction **post-mortems** often cite **retry** **storms**, **thread** **pool** **exhaustion**, and **half-open** **circuits** stuck **open** after **misconfigured** **exceptions**. You should sound like you have read those **reports**.\n\nFinally, **align** **timeouts** across **layers** and **test** **assumptions** with **chaos** **experiments** so **dashboards** match **reality** when **dependencies** **slow** **down**."
     },
     {
       "type": "theory",
       "title": "Theory and Internals - Feign, WebClient & Resilience",
-      "content": "### Day 53: Feign, WebClient & Resilience\nPhase context: REST APIs and microservice communication trade-offs.\n\n### What to understand deeply\n- mechanism and boundaries\n- runtime behavior and cost\n- operational failure modes\n- trade-offs vs alternatives\n\n### Implementation workflow\n1. Build a clear baseline solution.\n2. Validate edge/failure paths.\n3. Measure impact (latency, memory, throughput, or complexity).\n4. Refactor for readability and maintainability.\n\n### Interview framing template\n- \"The problem this solves is...\"\n- \"I chose this approach because...\"\n- \"The key trade-off is...\"\n- \"A failure case is... and mitigation is...\"\n\n### Production perspective\nFor Feign, WebClient & Resilience, quality is judged by correctness + resilience + debuggability, not just API usage.\n\n### Satyverse — deeper path (theory → practice)\n**gRPC** for internal high-performance RPC — protobuf contracts, streaming; browser needs grpc-web gateway.\n\n**REST vs gRPC:** human debugging vs efficiency — often REST at edge, gRPC mesh-internal.\n\n**Deadlines/cancellation** propagate contexts — cancel work when client disconnects.\n\n**Error model:** rich `Status` with details — map to domain errors consistently."
+      "content": "### Day 53 — **Feign**, **WebClient**, and **client resilience**\n\n---\n\n### 1. **OpenFeign** in Spring Cloud\n**OpenFeign** maps annotated interfaces to HTTP calls. **Spring** registers **beans** with **proxies** that honor **LoadBalancer** names, **encoders/decoders**, and **custom** **error** handling. Interview angle: explain **how** **declarative** clients stay **testable** with **contract** tests.\n\n---\n\n### 2. **WebClient** reactive model\n**WebClient** uses **Netty** under the hood in **WebFlux** stacks. Operators like **timeout**, **retryWhen**, and **onErrorResume** compose **resilience** in the **reactive** chain. Avoid **blocking** unless isolated.\n\n---\n\n### 3. **Circuit breaker** semantics\n**Resilience4j** tracks **sliding** **windows** of outcomes. Tune **failureRateThreshold**, **waitDurationInOpenState**, **permittedNumberOfCallsInHalfOpenState**, and **slowCall** detection. Too aggressive opens on **noise**; too lenient wastes **resources** during **blackouts**.\n\n---\n\n### 4. **Retry** with **jitter**\n**Exponential** backoff reduces **load** on recovering systems; **jitter** prevents **synchronized** **retry** waves. Restrict **retry** to **idempotent** operations or **known** **safe** **timeouts** only.\n\n---\n\n### 5. **Bulkheads**\nSeparate **executors** or **semaphores** per **dependency** so one **bad** **service** cannot **starve** **others**. Pair with **queue** **limits** and **clear** **rejection** **metrics**.\n\n---\n\n### 6. **Timeouts** layering\n**Connect** vs **read** vs **overall** **deadline**. Outer **gateways** > inner **clients** > **database** **statement** **timeouts** is a common **pattern**—adapt to your **stack** but keep **ordering** **consistent**.\n\n---\n\n### 7. **Observability**\n**Micrometer** **http.client.requests** timer, **Resilience4j** metrics, **trace** **propagation** on **Feign** **RequestInterceptor**. Logs must avoid **secrets**.\n\n---\n\n### 8. **60-second** story\n**Symptom:** Checkout **timeouts** after **inventory** **slowdown**. **Cause:** **Feign** **retry** without **bulkhead** saturated **tomcat** **threads**. **Fix:** **bulkhead** + **retry** **budget** + **timeout** **alignment**. **Verify:** **thread** **pool** metrics and **chaos** **replay**."
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "Basic — Client stack reference tables",
       "language": "java",
       "filename": "Day53Basic.java",
-      "code": "package arch.day53;\n\nimport java.net.URI;\nimport java.net.http.*;\n\npublic class Day53Basic {\n    public static void main(String[] args) throws Exception {\n        HttpClient c = HttpClient.newHttpClient();\n        HttpRequest req = HttpRequest.newBuilder(URI.create(\"https://httpbin.org/get\")).GET().build();\n        HttpResponse<String> res = c.send(req, HttpResponse.BodyHandlers.ofString());\n        System.out.println(res.statusCode());\n    }\n}",
+      "code": "package arch.day53;\n\n/*\n * Reference only — Spring Cloud OpenFeign + WebClient + Resilience4j interview map.\n */\npublic class Day53Basic {\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Feign vs WebClient (when to pick) ===\");\n        System.out.println(\"Feign     | Declarative interfaces, servlet-friendly, LoadBalancer lb://\");\n        System.out.println(\"WebClient | Reactive stack, streaming, non-blocking pipelines\");\n        System.out.println();\n        System.out.println(\"=== Resilience4j building blocks ===\");\n        System.out.println(\"CircuitBreaker | fail fast after error rate / slow calls\");\n        System.out.println(\"Retry          | backoff + jitter on transient failures\");\n        System.out.println(\"Bulkhead       | cap concurrent calls per dependency\");\n        System.out.println(\"TimeLimiter    | bound async execution wall time\");\n        System.out.println(\"RateLimiter    | smooth or limit request rate\");\n        System.out.println();\n        System.out.println(\"=== Timeout nesting (typical) ===\");\n        System.out.println(\"1. DB statement timeout (shortest meaningful work unit)\");\n        System.out.println(\"2. Feign/WebClient read timeout\");\n        System.out.println(\"3. Gateway / edge idle timeout (longer)\");\n        System.out.println();\n        System.out.println(\"=== Retry safety ===\");\n        System.out.println(\"Safe-ish: GET/HEAD with bounded retries + jitter\");\n        System.out.println(\"Risky: POST without Idempotency-Key or dedup store\");\n    }\n}\n",
       "level": "basic",
-      "output": "200\n",
-      "description": "HTTP GET with HttpClient (Java 11+) — WebClient/Feign build on same idea."
+      "output": "=== Feign vs WebClient (when to pick) ===\nFeign     | Declarative interfaces, servlet-friendly, LoadBalancer lb://\nWebClient | Reactive stack, streaming, non-blocking pipelines\n\n=== Resilience4j building blocks ===\nCircuitBreaker | fail fast after error rate / slow calls\nRetry          | backoff + jitter on transient failures\nBulkhead       | cap concurrent calls per dependency\nTimeLimiter    | bound async execution wall time\nRateLimiter    | smooth or limit request rate\n\n=== Timeout nesting (typical) ===\n1. DB statement timeout (shortest meaningful work unit)\n2. Feign/WebClient read timeout\n3. Gateway / edge idle timeout (longer)\n\n=== Retry safety ===\nSafe-ish: GET/HEAD with bounded retries + jitter\nRisky: POST without Idempotency-Key or dedup store\n",
+      "description": "Static tables: Feign vs WebClient, Resilience4j modules, timeout nesting."
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "Intermediate — Four deterministic client scenarios",
       "language": "java",
       "filename": "Day53Intermediate.java",
-      "code": "package arch.day53;\n\npublic class Day53Intermediate {\n    static int attempt = 0;\n    static int call() {\n        attempt++;\n        return attempt < 3 ? 503 : 200;\n    }\n\n    public static void main(String[] args) throws Exception {\n        int code;\n        int delay = 10;\n        do {\n            code = call();\n            if (code == 503) Thread.sleep(delay);\n            delay *= 2;\n        } while (code == 503);\n        System.out.println(code);\n    }\n}",
+      "code": "package arch.day53;\n\nimport java.util.ArrayList;\nimport java.util.List;\n\n/**\n * Simulates policy decisions without real HTTP.\n * spring.cloud.openfeign + spring.webflux WebClient mapping in comments only.\n */\npublic class Day53Intermediate {\n\n    static int attempt;\n\n    static int callWithRetryBudget() {\n        attempt = 0;\n        int max = 3;\n        int status;\n        do {\n            attempt++;\n            status = attempt < 3 ? 503 : 200;\n        } while (status != 200 && attempt < max);\n        return status;\n    }\n\n    static String classifyFeignStatus(int http) {\n        if (http == 404) {\n            return \"decode: NotFoundException\";\n        }\n        if (http >= 500) {\n            return \"decode: RetryableException\";\n        }\n        return \"decode: OK\";\n    }\n\n    static String bulkheadTry(List<String> inflight, int max, String callId) {\n        if (inflight.size() >= max) {\n            return \"BULKHEAD_REJECT \" + callId;\n        }\n        inflight.add(callId);\n        return \"ACQUIRED \" + callId;\n    }\n\n    static String timeoutLayers(int clientMs, int gatewayMs) {\n        if (clientMs > gatewayMs) {\n            return \"MISALIGNED: client timeout exceeds gateway\";\n        }\n        return \"OK: nested timeouts\";\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Day 53 intermediate scenarios ===\\n\");\n\n        System.out.println(\"--- Scenario 1: retry budget ---\");\n        System.out.println(\"finalStatus=\" + callWithRetryBudget() + \" attempts=\" + attempt);\n        System.out.println();\n\n        System.out.println(\"--- Scenario 2: Feign ErrorDecoder classes ---\");\n        System.out.println(classifyFeignStatus(404));\n        System.out.println(classifyFeignStatus(503));\n        System.out.println();\n\n        System.out.println(\"--- Scenario 3: bulkhead cap ---\");\n        List<String> lane = new ArrayList<>();\n        System.out.println(bulkheadTry(lane, 2, \"a\"));\n        System.out.println(bulkheadTry(lane, 2, \"b\"));\n        System.out.println(bulkheadTry(lane, 2, \"c\"));\n        System.out.println();\n\n        System.out.println(\"--- Scenario 4: timeout alignment ---\");\n        System.out.println(timeoutLayers(1500, 3000));\n        System.out.println(timeoutLayers(4000, 3000));\n    }\n}\n",
       "level": "intermediate",
-      "output": "200\n",
-      "description": "Retry with exponential backoff on 503."
+      "output": "=== Day 53 intermediate scenarios ===\n\n--- Scenario 1: retry budget ---\nfinalStatus=200 attempts=3\n\n--- Scenario 2: Feign ErrorDecoder classes ---\ndecode: NotFoundException\ndecode: RetryableException\n\n--- Scenario 3: bulkhead cap ---\nACQUIRED a\nACQUIRED b\nBULKHEAD_REJECT c\n\n--- Scenario 4: timeout alignment ---\nOK: nested timeouts\nMISALIGNED: client timeout exceeds gateway\n",
+      "description": "Retry budget, Feign error classification, bulkhead cap, timeout mismatch — no network, no sleep."
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "Advanced — Deterministic circuit breaker + slow dependency",
       "language": "java",
       "filename": "Day53Advanced.java",
-      "code": "package arch.day53;\n\npublic class Day53Advanced {\n    enum State { CLOSED, OPEN }\n    static int failures = 0;\n    static State st = State.CLOSED;\n\n    static String invoke() {\n        if (st == State.OPEN) return \"fast-fail\";\n        failures++;\n        if (failures >= 3) st = State.OPEN;\n        return \"ok\";\n    }\n\n    public static void main(String[] args) {\n        for (int i = 0; i < 5; i++) System.out.println(invoke());\n    }\n}",
+      "code": "package arch.day53;\n\n/**\n * Tiny CB + dependency simulation (deterministic).\n * resilience4j.circuitbreaker naming mirrored in println labels only.\n */\npublic class Day53Advanced {\n\n    enum State { CLOSED, OPEN, HALF_OPEN }\n\n    static final int FAILURE_THRESHOLD = 3;\n    static int consecutiveFailures;\n    static State state = State.CLOSED;\n    static int depCalls;\n\n    static boolean slowDependency() {\n        depCalls++;\n        return depCalls >= 4;\n    }\n\n    static String invoke() {\n        if (state == State.OPEN) {\n            return \"SHORT_CIRCUIT\";\n        }\n        boolean ok = slowDependency();\n        if (!ok) {\n            consecutiveFailures++;\n            if (consecutiveFailures >= FAILURE_THRESHOLD) {\n                state = State.OPEN;\n            }\n            return \"FAIL\";\n        }\n        consecutiveFailures = 0;\n        state = State.CLOSED;\n        return \"OK\";\n    }\n\n    static void halfOpenProbe() {\n        state = State.HALF_OPEN;\n        consecutiveFailures = 0;\n        depCalls = 3;\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Circuit breaker walkthrough ===\");\n        for (int i = 0; i < 5; i++) {\n            System.out.println(\"call \" + (i + 1) + \": \" + invoke());\n        }\n        System.out.println(\"--- admin: move to HALF_OPEN probe ---\");\n        halfOpenProbe();\n        System.out.println(\"probe: \" + invoke());\n        System.out.println(\"next: \" + invoke());\n    }\n}\n",
       "level": "advanced",
-      "output": "ok\nok\nok\nfast-fail\nfast-fail\n",
-      "description": "Circuit breaker states: CLOSED -> OPEN after failures, half-open probe."
+      "output": "=== Circuit breaker walkthrough ===\ncall 1: FAIL\ncall 2: FAIL\ncall 3: FAIL\ncall 4: OK\ncall 5: SHORT_CIRCUIT\n--- admin: move to HALF_OPEN probe ---\nprobe: OK\nnext: OK\n",
+      "description": "CLOSED→OPEN after failures, HALF_OPEN probe, dependency succeeds after warm-up counter."
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 53",
+      "title": "Client resilience — Feign/WebClient to downstream",
       "diagramType": "component",
-      "description": "Visual model for Feign, WebClient & Resilience",
-      "plantuml": "@startuml\ntitle Day 53 - Feign, WebClient & Resilience\nactor Learner\nrectangle \"Satyverse(Satyam Parmar) Lesson Engine\" {\n  component \"Theory\"\n  component \"Code\"\n  component \"Exercise\"\n  component \"Interview Drill\"\n}\nLearner --> \"Theory\" : Understand concept\nLearner --> \"Code\" : Implement\nLearner --> \"Exercise\" : Practice\nLearner --> \"Interview Drill\" : Explain\n@enduml"
+      "description": "Shows declarative client, optional circuit breaker, and dependency service with metrics.",
+      "plantuml": "@startuml\ntitle Day 53 — Outbound call with resilience\nparticipant \"Order Service\" as OS\nparticipant \"Feign / WebClient\" as C\nparticipant \"CircuitBreaker\" as CB\nparticipant \"Payments API\" as P\n\nOS -> C : GET /payments/{id}\nC -> CB : acquire permit\nCB -> P : HTTP\nP --> CB : 200 / 503 / timeout\nCB --> C : result / fail fast\nC --> OS : DTO / exception\nnote right of CB\n  Resilience4j tracks sliding window;\n  bulkhead limits concurrent calls\nend note\n@enduml"
     },
     {
       "type": "pitfalls",
       "title": "Common Pitfalls",
       "items": [
-        "Designing APIs without idempotency and failure semantics.",
-        "Coupling services tightly through synchronous chains.",
-        "Skipping resilience policies (retry/circuit/bulkhead/rate limits).",
-        "Ignoring consistency boundaries in distributed workflows.",
-        "Treating microservice decomposition as purely technical refactor."
+        "Setting **infinite** **timeouts** on **Feign** so **threads** **pile** up during **upstream** **stalls**, hiding **problems** until **GC** **pauses** **kill** **the** **JVM**.",
+        "Enabling **retry** on **POST** **payments** without **`Idempotency-Key`** or **server** **dedup**, **duplicating** **charges** after **ambiguous** **timeouts**.",
+        "Using **`WebClient.block()`** on **reactor** **event-loop** **threads**, **serializing** **thousands** of **requests** behind **one** **slow** **dependency**.",
+        "Configuring **circuit** **breakers** with **minimum** **calls** **too** **high** for **low** **QPS** **services**, so **breakers** **never** **open** during **real** **outages**.",
+        "Sharing **one** **giant** **thread** **pool** for **all** **Feign** **clients** so **one** **noisy** **neighbor** **blocks** **unrelated** **outbound** **calls**.",
+        "Ignoring **`Retry-After`** on **429** responses and **hammering** **partners** until **they** **ban** **your** **traffic**.",
+        "Logging **full** **`Authorization`** **headers** when **debugging** **Feign**, **leaking** **bearer** **tokens** into **central** **logs**.",
+        "Treating **fallback** methods as **free**—implementing **heavy** **blocking** **work** there **recreates** **the** **outage** **inside** **your** **service**."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - Feign, WebClient & Resilience Applied Scenario",
-      "problem": "Implement a realistic solution for **Feign, WebClient & Resilience**.\n\nRequirements:\n1. Define assumptions and constraints first.\n2. Include one failure-path handling strategy.\n3. Provide one improvement over baseline.\n4. State complexity or runtime impact.\n5. Keep implementation review-friendly.",
+      "title": "Exercise — Circuit breaker around slow dependency (Day 53 assignment)",
+      "problem": "Align with **Day 53 Assignment**: **Circuit breaker around slow dependency**.\n\n1. Simulate a **dependency** that returns **`false`** for the **first three** invocations and **`true`** afterward (warm-up).\n2. Implement a **circuit breaker** with **`FAILURE_THRESHOLD = 3`**: after **three** consecutive **logical** failures, enter **OPEN** and **short-circuit** further calls with a clear message.\n3. While **CLOSED**, each failed dependency call counts toward the threshold; a **success** resets consecutive failures.\n4. In **`main()`**, print **at least six** labeled lines showing: failures opening the circuit, **short-circuit** behavior, then a **manual** transition to **HALF_OPEN** (reset state in code), and a **successful** **probe**.\n5. Use **only** **deterministic** logic—**no** **`Math.random`**, **`UUID`**, **`System.currentTimeMillis`**, or **`hashCode`** for decisions.",
       "hints": [
-        "State constraints before coding.",
-        "Add one observability/debug aid in output or comments.",
-        "Document one trade-off clearly."
+        "Track **`consecutiveFailures`** separately from **total** **dependency** **calls**.",
+        "When **OPEN**, skip calling the dependency and print **`SHORT_CIRCUIT`**.",
+        "Add a **`halfOpenProbe()`** helper that sets state and rewinds counters for the demo."
       ],
-      "solution": "package arch.day53;\nimport java.util.*;\n\npublic class Day53Advanced {\n    static record Review(String topic, int confidence, boolean needsRevision) {}\n\n    public static void main(String[] args) {\n        List<Review> reviews = List.of(\n            new Review(\"Feign, WebClient & Resilience\", 72, true),\n            new Review(\"Coding Practice\", 81, false),\n            new Review(\"Interview Explanation\", 68, true)\n        );\n\n        long reviseCount = reviews.stream().filter(Review::needsRevision).count();\n        int avg = (int) reviews.stream().mapToInt(Review::confidence).average().orElse(0);\n\n        System.out.println(\"avgConfidence = \" + avg);\n        System.out.println(\"needsRevision = \" + reviseCount);\n    }\n}\n",
+      "solution": "package arch.day53;\n\n/**\n * Tiny CB + dependency simulation (deterministic).\n * resilience4j.circuitbreaker naming mirrored in println labels only.\n */\npublic class Day53Exercise {\n\n    enum State { CLOSED, OPEN, HALF_OPEN }\n\n    static final int FAILURE_THRESHOLD = 3;\n    static int consecutiveFailures;\n    static State state = State.CLOSED;\n    static int depCalls;\n\n    static boolean slowDependency() {\n        depCalls++;\n        return depCalls >= 4;\n    }\n\n    static String invoke() {\n        if (state == State.OPEN) {\n            return \"SHORT_CIRCUIT\";\n        }\n        boolean ok = slowDependency();\n        if (!ok) {\n            consecutiveFailures++;\n            if (consecutiveFailures >= FAILURE_THRESHOLD) {\n                state = State.OPEN;\n            }\n            return \"FAIL\";\n        }\n        consecutiveFailures = 0;\n        state = State.CLOSED;\n        return \"OK\";\n    }\n\n    static void halfOpenProbe() {\n        state = State.HALF_OPEN;\n        consecutiveFailures = 0;\n        depCalls = 3;\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Circuit breaker walkthrough ===\");\n        for (int i = 0; i < 5; i++) {\n            System.out.println(\"call \" + (i + 1) + \": \" + invoke());\n        }\n        System.out.println(\"--- admin: move to HALF_OPEN probe ---\");\n        halfOpenProbe();\n        System.out.println(\"probe: \" + invoke());\n        System.out.println(\"next: \" + invoke());\n    }\n}\n",
       "difficulty": "Advanced"
     },
     {
@@ -100,147 +106,459 @@
       "title": "Interview Drill",
       "conceptual": [
         {
-          "question": "What is OpenFeign?",
-          "answer": "Declarative HTTP client interface—Spring Cloud OpenFeign integrates."
+          "question": "What is **OpenFeign** and how does Spring Cloud integrate it?",
+          "answer": "**OpenFeign** is a **declarative** HTTP client: you write a Java **interface** with annotations like **`@GetMapping`** and Spring generates a **proxy** bean at runtime. **Spring Cloud OpenFeign** adds **`@FeignClient`**, **LoadBalancer** integration, **circuit breakers**, **error decoders**, and **request interceptors** so outbound calls behave like **first-class** infrastructure. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **OpenFeign** is a **declarative** HTTP client: you write a Java **interface** with annotations like Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **OpenFeign** is a **declarative** HTTP client: you write a Java **interface** with annota Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "What is WebClient?",
-          "answer": "Non-blocking alternative to RestTemplate—reactive stack."
+          "question": "When do you choose **WebClient** over **OpenFeign**?",
+          "answer": "**WebClient** is the **reactive** HTTP client in **Spring WebFlux** with **non-blocking** I/O and **backpressure** awareness. Pick it when your service is already on the **reactive** stack or you need **streaming** responses. **Feign** is often simpler for **servlet** apps that are mostly **blocking** but can still use **async** options with care.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **WebClient** is the **reactive** HTTP client in **Spring WebFlux** with **non-blocking** I/O and ** Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **WebClient** is the **reactive** HTTP client in **Spring WebFlux** with **non-blocking** Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail."
+            }
+          ]
         },
         {
-          "question": "What is resilience4j circuit breaker?",
-          "answer": "States closed/open/half-open—fail fast when errors spike."
+          "question": "Explain **Resilience4j** **circuit breaker** states and what moves between them.",
+          "answer": "A **circuit breaker** starts **CLOSED** and counts failures in a **sliding window**. When the **failure rate** crosses a **threshold**, it **opens** and **short-circuits** calls to fail fast. After a **wait** interval it enters **HALF_OPEN** to allow **trial** calls; successes **close** it again while failures **re-open** it.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. A **circuit breaker** starts **CLOSED** and counts failures in a **sliding window**. When the **fail Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. A **circuit breaker** starts **CLOSED** and counts failures in a **sliding window**. When Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast."
+            }
+          ]
         },
         {
-          "question": "What is retry with backoff?",
-          "answer": "Transient failures—exponential backoff jitter avoid thundering herd."
+          "question": "Why are **blind retries** dangerous for **POST** in payment flows?",
+          "answer": "**POST** is not **idempotent** by default: a **retry** after a **timeout** may execute the **server** **side effect** twice if the first request actually **succeeded** but the **ACK** was lost. Mitigate with **`Idempotency-Key`**, **deduplication** tables, or **safe** **retry** policies on **read-only** operations only. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **POST** is not **idempotent** by default: a **retry** after a **timeout** may execute the **server* Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **POST** is not **idempotent** by default: a **retry** after a **timeout** may execute the Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "What is bulkhead isolation?",
-          "answer": "Separate thread pools—failure isolation."
+          "question": "How should **client timeouts** relate to **gateway** and **upstream** timeouts?",
+          "answer": "Timeouts should **nest**: **outer** layers (**gateway**, **LB**) stay **longer** than **inner** **Feign**/**WebClient** timeouts so the **client** fails first with a **clear** error instead of **hanging** until the **edge** gives up. Misaligned stacks create **orphan** work and **duplicate** side effects. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Timeouts should **nest**: **outer** layers (**gateway**, **LB**) stay **longer** than **inner** **Fe Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Timeouts should **nest**: **outer** layers (**gateway**, **LB**) stay **longer** than **in Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**."
+            }
+          ]
         },
         {
-          "question": "What is timeout configuration?",
-          "answer": "Connect vs read timeout—different failure modes."
+          "question": "What is a **bulkhead** and how does it differ from a **circuit breaker**?",
+          "answer": "A **bulkhead** **isolates** **thread** pools or **semaphores** so one **slow** dependency cannot exhaust **all** workers for other calls. A **circuit breaker** **stops** calling a **failing** dependency temporarily. Teams often combine **both**: **bulkhead** limits **concurrency**, **breaker** stops **wasting** attempts during **outages**. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. A **bulkhead** **isolates** **thread** pools or **semaphores** so one **slow** dependency cannot exh Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. A **bulkhead** **isolates** **thread** pools or **semaphores** so one **slow** dependency Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            }
+          ]
         },
         {
-          "question": "What is RestTemplate deprecation?",
-          "answer": "Prefer WebClient for new code—even in servlet apps for async."
+          "question": "What does **Resilience4j Retry** configure besides **maxAttempts**?",
+          "answer": "You configure **wait** duration, **exponential** **backoff** with optional **randomization** (**jitter**), which **exceptions** or **HTTP statuses** are **retryable**, and a **max** **total** **time** budget. **Jitter** spreads retries to avoid **thundering herd** when many clients retry together. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. You configure **wait** duration, **exponential** **backoff** with optional **randomization** (**jitt For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. You configure **wait** duration, **exponential** **backoff** with optional **randomization Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**."
+            }
+          ]
         },
         {
-          "question": "What is Feign fallback factory?",
-          "answer": "Provide fallback bean when circuit open—degraded response."
+          "question": "How do **Feign ErrorDecoder** and **WebClient** **`onStatus`** differ in purpose?",
+          "answer": "**ErrorDecoder** maps **HTTP status** and **body** to **typed** **exceptions** for **Feign** so callers can branch on **domain** errors. **WebClient** **`filter`** or **`onStatus`** hooks let you **translate** **4xx/5xx** into **exceptions** or **fallback** **Mono** values in **reactive** code. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **ErrorDecoder** maps **HTTP status** and **body** to **typed** **exceptions** for **Feign** so call Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **ErrorDecoder** maps **HTTP status** and **body** to **typed** **exceptions** for **Feign Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "What is client-side load balancing with Feign?",
-          "answer": "Ribbon legacy replaced by Spring Cloud LoadBalancer."
+          "question": "What observability should wrap outbound HTTP clients?",
+          "answer": "Emit **Micrometer** timers on **client** **name** and **outcome**, propagate **W3C** **`traceparent`** headers, and log **structured** fields (**uri template**, **status**, **duration**) without **secrets**. **Resilience4j** exposes **circuit breaker** and **retry** **events** for **metrics**. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Emit **Micrometer** timers on **client** **name** and **outcome**, propagate **W3C** **`traceparent` Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Emit **Micrometer** timers on **client** **name** and **outcome**, propagate **W3C** **`tr Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail."
+            }
+          ]
         },
         {
-          "question": "What is Micrometer metrics for resilience4j?",
-          "answer": "Monitor circuit state transitions counts."
+          "question": "Why is **connection pool** tuning important for **Feign** under load?",
+          "answer": "Each **route** needs enough **connections** to match **expected** **concurrency**; too few causes **queueing** and **timeouts**, too many wastes **file descriptors** and **memory**. Tune **max** **per** **route**, **keep-alive**, and **idle** **eviction** to match **service** **SLO**. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Each **route** needs enough **connections** to match **expected** **concurrency**; too few causes ** Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Each **route** needs enough **connections** to match **expected** **concurrency**; too few Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**."
+            }
+          ]
         },
         {
-          "question": "What is HTTP/2 multiplexing benefit?",
-          "answer": "Single connection many streams—client server support needed."
+          "question": "What is **TimeLimiter** in Resilience4j and when do you use it?",
+          "answer": "**TimeLimiter** bounds how long an **async** or **CompletableFuture**-backed call may run, complementing **HTTP** **read** timeouts. Use it when **thread** **boundaries** cross **executors** or when **blocking** code is wrapped for **reactive** pipelines. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **TimeLimiter** bounds how long an **async** or **CompletableFuture**-backed call may run, complemen Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **TimeLimiter** bounds how long an **async** or **CompletableFuture**-backed call may run, Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "What is connection pooling HttpClient?",
-          "answer": "Reuse TCP connections—tune max connections per route."
+          "question": "How does **Spring Cloud LoadBalancer** replace legacy **Ribbon** for Feign?",
+          "answer": "**Feign** resolves **`lb://serviceId`** through **LoadBalancerClient** backed by **Kubernetes** **discovery** or **Eureka**. **Ribbon** maintenance ended; modern stacks use **Spring Cloud LoadBalancer** with **caching** **TTL** you must tune to avoid **stale** **instances**. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **Feign** resolves **`lb://serviceId`** through **LoadBalancerClient** backed by **Kubernetes** **di Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **Feign** resolves **`lb://serviceId`** through **LoadBalancerClient** backed by **Kuberne Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+            }
+          ]
         },
         {
-          "question": "What is idempotent retry safety?",
-          "answer": "Only retry GET/PUT with care—POST duplicate risk."
+          "question": "What is **graceful degradation** with **fallback** methods?",
+          "answer": "When a **breaker** opens or **timeout** hits, return a **cached** **read**, **default** **value**, or **feature** **off** response instead of **hard** **failure**. **FallbackFactory** in Feign can access **Throwable** to **log** **cause** while still **responding**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. When a **breaker** opens or **timeout** hits, return a **cached** **read**, **default** **value**, o Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. When a **breaker** opens or **timeout** hits, return a **cached** **read**, **default** ** Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            }
+          ]
         },
         {
-          "question": "What is chaos engineering relation?",
-          "answer": "Test resilience assumptions—inject faults."
+          "question": "Why should **reactive** chains avoid **blocking** calls?",
+          "answer": "Blocking on a **reactor** **event-loop** thread **stalls** **many** requests. Offload blocking **Feign** to **bounded** **elastic** **schedulers** or prefer **non-blocking** **WebClient** end-to-end. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Blocking on a **reactor** **event-loop** thread **stalls** **many** requests. Offload blocking **Fei Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Blocking on a **reactor** **event-loop** thread **stalls** **many** requests. Offload bloc Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+            }
+          ]
         },
         {
-          "question": "What is gRPC vs HTTP JSON clients?",
-          "answer": "Binary protobuf efficiency—different tooling."
+          "question": "How do **consumer-driven contracts** relate to Feign clients?",
+          "answer": "**Pact** or **Spring Cloud Contract** tests verify **provider** responses match **consumer** expectations before **deploy**. They catch **breaking** **JSON** changes that would **fail** **Feign** **decoders** at runtime. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast.",
+          "followUps": [
+            {
+              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Feign and WebClient**?",
+              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. **Pact** or **Spring Cloud Contract** tests verify **provider** responses match **consumer** expecta Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail."
+            },
+            {
+              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
+              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. **Pact** or **Spring Cloud Contract** tests verify **provider** responses match **consumer Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast."
+            }
+          ]
         }
       ],
       "codeBased": [
         {
-          "question": "@FeignClient(name=\"orders\", path=\"/api\")",
-          "answer": "Interface methods map to HTTP."
+          "question": "`@FeignClient(name = \"orders\", path = \"/api\")` interface — what does Spring create?",
+          "answer": "// @FeignClient(name = \"orders\", path = \"/api\")\n// interface OrderClient {\n//   @GetMapping(\"/{id}\") Order get(@PathVariable String id);\n// }\n// Spring creates a JDK proxy bean; calls go through LoadBalancer + encoder/decoder.",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "@CircuitBreaker name=\"orders\" fallbackMethod",
-          "answer": "Resilience4j annotation style."
+          "question": "Show **WebClient** GET with **uri** template and **retrieve**.",
+          "answer": "// webClient.get()\n//   .uri(\"https://api/orders/{id}\", id)\n//   .retrieve()\n//   .bodyToMono(Order.class)\n//   .timeout(Duration.ofSeconds(2));",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "WebClient.builder().baseUrl(...).build()",
-          "answer": "Create client bean."
+          "question": "Resilience4j **`@CircuitBreaker`** annotation pseudo-config.",
+          "answer": "// @CircuitBreaker(name = \"payments\", fallbackMethod = \"payFallback\")\n// public Payment pay(Request r) { return client.charge(r); }\n// private Payment payFallback(Request r, Exception e) { return Payment.degraded(); }",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "Retry backoff exponential Resilience4j RetryConfig",
-          "answer": "Configure max attempts."
+          "question": "**Feign** **`Request.Options`** connect/read timeouts (conceptual).",
+          "answer": "// @Bean\n// Request.Options feignOptions() {\n//   return new Request.Options(200, TimeUnit.MILLISECONDS, 1500, TimeUnit.MILLISECONDS, true);\n// }\n// Align read timeout with upstream SLA + margin.",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "TimeLimiter for async calls",
-          "answer": "Bound execution time."
+          "question": "**WebClient** **`filter`** adding correlation header.",
+          "answer": "// webClient.mutate().filter((req, next) ->\n//   next.exchange(ClientRequest.from(req).header(\"X-Trace-Id\", traceId).build())).build();",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "RestTemplate exchange ResponseEntity",
-          "answer": "Legacy synchronous."
+          "question": "**Resilience4j RetryConfig** maxAttempts + intervalFunction.",
+          "answer": "// RetryConfig.custom().maxAttempts(3)\n//   .intervalFunction(attempt -> 100L * (long) Math.pow(2, attempt - 1))\n//   .build();",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "Feign ErrorDecoder map status to exceptions",
-          "answer": "Typed errors."
+          "question": "**Bulkhead** registry configuration sketch.",
+          "answer": "// BulkheadConfig.custom().maxConcurrentCalls(20).maxWaitDuration(Duration.ofMillis(50)).build();\n// Register per downstream dependency name.",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "WebClient retrieve onStatus error",
-          "answer": "Handle 4xx/5xx."
+          "question": "**Feign** **`ErrorDecoder`** mapping 404 to custom exception.",
+          "answer": "// if (status == 404) return new NotFoundException(methodKey, response);\n// return new Default().decode(methodKey, response);",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "BulkheadRegistry configure thread pools",
-          "answer": "Isolation tuning."
+          "question": "Micrometer tag **`client_name`** on outbound timer (conceptual).",
+          "answer": "// Timer.builder(\"http.client.requests\")\n//   .tag(\"client\", \"payments\")\n//   .tag(\"outcome\", status >= 500 ? \"SERVER_ERROR\" : \"SUCCESS\")\n//   .register(registry);",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         },
         {
-          "question": "OkHttpClient connection pool tuning",
-          "answer": "If using underlying OkHttp—advanced."
+          "question": "**WebClient** **`onStatus`** throwing on 5xx.",
+          "answer": "// .onStatus(HttpStatusCode::is5xxServerError,\n//   r -> r.bodyToMono(String.class).map(body -> new UpstreamException(body)))",
+          "followUps": [
+            {
+              "question": "What breaks at **runtime** if this snippet is mis-wired?",
+              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+            },
+            {
+              "question": "How do you **test** this in **CI** without **flaky** **network**?",
+              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+            }
+          ]
         }
       ],
       "seniorScenario": [
         {
-          "question": "Retry storm on DB outage—symptom?",
-          "answer": "Amplified load—disable retries under cascade; bulkhead."
+          "question": "**Production:** After a **payments** outage, **Feign** clients recover but **p99** stays high everywhere. Diagnose.",
+          "answer": "**(1) Immediate response** Open **APM** **service** **map**, check **thread** **pool** **saturation** and **bulkhead** **rejects**, freeze risky **releases**.\n\n**(2) Root cause** **Bulkheads** were too small or **blocking** **fallbacks** exhausted **executor** queues; **retry** storms kept **CPU** hot.\n\n**(3) Fix** 1) Increase **bulkhead** **limits** carefully. 2) Remove **blocking** from **reactive** paths. 3) Add **jitter** to **retries**. 4) Scale **replicas** after **evidence** from **metrics**.\n\n**(4) Prevention** Add **dashboards** for **pool** **depth**, **reject** counts, and **chaos** tests for **dependency** **slowdown**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail.",
+          "followUps": [
+            {
+              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
+              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "Which **post-incident** **action** items are **non-negotiable**?",
+              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "Feign timeouts vs gateway timeouts ordering?",
-          "answer": "Align layers—inner shorter than outer."
+          "question": "**Incident:** **429** from partner API — your **Feign** **retry** amplifies rate limit hits.",
+          "answer": "**(1) Immediate response** Disable **auto** **retry** on **429**, alert **account** **manager**, switch to **cached** **reads** if safe.\n\n**(2) Root cause** Clients ignore **`Retry-After`** and **hammer** **partner** during **incidents**.\n\n**(3) Fix** Honor **`Retry-After`**, cap **max** **retries**, implement **exponential** **backoff** with **jitter**, negotiate **quota**.\n\n**(4) Prevention** **Contract** tests include **429** path; **SLO** on **partner** **latency** and **quota** **headroom**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**.",
+          "followUps": [
+            {
+              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
+              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "Which **post-incident** **action** items are **non-negotiable**?",
+              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "Thread pool exhaustion bulkhead?",
-          "answer": "Tune limits; queue depth metrics; reject fast."
+          "question": "**Design:** Team wants **synchronous** **Feign** chain **A→B→C** for checkout.",
+          "answer": "**(1) Immediate response** Challenge **latency** **budget**; propose **async** **events** for non-critical steps.\n\n**(2) Root cause** Deep **sync** graphs multiply **timeouts** and **failure** **probability**.\n\n**(3) Fix** Introduce **Saga** or **event** for **inventory** **hold**; keep **Feign** for **read** **path** only where needed.\n\n**(4) Prevention** **Architecture** **decision** record documents **max** **chain** **depth**. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims.",
+          "followUps": [
+            {
+              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
+              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "Which **post-incident** **action** items are **non-negotiable**?",
+              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "Partial failure distributed call graph?",
-          "answer": "Saga compensations; graceful degradation UX."
+          "question": "**Bug:** **Circuit breaker** never opens despite **500** storm.",
+          "answer": "**(1) Immediate response** Verify **metric** **window**, **minimum** **number** of calls, and **recordExceptions** configuration.\n\n**(2) Root cause** **Predicate** ignores **wrapped** **exceptions** or **sample** size too small.\n\n**(3) Fix** Fix **recordException** rules, lower **minimum** **calls** for **canary** environments, add **integration** test.\n\n**(4) Prevention** Alert on **zero** **state** **transitions** during **fault** **injection**. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims.",
+          "followUps": [
+            {
+              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
+              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "Which **post-incident** **action** items are **non-negotiable**?",
+              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "Observability trace feign calls?",
-          "answer": "OpenTelemetry propagation headers."
+          "question": "**Migration:** Replace **RestTemplate** with **WebClient** in **servlet** app.",
+          "answer": "**(1) Immediate response** Run **dual** **write** period with **feature** **flag**, measure **thread** usage.\n\n**(2) Root cause** **Blocking** **`block()`** on **WebClient** gives little benefit; must adopt **async** **controller** or **mvc** + **Callable**.\n\n**(3) Fix** Migrate **hot** paths first; use **`WebClient`** with **`block()`** only as **temporary** bridge with **timeouts**.\n\n**(4) Prevention** **Lint** rule forbids new **RestTemplate** beans. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**.",
+          "followUps": [
+            {
+              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
+              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "Which **post-incident** **action** items are **non-negotiable**?",
+              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         },
         {
-          "question": "Breaking API feign client compile errors?",
-          "answer": "Consumer-driven contract catch early."
+          "question": "**Security:** **Feign** forwards internal **headers** to **internet** **partner**.",
+          "answer": "**(1) Immediate response** Stop traffic, rotate **secrets**, patch **interceptor** list.\n\n**(2) Root cause** **RequestInterceptor** copies **`Authorization`** or **internal** **trace** headers inappropriately.\n\n**(3) Fix** Whitelist **headers** per **client**, use **separate** **Feign** **configurations** for **internal** vs **external**.\n\n**(4) Prevention** **Security** review checklist for every new **FeignClient**. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings.",
+          "followUps": [
+            {
+              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
+              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            },
+            {
+              "question": "Which **post-incident** **action** items are **non-negotiable**?",
+              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+            }
+          ]
         }
       ],
       "wrongAnswers": [
-        "Circuit breakers open on first failed request always.",
-        "WebClient is blocking by default.",
-        "Feign works without any HTTP implementation.",
-        "Retry is safe for all HTTP methods without conditions.",
-        "RestTemplate is the recommended client for new Spring Boot 3 projects.",
-        "Bulkhead and circuit breaker are identical patterns."
+        "**Circuit breakers** should open on the **first** timeout — **Correction:** Breakers need enough **calls** in a **window** to avoid **flapping** on **noise**.",
+        "**WebClient** is always **non-blocking** even when you call **`block()`** — **Correction:** **`block()`** is **blocking** and can **starve** threads if misused.",
+        "**Retries** are **safe** for all **HTTP** methods — **Correction:** **POST** needs **idempotency** design before **retry**.",
+        "**Feign** works without any **HTTP** client implementation — **Correction:** You need **OKHttp**, **Apache HttpClient**, or **default** **JDK** client on **classpath**.",
+        "**Bulkhead** and **circuit breaker** are the **same** pattern — **Correction:** **Bulkhead** limits **concurrency**; **breaker** stops calls during **failure** **spikes**.",
+        "**Client timeout** should always be **longer** than **server** timeout — **Correction:** Usually **inner** **clients** are **shorter** than **outer** **gateways** so failures **fail** **fast** locally.",
+        "**Resilience4j** replaces the need for **upstream** **fixes** — **Correction:** Resilience **contains** damage; **root** **cause** still needs **engineering**.",
+        "**OpenFeign** cannot use **Spring** **Security** **OAuth2** tokens — **Correction:** Use **`RequestInterceptor`** or **`OAuth2FeignRequestInterceptor`** patterns to propagate **tokens** safely."
       ]
     },
     {
       "type": "cheatsheet",
       "title": "Cheatsheet",
-      "content": "| Area | Phase 6 Expectation | Quick Rule | Gotcha |\n|---|---|---|---|\n| Framing | Explain intent + constraints | Start from problem | API-only answer |\n| Design | State trade-off explicitly | Compare alternatives | One-solution bias |\n| Runtime | Mention cost impact | Time + space/ops | No performance reasoning |\n| Failure | Name one incident pattern | Mitigation path | Happy-path only thinking |\n| Communication | Be concise + concrete | Use one example | Generic buzzwords |"
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n|---|---|---|\n| OpenFeign | Declarative HTTP + LB | Contract tests catch breaks early |\n| WebClient | Reactive Netty client | Never block on event-loop threads |\n| Circuit breaker | Sliding window + half-open | Tune minimum calls for low QPS |\n| Retry | Backoff + jitter | POST needs idempotency keys |\n| Bulkhead | Concurrency cap per dep | Prevents total thread starvation |\n| Timeouts | Nest inner < outer | Stops orphan work at layers |\n| ErrorDecoder | Map status → typed errors | Enables business-level handling |\n| Observability | Micrometer + trace headers | Debug client issues like a gateway |\n| TimeLimiter | Bound async work | Pairs with CompletableFuture APIs |\n| LoadBalancer cache | TTL tuning | Stale instances cause mystery 503 |"
     }
   ]
 }
