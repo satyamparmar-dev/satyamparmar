@@ -1,209 +1,317 @@
 # Day Content Enrichment — Cursor AI Prompt
 
-## How to use this in Cursor
+## How to use
 
-1. Open Cursor in this repo root
-2. Open the Composer panel (`Ctrl+I` or `Cmd+I`)
-3. Paste the **"Cursor Prompt"** section below
-4. Fill in the Day number at the bottom
-5. Cursor will read the referenced files and rewrite both day files in-place
+1. Open Cursor → Composer (`Ctrl+I`)
+2. Copy everything inside the triple-backtick block below
+3. Fill in **Day number** and **Phase number** in the `NOW ENRICH DAY` section and substitute `{N}` / `{D}` in the paths
+4. Send — Cursor reads the gold-standard files and writes both JSON files directly
 
 ---
 
 ## Cursor Prompt
 
 ```
+════════════════════════════════════════════════════════
+⛔  ABSOLUTE RULES — READ THIS BLOCK BEFORE ANYTHING ELSE
+════════════════════════════════════════════════════════
+
+OUTPUT = exactly TWO files, nothing else:
+  • public/data/days/phase{N}-day{D}.json
+  • public/data/days/scenarioDrill-day{D}.json
+
+FORBIDDEN — do not create any of these:
+  ✗  Python / shell / Node scripts  (.py  .sh  .mjs)
+  ✗  Java source or class files      (.java  .class)
+  ✗  Any folder, pipeline, or helper of any kind
+  ✗  _verify/ or any other directory
+
+For code "output" fields:
+  → Trace the Java code line by line in your head
+  → Write the exact stdout string directly into the JSON "output" field
+  → Do NOT compile, run, or shell out
+
+If you are tempted to create any file other than the two JSON targets — STOP.
+You are done when both JSON files are saved. That is all.
+
+════════════════════════════════════════════════════════
+
+
 You are enriching the Java Interview Mastery app (Satyverse by Satyam Parmar).
 
-## Files to read first (context)
 
-@public/data/days/phase6-day49.json          ← GOLD STANDARD for phase/day files
-@public/data/days/scenarioDrill-day49.json   ← GOLD STANDARD for scenarioDrill files
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1 — READ THESE FILES FIRST (before writing a single character)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Read both files completely before writing anything. Every section you produce
-must match that depth, length, and quality.
+@public/data/days/phase6-day49.json          ← GOLD STANDARD — day file structure & depth
+@public/data/days/scenarioDrill-day49.json   ← GOLD STANDARD — scenario drill structure & depth
+@public/data/assignments_phase{N}.json       ← find assignments["{D}"] → drives the exercise section
+@public/data/phase{N}.json                   ← get title / tags / prerequisites / learningObjectives
 
-## Phase source files — read the one for your target day
+Read all four files completely. Every section you write must match Day 49's depth and length.
+Your output must be at least as long and detailed as the gold-standard files.
 
-These contain the official topic list and existing shallow content per day:
 
-@public/data/phase1.json    ← Days 1–9
-@public/data/phase2.json    ← Days 10–18
-@public/data/phase3.json    ← Days 19–27
-@public/data/phase4.json    ← Days 28–37
-@public/data/phase5.json    ← Days 38–48
-@public/data/phase6.json    ← Days 49–58
-@public/data/phase7.json    ← Days 59–67
-@public/data/phase8.json    ← Days 68–76
-@public/data/phase9.json    ← Days 77–84
-@public/data/phase10.json   ← Days 85–90
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 2 — WRITING VOICE (apply to every prose field)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-From the phase file for your target day, read:
-- The day's `title`, `tags`, `prerequisites`, `learningObjectives`
-- Any existing section content worth preserving or building on
+Target reader: a strong intermediate Java developer preparing for senior interviews.
 
-## Target day files to REWRITE (overwrite completely)
+DO:
+  • Short sentences. One main idea per sentence.
+  • Name the real thing that breaks in production before naming the concept.
+  • Bold key interview terms on first use and pair with a plain-English definition or tiny example.
+  • For operational topics (HTTP, DB, Kafka, K8s, cloud) include numbered steps and/or real
+    CLI commands (curl, kubectl, kafka-console-consumer, redis-cli, psql, etc.) where they fit.
+  • Teach first, then be precise — clarity beats clever wording.
 
-@public/data/days/phase{N}-day{D}.json
-@public/data/days/scenarioDrill-day{D}.json
+DON'T:
+  • Three abstract nouns in a row without a concrete hook (symptom, fix, tool, story).
+  • Vague conclusions like "this is important" — always say what breaks if you skip it.
+  • Jargon that isn't needed for the interview angle being covered.
 
-Replace ALL content in both files. Keep the same JSON key names and section order
-as the gold standard. Do not add new top-level keys.
 
----
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 3 — WRITE phase{N}-day{D}.json
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-## phase{N}-day{D}.json — required sections in order
+Top-level keys (same order and names as `phase6-day49.json`, no extra keys):
+  day · title · estimatedHours · difficulty · level · track · tags · prerequisites · learningObjectives · sections
 
-### 1. type: "why"
-- 4–5 flowing paragraphs, NO bullet lists
-- Paragraph 1: what goes wrong in production when this topic is mishandled (real failure)
-- Paragraph 2: what interviewers are actually testing (not just API knowledge)
-- Paragraph 3: what a 4-step strong answer looks like for this specific topic
-- Paragraph 4: why this topic matters at scale / across teams
-- Paragraph 5: the operational behavior that distinguishes a senior answer
+Note: `phase{N}-day{D}.json` does **not** use top-level `phaseId` (that field lives on `scenarioDrill-day{D}.json` only).
 
-### 2. type: "theory"
-- Minimum 8 numbered `###` sections in markdown
-- Must include: formal definition, internals/mechanism, 3–4 most-probed interview angles,
-  Java/Spring practical mapping, comparison table where relevant, 60-second story to tell in interview
-- Include `**Interview angle:**` callouts inside relevant sections
+Interview extension vs gold day-49 file: preserve every other shape from the gold file; each object in
+`interview.conceptual`, `interview.codeBased`, and `interview.seniorScenario` **adds** a `followUps` array
+(exactly 2 items) as specified in SECTION 7 — legacy JSON may omit these until a day is refreshed.
 
-### 3. type: "code" — exactly 3 entries
 
-**Rules for all 3 code sections:**
-- `"language": "java"`, standalone `main()`, compiles without Spring on classpath
-- Spring/framework patterns shown as `//` comment lines in the code
-- `"output"` field = exact stdout the code prints — trace it yourself before writing
-- NEVER use Math.random(), System.currentTimeMillis(), hashCode(), UUID.randomUUID(),
-  or any non-deterministic value — output must be 100% reproducible
+── SECTION 1  type: "why" ──────────────────────────────
 
-**Basic (40–60 lines):**
-- Prints a reference table, property matrix, or comparison of named options
-- All output is static strings — no computation needed to verify
+4–5 flowing paragraphs. NO bullet lists.
 
-**Intermediate (70–100 lines):**
-- Simulates a real mechanism from this topic (cache, state machine, event log, pool, etc.)
-- main() runs 4 labelled scenarios: happy path, retry/replay, failure/edge case, summary rules
-- Label with `--- Scenario N: description ---` or `=== SECTION ===` headers in output
+  Para 1 — Production failure: what breaks when this topic is handled badly (real incident, real symptom)
+  Para 2 — What the interviewer is actually testing (not just API recall)
+  Para 3 — The 4-step strong answer pattern for this specific topic
+  Para 4 — Why this matters at scale and across teams
+  Para 5 — The one thing that separates a senior answer from a mid-level answer
 
-**Advanced (100–130 lines):**
-- Defines a `record` or inner class for a standard format from this topic
-- Implements a real algorithm or decision logic from this topic
-- Ends with a decision reference table printed via System.out.println
-- Output structured in 3 clearly separated blocks
+Voice: concrete and readable; name symptoms and fixes before naming abstractions.
 
-### 4. type: "diagram"
-- PlantUML (`@startuml` ... `@enduml`) showing the data/request flow through
-  real infrastructure components relevant to this topic
-- `"description"`: 1–2 sentences explaining what the diagram shows
 
-### 5. type: "pitfalls"
-- Exactly 8 items (array of strings)
-- Each string: one full sentence naming the mistake + why it breaks in production
-- Must be real mistakes engineers hit on real projects, not textbook warnings
+── SECTION 2  type: "theory" ───────────────────────────
 
-### 6. type: "exercise"
-- `"problem"`: real-world scenario with 4+ numbered requirements, directly about today's topic
-- `"hints"`: exactly 3 strings, each a single actionable clue (does not give away the answer)
-- `"solution"`: full Java code, `package arch.day{D};`, compiles and runs,
-  directly solves the exercise problem, comments explain every design decision
+Minimum 8 numbered ### sections in Markdown.
 
-### 7. type: "interview"
+Required coverage:
+  • Formal definition (plain English + precise)
+  • Internal mechanism (how it actually works)
+  • 3–4 most-probed interview angles, each with an **Interview angle:** callout
+  • Java/Spring practical mapping
+  • Comparison table where relevant (use Markdown pipe tables)
+  • "60-second story" — one paragraph you can say out loud in an interview
 
-`"conceptual"` — 15 Q&A objects:
-- answer: minimum 3 sentences, bold key terms, explains WHY not just WHAT,
-  includes Java/Spring practical angle, real production consequence
+Voice: teach each idea in plain language, then sharpen with precision; table rows must be scannable.
 
-`"codeBased"` — 10 Q&A objects:
-- answer: actual Spring/Java code as `//` comment lines (8–15 lines per answer),
-  showing annotation + method signature + response/output
 
-`"seniorScenario"` — 6 Q&A objects:
-- answer: minimum 150 words, structured as **(1) Immediate response, (2) Root cause,
-  (3) Fix, (4) Prevention**. Bold those labels.
+── SECTION 3  type: "code"  (exactly 3 entries) ────────
 
-`"wrongAnswers"` — 8 strings:
-- Format: `"Wrong claim — correction explaining why it is wrong"`
-- Must be topic-specific misconceptions that sound plausible
+Rules for ALL 3 code blocks:
+  • "language": "java"
+  • Standalone main() — compiles without Spring on the classpath
+  • Spring/framework patterns shown as // comment lines only
+  • "output" = exact stdout — trace it mentally, write it as a string, never run it
+  • NO Math.random(), System.currentTimeMillis(), hashCode(), UUID.randomUUID()
+    (output must be 100% reproducible)
 
-### 8. type: "cheatsheet"
-- Markdown table, 10 rows
-- Columns: `Topic | Rule of thumb | Interview one-liner`
+BASIC (40–60 lines):
+  Purpose: print a reference table, property matrix, or option comparison
+  Output: static strings only — easy to trace by eye
 
----
+INTERMEDIATE (70–100 lines):
+  Purpose: simulate a real mechanism from this topic (cache, state machine, event log, pool, etc.)
+  Structure: main() runs exactly 4 labelled scenarios
+  Output labels: "--- Scenario N: description ---" or "=== SECTION ===" headers
 
-## scenarioDrill-day{D}.json — required structure
+ADVANCED (100–130 lines):
+  Purpose: implement real algorithm or decision logic from this topic
+  Structure: define a record or inner class; end with a printed decision reference table
+  Output: 3 clearly separated blocks
 
-Top-level fields: `"day"`, `"title"`, `"phaseId"`, `"tags"`, `"scenarios"`
 
-Exactly 10 scenario objects. Each:
-```json
-{
-  "id": "d{D}-s{N}",
-  "question": "...",
-  "signals": ["keyword1", "keyword2", "keyword3", "keyword4"],
-  "answer": "...",
-  "followUps": [
-    { "question": "...", "answer": "..." },
-    { "question": "...", "answer": "..." }
-  ]
-}
-```
+── SECTION 4  type: "diagram" ──────────────────────────
 
-Distribute 10 scenarios across these types (one each):
-1. Code review critique — "This code does X — what's wrong?"
-2. Production incident — "Users report Y — diagnose and fix"
-3. Design choice — "Choose between A and B for use case Z"
-4. Internal deep dive — "Explain how X works internally"
-5. Trade-off analysis — "Pros/cons of X vs Y"
-6. Gotcha — "This passes tests but fails in prod — why?"
-7. Senior architectural — "Design system X for 10M users"
-8. Security or correctness implication most engineers miss
-9. Scale or performance angle
-10. Misconception a new engineer might have
+PlantUML (@startuml … @enduml) showing request/data flow through real infrastructure
+components for this topic.
+"description": 1–2 sentences explaining what the diagram shows.
+
+
+── SECTION 5  type: "pitfalls" ─────────────────────────
+
+Exactly 8 strings (array).
+Each string: one full sentence — the mistake + why it breaks in production.
+Real engineering mistakes from real projects; not textbook bullet points.
+
+
+── SECTION 6  type: "exercise"  ← MUST align with assignments file ──
+
+Source of truth: open @public/data/assignments_phase{N}.json,
+find assignments["{D}"] (string key), read its questions array.
+The exercise must implement the coding or primary scenario question from that entry.
+
+  "problem":   Real-world scenario with 4+ numbered requirements.
+               Must match the assignment's scenario, constraints, and deliverable.
+               Not a generic stub. Not just the topic name printed.
+
+  "hints":     Exactly 3 strings. Each is one actionable clue that does NOT give away the answer.
+
+  "solution":  Full Java code, package arch.day{D};
+               main() runs with deterministic output.
+               Comments explain every design decision.
+               Opening class Javadoc references the assignment goal.
+
+
+── SECTION 7  type: "interview" ────────────────────────
+
+Every object in conceptual / codeBased / seniorScenario includes:
+  question  ·  answer  ·  followUps  (array of exactly 2 objects, each with question + answer)
+
+▸ "conceptual"  — 15 objects
+
+  answer:    Minimum 3 sentences. Bold key terms. Explains WHY not just WHAT.
+             Java/Spring angle where relevant. Real production consequence named.
+  followUps: 2 objects. Each answer: minimum 60 words.
+             Deepen the topic — edge case, failure mode, comparison, "what next in prod?".
+  Commands:  For operational topics include numbered steps and/or example CLI commands
+             (curl, kubectl, kafka-console-consumer, redis-cli, psql, aws CLI, JVM flags,
+             header names, metric names) in the main answer OR at least one follow-up —
+             only when they fit the day's topic naturally.
+
+▸ "codeBased"  — 10 objects
+
+  answer:    8–15 // comment lines showing annotation + method signature + response/output.
+  followUps: 2 objects. At least one pushes a variant (error handling, security,
+             idempotency, performance). Answers may use more // code lines and/or
+             a curl / httpie one-liner as comments.
+
+▸ "seniorScenario"  — 6 objects
+
+  answer:    Minimum 150 words.
+             Structured as: **(1) Immediate response  (2) Root cause  (3) Fix  (4) Prevention**
+             Bold all four labels.
+             Under (3) and/or (4) include numbered steps or example commands a senior
+             would actually run (canary, rollback, migration order, verification query)
+             where the scenario warrants it.
+  followUps: 2 objects. Each answer: minimum 60 words.
+             Second-order effects — rollback plan, SLO impact, cost, team process.
+
+▸ "wrongAnswers"  — 8 strings
+
+  Format: "Wrong claim — correction explaining why it is wrong"
+  Must be topic-specific misconceptions that sound plausible to a candidate.
+
+
+── SECTION 8  type: "cheatsheet" ───────────────────────
+
+Markdown pipe table, exactly 10 rows.
+Columns: Topic | Rule of thumb | Interview one-liner
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 4 — WRITE scenarioDrill-day{D}.json
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Top-level keys: day · title · phaseId · tags · scenarios
+
+Exactly 10 scenario objects. Each object:
+  {
+    "id":       "d{D}-s{N}",
+    "question": "...",
+    "signals":  ["keyword1", "keyword2", "keyword3", "keyword4"],
+    "answer":   "...",
+    "followUps": [
+      { "question": "...", "answer": "..." },
+      { "question": "...", "answer": "..." }
+    ]
+  }
+
+Distribute one scenario per type:
+  1  Code review critique     — "This code does X — what's wrong?"
+  2  Production incident      — "Users report Y — diagnose and fix"
+  3  Design choice            — "Choose between A and B for use case Z"
+  4  Internal deep dive       — "Explain how X works internally"
+  5  Trade-off analysis       — "Pros/cons of X vs Y"
+  6  Gotcha                   — "This passes tests but fails in prod — why?"
+  7  Senior architectural     — "Design system X for 10M users"
+  8  Security / correctness   — implication most engineers miss
+  9  Scale / performance      — specific bottleneck or optimisation
+  10 Misconception            — wrong belief a new engineer might hold
 
 Quality bar:
-- scenario answer: minimum 100 words, name root cause before fix, bold key terms
-- followUp answer: minimum 60 words, genuinely deepens the scenario
-- For incidents: name the monitoring/tooling that surfaces the problem
-- For design choices: give a recommendation + justification + trade-off named
+  • scenario answer:   minimum 100 words; name root cause before fix; bold key terms
+  • followUp answer:   minimum 60 words; genuinely deepens the scenario (not a summary)
+  • Production incident: name the specific monitoring tool / metric / log that surfaces it
+  • Design choice:       give a recommendation + justification + at least one trade-off named
+  • Operational scenarios: include numbered steps and/or example commands where they fit
 
----
 
-## JSON output rules
-- Pure JSON only — no markdown fences around the output
-- Escape all `"` inside string values as `\"`
-- Newlines inside strings as `\n`
-- No trailing commas anywhere
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 5 — JSON FORMATTING RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
----
+  • Pure JSON — no markdown fences around the output
+  • Escape all " inside strings as \"
+  • Newlines inside strings as \n
+  • No trailing commas anywhere
+  • Write the complete file content directly to the target path — do not print to chat
 
-## NOW ENRICH DAY: ___
 
-Day number   : 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRE-FLIGHT CHECKLIST (run through this before saving)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  □  Did I read phase6-day49.json fully before writing?
+  □  Did I read assignments_phase{N}.json and use assignments["{D}"] for the exercise?
+  □  Every interview Q&A has exactly 2 followUps objects?
+  □  All 3 code sections have a non-empty "output" field traced by hand?
+  □  No Math.random / currentTimeMillis / hashCode / UUID.randomUUID in any code section?
+  □  Exactly 8 pitfalls?
+  □  Exactly 10 scenarios in the drill file?
+  □  exercise.solution is a real implementation (not a stub that just prints the topic name)?
+  □  Only 2 files created or modified?
+
+
+════════════════════════════════════════════════════════
+NOW ENRICH DAY  ← fill in day / phase, replace {N} and {D} in paths, then send
+════════════════════════════════════════════════════════
+
+Day number   :
+Phase number :
 Phase file   : @public/data/phase{N}.json
-Day file     : @public/data/days/phase{N}-day{D}.json
-Scenario file: @public/data/days/scenarioDrill-day{D}.json
+Assignments  : @public/data/assignments_phase{N}.json
+Day file     : public/data/days/phase{N}-day{D}.json
+Scenario file: public/data/days/scenarioDrill-day{D}.json
 ```
 
 ---
 
-## Quick reference — Day → File map
+## Quick reference — Day → Phase file
 
-| Day | Read this phase file | Rewrite these day files |
-|-----|----------------------|-------------------------|
-| 1–9 | `@public/data/phase1.json` | `phase1-day{D}.json` + `scenarioDrill-day{D}.json` |
-| 10–18 | `@public/data/phase2.json` | `phase2-day{D}.json` + `scenarioDrill-day{D}.json` |
-| 19–27 | `@public/data/phase3.json` | `phase3-day{D}.json` + `scenarioDrill-day{D}.json` |
-| 28–37 | `@public/data/phase4.json` | `phase4-day{D}.json` + `scenarioDrill-day{D}.json` |
-| 38–48 | `@public/data/phase5.json` | `phase5-day{D}.json` + `scenarioDrill-day{D}.json` |
-| 49–58 | `@public/data/phase6.json` | `phase6-day{D}.json` + `scenarioDrill-day{D}.json` |
-| 59–67 | `@public/data/phase7.json` | `phase7-day{D}.json` + `scenarioDrill-day{D}.json` |
-| 68–76 | `@public/data/phase8.json` | `phase8-day{D}.json` + `scenarioDrill-day{D}.json` |
-| 77–84 | `@public/data/phase9.json` | `phase9-day{D}.json` + `scenarioDrill-day{D}.json` |
-| 85–90 | `@public/data/phase10.json` | `phase10-day{D}.json` + `scenarioDrill-day{D}.json` |
+| Days | Phase file | Day file prefix |
+|------|-----------|-----------------|
+| 1–9 | `phase1.json` | `phase1-day{D}` |
+| 10–18 | `phase2.json` | `phase2-day{D}` |
+| 19–27 | `phase3.json` | `phase3-day{D}` |
+| 28–37 | `phase4.json` | `phase4-day{D}` |
+| 38–48 | `phase5.json` | `phase5-day{D}` |
+| 49–58 | `phase6.json` | `phase6-day{D}` |
+| 59–67 | `phase7.json` | `phase7-day{D}` |
+| 68–76 | `phase8.json` | `phase8-day{D}` |
+| 77–84 | `phase9.json` | `phase9-day{D}` |
+| 85–90 | `phase10.json` | `phase10-day{D}` |
 
-## Full day → topic map
+## Day → Topic map
 
 | Day | Phase | Topic |
 |-----|-------|-------|

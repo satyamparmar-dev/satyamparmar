@@ -15,7 +15,7 @@
 - **Visual Roadmap** of all 90 days
 - **Progress Tracking** with streak system, phase progress, and export/import
 - **Full-Text Search** (Ctrl+K) across all lessons
-- **Scenario interview drill** (`/scenarios`) — scenario questions with answers, signals, and follow-ups per day; data in `public/data/scenarioDrill.json` (see [`scripts/SCENARIO_DRILL.md`](scripts/SCENARIO_DRILL.md))
+- **Scenario interview drill** (`/scenarios`) — scenario questions per day; manifest in `public/data/scenarioDrill.json` and bundles in `public/data/days/scenarioDrill-day*.json` (authoring notes: [`public/data/SCENARIO_INTERVIEW_DEPTH_PROMPT.md`](public/data/SCENARIO_INTERVIEW_DEPTH_PROMPT.md))
 - **Bookmarks** and notes per lesson
 - **Dark/Light mode**
 - **Keyboard shortcuts** for power users
