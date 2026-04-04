@@ -1,3 +1,9 @@
+/**
+ * ⚠️  LEGACY AUTH — Currently disabled (AUTH_LOGIN_ENABLED = false in authConfig.ts)
+ * This file is kept for potential future re-enablement.
+ * To re-activate: set AUTH_LOGIN_ENABLED = true and PBKDF2-upgrade the password hashing.
+ * Do NOT remove without also removing: LoginPage.tsx, emailService.ts, useAuthStore.ts
+ */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
@@ -28,6 +34,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import MarkEmailReadIcon from '@mui/icons-material/MarkEmailRead';
 import { useAuthStore } from '../auth/useAuthStore';
 import { APP_DISPLAY_NAME } from '../constants/branding';
+import AccessEnquiryNotice from '../components/AccessEnquiryNotice';
 import { checkRateLimit, getRemainingAttempts } from '../auth/authUtils';
 import {
   isAllowedProvider,
@@ -695,6 +702,20 @@ const LoginPage: React.FC<Props> = ({ onSuccess }) => {
               )}
             </>
           )}
+        </Paper>
+
+        <Paper
+          elevation={0}
+          sx={{
+            mt: 2,
+            p: 2.5,
+            borderRadius: 3,
+            border: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
+          }}
+        >
+          <AccessEnquiryNotice embedded={false} />
         </Paper>
       </Box>
     </Box>

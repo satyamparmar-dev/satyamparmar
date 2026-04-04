@@ -5,6 +5,7 @@ import {
   IconButton,
   Typography,
   Box,
+  Button,
   Tooltip,
   useMediaQuery,
   useTheme,
@@ -26,6 +27,7 @@ import { useAuthStore } from '../auth/useAuthStore';
 import { useAllowlistGateStore } from '../auth/useAllowlistGateStore';
 import { AUTH_LOGIN_ENABLED, EMAIL_ALLOWLIST_GATE_ENABLED } from '../auth/authConfig';
 import { APP_DISPLAY_NAME } from '../constants/branding';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 function initialsFromEmail(email: string): string {
   const local = (email.split('@')[0] ?? 'U').replace(/[._-]+/g, ' ');
@@ -44,6 +46,8 @@ interface Props {
 }
 
 const Header: React.FC<Props> = ({ onMenuToggle }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const { theme, toggleTheme, setSearchOpen, progress, sidebarOpen } = useAppStore();
   const { currentUser, logout } = useAuthStore();
   const gateEmail = useAllowlistGateStore((s) => s.gateEmail);
@@ -182,6 +186,21 @@ const Header: React.FC<Props> = ({ onMenuToggle }) => {
             )}
           </IconButton>
         </Tooltip>
+
+        {EMAIL_ALLOWLIST_GATE_ENABLED && !gateEmail && (
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() =>
+              navigate('/login', {
+                state: { from: `${location.pathname}${location.search}` },
+              })
+            }
+            sx={{ mr: 1, fontWeight: 700, textTransform: 'none', flexShrink: 0 }}
+          >
+            Sign in
+          </Button>
+        )}
 
         {/* User Avatar + Menu */}
         {sessionUser && (

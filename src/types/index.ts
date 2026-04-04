@@ -42,6 +42,8 @@ export interface PhaseData {
   phase: number;
   title: string;
   days: LessonDay[];
+  /** When set, loader merges `data/days/{phaseFile}-day{N}.json` into `days` (shell usually has `days: []`). */
+  externalDayNumbers?: number[];
 }
 
 // ─── Lesson Day ─────────────────────────────────────────────
@@ -150,20 +152,27 @@ export interface AssignmentSection {
   questions: AssignmentQuestion[];
 }
 
-export interface InterviewSection {
-  type: 'interview';
-  title: string;
-  conceptual: { question: string; answer: string }[];
-  codeBased: { question: string; answer: string }[];
-  seniorScenario: { question: string; answer: string }[];
-  wrongAnswers: string[];
-}
-
 // ─── Scenario Interview Drill (standalone JSON) ─────────────
 export interface ScenarioFollowUp {
   question: string;
   /** Markdown: steps, theory, fenced code, shell commands */
   answer: string;
+}
+
+/** Interview Q&A; `followUps` mirrors scenario drill depth (optional for legacy days). */
+export interface InterviewQuestionItem {
+  question: string;
+  answer: string;
+  followUps?: ScenarioFollowUp[];
+}
+
+export interface InterviewSection {
+  type: 'interview';
+  title: string;
+  conceptual: InterviewQuestionItem[];
+  codeBased: InterviewQuestionItem[];
+  seniorScenario: InterviewQuestionItem[];
+  wrongAnswers: string[];
 }
 
 export interface ScenarioItem {
@@ -197,6 +206,8 @@ export interface ScenarioThemeBundle {
 export interface ScenarioDrillData {
   version: number;
   days: ScenarioDayBundle[];
+  /** When set, loader fetches `data/days/scenarioDrill-day{N}.json` for each N (shell usually has `days: []`). */
+  externalDayNumbers?: number[];
   /** Merged at load time from `scenarioInterviewThemes.json` when present */
   interviewThemes?: ScenarioThemeBundle[];
 }

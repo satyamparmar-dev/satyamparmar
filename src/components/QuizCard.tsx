@@ -12,6 +12,7 @@ import {
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ReplayIcon from '@mui/icons-material/Replay';
 import { parseMarkdown } from '../utils/markdown';
+import SignInToContinueCallout from './SignInToContinueCallout';
 
 interface QuizCardProps {
   question: string;
@@ -21,6 +22,8 @@ interface QuizCardProps {
   total: number;
   onKnew: () => void;
   onReview: () => void;
+  /** When true, answer side shows sign-in prompt instead of the solution */
+  answersLocked?: boolean;
 }
 
 const typeColors: Record<string, string> = {
@@ -43,6 +46,7 @@ const QuizCard: React.FC<QuizCardProps> = ({
   total,
   onKnew,
   onReview,
+  answersLocked = false,
 }) => {
   const [flipped, setFlipped] = useState(false);
 
@@ -85,37 +89,11 @@ const QuizCard: React.FC<QuizCardProps> = ({
       </Box>
 
       {/* Card */}
-      <Box
-        sx={{
-          perspective: '1000px',
-          cursor: 'pointer',
-          minHeight: 280,
-        }}
-        onClick={() => setFlipped(!flipped)}
-      >
-        <Box
-          sx={{
-            position: 'relative',
-            minHeight: 280,
-            transformStyle: 'preserve-3d',
-            transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
-            transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
-          }}
-        >
-          {/* Front — Question */}
-          <Card
-            sx={{
-              position: 'absolute',
-              inset: 0,
-              backfaceVisibility: 'hidden',
-              WebkitBackfaceVisibility: 'hidden',
-              border: `2px solid ${color}40`,
-              cursor: 'pointer',
-            }}
-          >
+      {answersLocked ? (
+        <>
+          <Card sx={{ border: `2px solid ${color}40`, minHeight: 200 }}>
             <CardContent
               sx={{
-                height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'center',
@@ -124,69 +102,111 @@ const QuizCard: React.FC<QuizCardProps> = ({
                 textAlign: 'center',
               }}
             >
-              <Typography
-                variant="overline"
-                sx={{ color, mb: 2, display: 'block' }}
-              >
+              <Typography variant="overline" sx={{ color, mb: 2, display: 'block' }}>
                 Question
               </Typography>
               <Typography variant="h6" fontWeight={600} lineHeight={1.5}>
                 {question}
               </Typography>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ mt: 3 }}
-              >
-                Click to reveal answer
-              </Typography>
             </CardContent>
           </Card>
-
-          {/* Back — Answer */}
-          <Card
+          <SignInToContinueCallout
+            sx={{ mt: 2 }}
+            message="Quiz answers and explanations are available after you sign in with an authorized email."
+          />
+        </>
+      ) : (
+        <Box
+          sx={{
+            perspective: '1000px',
+            cursor: 'pointer',
+            minHeight: 280,
+          }}
+          onClick={() => setFlipped(!flipped)}
+        >
+          <Box
             sx={{
-              position: 'absolute',
-              inset: 0,
-              backfaceVisibility: 'hidden',
-              WebkitBackfaceVisibility: 'hidden',
-              transform: 'rotateY(180deg)',
-              border: `2px solid ${color}40`,
-              cursor: 'pointer',
-              overflow: 'auto',
+              position: 'relative',
+              minHeight: 280,
+              transformStyle: 'preserve-3d',
+              transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+              transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
             }}
           >
-            <CardContent sx={{ p: 3 }}>
-              <Typography
-                variant="overline"
-                sx={{ color, mb: 1.5, display: 'block' }}
+            <Card
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                backfaceVisibility: 'hidden',
+                WebkitBackfaceVisibility: 'hidden',
+                border: `2px solid ${color}40`,
+                cursor: 'pointer',
+              }}
+            >
+              <CardContent
+                sx={{
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  p: 4,
+                  textAlign: 'center',
+                }}
               >
-                Answer
-              </Typography>
-              <Fade in={flipped}>
-                <Box
-                  className="md-content"
-                  sx={{
-                    '& p': { mb: 1 },
-                    '& code': {
-                      bgcolor: 'action.hover',
-                      px: 0.5,
-                      py: 0.25,
-                      borderRadius: 0.5,
-                      fontFamily: 'JetBrains Mono, monospace',
-                      fontSize: '0.82em',
-                    },
-                  }}
-                  dangerouslySetInnerHTML={{ __html: parseMarkdown(answer) }}
-                />
-              </Fade>
-            </CardContent>
-          </Card>
+                <Typography variant="overline" sx={{ color, mb: 2, display: 'block' }}>
+                  Question
+                </Typography>
+                <Typography variant="h6" fontWeight={600} lineHeight={1.5}>
+                  {question}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 3 }}>
+                  Click to reveal answer
+                </Typography>
+              </CardContent>
+            </Card>
+
+            <Card
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                backfaceVisibility: 'hidden',
+                WebkitBackfaceVisibility: 'hidden',
+                transform: 'rotateY(180deg)',
+                border: `2px solid ${color}40`,
+                cursor: 'pointer',
+                overflow: 'auto',
+              }}
+            >
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="overline" sx={{ color, mb: 1.5, display: 'block' }}>
+                  Answer
+                </Typography>
+                <Fade in={flipped}>
+                  <Box
+                    className="md-content"
+                    sx={{
+                      '& p': { mb: 1 },
+                      '& code': {
+                        bgcolor: 'action.hover',
+                        px: 0.5,
+                        py: 0.25,
+                        borderRadius: 0.5,
+                        fontFamily: 'JetBrains Mono, monospace',
+                        fontSize: '0.82em',
+                      },
+                    }}
+                    dangerouslySetInnerHTML={{ __html: parseMarkdown(answer) }}
+                  />
+                </Fade>
+              </CardContent>
+            </Card>
+          </Box>
         </Box>
-      </Box>
+      )}
 
       {/* Action Buttons */}
-      {flipped && (
+      {flipped && !answersLocked && (
         <Fade in={flipped}>
           <Box display="flex" gap={2} mt={2} justifyContent="center">
             <Button

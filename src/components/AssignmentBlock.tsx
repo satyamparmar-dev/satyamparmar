@@ -16,6 +16,7 @@ import { AssignmentSection, AssignmentQuestion } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import CodeBlock from './CodeBlock';
 import { parseMarkdown } from '../utils/markdown';
+import SignInToContinueCallout from './SignInToContinueCallout';
 
 // ─── Question Type Config ─────────────────────────────────────────────────────
 
@@ -58,10 +59,11 @@ interface QuestionCardProps {
   dayNumber: number;
   isCompleted: boolean;
   onToggleComplete: (id: string) => void;
+  hasFullAccess: boolean;
 }
 
 const QuestionCard: React.FC<QuestionCardProps> = ({
-  question, index, dayNumber, isCompleted, onToggleComplete,
+  question, index, dayNumber, isCompleted, onToggleComplete, hasFullAccess,
 }) => {
   const [showHints, setShowHints] = useState(false);
   const [showSolution, setShowSolution] = useState(false);
@@ -69,6 +71,7 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
   const cfg = TYPE_CONFIG[question.type] ?? TYPE_CONFIG.conceptual;
 
   const handleRevealNextHint = () => {
+    if (!hasFullAccess) return;
     setRevealedHints((n) => Math.min(n + 1, question.hints.length));
     setShowHints(true);
   };
@@ -191,7 +194,7 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
             size="small"
             startIcon={<LightbulbOutlinedIcon fontSize="small" />}
             onClick={handleRevealNextHint}
-            disabled={revealedHints >= question.hints.length}
+            disabled={!hasFullAccess || revealedHints >= question.hints.length}
             sx={{ fontSize: '0.75rem', textTransform: 'none' }}
           >
             {revealedHints === 0
@@ -206,8 +209,9 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
         <Button
           size="small"
           startIcon={showSolution ? <VisibilityOffOutlinedIcon fontSize="small" /> : <VisibilityOutlinedIcon fontSize="small" />}
-          onClick={() => setShowSolution((v) => !v)}
+          onClick={() => hasFullAccess && setShowSolution((v) => !v)}
           color={showSolution ? 'error' : 'primary'}
+          disabled={!hasFullAccess}
           sx={{ fontSize: '0.75rem', textTransform: 'none' }}
         >
           {showSolution ? 'Hide Solution' : 'Reveal Solution'}
@@ -215,7 +219,7 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
       </Box>
 
       {/* Hints (progressive) */}
-      <Collapse in={showHints && revealedHints > 0}>
+      <Collapse in={hasFullAccess && showHints && revealedHints > 0}>
         <Box sx={{ px: 2.5, py: 2, borderTop: '1px solid', borderColor: 'divider' }}>
           <Typography variant="caption" fontWeight={700} color="warning.main" display="block" mb={1}>
             💡 Hints
@@ -240,7 +244,7 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
       </Collapse>
 
       {/* Solution */}
-      <Collapse in={showSolution}>
+      <Collapse in={hasFullAccess && showSolution}>
         <Box sx={{ borderTop: '1px solid', borderColor: 'divider' }}>
           <Box sx={{ px: 2.5, pt: 2, pb: 1 }}>
             <Typography variant="caption" fontWeight={700} color="success.main" display="block" mb={1.5}>
@@ -281,9 +285,11 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
 interface Props {
   section: AssignmentSection;
   dayNumber: number;
+  /** When false, question text remains visible; hints and solutions require sign-in */
+  hasFullAccess?: boolean;
 }
 
-const AssignmentBlock: React.FC<Props> = ({ section, dayNumber }) => {
+const AssignmentBlock: React.FC<Props> = ({ section, dayNumber, hasFullAccess = true }) => {
   const { progress, markAssignmentQuestion, unmarkAssignmentQuestion } = useAppStore();
   const completedIds =
     progress.assignmentsCompleted?.[String(dayNumber)] ?? [];
@@ -382,6 +388,13 @@ const AssignmentBlock: React.FC<Props> = ({ section, dayNumber }) => {
         )}
       </Paper>
 
+      {!hasFullAccess && (
+        <SignInToContinueCallout
+          sx={{ mb: 3 }}
+          message="Hints and official solutions for these assignment questions are available after you sign in with an authorized email."
+        />
+      )}
+
       {/* Questions grouped by type */}
       {(['conceptual', 'scenario', 'coding'] as const).map((type) => {
         const qs = byType[type];
@@ -409,6 +422,7 @@ const AssignmentBlock: React.FC<Props> = ({ section, dayNumber }) => {
                   dayNumber={dayNumber}
                   isCompleted={completedIds.includes(q.id)}
                   onToggleComplete={handleToggle}
+                  hasFullAccess={hasFullAccess}
                 />
               ))}
             </Stack>

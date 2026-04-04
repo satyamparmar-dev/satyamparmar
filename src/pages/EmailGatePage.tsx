@@ -18,6 +18,7 @@ import {
   clearFailedAttempts,
 } from '../auth/authUtils';
 import { useAllowlistGateStore } from '../auth/useAllowlistGateStore';
+import AccessEnquiryNotice from '../components/AccessEnquiryNotice';
 
 interface Props {
   allowedSet: Set<string>;
@@ -111,7 +112,7 @@ const EmailGatePage: React.FC<Props> = ({ allowedSet, loadError, onRetry }) => {
             {APP_DISPLAY_NAME}
           </Typography>
           <Typography variant="body2" color="text.secondary" mt={0.5}>
-            Enter your authorized email to continue
+            Enter your authorized email to unlock solutions, full lessons, and quiz answers
           </Typography>
         </Box>
 
@@ -194,6 +195,8 @@ const EmailGatePage: React.FC<Props> = ({ allowedSet, loadError, onRetry }) => {
               </Typography>
             )}
           </Box>
+
+          <AccessEnquiryNotice />
         </Paper>
       </Box>
     </Box>

@@ -4,7 +4,9 @@ import {
   Chip, Paper, Tooltip, Fab, Checkbox, FormControlLabel,
   TextField, Collapse, Alert, LinearProgress,
   List, ListItem, ListItemIcon, ListItemText, Divider,
+  Accordion, AccordionSummary, AccordionDetails,
 } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
@@ -16,7 +18,9 @@ import PrintIcon from '@mui/icons-material/Print';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { fetchCurriculum, fetchPhaseWithCache, getScenarioDrillDaysWithContent, fetchAssignmentForDay } from '../services/api';
-import { LessonDay, LessonSection, CodeSection, DiagramSection, AssignmentSection } from '../types';
+import {
+  LessonDay, LessonSection, CodeSection, DiagramSection, AssignmentSection, InterviewQuestionItem,
+} from '../types';
 import { parseMarkdown } from '../utils/markdown';
 import CodeBlock from '../components/CodeBlock';
 import DiagramBlock from '../components/DiagramBlock';
@@ -24,6 +28,8 @@ import LevelBadge from '../components/LevelBadge';
 import TrackBanner from '../components/TrackBanner';
 import LoadingSpinner from '../components/LoadingSpinner';
 import AssignmentBlock from '../components/AssignmentBlock';
+import { useContentAccess } from '../auth/ContentAccessContext';
+import SignInToContinueCallout from '../components/SignInToContinueCallout';
 
 type SectionTab = 'why' | 'theory' | 'code' | 'diagram' | 'pitfalls' | 'exercise' | 'interview' | 'cheatsheet' | 'assignment';
 
@@ -59,10 +65,30 @@ const Learn: React.FC = () => {
   const [showExerciseHints, setShowExerciseHints] = useState<boolean[]>([]);
   const [showExerciseSolution, setShowExerciseSolution] = useState(false);
   const [checkedObjectives, setCheckedObjectives] = useState<boolean[]>([]);
-  /** Days that have entries in `scenarioDrill.json` with at least one scenario */
+  /** Days that have scenario drill content (merged manifest + `days/scenarioDrill-day*.json`) */
   const [scenarioDrillDays, setScenarioDrillDays] = useState<Set<number> | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const noteTimer = useRef<ReturnType<typeof setTimeout>>();
+  const prevHasFullAccess = useRef<boolean | null>(null);
+
+  const { hasFullAccess } = useContentAccess();
+
+  // After sign-out, move to a tab that still shows free preview (Why / Theory excerpt),
+  // not Code/Cheatsheet/etc. where the panel is only "Sign in to continue".
+  useEffect(() => {
+    if (!dayData) return;
+    const tabs = (dayData.sections ?? []).map((s) => s.type) as SectionTab[];
+    if (prevHasFullAccess.current === null) {
+      prevHasFullAccess.current = hasFullAccess;
+      return;
+    }
+    const lostFull = prevHasFullAccess.current === true && !hasFullAccess;
+    prevHasFullAccess.current = hasFullAccess;
+    if (!lostFull) return;
+    if (tabs.includes('why')) setActiveTab('why');
+    else if (tabs.includes('theory')) setActiveTab('theory');
+    else if (tabs[0]) setActiveTab(tabs[0] as SectionTab);
+  }, [hasFullAccess, dayData]);
 
   const isComplete = progress.completedDays.includes(dayNum);
   const isBookmarked = progress.bookmarks.includes(dayNum);
@@ -130,7 +156,7 @@ const Learn: React.FC = () => {
       const total = document.documentElement.scrollHeight - window.innerHeight;
       setReadingProgress(total > 0 ? (scrolled / total) * 100 : 0);
     };
-    window.addEventListener('scroll', onScroll);
+    window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, [dayData]);
 
@@ -387,14 +413,39 @@ const Learn: React.FC = () => {
           />
         )}
 
-        {/* Theory */}
+        {/* Theory — preview without sign-in; full article when signed in */}
         {activeTab === 'theory' && theorySection && (
           theoryHtml && theoryHtml.trim().length > 0 ? (
-            <Box
-              className="md-content"
-              dangerouslySetInnerHTML={{ __html: theoryHtml }}
-              sx={{ lineHeight: 1.8 }}
-            />
+            hasFullAccess ? (
+              <Box
+                className="md-content"
+                dangerouslySetInnerHTML={{ __html: theoryHtml }}
+                sx={{ lineHeight: 1.8 }}
+              />
+            ) : (
+              <>
+                <Box sx={{ position: 'relative', maxHeight: 280, overflow: 'hidden', mb: 2 }}>
+                  <Box
+                    className="md-content"
+                    dangerouslySetInnerHTML={{ __html: theoryHtml }}
+                    sx={{ lineHeight: 1.8 }}
+                  />
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: 96,
+                      pointerEvents: 'none',
+                      background: (t) =>
+                        `linear-gradient(180deg, transparent, ${t.palette.background.default})`,
+                    }}
+                  />
+                </Box>
+                <SignInToContinueCallout message="You are viewing an excerpt of the theory section. Sign in with your authorized email to read the full article and the rest of this lesson." />
+              </>
+            )
           ) : (
             <Alert severity="info" sx={{ borderRadius: 2 }}>
               Theory content is not available for this day yet.
@@ -404,6 +455,7 @@ const Learn: React.FC = () => {
 
         {/* Code */}
         {activeTab === 'code' && (
+          hasFullAccess ? (
           <Box>
             {codeSections.map((sec, i) => (
               <Box key={i} mb={2}>
@@ -423,15 +475,23 @@ const Learn: React.FC = () => {
               </Box>
             ))}
           </Box>
+          ) : (
+            <SignInToContinueCallout message="Code samples and walkthroughs for this day are available after you sign in with an authorized email." />
+          )
         )}
 
         {/* Diagram */}
         {activeTab === 'diagram' && diagramSection && (
-          <DiagramBlock section={diagramSection} />
+          hasFullAccess ? (
+            <DiagramBlock section={diagramSection} />
+          ) : (
+            <SignInToContinueCallout message="Diagrams and architecture views for this lesson are available to signed-in learners only." />
+          )
         )}
 
         {/* Pitfalls */}
         {activeTab === 'pitfalls' && pitfallsSection && (
+          hasFullAccess ? (
           <Box>
             <Typography variant="h6" fontWeight={700} mb={2}>
               {(pitfallsSection as any).title}
@@ -460,9 +520,12 @@ const Learn: React.FC = () => {
               </Alert>
             )}
           </Box>
+          ) : (
+            <SignInToContinueCallout message="Common pitfalls and anti-patterns for this topic are shown after sign-in." />
+          )
         )}
 
-        {/* Exercise */}
+        {/* Exercise — problem visible; hints & solution require sign-in */}
         {activeTab === 'exercise' && exerciseSection && (
           <Box>
             <Box display="flex" alignItems="center" gap={1} mb={2}>
@@ -478,59 +541,72 @@ const Learn: React.FC = () => {
             </Paper>
 
             {/* Hints */}
-            <Box mb={2}>
-              {(((exerciseSection as any)?.hints as string[]) ?? []).map((hint: string, i: number) => (
-                <Box key={i} mb={1}>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => {
-                      const next = [...showExerciseHints];
-                      next[i] = !next[i];
-                      setShowExerciseHints(next);
-                    }}
-                    sx={{ mb: 0.5, borderColor: '#D29922', color: '#D29922' }}
-                  >
-                    {showExerciseHints[i] ? '▼' : '▶'} Hint {i + 1}
-                  </Button>
-                  <Collapse in={showExerciseHints[i]}>
-                    <Alert severity="info" sx={{ borderRadius: 2 }}>
-                      <Box
-                        className="md-content"
-                        dangerouslySetInnerHTML={{ __html: parseMarkdown(hint) }}
-                        sx={{ '& p': { mb: 0 } }}
-                      />
-                    </Alert>
-                  </Collapse>
-                </Box>
-              ))}
-            </Box>
+            {hasFullAccess ? (
+              <Box mb={2}>
+                {(((exerciseSection as any)?.hints as string[]) ?? []).map((hint: string, i: number) => (
+                  <Box key={i} mb={1}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        const next = [...showExerciseHints];
+                        next[i] = !next[i];
+                        setShowExerciseHints(next);
+                      }}
+                      sx={{ mb: 0.5, borderColor: '#D29922', color: '#D29922' }}
+                    >
+                      {showExerciseHints[i] ? '▼' : '▶'} Hint {i + 1}
+                    </Button>
+                    <Collapse in={showExerciseHints[i]}>
+                      <Alert severity="info" sx={{ borderRadius: 2 }}>
+                        <Box
+                          className="md-content"
+                          dangerouslySetInnerHTML={{ __html: parseMarkdown(hint) }}
+                          sx={{ '& p': { mb: 0 } }}
+                        />
+                      </Alert>
+                    </Collapse>
+                  </Box>
+                ))}
+              </Box>
+            ) : (
+              <SignInToContinueCallout
+                sx={{ mb: 2 }}
+                message="Hints for this exercise are available after you sign in with an authorized email."
+              />
+            )}
 
             {/* Solution */}
-            <Button
-              variant="outlined"
-              onClick={() => setShowExerciseSolution(!showExerciseSolution)}
-              sx={{ mb: 1.5 }}
-            >
-              {showExerciseSolution ? 'Hide' : 'Show'} Solution
-            </Button>
-            <Collapse in={showExerciseSolution}>
-              <Box
-                component="pre"
-                sx={{
-                  bgcolor: '#0d1117',
-                  p: 2.5,
-                  borderRadius: 2,
-                  overflow: 'auto',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  fontSize: '0.85rem',
-                  color: '#E6EDF3',
-                  lineHeight: 1.7,
-                }}
-              >
-                {(exerciseSection as any).solution}
-              </Box>
-            </Collapse>
+            {hasFullAccess ? (
+              <>
+                <Button
+                  variant="outlined"
+                  onClick={() => setShowExerciseSolution(!showExerciseSolution)}
+                  sx={{ mb: 1.5 }}
+                >
+                  {showExerciseSolution ? 'Hide' : 'Show'} Solution
+                </Button>
+                <Collapse in={showExerciseSolution}>
+                  <Box
+                    component="pre"
+                    sx={{
+                      bgcolor: '#0d1117',
+                      p: 2.5,
+                      borderRadius: 2,
+                      overflow: 'auto',
+                      fontFamily: 'JetBrains Mono, monospace',
+                      fontSize: '0.85rem',
+                      color: '#E6EDF3',
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    {(exerciseSection as any).solution}
+                  </Box>
+                </Collapse>
+              </>
+            ) : (
+              <SignInToContinueCallout message="The reference solution for this exercise is available to signed-in learners only." />
+            )}
           </Box>
         )}
 
@@ -540,7 +616,7 @@ const Learn: React.FC = () => {
             <Typography variant="h6" fontWeight={700} mb={2}>{(interviewSection as any).title}</Typography>
 
             {['conceptual', 'codeBased', 'seniorScenario'].map((category) => {
-              const questions = (interviewSection as any)[category] as { question: string; answer: string }[];
+              const questions = (interviewSection as any)[category] as InterviewQuestionItem[];
               if (!questions?.length) return null;
               const labels: Record<string, string> = {
                 conceptual: '💬 Conceptual Questions',
@@ -560,11 +636,52 @@ const Learn: React.FC = () => {
                         </Typography>
                       </Box>
                       <Box sx={{ p: 2 }}>
-                        <Box
-                          className="md-content"
-                          dangerouslySetInnerHTML={{ __html: parseMarkdown(qa.answer) }}
-                          sx={{ '& p:last-child': { mb: 0 } }}
-                        />
+                        {hasFullAccess ? (
+                          <>
+                            <Box
+                              className="md-content"
+                              dangerouslySetInnerHTML={{ __html: parseMarkdown(qa.answer) }}
+                              sx={{ '& p:last-child': { mb: 0 } }}
+                            />
+                            {(qa.followUps?.length ?? 0) > 0 && (
+                              <Box mt={2}>
+                                <Typography variant="subtitle2" fontWeight={700} mb={1}>
+                                  Follow-up questions
+                                </Typography>
+                                {(qa.followUps ?? []).map((fu, fi) => (
+                                  <Accordion
+                                    key={fi}
+                                    disableGutters
+                                    sx={{
+                                      mb: 1,
+                                      border: 1,
+                                      borderColor: 'action.hover',
+                                      borderRadius: '8px !important',
+                                      '&:before': { display: 'none' },
+                                    }}
+                                  >
+                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                      <Typography variant="body2" fontWeight={600}>
+                                        {fu.question}
+                                      </Typography>
+                                    </AccordionSummary>
+                                    <AccordionDetails>
+                                      <Box
+                                        className="md-content"
+                                        dangerouslySetInnerHTML={{ __html: parseMarkdown(fu.answer) }}
+                                        sx={{ lineHeight: 1.75, '& pre': { overflow: 'auto' } }}
+                                      />
+                                    </AccordionDetails>
+                                  </Accordion>
+                                ))}
+                              </Box>
+                            )}
+                          </>
+                        ) : (
+                          <SignInToContinueCallout
+                            message="Interview answers and model responses are available after you sign in with an authorized email."
+                          />
+                        )}
                       </Box>
                     </Paper>
                   ))}
@@ -573,7 +690,7 @@ const Learn: React.FC = () => {
             })}
 
             {/* Wrong Answers */}
-            {(interviewSection as any).wrongAnswers?.length > 0 && (
+            {hasFullAccess && (interviewSection as any).wrongAnswers?.length > 0 && (
               <Box>
                 <Typography variant="subtitle1" fontWeight={700} mb={1.5} color="error.main">
                   ❌ Common Wrong Answers
@@ -590,23 +707,27 @@ const Learn: React.FC = () => {
 
         {/* Cheatsheet */}
         {activeTab === 'cheatsheet' && cheatsheetSection && (
-          <Box>
-            <Typography variant="h6" fontWeight={700} mb={2}>{(cheatsheetSection as any).title}</Typography>
-            <Box
-              className="md-content"
-              dangerouslySetInnerHTML={{ __html: parseMarkdown((cheatsheetSection as any).content) }}
-              sx={{
-                '& table': { fontSize: '0.85rem' },
-                '& th': { bgcolor: 'rgba(102,126,234,0.12)' },
-              }}
-            />
-          </Box>
+          hasFullAccess ? (
+            <Box>
+              <Typography variant="h6" fontWeight={700} mb={2}>{(cheatsheetSection as any).title}</Typography>
+              <Box
+                className="md-content"
+                dangerouslySetInnerHTML={{ __html: parseMarkdown((cheatsheetSection as any).content) }}
+                sx={{
+                  '& table': { fontSize: '0.85rem' },
+                  '& th': { bgcolor: 'rgba(102,126,234,0.12)' },
+                }}
+              />
+            </Box>
+          ) : (
+            <SignInToContinueCallout message="The full cheatsheet for this day is available after sign-in." />
+          )
         )}
 
         {/* Assignment */}
         {activeTab === 'assignment' && (
           assignmentSection ? (
-            <AssignmentBlock section={assignmentSection} dayNumber={dayNum} />
+            <AssignmentBlock section={assignmentSection} dayNumber={dayNum} hasFullAccess={hasFullAccess} />
           ) : (
             <Box
               sx={{

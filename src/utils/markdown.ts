@@ -1,4 +1,5 @@
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import hljs from 'highlight.js/lib/core';
 import java from 'highlight.js/lib/languages/java';
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -66,11 +67,42 @@ export const parseMarkdown = (content: string): string => {
       .replace(/'/g, '&#39;');
 
   try {
-    const parsed = marked.parse(content) as string;
-    if (!parsed || !parsed.trim()) {
+    const raw = marked.parse(content) as string;
+    if (!raw || !raw.trim()) {
       return `<p>${escapeHtml(content).replace(/\n/g, '<br/>')}</p>`;
     }
-    return parsed;
+    return DOMPurify.sanitize(raw, {
+      ALLOWED_TAGS: [
+        'h1',
+        'h2',
+        'h3',
+        'h4',
+        'h5',
+        'h6',
+        'p',
+        'br',
+        'strong',
+        'em',
+        'code',
+        'pre',
+        'blockquote',
+        'ul',
+        'ol',
+        'li',
+        'a',
+        'table',
+        'thead',
+        'tbody',
+        'tr',
+        'th',
+        'td',
+        'hr',
+        'span',
+        'div',
+      ],
+      ALLOWED_ATTR: ['href', 'class', 'id', 'target', 'rel'],
+      FORCE_BODY: true,
+    });
   } catch {
     return `<p>${escapeHtml(content).replace(/\n/g, '<br/>')}</p>`;
   }

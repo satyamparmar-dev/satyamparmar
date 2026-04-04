@@ -8,6 +8,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import MainLayout from './layouts/MainLayout';
 import AppRoutes from './routes';
 import AuthGuard from './auth/AuthGuard';
+import { ContentAccessProvider } from './auth/ContentAccessContext';
 
 // Import atom-one-dark theme for highlight.js
 import 'highlight.js/styles/atom-one-dark.css';
@@ -21,13 +22,15 @@ const App: React.FC = () => {
       <CssBaseline />
       <ToastProvider>
         <ErrorBoundary>
-          <AuthGuard>
-            <HashRouter>
-              <MainLayout>
-                <AppRoutes />
-              </MainLayout>
-            </HashRouter>
-          </AuthGuard>
+          <ContentAccessProvider>
+            <AuthGuard>
+              <HashRouter>
+                <MainLayout>
+                  <AppRoutes />
+                </MainLayout>
+              </HashRouter>
+            </AuthGuard>
+          </ContentAccessProvider>
         </ErrorBoundary>
       </ToastProvider>
     </ThemeProvider>

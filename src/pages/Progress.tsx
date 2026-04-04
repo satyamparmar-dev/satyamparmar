@@ -21,6 +21,22 @@ const Progress: React.FC = () => {
   const { curriculum, progress, loadedPhases, theme, exportProgress } = useAppStore();
   const completionRate = useAppStore(selectCompletionRate);
 
+  const handleExport = () => {
+    const state = {
+      exportedAt: new Date().toISOString(),
+      progress: useAppStore.getState().progress,
+      bookmarks: useAppStore.getState().progress.bookmarks,
+      notes: useAppStore.getState().progress.notes,
+    };
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `satyverse-progress-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (!curriculum) {
     return (
       <Box py={8} textAlign="center">
@@ -76,14 +92,19 @@ const Progress: React.FC = () => {
 
   return (
     <Box className="fade-in">
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} flexWrap="wrap" gap={1}>
         <Box>
           <Typography variant="h4" fontWeight={800}>Progress</Typography>
           <Typography color="text.secondary">Your 90-day Java mastery journey</Typography>
         </Box>
-        <Button variant="outlined" onClick={exportProgress}>
-          Export JSON
-        </Button>
+        <Box display="flex" gap={1} flexWrap="wrap">
+          <Button variant="outlined" size="small" onClick={handleExport}>
+            Export Progress Backup
+          </Button>
+          <Button variant="outlined" size="small" onClick={exportProgress}>
+            Export JSON
+          </Button>
+        </Box>
       </Box>
 
       <Paper
@@ -104,8 +125,9 @@ const Progress: React.FC = () => {
             Scenario interview drill
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Full answers, signals, and follow-ups — mapped by day (see{' '}
-            <code style={{ fontSize: '0.85em' }}>scenarioDrill.json</code>).
+            Full answers, signals, and follow-ups — mapped by day (manifest in{' '}
+            <code style={{ fontSize: '0.85em' }}>scenarioDrill.json</code> + files under{' '}
+            <code style={{ fontSize: '0.85em' }}>data/days/</code>).
           </Typography>
         </Box>
         <Button

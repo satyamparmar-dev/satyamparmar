@@ -1,9 +1,16 @@
+/**
+ * ⚠️  LEGACY AUTH — Currently disabled (AUTH_LOGIN_ENABLED = false in authConfig.ts)
+ * This file is kept for potential future re-enablement.
+ * To re-activate: set AUTH_LOGIN_ENABLED = true and PBKDF2-upgrade the password hashing.
+ * Do NOT remove without also removing: LoginPage.tsx, emailService.ts, useAuthStore.ts
+ */
 // ─── Auth Utilities ───────────────────────────────────────────────────────────
-// Uses Web Crypto API (SHA-256) — never stores plaintext passwords.
-// Session tokens are HMAC-signed with the user's own passwordHash so
-// manually crafting a valid token requires knowing the hash too.
+// Uses Web Crypto API — never stores plaintext passwords.
+// Session tokens are HMAC-SHA-256-signed with APP_SECRET; payload binds passwordHash.
 
-const APP_SECRET = 'satyverse-satyam-parmar-v1-2026';
+const APP_SECRET =
+  (import.meta as unknown as { env: Record<string, string> }).env.VITE_APP_SECRET ||
+  'satyverse-dev-fallback-secret-v1';
 
 // ─── Hashing ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +35,35 @@ export async function sha256(input: string): Promise<string> {
   return bufToHex(buf);
 }
 
+async function hmacSign(message: string, secret: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function hmacVerify(
+  message: string,
+  signature: string,
+  secret: string
+): Promise<boolean> {
+  const expected = await hmacSign(message, secret);
+  if (expected.length !== signature.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) {
+    diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 /** Hash a password with its salt using SHA-256 (two rounds for extra hardness) */
 export async function hashPassword(password: string, salt: string): Promise<string> {
   const round1 = await sha256(password + salt);
@@ -38,7 +74,7 @@ export async function hashPassword(password: string, salt: string): Promise<stri
 // ─── Session Tokens ───────────────────────────────────────────────────────────
 // Token format:  base64url(payload) + "." + signature
 // payload = JSON { userId, email, expiresAt }
-// signature = SHA-256(base64url(payload) + passwordHash + APP_SECRET)
+// signature = HMAC-SHA-256(key=APP_SECRET, message=payload + passwordHash)
 // → forging requires knowing the user's passwordHash, which is in localStorage
 //   but changing the passwordHash invalidates all old tokens
 
@@ -72,7 +108,7 @@ export async function createSessionToken(
     expiresAt: Date.now() + SESSION_TTL_MS,
   };
   const encodedPayload = b64Encode(JSON.stringify(fullPayload));
-  const signature = await sha256(encodedPayload + passwordHash + APP_SECRET);
+  const signature = await hmacSign(encodedPayload + passwordHash, APP_SECRET);
   return `${encodedPayload}.${signature}`;
 }
 
@@ -87,11 +123,13 @@ export async function verifySessionToken(
     const encodedPayload = token.slice(0, dot);
     const signature = token.slice(dot + 1);
 
-    // Verify signature
-    const expectedSig = await sha256(encodedPayload + passwordHash + APP_SECRET);
-    if (signature !== expectedSig) return null;
+    const valid = await hmacVerify(
+      encodedPayload + passwordHash,
+      signature,
+      APP_SECRET
+    );
+    if (!valid) return null;
 
-    // Decode and check expiry
     const payload: TokenPayload = JSON.parse(b64Decode(encodedPayload));
     if (Date.now() > payload.expiresAt) return null;
 

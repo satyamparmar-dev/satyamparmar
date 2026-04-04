@@ -19,14 +19,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
 
 function readSecretFromAuthConfig() {
+  if (process.env.VITE_ALLOWLIST_CRYPTO_SECRET) {
+    return process.env.VITE_ALLOWLIST_CRYPTO_SECRET;
+  }
   const p = path.join(root, 'src', 'auth', 'authConfig.ts');
   const src = fs.readFileSync(p, 'utf8');
   const m = src.match(
-    /export const ALLOWLIST_CRYPTO_SECRET\s*=\s*(?:\r?\n\s*)?'((?:\\'|[^'])*)'/
+    /VITE_ALLOWLIST_CRYPTO_SECRET\s*\|\|\s*'((?:\\'|[^'])*)'/
   );
   if (!m) {
     throw new Error(
-      'Could not parse ALLOWLIST_CRYPTO_SECRET from src/auth/authConfig.ts'
+      'Set VITE_ALLOWLIST_CRYPTO_SECRET in the environment, or ensure authConfig.ts has a || \'fallback\' string for the allowlist secret.'
     );
   }
   return m[1].replace(/\\'/g, "'");

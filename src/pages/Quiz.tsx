@@ -12,6 +12,8 @@ import { fetchCurriculum, fetchPhaseWithCache } from '../services/api';
 import { LessonDay, InterviewSection } from '../types';
 import QuizCard from '../components/QuizCard';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { useContentAccess } from '../auth/ContentAccessContext';
+import SignInToContinueCallout from '../components/SignInToContinueCallout';
 
 interface QuizQuestion {
   question: string;
@@ -25,6 +27,7 @@ const Quiz: React.FC = () => {
   const initialDay = searchParams.get('day');
 
   const { curriculum, setCurriculum, loadedPhases, loadPhase, progress, saveQuizScore } = useAppStore();
+  const { hasFullAccess } = useContentAccess();
 
   const [selectedPhase, setSelectedPhase] = useState<string>('all');
   const [selectedDay, setSelectedDay] = useState<string>(initialDay ?? '');
@@ -194,7 +197,7 @@ const Quiz: React.FC = () => {
                   variant="contained"
                   fullWidth
                   onClick={startQuiz}
-                  disabled={!selectedDay || loading}
+                  disabled={!selectedDay || loading || !hasFullAccess}
                   sx={{
                     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                     fontWeight: 700,
@@ -204,6 +207,12 @@ const Quiz: React.FC = () => {
                 </Button>
               </Grid>
             </Grid>
+            {!hasFullAccess && (
+              <SignInToContinueCallout
+                sx={{ mt: 2 }}
+                message="Sign in with your authorized email to run the quiz, reveal answers, and track scores."
+              />
+            )}
           </CardContent>
         </Card>
       ) : null}
@@ -285,6 +294,7 @@ const Quiz: React.FC = () => {
             total={questions.length}
             onKnew={handleKnew}
             onReview={handleReview}
+            answersLocked={!hasFullAccess}
           />
         </Box>
       )}

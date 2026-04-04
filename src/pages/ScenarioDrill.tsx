@@ -31,6 +31,8 @@ import {
   ScenarioItem,
 } from '../types';
 import { parseMarkdown } from '../utils/markdown';
+import { useContentAccess } from '../auth/ContentAccessContext';
+import SignInToContinueCallout from '../components/SignInToContinueCallout';
 
 function bundleByDayMap(data: ScenarioDrillData): Map<number, ScenarioDayBundle> {
   const m = new Map<number, ScenarioDayBundle>();
@@ -44,6 +46,16 @@ function matchesSearch(text: string, q: string): boolean {
   if (!q.trim()) return true;
   const lower = q.toLowerCase();
   return text.toLowerCase().includes(lower);
+}
+
+/** Truncate markdown for a signed-out preview (keeps parseMarkdown safer than mid-tag cuts). */
+function previewMarkdownSlice(md: string, maxChars: number): string {
+  const t = md.trim();
+  if (t.length <= maxChars) return t;
+  const slice = t.slice(0, maxChars);
+  const lastBreak = Math.max(slice.lastIndexOf('\n\n'), slice.lastIndexOf('. '));
+  const cut = lastBreak > maxChars * 0.45 ? slice.slice(0, lastBreak + 1) : slice;
+  return `${cut.replace(/\s+$/, '')}\n\n…`;
 }
 
 const ScenarioDrill: React.FC = () => {
@@ -362,8 +374,9 @@ const ScenarioDrill: React.FC = () => {
 
       {viewMode === 'curriculum' && !activeBundle?.scenarios?.length && (
         <Alert severity="warning" sx={{ borderRadius: 2 }}>
-          No scenario bundles for Day {dayNum} yet. Try another day (e.g. 1–12) or extend{' '}
-          <code>scenarioDrill.json</code>.
+          No scenario bundles for Day {dayNum} yet. Try another day or add{' '}
+          <code>public/data/days/scenarioDrill-day{dayNum}.json</code> (and list the day in{' '}
+          <code>scenarioDrill.json</code> → <code>externalDayNumbers</code>).
         </Alert>
       )}
 
@@ -504,69 +517,105 @@ const GridFilters: React.FC<{
   </Box>
 );
 
-const ScenarioAccordion: React.FC<{ item: ScenarioItem }> = ({ item }) => (
-  <Accordion disableGutters elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: '8px !important', '&:before': { display: 'none' } }}>
-    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-      <Typography fontWeight={700} pr={2}>
-        {item.question}
-      </Typography>
-    </AccordionSummary>
-    <AccordionDetails sx={{ pt: 0 }}>
-      {(item.signals?.length ?? 0) > 0 && (
-        <Box mb={2}>
-          <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" mb={0.75}>
-            Signals / keywords
-          </Typography>
-          <Box display="flex" flexWrap="wrap" gap={0.5}>
-            {(item.signals ?? []).map((s) => (
-              <Chip key={s} label={s} size="small" variant="outlined" sx={{ height: 24 }} />
-            ))}
-          </Box>
-        </Box>
-      )}
-      <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" mb={0.75}>
-        Answer
-      </Typography>
-      <Box
-        className="md-content"
-        dangerouslySetInnerHTML={{ __html: parseMarkdown(item.answer) }}
-        sx={{ lineHeight: 1.75, '& pre': { overflow: 'auto' }, mb: 2 }}
-      />
-      {(item.followUps?.length ?? 0) > 0 && (
-        <Box>
-          <Typography variant="subtitle2" fontWeight={700} mb={1}>
-            Follow-up questions
-          </Typography>
-          {(item.followUps ?? []).map((fu, i) => (
-            <Accordion
-              key={i}
-              disableGutters
-              sx={{
-                mb: 1,
-                border: 1,
-                borderColor: 'action.hover',
-                borderRadius: '8px !important',
-                '&:before': { display: 'none' },
-              }}
-            >
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="body2" fontWeight={600}>
-                  {fu.question}
+const ScenarioAccordion: React.FC<{ item: ScenarioItem }> = ({ item }) => {
+  const { hasFullAccess } = useContentAccess();
+
+  return (
+    <Accordion disableGutters elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: '8px !important', '&:before': { display: 'none' } }}>
+      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+        <Typography fontWeight={700} pr={2}>
+          {item.question}
+        </Typography>
+      </AccordionSummary>
+      <AccordionDetails sx={{ pt: 0 }}>
+        {hasFullAccess ? (
+          <>
+            {(item.signals?.length ?? 0) > 0 && (
+              <Box mb={2}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" mb={0.75}>
+                  Signals / keywords
                 </Typography>
-              </AccordionSummary>
-              <AccordionDetails>
-                <Box
-                  className="md-content"
-                  dangerouslySetInnerHTML={{ __html: parseMarkdown(fu.answer) }}
-                  sx={{ lineHeight: 1.75, '& pre': { overflow: 'auto' } }}
-                />
-              </AccordionDetails>
-            </Accordion>
-          ))}
-        </Box>
-      )}
-    </AccordionDetails>
-  </Accordion>
-);
+                <Box display="flex" flexWrap="wrap" gap={0.5}>
+                  {(item.signals ?? []).map((s) => (
+                    <Chip key={s} label={s} size="small" variant="outlined" sx={{ height: 24 }} />
+                  ))}
+                </Box>
+              </Box>
+            )}
+            <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" mb={0.75}>
+              Answer
+            </Typography>
+            <Box
+              className="md-content"
+              dangerouslySetInnerHTML={{ __html: parseMarkdown(item.answer) }}
+              sx={{ lineHeight: 1.75, '& pre': { overflow: 'auto' }, mb: 2 }}
+            />
+            {(item.followUps?.length ?? 0) > 0 && (
+              <Box>
+                <Typography variant="subtitle2" fontWeight={700} mb={1}>
+                  Follow-up questions
+                </Typography>
+                {(item.followUps ?? []).map((fu, i) => (
+                  <Accordion
+                    key={i}
+                    disableGutters
+                    sx={{
+                      mb: 1,
+                      border: 1,
+                      borderColor: 'action.hover',
+                      borderRadius: '8px !important',
+                      '&:before': { display: 'none' },
+                    }}
+                  >
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="body2" fontWeight={600}>
+                        {fu.question}
+                      </Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Box
+                        className="md-content"
+                        dangerouslySetInnerHTML={{ __html: parseMarkdown(fu.answer) }}
+                        sx={{ lineHeight: 1.75, '& pre': { overflow: 'auto' } }}
+                      />
+                    </AccordionDetails>
+                  </Accordion>
+                ))}
+              </Box>
+            )}
+          </>
+        ) : (
+          <>
+            <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" mb={0.75}>
+              Answer (preview)
+            </Typography>
+            <Box sx={{ position: 'relative', maxHeight: 220, overflow: 'hidden', mb: 2 }}>
+              <Box
+                className="md-content"
+                dangerouslySetInnerHTML={{
+                  __html: parseMarkdown(previewMarkdownSlice(item.answer, 700)),
+                }}
+                sx={{ lineHeight: 1.75, '& pre': { overflow: 'auto' } }}
+              />
+              <Box
+                sx={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: 72,
+                  pointerEvents: 'none',
+                  background: (t) =>
+                    `linear-gradient(180deg, transparent, ${t.palette.background.default})`,
+                }}
+              />
+            </Box>
+            <SignInToContinueCallout message="You are viewing a short preview. Full answers, signals, and follow-ups are available after you sign in with an authorized email." />
+          </>
+        )}
+      </AccordionDetails>
+    </Accordion>
+  );
+};
 
 export default ScenarioDrill;
