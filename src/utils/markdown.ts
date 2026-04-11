@@ -10,9 +10,11 @@ import yaml from 'highlight.js/lib/languages/yaml';
 import json from 'highlight.js/lib/languages/json';
 import sql from 'highlight.js/lib/languages/sql';
 import plaintext from 'highlight.js/lib/languages/plaintext';
+import python from 'highlight.js/lib/languages/python';
 
 // Register languages
 hljs.registerLanguage('java', java);
+hljs.registerLanguage('python', python);
 hljs.registerLanguage('javascript', javascript);
 hljs.registerLanguage('typescript', typescript);
 hljs.registerLanguage('bash', bash);
@@ -52,8 +54,82 @@ renderer.heading = (text: string, level: number, raw: string) => {
 
 marked.use({ renderer });
 
+export type ParseMarkdownOptions = {
+  /** Framed code blocks, spacing, and scan-friendly emphasis for interview answers */
+  interview?: boolean;
+};
+
+/** Wrap each &lt;pre&gt; block so CSS can add a label and border (interview / scenario layouts). */
+function wrapPreInCodeFrame(html: string): string {
+  return html.replace(/<pre(\s[^>]*)?>[\s\S]*?<\/pre>/gi, '<div class="md-code-frame">$&</div>');
+}
+
+/** True if this line is empty or a Java/JS line comment (leading //). */
+function isSlashSlashCommentLine(line: string): boolean {
+  return line.trim().length === 0 || /^\s*\/\//.test(line);
+}
+
+/** Index after the longest run of blank + // lines starting at `start`. */
+function endOfSlashSlashRun(lines: string[], start: number): number {
+  let i = start;
+  while (i < lines.length && isSlashSlashCommentLine(lines[i])) {
+    i++;
+  }
+  return i;
+}
+
+/**
+ * Day JSON often stores pseudo-Java as // comment lines without markdown fences.
+ * Splitting only on `\n\n` misses runs that use single newlines between // lines.
+ * Scan line-by-line: maximal runs where every non-empty line starts with // become ```java blocks.
+ */
+function processUnfencedSegmentForInterview(segment: string): string {
+  if (!segment.trim()) return segment;
+  const lines = segment.split(/\r?\n/);
+  const chunks: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const j = endOfSlashSlashRun(lines, i);
+    const runLines = lines.slice(i, j);
+    const nonEmpty = runLines.filter((l) => l.trim().length > 0);
+    if (nonEmpty.length > 0 && nonEmpty.every((l) => /^\s*\/\//.test(l))) {
+      chunks.push('```java\n' + runLines.join('\n').trimEnd() + '\n```');
+      i = j;
+      continue;
+    }
+    if (j > i) {
+      i = j;
+      continue;
+    }
+    const proseStart = i;
+    i++;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (line.trim() === '') {
+        i++;
+        break;
+      }
+      if (/^\s*\/\//.test(line)) break;
+      i++;
+    }
+    const prose = lines.slice(proseStart, i).join('\n');
+    if (prose.length > 0) chunks.push(prose);
+  }
+  return chunks.join('\n\n');
+}
+
+function promotePseudoJavaCommentBlocksToFences(content: string): string {
+  const parts = content.split(/(```[\w-]*\r?\n[\s\S]*?```)/g);
+  return parts
+    .map((part) => {
+      if (part.startsWith('```')) return part;
+      return processUnfencedSegmentForInterview(part);
+    })
+    .join('');
+}
+
 // ─── Parse Markdown → HTML ───────────────────────────────────
-export const parseMarkdown = (content: string): string => {
+export const parseMarkdown = (content: string, options?: ParseMarkdownOptions): string => {
   if (!content || !content.trim()) {
     return '<p>No content available.</p>';
   }
@@ -67,11 +143,12 @@ export const parseMarkdown = (content: string): string => {
       .replace(/'/g, '&#39;');
 
   try {
-    const raw = marked.parse(content) as string;
+    const mdSource = options?.interview ? promotePseudoJavaCommentBlocksToFences(content) : content;
+    const raw = marked.parse(mdSource) as string;
     if (!raw || !raw.trim()) {
       return `<p>${escapeHtml(content).replace(/\n/g, '<br/>')}</p>`;
     }
-    return DOMPurify.sanitize(raw, {
+    let sanitized = DOMPurify.sanitize(raw, {
       ALLOWED_TAGS: [
         'h1',
         'h2',
@@ -103,6 +180,10 @@ export const parseMarkdown = (content: string): string => {
       ALLOWED_ATTR: ['href', 'class', 'id', 'target', 'rel'],
       FORCE_BODY: true,
     });
+    if (options?.interview) {
+      sanitized = wrapPreInCodeFrame(sanitized);
+    }
+    return sanitized;
   } catch {
     return `<p>${escapeHtml(content).replace(/\n/g, '<br/>')}</p>`;
   }

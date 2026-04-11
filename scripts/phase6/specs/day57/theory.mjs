@@ -1,0 +1,3 @@
+export const theoryTitle = "CQRS & Event Sourcing";
+
+export const theoryBase = "### Day 57 — **CQRS** **and** **event** **sourcing**\n\n### 1. CQRS\nSplit **commands** **and** **queries**.\n\n### 2. Event sourcing\nAppend-only **event** **log** **as** **truth**.\n\n### 3. Projections\nRead **models** **from** **streams**.\n\n### 4. Concurrency\nOptimistic **versioning** **on** **aggregates**.\n\n### 5. Snapshots\nTruncate **replay** **time**.\n\n### 6. Upcasting\nSchema **migration** **during** **replay**.\n\n### 7. Ops\nRebuild **jobs**, **lag** **metrics**, **storage** **growth**.\n\n### 8. Story\nPricing **bug** **fixed** **by** **replaying** **events** **into** **new** **projection** **schema**.";

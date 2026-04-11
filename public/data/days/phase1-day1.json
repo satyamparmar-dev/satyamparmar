@@ -28,73 +28,75 @@
   "sections": [
     {
       "type": "why",
-      "title": "Why Introduction to Java - JDK vs JRE vs JVM matters",
-      "content": "Day 1 matters because every Java interview starts with fundamentals. If JDK, JRE, and JVM are not clear, even simple questions become difficult.\n\nIn practical work, setup confusion is one of the biggest beginner blockers. A project fails to build, javac is missing, or the wrong Java version runs. Once you know each layer's role, these issues become easy to debug.\n\nThink of it as a workshop:\n- JDK = complete toolbox\n- JRE = runtime environment\n- JVM = execution engine\n\nThis clarity helps in both coding and communication. Interviewers evaluate whether you understand what happens after writing code. A strong answer includes compile and run flow, not only definitions.\n\nBy the end of this day, you should be able to set up Java on a new machine, run HelloWorld from terminal, and explain runtime flow in simple words."
+      "title": "Why JDK, JRE, and JVM clarity matters",
+      "content": "A Spring Boot microservice pipeline turns red at 02:17 when the slim CI image contains only a **JRE** and your Gradle plugin still expects **javac** on the PATH. The failure is not a flaky test. It is a missing **JDK** layer in a container that was sized for production parity. The symptom is an immediate compile-step failure before any bytecode ships. The environment is a Linux build agent in a monorepo that mirrors deploy images. The lifecycle moment is **startup of the build**, not peak traffic.\n\nInterviewers who ask about **JDK**, **JRE**, and **JVM** are not checking whether you memorized three acronyms. They want evidence that you know **who** turns source into portable **bytecode** and **who** executes that bytecode under real constraints. The mental model gap that separates a weak answer from a strong one is timeline clarity: compile-time tools versus runtime engine versus bytecode contract.\n\nUse this four-step pattern in every answer. First, name the artifact: `.java` source, `.class` bytecode, optional **JAR** bundle. Second, name the tool: `javac` lives in the **JDK**; `java` is the launcher that starts a **JVM** process. Third, name a failure: mismatched **PATH** entries, **JAVA_HOME** pointing at a **JRE** root, or a **classpath** that cannot see your entry class. Fourth, verify: run `javac -version` and `java -version` from the same shell, then print `System.getProperty(\"java.home\")` and compare it to the directory you expect.\n\nAt scale, ten engineers on one service and fifty JVM microservices amplify any sloppy standard. One teammate ships a feature compiled with **Java 21** preview APIs while production still runs **Java 17** LTS. The concrete failure mode is `UnsupportedClassVersionError` during rolling deploy, not a gentle warning. Another concrete failure mode is two JDK installs where `where java` and `where javac` on Windows resolve to different roots; Gradle reads **JAVA_HOME** while the shell runs a different `java` from an earlier **PATH** entry. The team burns a day reconciling logs that look like application bugs but are launcher mistakes.\n\nA senior candidate states one version-specific fact the mid-level candidate skips. Example: from **Java 11** onward the `java` launcher can compile and run a single-file program with `java Hello.java`, but that convenience path still ends in bytecode execution on the **HotSpot** **JVM**; it does not erase the distinction between development kit and runtime engine. Another senior signal is naming **bytecode verification** as the gate that rejects illegal stack shapes before your `main` method runs.\n\nIn your first six months on a new job this topic shows up weekly. A reviewer asks why your **Dockerfile** uses a **JDK** base for a service that never compiles inside the image; you explain multi-stage builds and test tooling. On-call you pair with someone whose IDE runs but CLI `javac` fails; you walk `echo %PATH%`, compare **JAVA_HOME**, and document the fix in the team wiki. During a **Kubernetes** node upgrade someone pins an old **JRE** sidecar; you catch the drift because `java -version` inside the pod disagrees with the build manifest. This day trains you to treat the platform stack as observable facts, not slogans."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Introduction to Java - JDK vs JRE vs JVM",
-      "content": "Java is a language plus runtime platform.\n\n### Core terms\n- **JDK**: development kit with compiler ('javac') and tools.\n- **JRE**: runtime components required to execute Java programs.\n- **JVM**: virtual machine that executes bytecode.\n\n### Execution flow\n1. Write 'Hello.java'.\n2. Compile with 'javac Hello.java'.\n3. Compiler outputs 'Hello.class' (bytecode).\n4. Run with 'java Hello'.\n5. JVM loads and executes bytecode.\n\n### Why this design?\nBytecode allows portability. Same class file can run on different systems with compatible JVM.\n\n### main() signature\n'public static void main(String[] args)'\n- public: accessible to JVM\n- static: callable without object\n- void: no return\n- args: command-line input\n\n### Setup troubleshooting\n- 'java -version' should work\n- 'javac -version' should work\n- If javac fails: likely JDK not installed or PATH not set.\n\n### Interview-ready statement\n\"JDK is for development, JRE is for execution, and JVM executes bytecode. Java source compiles to bytecode and runs through JVM.\"\n\n### Satyverse — deeper path (theory → practice)\n**From zero to first run.** Walk through once on your machine: create a folder, add `Hello.java`, run `javac` then `java`, and confirm the `.class` file appears. That muscle memory beats memorizing definitions.\n\n**What the JVM actually does first:** it finds your class, runs static initializers, then calls `main`. Classpath tells it *where* to look; wrong directory → `ClassNotFoundException` even with perfect code.\n\n**JAVA_HOME vs PATH:** PATH is for shells to find `java`/`javac`; JAVA_HOME is the JDK root for Maven, Gradle, and CI. Point both at the *same* JDK version to avoid “compiled with 21, ran with 17” surprises.\n\n**Practice drill:** print `args` from the command line (`java MyApp a b c`) and explain why `args[0]` is `\"a\"` — interviewers use this to check you understand launch semantics, not only syntax."
+      "title": "Theory and Internals — JDK, JRE, JVM, and the launch pipeline",
+      "content": "### Plain-language overview\n\n**Java** is both a programming language and a **platform**. You write **source code** in `.java` files. The **Java compiler** `javac` turns that source into **bytecode** stored in `.class` files. The **`java`** launcher starts a **JVM process** that loads those classes and executes your program. The **JDK** bundles compiler, launcher, standard libraries, and diagnostic tools. The **JRE** historically meant runtime-only bundles; modern **JDK** distributions ship what you need to run and to build. Interviewers still use the three-letter vocabulary, so you must speak it with precision.\n\n### 1. **JDK** — the development boundary\n\nThe **JDK** (**Java Development Kit**) is the contract between language designers and engineers who ship software. It contains `javac`, `jar`, `javadoc`, `jdb`, `javap`, and the same libraries the runtime needs. When Gradle prints `compileJava`, it ultimately shells into a **`JavaCompiler`** SPI backed by the **JDK** toolchain. **Interview angle:** If a candidate says \"I installed Java\" without naming **JDK** versus **JRE**, probe whether their laptop can compile a module or only run a **JAR**. Production servers that never compile still sometimes carry a **JDK** in the image so agents can attach `jcmd` or run lightweight diagnostics; that is a conscious image-size trade, not laziness.\n\n### 2. **JRE** — what runs after the build\n\nThe **JRE** (**Java Runtime Environment**) is the subset focused on execution: **JVM**, core class libraries, property files, and configuration. You cannot rely on **JRE**-only installs to expose `javac`. CI failures where `javac` is missing while `java -version` works are almost always **JRE**-only images. **Interview angle:** Ask how they would prove the difference on Linux with `ls $JAVA_HOME/bin | grep javac` or by reading the **Dockerfile** `FROM eclipse-temurin:17-jre` line versus `-jdk`.\n\n### 3. **JVM** — process, class loader, execution engine\n\nThe **JVM** is an abstract machine with a concrete implementation such as **HotSpot**. Each `java` invocation starts a new OS process. Inside, **class loaders** locate bytecode, the **bytecode verifier** rejects illegal programs, the **interpreter** runs cold code, and **JIT** compilers promote hot methods to native code. **Interview angle:** Senior answers mention **bytecode verification** as the reason malformed third-party **JARs** fail before business logic runs, preventing entire classes of memory corruption.\n\n### 4. Source to bytecode — `javac` responsibilities\n\n`javac` reads **ASTs**, performs type checking, emits stack maps, and writes **class files** containing constant pools, method bytecode, and metadata for reflection. Generics are erased; bridge methods appear. This phase is entirely **compile-time**; the **JVM** never sees your `.java` text. Snippet illustrating the contract:\n\n```java\npublic class Entry {\n    public static void main(String[] args) {\n        System.out.println(\"launch\");\n    }\n}\n// javac Entry.java  -> Entry.class\n// java Entry          -> JVM loads Entry and invokes main\n```\n\n### 5. Launcher to `main` — runtime steps\n\nThe **`java`** binary parses flags, builds a **classpath** or **module path**, selects the **Garbage Collector**, installs signal handlers, and calls **`sun.launcher.LauncherHelper`** (implementation detail) to load the application class. Static initializers run before **`main`**. Wrong working directory yields `ClassNotFoundException` even when `javac` succeeded. **Interview angle:** Emphasize that **`java com.example.App`** requires directory `com/example` beneath the **classpath** root.\n\n### 6. **Bytecode** portability versus native binaries\n\n**Bytecode** is architecture-neutral. The same **class file** runs on AArch64 servers and x86 laptops if the major version is supported. Native code is produced later inside the **JVM** via **JIT**. **Interview angle:** Contrast with `UnsupportedClassVersionError`: bytecode is portable only across **JVMs** that understand its **major version**.\n\n### 7. Production comparison table — commands vs artifacts\n\n| Step | Command / artifact | Fails when |\n|------|--------------------|------------|\n| Edit | `src/Main.java` | Syntax errors caught by `javac` |\n| Compile | `javac -d out Main.java` | Missing symbols, wrong `--release` |\n| Package | `jar cf app.jar -C out .` | Manifest issues for executable **JAR** |\n| Run | `java -cp out Main` | **Classpath** omits `out`, wrong class name |\n| Observe | `jcmd <pid> VM.version` | Process not running, lack of **JDK** tools |\n\n### 8. **Classpath** mechanics and `ClassNotFoundException`\n\n**Classpath** is an ordered search path of directories and **ZIP**/ **JAR** roots. The **application class loader** delegates to parents per the parent-delegation model. Duplicate classes shadow later entries silently. **Interview angle:** Mention `java -verbose:class` as the heavy but definitive trace when diagnosing `NoClassDefFoundError` caused by fat **JAR** shading.\n\n### 9. **Module path** (Java 9+) versus **classpath**\n\n| Mechanism | Encapsulation | Typical use |\n|-----------|---------------|-------------|\n| **Classpath** | Weak — any public class is reachable | Legacy apps, fat **JARs** |\n| **Module path** | Strong — `module-info` exports packages | Libraries, **jpms** services |\n\nBoot layers still load `java.base` before application modules. **Interview angle:** Senior engineers note that Spring Boot 3 targets **Java 17** and ships module metadata even when you still launch with **classpath** ergonomics.\n\n### 10. **`public static void main(String[] args)`** contract\n\n**`public`** exposes the method to the launcher. **`static`** avoids constructing an object before entry. **`void`** signals no return channel to the launcher. **`String[] args`** captures tokens after the class name on the CLI. Renaming to `main` with a typo yields `NoSuchMethodError: main`. **Interview angle:** Mention that **`javac`** does not validate that `main` exists on every class—only **`java`** does at runtime.\n\n### 11. **JIT** compilation and tiered levels (conceptual)\n\n**HotSpot** starts in interpreted mode, gathers profiling counters, then promotes hot methods through **C1** and **C2** tiers. Deoptimization returns to interpreter if assumptions break. This is why microbenchmarks without warmup lie. **Interview angle:** Tie **JIT** to production **CPU** spikes during warm traffic after deploy, not to randomness.\n\n### 12. **JAVA_HOME**, **PATH**, and build tools\n\n| Variable | Consumer | Misconfiguration symptom |\n|----------|----------|----------------------------|\n| **PATH** | Shell, scripts | Wrong `java` picked first |\n| **JAVA_HOME** | Maven, Gradle, IntelliJ | Toolchain downloads wrong **JDK** |\n| **JDK_JAVA_OPTIONS** | Launcher | Surprise flags in prod |\n\nRun `where java` on Windows or `type -a java` on **bash** when debugging. **Interview angle:** Describe a Gradle daemon pinned to **JAVA_HOME** while the interactive shell uses another **SDKMAN** candidate.\n\n### 13. Single-file programs (`java Source.java`)\n\nSince **Java 11**, `java Hello.java` compiles in memory and runs for single-file sources without leaving a persistent `.class`. This does not remove **bytecode**; it hides the file. Large projects still need **`javac`** and build tools. **Interview angle:** Ask whether CI should rely on this feature—answer is usually no, because reproducible artifacts matter.\n\n### 13b. Class loader delegation in practice\n\nMost services you ship still rely on the three-loader model: **bootstrap**, **platform**, and **application** loaders. The **bootstrap** loader pulls `java.lang` from modules baked into the runtime image. The **platform** loader sees endorsed APIs. Your **Spring** fat **JAR** uses `LaunchedURLClassLoader` as a child of the **application** loader so that dependency versions stay isolated from the container. When **NoClassDefFoundError** references a library you know is on disk, the real issue is often a **parent-delegation** trap: a class was loaded twice by different loaders and `instanceof` checks fail mysteriously during **Spring Security** filter wiring. **Interview angle:** Mention `ClassLoader#getResource` versus `getResourceAsStream` when debugging missing `application.yml` files inside nested **JARs**—the wrong loader returns null even though the bytes exist. Ops teams see this as configuration drift, but the mechanism is pure **classpath** visibility.\n\n### 14. Observability hooks you actually use\n\n`jps -l` lists **JVM** processes. `jcmd <pid> VM.flags` prints effective flags. `java -Xlog:gc*:stdout` enables **GC** logging without extra agents. These tools ship with the **JDK**. **Interview angle:** On-call engineers pair **heap** dumps with knowing which **JDK** build produced them.\n\n### 15. Sixty-second interview story\n\nJava programs compile to portable **bytecode** using **`javac` from the **JDK**. The **`java`** launcher boots **HotSpot**, verifies bytecode, runs static initializers, and enters **`main`**. The **JRE** mindset is execution-only; the **JDK** mindset adds tooling. Production pain shows up as **`UnsupportedClassVersionError`** when bytecode outpaces the runtime, **`ClassNotFoundException`** when **classpath** is wrong, and silent **`javac` missing** errors when images are **JRE**-only. Verify with matching `javac -version` and `java -version`, align **JAVA_HOME**, and document the **Dockerfile** base tag. After fixing, rerun the pipeline and attach `jcmd` output to the ticket so the team sees proof.\n\n### Satyverse drill — tie-down\n\nPair every definition with a command. Run `javac -version`, `java -version`, print `System.getProperty(\"java.home\")`, and inspect the directory layout. Repeat after changing **PATH**. That loop converts vocabulary into muscle memory."
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "Basic — JDK / JRE / JVM reference matrix (static tables)",
       "language": "java",
       "filename": "Day1Basic.java",
-      "code": "package arch.day1;\n\npublic class Day1Basic {\n    public static void main(String[] args) {\n        System.out.println(\"Java setup check\");\n        System.out.println(\"main args count: \" + args.length);\n        for (int i = 0; i < args.length; i++) {\n            System.out.println(\"arg[\" + i + \"] = \" + args[i]);\n        }\n    }\n}",
       "level": "basic",
-      "output": "Java setup check\nmain args count: 0\n",
-      "description": "Minimal entry point: prints a message and echoes command-line arguments so you see how args flow into main."
+      "description": "Print-only reference you can paste into onboarding docs. Every line is a literal string — trace is eyeball verification. // Spring Boot and Gradle still assume this vocabulary when they download toolchains.",
+      "code": "package arch.day1;\n\n/**\n * Day 1 basic: static reference tables for JDK vs JRE vs JVM.\n * // In real projects javac lives in JDK; java launches HotSpot.\n * // Staff signal: jcmd and javap also live in the JDK — without them\n * //   you cannot attach to a running JVM for GC diagnostics.\n */\npublic class Day1Basic {\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Java platform layers ===\");\n        System.out.println(\"JDK  | Development kit  | javac, jar, javadoc, jdb, jcmd, jlink, JVM + libs\");\n        System.out.println(\"JRE  | Runtime bundle   | JVM + class libraries (no javac, no jcmd)\");\n        System.out.println(\"JVM  | Execution engine | loads bytecode, verifies, JIT-compiles, GC\");\n        System.out.println();\n\n        System.out.println(\"=== Compile vs run commands ===\");\n        System.out.println(\"javac Hello.java         -> produces Hello.class bytecode\");\n        System.out.println(\"java Hello               -> starts JVM, loads Hello, calls main\");\n        System.out.println(\"java Hello.java          -> since Java 11: in-memory compile+run (single file)\");\n        System.out.println(\"javap -c Hello.class     -> disassemble bytecode (JDK tool, debugging)\");\n        System.out.println(\"jcmd <pid> VM.flags      -> show effective JVM flags at runtime\");\n        System.out.println();\n\n        System.out.println(\"=== main() contract: each keyword has a runtime reason ===\");\n        System.out.println(\"public static void main(String[] args)\");\n        System.out.println(\"  public  -> launcher can invoke without access restrictions\");\n        System.out.println(\"  static  -> no instance required before entry; JVM has no object to construct\");\n        System.out.println(\"  void    -> no return value to launcher; exit code via System.exit()\");\n        System.out.println(\"  args    -> tokens from CLI after class name\");\n        System.out.println();\n\n        System.out.println(\"=== Key environment variables ===\");\n        System.out.println(\"JAVA_HOME  -> JDK root (Gradle, Maven, IntelliJ read this)\");\n        System.out.println(\"PATH       -> shell resolution order; javac wins/loses here\");\n        System.out.println(\"CLASSPATH  -> fallback classpath (override with -cp at runtime)\");\n        System.out.println();\n\n        System.out.println(\"=== Common prod failures tied to this lesson ===\");\n        System.out.println(\"javac missing in CI          -> JRE-only image or PATH lacks JDK/bin\");\n        System.out.println(\"ClassNotFoundException       -> classpath or module path wrong\");\n        System.out.println(\"UnsupportedClassVersionError -> bytecode newer than runtime JVM\");\n        System.out.println(\"NoSuchMethodError: main      -> main typo or wrong modifier\");\n        System.out.println(\"VerifyError at class load    -> bad bytecode from code generator (CGLIB/Lombok)\");\n    }\n}",
+      "output": "=== Java platform layers ===\nJDK  | Development kit  | javac, jar, javadoc, jdb, jcmd, jlink, JVM + libs\nJRE  | Runtime bundle   | JVM + class libraries (no javac, no jcmd)\nJVM  | Execution engine | loads bytecode, verifies, JIT-compiles, GC\n\n=== Compile vs run commands ===\njavac Hello.java         -> produces Hello.class bytecode\njava Hello               -> starts JVM, loads Hello, calls main\njava Hello.java          -> since Java 11: in-memory compile+run (single file)\njavap -c Hello.class     -> disassemble bytecode (JDK tool, debugging)\njcmd <pid> VM.flags      -> show effective JVM flags at runtime\n\n=== main() contract: each keyword has a runtime reason ===\npublic static void main(String[] args)\n  public  -> launcher can invoke without access restrictions\n  static  -> no instance required before entry; JVM has no object to construct\n  void    -> no return value to launcher; exit code via System.exit()\n  args    -> tokens from CLI after class name\n\n=== Key environment variables ===\nJAVA_HOME  -> JDK root (Gradle, Maven, IntelliJ read this)\nPATH       -> shell resolution order; javac wins/loses here\nCLASSPATH  -> fallback classpath (override with -cp at runtime)\n\n=== Common prod failures tied to this lesson ===\njavac missing in CI          -> JRE-only image or PATH lacks JDK/bin\nClassNotFoundException       -> classpath or module path wrong\nUnsupportedClassVersionError -> bytecode newer than runtime JVM\nNoSuchMethodError: main      -> main typo or wrong modifier\nVerifyError at class load    -> bad bytecode from code generator (CGLIB/Lombok)\n"
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "Intermediate — Four onboarding scenarios from compile to misconfigured PATH",
       "language": "java",
       "filename": "Day1Intermediate.java",
-      "code": "package arch.day1;\n\nimport java.util.List;\n\npublic class Day1Intermediate {\n    public static void main(String[] args) {\n        List<String> components = List.of(\"JDK\", \"JRE\", \"JVM\");\n        for (String c : components) {\n            switch (c) {\n                case \"JDK\" -> System.out.println(\"JDK: compiler (javac), tools, includes JRE\");\n                case \"JRE\" -> System.out.println(\"JRE: JVM + libraries to run bytecode\");\n                case \"JVM\" -> System.out.println(\"JVM: loads and executes .class bytecode\");\n                default -> System.out.println(\"Unknown\");\n            }\n        }\n    }\n}",
       "level": "intermediate",
-      "output": "JDK: compiler (javac), tools, includes JRE\nJRE: JVM + libraries to run bytecode\nJVM: loads and executes .class bytecode\n",
-      "description": "JDK vs JRE vs JVM: use switch expressions to print what each layer is responsible for."
+      "description": "Simulates how a staff engineer narrates four real situations: happy path, wrong working directory, JRE-only box, and mismatched java versus javac roots. // Spring does not fix a missing JDK in CI — you fix the image.",
+      "code": "package arch.day1;\n\n/**\n * Day 1 intermediate: four labelled scenarios a Staff engineer narrates.\n * // Real JVM would throw; here we print expected exception class names.\n * // Multi-stage Docker builds use JDK for compile and JRE for the final image.\n */\npublic class Day1Intermediate {\n\n    static void scenario1() {\n        System.out.println(\"--- Scenario 1: clean compile-and-run narrative ---\");\n        System.out.println(\"step A: javac reads .java, resolves types, emits .class bytecode\");\n        System.out.println(\"step B: java -cp out Demo starts a new OS process (HotSpot JVM)\");\n        System.out.println(\"step C: bytecode verifier accepts stack maps -> no VerifyError\");\n        System.out.println(\"step D: static initializers run before main() body\");\n        System.out.println(\"step E: main() executes; JIT promotes hot code to native after warmup\");\n        System.out.println(\"staff signal: jcmd <pid> VM.flags shows active GC and heap flags\");\n        System.out.println();\n    }\n\n    static void scenario2() {\n        System.out.println(\"--- Scenario 2: wrong working directory (missing classpath root) ---\");\n        System.out.println(\"command:  java com.acme.Demo   (cwd does not contain com/acme tree)\");\n        System.out.println(\"result:   ClassNotFoundException or NoClassDefFoundError at launch\");\n        System.out.println(\"why:      application class loader searches classpath left-to-right\");\n        System.out.println(\"          it cannot find com/acme/Demo.class under any entry\");\n        System.out.println(\"fix:      cd to classpath root   OR   pass -cp target/classes\");\n        System.out.println(\"verify:   java -verbose:class -cp target/classes com.acme.Demo\");\n        System.out.println(\"          look for [Loaded com.acme.Demo from ...] in output\");\n        System.out.println();\n    }\n\n    static void scenario3() {\n        System.out.println(\"--- Scenario 3: JRE-only CI image (build fails before tests) ---\");\n        System.out.println(\"symptom:  mvnw compile exits 127; log says javac not found in PATH\");\n        System.out.println(\"cause:    Dockerfile FROM eclipse-temurin:17-jre (no javac binary)\");\n        System.out.println(\"fix:      change to eclipse-temurin:17-jdk for build stage\");\n        System.out.println(\"          use multi-stage: JDK for compile, JRE for final image\");\n        System.out.println(\"verify:   docker run <image> javac -version  ->  javac 17.x.x\");\n        System.out.println(\"staff:    ls $JAVA_HOME/bin | grep javac  inside the container\");\n        System.out.println();\n    }\n\n    static void scenario4() {\n        System.out.println(\"--- Scenario 4: java and javac disagree (JAVA_HOME vs PATH) ---\");\n        System.out.println(\"symptom:  java -version prints 21, javac -version prints 17\");\n        System.out.println(\"cause:    PATH resolves two JDK installs; Gradle reads JAVA_HOME\");\n        System.out.println(\"          Gradle daemon compiled with 17, shell runs 21 launcher\");\n        System.out.println(\"fix step 1: type -a java   (bash)  or  where java  (Windows)\");\n        System.out.println(\"fix step 2: align JAVA_HOME=<17-root>; export to shell profile\");\n        System.out.println(\"fix step 3: reopen terminal; verify both commands agree\");\n        System.out.println(\"prevention: Gradle toolchain block pins JDK version in build.gradle\");\n        System.out.println();\n    }\n\n    public static void main(String[] args) {\n        scenario1();\n        scenario2();\n        scenario3();\n        scenario4();\n    }\n}",
+      "output": "--- Scenario 1: clean compile-and-run narrative ---\nstep A: javac reads .java, resolves types, emits .class bytecode\nstep B: java -cp out Demo starts a new OS process (HotSpot JVM)\nstep C: bytecode verifier accepts stack maps -> no VerifyError\nstep D: static initializers run before main() body\nstep E: main() executes; JIT promotes hot code to native after warmup\nstaff signal: jcmd <pid> VM.flags shows active GC and heap flags\n\n--- Scenario 2: wrong working directory (missing classpath root) ---\ncommand:  java com.acme.Demo   (cwd does not contain com/acme tree)\nresult:   ClassNotFoundException or NoClassDefFoundError at launch\nwhy:      application class loader searches classpath left-to-right\n          it cannot find com/acme/Demo.class under any entry\nfix:      cd to classpath root   OR   pass -cp target/classes\nverify:   java -verbose:class -cp target/classes com.acme.Demo\n          look for [Loaded com.acme.Demo from ...] in output\n\n--- Scenario 3: JRE-only CI image (build fails before tests) ---\nsymptom:  mvnw compile exits 127; log says javac not found in PATH\ncause:    Dockerfile FROM eclipse-temurin:17-jre (no javac binary)\nfix:      change to eclipse-temurin:17-jdk for build stage\n          use multi-stage: JDK for compile, JRE for final image\nverify:   docker run <image> javac -version  ->  javac 17.x.x\nstaff:    ls $JAVA_HOME/bin | grep javac  inside the container\n\n--- Scenario 4: java and javac disagree (JAVA_HOME vs PATH) ---\nsymptom:  java -version prints 21, javac -version prints 17\ncause:    PATH resolves two JDK installs; Gradle reads JAVA_HOME\n          Gradle daemon compiled with 17, shell runs 21 launcher\nfix step 1: type -a java   (bash)  or  where java  (Windows)\nfix step 2: align JAVA_HOME=<17-root>; export to shell profile\nfix step 3: reopen terminal; verify both commands agree\nprevention: Gradle toolchain block pins JDK version in build.gradle\n\n"
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "Advanced — Classpath token scan + load decision table",
       "language": "java",
       "filename": "Day1Advanced.java",
-      "code": "package arch.day1;\n\nimport java.util.Map;\n\npublic class Day1Advanced {\n    public static void main(String[] args) {\n        Map<String, String> diagnostics = Map.of(\n            \"java.version\", System.getProperty(\"java.version\"),\n            \"java.vendor\", System.getProperty(\"java.vendor\"),\n            \"java.home\", System.getProperty(\"java.home\"),\n            \"os.name\", System.getProperty(\"os.name\")\n        );\n        diagnostics.forEach((k, v) -> System.out.println(k + \" = \" + v));\n        System.out.println(\"If javac is missing, install JDK and fix PATH / JAVA_HOME.\");\n    }\n}",
       "level": "advanced",
-      "output": "(Exact lines depend on your machine; keys include java.version, java.home, etc.)\n",
-      "description": "Runtime diagnostics: read java.version, java.home, and OS so you can debug “wrong Java on PATH” issues."
+      "description": "Implements a deterministic scan of classpath entries and a tiny binary-name probe, then prints a support decision matrix. Mirrors how interviewers expect you to reason about ClassNotFoundException without relying on random IO.",
+      "code": "package arch.day1;\n\nimport java.util.ArrayList;\nimport java.util.LinkedHashMap;\nimport java.util.List;\nimport java.util.Map;\n\n/**\n * Day 1 advanced: deterministic classpath simulation.\n * // Real JVM uses native loaders; this models ordered search.\n */\npublic class Day1Advanced {\n\n    record ClasspathEntry(String label, boolean containsDemoClass) {}\n\n    static List<String> splitClasspath(String raw) {\n        List<String> parts = new ArrayList<>();\n        StringBuilder cur = new StringBuilder();\n        for (int i = 0; i < raw.length(); i++) {\n            char c = raw.charAt(i);\n            if (c == ';' || c == ':') {\n                parts.add(cur.toString().trim());\n                cur.setLength(0);\n            } else {\n                cur.append(c);\n            }\n        }\n        if (cur.length() > 0) {\n            parts.add(cur.toString().trim());\n        }\n        return parts;\n    }\n\n    static String firstHit(List<ClasspathEntry> ordered, String goal) {\n        for (ClasspathEntry e : ordered) {\n            if (e.containsDemoClass()) {\n                return e.label();\n            }\n        }\n        return \"NOT_FOUND\";\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Block 1: tokenized classpath ===\");\n        String raw = \"out/classes;vendor/lib.jar;extra\";\n        List<String> tokens = splitClasspath(raw);\n        for (int i = 0; i < tokens.size(); i++) {\n            System.out.println(\"entry[\" + i + \"] = \" + tokens.get(i));\n        }\n        System.out.println();\n\n        System.out.println(\"=== Block 2: ordered search for Demo.class ===\");\n        List<ClasspathEntry> entries = List.of(\n            new ClasspathEntry(\"out/classes\", true),\n            new ClasspathEntry(\"vendor/lib.jar\", false),\n            new ClasspathEntry(\"extra\", false)\n        );\n        String hit = firstHit(entries, \"Demo\");\n        System.out.println(\"first provider = \" + hit);\n        System.out.println();\n\n        System.out.println(\"=== Block 3: launcher triage matrix ===\");\n        Map<String, String> table = new LinkedHashMap<>();\n        table.put(\"javac missing\", \"install JDK; add JDK/bin to PATH before JRE shims\");\n        table.put(\"java cannot find class\", \"fix -cp, package directories, or fully-qualified name\");\n        table.put(\"UnsupportedClassVersionError\", \"run with newer JVM or recompile with --release\");\n        table.put(\"NoSuchMethodError: main\", \"check main signature is public static void main(String[])\");\n        for (Map.Entry<String, String> e : table.entrySet()) {\n            System.out.println(e.getKey() + \" -> \" + e.getValue());\n        }\n    }\n}",
+      "output": "=== Block 1: tokenized classpath ===\nentry[0] = out/classes\nentry[1] = vendor/lib.jar\nentry[2] = extra\n\n=== Block 2: ordered search for Demo.class ===\nfirst provider = out/classes\n\n=== Block 3: launcher triage matrix ===\njavac missing -> install JDK; add JDK/bin to PATH before JRE shims\njava cannot find class -> fix -cp, package directories, or fully-qualified name\nUnsupportedClassVersionError -> run with newer JVM or recompile with --release\nNoSuchMethodError: main -> check main signature is public static void main(String[])\n"
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 1",
+      "title": "Sequence — from developer keystroke to running bytecode on HotSpot",
       "diagramType": "sequence",
-      "description": "Visual model for Introduction to Java - JDK vs JRE vs JVM",
-      "plantuml": "@startuml\ntitle Day 1 - Java Runtime Flow\nactor Learner\nparticipant \"Java Source (.java)\" as SRC\nparticipant \"Compiler javac\" as C\nparticipant \"Bytecode (.class)\" as B\nparticipant \"JVM\" as J\nLearner -> SRC : Write code\nSRC -> C : Compile\nC -> B : Generate bytecode\nB -> J : Run\nJ --> Learner : Output\n@enduml"
+      "description": "Shows how javac emits class files, the java launcher constructs a JVM process, class loaders search the classpath, and the verifier either accepts bytecode or fails before main runs — the flow interviewers expect you to narrate.",
+      "plantuml": "@startuml\ntitle JDK / JRE / JVM launch pipeline\nactor Engineer\nparticipant \"IDE or shell\" as SH\nparticipant \"javac (JDK)\" as JC\nparticipant \"Hello.class bytecode\" as BC\nparticipant \"java launcher\" as LN\nparticipant \"JVM (HotSpot)\" as JVM\nparticipant \"Application class loader\" as ACL\nEngineer -> SH : edit Hello.java\nSH -> JC : javac Hello.java\nJC -> BC : write verified bytecode\nEngineer -> SH : java -cp out Hello\nSH -> LN : posix_spawn java\nLN -> JVM : create OS process + JNI bootstrap\nJVM -> JVM : parse -cp / --class-path\nJVM -> ACL : load Hello\nalt bytecode legal\n  ACL -> JVM : defineClass succeeds\n  JVM -> JVM : prepare + verify + initialize statics\n  JVM -> Engineer : stdout from main\nelse corrupt or wrong major version\n  ACL -> Engineer : ClassFormatError / UnsupportedClassVersionError\nend\n@enduml"
     },
     {
       "type": "pitfalls",
       "title": "Common Pitfalls",
       "items": [
-        "Installing only JRE and expecting javac to work.",
-        "Not restarting terminal after PATH update.",
-        "Using wrong class name while running java command.",
-        "Confusing source file with compiled class file.",
-        "Memorizing terms without understanding execution flow."
+        "Shipping a JRE-only container for CI compile jobs — the pipeline fails at the first `javac` invocation with `not recognized` or exit 127; fix by switching to a `-jdk` base image or installing the toolchain plugin, verify with `javac -version` inside the image before merging.",
+        "Pointing `JAVA_HOME` at a JRE subtree while Gradle reads it for compiler forks — builds emit confusing `Toolchain` errors or silently pick another JDK; fix by exporting `JAVA_HOME` to the JDK root that contains `bin/javac`, verify with `ls \"$JAVA_HOME/bin/javac\"`.",
+        "Leaving an older Oracle JDK earlier on Windows `PATH` than the Temurin JDK you just installed — `java -version` shows 21 but `javac -version` shows 11; fix with `where java` / `where javac` and reorder PATH, then reopen the terminal.",
+        "Running `java Hello` for `package com.acme;` without matching folder layout — JVM throws `ClassNotFoundException` even though `javac` succeeded; fix by using `java -cp out com.acme.Hello` with `com/acme/Hello.class` under `out`.",
+        "Committing `.class` binaries compiled with `--release 21` into a repo that deploys on Java 17 — pods crash-loop with `UnsupportedClassVersionError`; fix by aligning CI `JAVA_VERSION` with prod or lowering `--release`, verify with `javap -verbose` major version.",
+        "Relying on `java Source.java` single-file mode inside multi-file modules — launcher cannot see sibling types; symptom is compile errors at launch; fix by returning to `javac` + explicit classpath like every production build.",
+        "Assuming `public static void Main` is acceptable — JVM throws `NoSuchMethodError: main` after bytecode loads; fix by renaming to exact `main` and recompiling, catch early with unit tests that spawn `ProcessBuilder`.",
+        "Telling operators to set `_JAVA_OPTIONS` for debugging and forgetting it persists — every service inherits huge GC flags unexpectedly; detect via `jcmd <pid> VM.flags`, fix by scoping flags to the debug pod only and removing global env vars."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - Implement Introduction to Java - JDK vs JRE vs JVM",
-      "problem": "Implement a Java program for **Introduction to Java - JDK vs JRE vs JVM** with real input and edge-case handling.\n\nRequirements:\n1. Accept at least 5 sample cases.\n2. Print clear intermediate output.\n3. Include one invalid/boundary case.\n4. Explain time complexity in comments.\n5. Keep naming and structure interview-ready.",
+      "title": "Exercise — Runtime info card and setup triage (Day 1 assignment)",
+      "problem": "Consolidate the Day 1 assignment themes (JDK vs JRE vs JVM, execution flow, broken PATH, runtime properties) into one deterministic `main` program.\n\nRequirements:\n1. Print a five-line **lecture card** that names **JDK**, **JRE**, **JVM**, **`javac`**, and **`java`** with one clause each — hardcoded strings only.\n2. Print the **compile-run** story in four numbered steps from `.java` to running **bytecode**.\n3. Simulate the broken laptop scenario `'javac' is not recognized`: print the **two** most likely root causes and the **single** verification command you run after fixing PATH.\n4. Print four lines formatted exactly `key = value` for `java.version`, `java.vendor`, `java.home`, and `os.name` using **fixed demo literals** (not `System.getProperty`) so output is identical on every machine, and add an inline comment explaining that real code would call `System.getProperty`.\n5. End with one line reminding reviewers to compare `javac -version` with `java -version`.",
       "hints": [
-        "Start with a straightforward solution first.",
-        "Write at least one edge case test.",
-        "Refactor variable names for readability."
+        "Keep every teaching string as a `final String` or text block so reviewers see there is no hidden randomness.",
+        "Use `System.out.println` for the `key = value` section with constants like `17.0.9-demo` to mirror the assignment without binding to a physical workstation.",
+        "Structure `main` top-down: card, story, PATH incident, properties, reminder — that mirrors how you would speak in an interview."
       ],
-      "solution": "package arch.day1;\nimport java.util.Map;\n\npublic class Day1Advanced {\n    public static void main(String[] args) {\n        Map<String, String> diagnostics = Map.of(\n            \"java.version\", System.getProperty(\"java.version\"),\n            \"java.vendor\", System.getProperty(\"java.vendor\"),\n            \"java.home\", System.getProperty(\"java.home\"),\n            \"os.name\", System.getProperty(\"os.name\")\n        );\n\n        diagnostics.forEach((k, v) -> System.out.println(k + \" = \" + v));\n        System.out.println(\"If javac fails, verify JDK installation and PATH.\");\n    }\n}\n",
-      "difficulty": "Beginner"
+      "solution": "package arch.day1;\n\n/**\n * Day 1 exercise — ties together assignments_phase1.json Day 1 prompts.\n * Demonstrates deterministic output suitable for CI snapshot tests.\n */\npublic class Day1Exercise {\n\n    public static void main(String[] args) {\n        // 1) Lecture card — literal strings only (O(1) output, no collections)\n        System.out.println(\"JDK  -> full kit: javac, tools, libraries\");\n        System.out.println(\"JRE  -> runtime: JVM + standard libraries\");\n        System.out.println(\"JVM  -> executes bytecode, manages heap + JIT\");\n        System.out.println(\"javac-> translates .java sources into .class files\");\n        System.out.println(\"java -> launcher that boots a JVM for a class name\");\n        System.out.println();\n\n        // 2) Execution flow story\n        System.out.println(\"1. Author saves Example.java\");\n        System.out.println(\"2. javac produces Example.class bytecode\");\n        System.out.println(\"3. java loads bytecode via class loaders\");\n        System.out.println(\"4. JVM invokes public static void main\");\n        System.out.println();\n\n        // 3) Broken PATH scenario — deterministic diagnosis text\n        System.out.println(\"Incident: 'javac' is not recognized\");\n        System.out.println(\"Likely cause A: JRE-only install (no javac binary shipped)\");\n        System.out.println(\"Likely cause B: JDK bin missing from PATH\");\n        System.out.println(\"Post-fix check: run javac -version in the same shell\");\n        System.out.println();\n\n        // 4) Property card — literals stand in for System.getProperty during lessons\n        // Real service code would call System.getProperty(key) for each line.\n        System.out.println(\"java.version = 17.0.9-demo\");\n        System.out.println(\"java.vendor = DemoVendor\");\n        System.out.println(\"java.home = /demo/jdk-home\");\n        System.out.println(\"os.name = DemoOS\");\n        System.out.println();\n\n        // 5) Version alignment reminder\n        System.out.println(\"Reminder: javac -version and java -version must reference the same JDK home.\");\n    }\n}\n"
     },
     {
       "type": "interview",
@@ -102,35 +104,35 @@
       "conceptual": [
         {
           "question": "What is the JDK and what tools does it include?",
-          "answer": "The JDK (Java Development Kit) is the full development bundle: it includes javac (compiler), jar, javadoc, jdb, and the JRE so you can compile and run Java programs.",
+          "answer": "The **JDK** (**Java Development Kit**) is the complete development bundle. It contains `javac` (compiler), `java` (launcher), `jar` (archiver), `javadoc` (documentation generator), `jdb` (debugger), `jcmd` (diagnostic command tool), `jlink` (custom JRE builder), `javap` (bytecode disassembler), `jstat` (GC statistics), and the full standard library. In production, `jcmd` and `javap` are critical diagnostic tools — without the JDK installed on or accessible from a pod, you cannot attach to a running JVM for GC heap inspection or bytecode-level debugging. A CI pipeline built on a JRE-only base image fails at the `javac` step with exit code 127 before any test runs. The fix is switching to a `-jdk` tagged base image (e.g. `eclipse-temurin:17-jdk`). The Staff signal: Gradle 8+ supports toolchain declarations that download and cache the exact JDK version, making builds reproducible independently of the local `JAVA_HOME` setting.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. The JDK (Java Development Kit) is the full development bundle: it includes javac (compiler), jar, javadoc, jdb, and the JRE so you can compi… Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "answer": "On-call at 2am, you pull `jcmd <pid> GC.heap_info` and `jcmd <pid> VM.flags` to understand heap state and active GC flags. Both commands live in the **JDK**. If the production image is JRE-only, these tools are absent and you are debugging blind. The Staff-level instinct is to always ship a JDK diagnostic layer — either by including the JDK in the debug sidecar or by using a profiling agent that bundles its own diagnostic capabilities."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Introduction to Java - JDK vs JRE vs JVM**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. The JDK (Java Development Kit) is the full development bundle: it includes javac (compiler), jar, javadoc, jdb, and the … Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "answer": "A common trap: a developer sets `JAVA_HOME` to a JRE path because the full JDK is installed elsewhere on PATH. Maven and Gradle both read `JAVA_HOME` for compiler forks. Maven `mvn compile` succeeds if it falls back to the PATH `javac`, but `-Djava.home` in the compiler fork points to the JRE, causing subtle classpath resolution differences. Check with `mvn --version` — it prints which Java home it is using."
             }
           ]
         },
         {
           "question": "What is the JRE and can you compile Java with only the JRE?",
-          "answer": "The JRE (Java Runtime Environment) contains the JVM and libraries needed to run Java applications. You cannot compile new .java files with JRE alone—you need the JDK for javac.",
+          "answer": "The **JRE** (**Java Runtime Environment**) contains the **JVM**, core class libraries (rt.jar in Java 8, or equivalent modules in Java 9+), property files, and runtime configuration. It does NOT include `javac`, `jcmd`, `javap`, or other development tools. You cannot compile `.java` files with only the JRE. In practice, Docker images tagged `eclipse-temurin:17-jre` are roughly 150MB smaller than `-jdk` equivalents and are suitable for running Spring Boot JARs in production, but any build step that invokes `javac` inside that container fails immediately. The Staff-level pattern is **multi-stage Dockerfiles**: compile in a JDK stage, copy the fat JAR or custom JRE into a JRE or distroless final stage. This reduces the final image size by 40–70% and shrinks the attack surface. Since Java 9, JDK distributions effectively ship what used to be called the JRE — the separate JRE download was discontinued for most vendors. Interviewers still use the JDK/JRE distinction to test conceptual clarity.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. The JRE (Java Runtime Environment) contains the JVM and libraries needed to run Java applications. You cannot compile new .java files with J… Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "answer": "In Kubernetes, a JRE-only pod cannot run `jcmd` or `jmap` for heap dumps. The Staff mitigation is attaching a **debug sidecar** with a JDK image sharing the process namespace (`shareProcessNamespace: true` in the pod spec), or using async-profiler as a shared-memory profiler that does not require `jcmd`. Alternatively, set `-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/dumps/` in the application JVM flags so the heap dump is written automatically on OOM."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Introduction to Java - JDK vs JRE vs JVM**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. The JRE (Java Runtime Environment) contains the JVM and libraries needed to run Java applications. You cannot compile ne… Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "answer": "The most common JRE vs JDK confusion in production: a developer pins `eclipse-temurin:17-jre` in the Dockerfile to save image size, but the application uses a Groovy script engine that compiles Groovy at runtime. Groovy compilation requires `javax.tools.JavaCompiler` which is absent from JRE distributions. The symptom is a runtime `ToolProvider.getSystemJavaCompiler()` returning null. Fix: switch to the JDK image or use Groovy bytecode compilation path that does not need `javax.tools`."
             }
           ]
         },
         {
           "question": "What is the JVM’s role?",
-          "answer": "The JVM loads .class bytecode, verifies it, and executes it on the host OS. It provides memory management (heap, GC) and the execution engine for your program.",
+          "answer": "The JVM (Java Virtual Machine) is an abstract execution engine that sits between compiled Java bytecode and the host operating system. Its responsibilities span three layers. **Loading & Verification**: the class loader subsystem reads `.class` files, checks that bytecode is structurally valid and type-safe via the bytecode verifier (preventing stack underflows, illegal casts, and uninitialized reads), then links and initializes the class. **Memory Management**: the JVM partitions heap into Young Generation (Eden + Survivor spaces) and Old Generation, orchestrating garbage collection so you never call `free()`. It also manages non-heap regions — Metaspace for class metadata and the Code Cache for JIT-compiled native code. **Execution Engine**: initially all bytecode is interpreted; the JIT compiler (C1 for fast start, C2 for peak throughput) promotes hot methods to native code after profiling. Diagnostics: `jcmd <pid> VM.flags` dumps active JVM flags; `jcmd <pid> GC.heap_info` shows live heap usage — essential first checks during on-call incidents.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
@@ -144,35 +146,35 @@
         },
         {
           "question": "What is the relationship between .java, .class, and running a program?",
-          "answer": "You write .java source, javac produces .class bytecode, and the java launcher starts the JVM to execute the bytecode for the named class.",
+          "answer": "`.java` is the human-readable source file that `javac` reads. `javac` performs type checking, resolves imports, erases generics, generates bridge methods, and emits one `.class` file per type. The `.class` file contains a **constant pool** (string and type literals), **method bytecode** (JVM instruction sequences), **attribute tables** (stack map frames, debug info, annotations), and a **magic number** (`0xCAFEBABE`) that the JVM verifier checks first. The `java` launcher loads `.class` files via the **application class loader**, runs the **bytecode verifier**, runs **static initializers**, and then invokes `main`. Class loading is **lazy**: only classes actually referenced during execution are loaded. This means a path in production code that references a missing dependency will compile and deploy successfully but throw `NoClassDefFoundError` only when that path is first executed — potentially weeks after deploy. Use `javap -c MyClass.class` to disassemble bytecode and inspect what `javac` actually produced.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. You write .java source, javac produces .class bytecode, and the java launcher starts the JVM to execute the bytecode for the named class. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "answer": "In Spring Boot fat JARs, your `Application.class` lives at `BOOT-INF/classes/com/example/Application.class`. Spring Boot's `LaunchedURLClassLoader` handles this nesting. If you try to run the JAR with `java -cp app.jar com.example.Application` (bypassing the Spring Boot launcher), you get `ClassNotFoundException` because the nested classpath structure is not visible to the standard application class loader."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Introduction to Java - JDK vs JRE vs JVM**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. You write .java source, javac produces .class bytecode, and the java launcher starts the JVM to execute the bytecode for… Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "answer": "Generics erasure means the `.class` file contains `List`, not `List<String>`. Type information is stored as annotations (`@ParameterizedType`) accessible via reflection. Frameworks like Spring and Jackson use reflection to reconstruct generic types from `TypeToken` or `ParameterizedTypeReference` patterns. This is why `objectMapper.readValue(json, List.class)` loses type and produces `List<LinkedHashMap>` instead of `List<MyDto>`, while `objectMapper.readValue(json, new TypeReference<List<MyDto>>(){})` works correctly."
             }
           ]
         },
         {
           "question": "Why is main() declared public static void main(String[] args)?",
-          "answer": "public so the JVM can call it from outside the class; static so it runs without constructing an object first; void because the JVM does not use a return value; String[] args holds command-line arguments.",
+          "answer": "Each keyword in `public static void main(String[] args)` serves a specific purpose enforced by the **JVM launcher**, not by `javac`. `public` means the launcher can invoke the method without access restrictions across package boundaries. `static` means the JVM can call the method without constructing an instance of the class — the JVM has no mechanism to select a constructor or inject dependencies before entry. `void` means no return value is passed back to the launcher — process exit code is communicated via `System.exit(int)` or process termination. `String[] args` receives command-line tokens. Critically, `javac` does NOT validate that `main` exists on any class — only the `java` launcher does at runtime. A typo like `Main` instead of `main`, or `private` modifier, produces `NoSuchMethodError: main` after the class loads successfully. Since Java 21 (JEP 445, preview), unnamed classes can use `void main()` for single-file programs, but production Spring Boot services still require the canonical signature for compatibility.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. public so the JVM can call it from outside the class; static so it runs without constructing an object first; void because the JVM does not … Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "answer": "A `NoSuchMethodError: main` after a refactor usually means the `main` method signature changed. A common mistake is `public static void main(String args)` (missing array brackets). `javac` accepts this — it is a valid method. The launcher rejects it at runtime. Catch it with a `ProcessBuilder` smoke test in CI that launches the class and checks exit code 0."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Introduction to Java - JDK vs JRE vs JVM**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. public so the JVM can call it from outside the class; static so it runs without constructing an object first; void becau… Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "answer": "Static initializers in the class run before `main`. If a static field initializer throws an `ExceptionInInitializerError`, it propagates as `NoClassDefFoundError` on every subsequent attempt to load the class. This is why database connection pool initialization inside static fields is dangerous: a transient network error at startup permanently prevents the class from loading until the JVM process restarts."
             }
           ]
         },
         {
           "question": "What does “platform independence” mean for Java?",
-          "answer": "Source compiles to bytecode that any compatible JVM can run, so the same .class can run on Windows, Linux, or macOS without recompiling for each CPU instruction set.",
+          "answer": "\"Write Once, Run Anywhere\" means `javac` compiles source into `.class` bytecode — an OS-agnostic instruction set — rather than native machine code. Any JVM that implements the JVM Specification (JDK 8, 11, 17, 21 from Oracle, Amazon Corretto, Eclipse Temurin) can load and execute the same `.class` file regardless of whether the host CPU is x86, ARM, or RISC-V. **Practical limits**: (1) Native libraries loaded via JNI (`System.loadLibrary`) are OS/arch-specific and break portability; compile separate `.so`/`.dll` per platform. (2) File separator characters and line endings differ; use `File.separator` and `System.lineSeparator()` instead of hardcoded `/` or `\\n`. (3) The JVM Specification guarantees the bytecode contract, not identical behaviour of `System.currentTimeMillis()` precision or thread scheduling. **Staff check**: on a new server run `java -version` AND `javac -version` — they should match; mismatch means the PATH resolves to a different JDK and silent bytecode version drift follows.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
@@ -186,127 +188,155 @@
         },
         {
           "question": "How do you check that JDK (not only JRE) is installed correctly?",
-          "answer": "Run javac -version in the terminal. If javac is missing or errors, the JDK is not on PATH or only a JRE was installed.",
+          "answer": "Run `javac -version` and `java -version` from the same shell. If `javac` is missing, either only a JRE is installed or the JDK `bin` directory is not on PATH. Also run `echo $JAVA_HOME` (Linux/Mac) or `echo %JAVA_HOME%` (Windows) and verify that `$JAVA_HOME/bin/javac` exists. The single-command check: `ls $JAVA_HOME/bin | grep -E \"javac|jar|jcmd|javap\"` — if all four appear, the full JDK toolset is present. On Windows: `dir \"%JAVA_HOME%\\bin\\\" | findstr \"javac jcmd javap\"`. A CI agent that passes `java -version` but fails `javac -version` wastes 15–20 minutes of pipeline time before the team discovers the base image is wrong. The fix: switch the Dockerfile `FROM` tag from `-jre` to `-jdk`. After fixing, verify inside the running container with `docker exec <container> javac -version` before merging to main.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Run javac -version in the terminal. If javac is missing or errors, the JDK is not on PATH or only a JRE was installed. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "answer": "Gradle toolchain declarations (Java 8+) eliminate manual JAVA_HOME verification. In `build.gradle`: `java { toolchain { languageVersion = JavaLanguageVersion.of(17) } }`. Gradle downloads and caches the correct JDK automatically from Foojay or a configured toolchain resolver. This makes the build reproducible regardless of what is installed locally or in CI. When toolchain resolution fails, the error message names the exact JDK version that was expected — far more actionable than a missing `javac`."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Introduction to Java - JDK vs JRE vs JVM**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Run javac -version in the terminal. If javac is missing or errors, the JDK is not on PATH or only a JRE was installed. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "answer": "Some enterprise environments install multiple JDKs via SDKMAN, Homebrew, or system package managers. `type -a java` (bash) lists all `java` executables on PATH in order. The first one wins. When `java -version` and `javac -version` disagree, the cause is usually that one binary comes from a JDK install earlier on PATH while the other is a wrapper from a different install. Fix: reorder PATH or set JAVA_HOME explicitly and source it in `.bashrc`/`.zshrc`."
             }
           ]
         },
         {
           "question": "What is JAVA_HOME and why do build tools use it?",
-          "answer": "JAVA_HOME points to the JDK installation root. Maven, Gradle, and IDEs use it to find the compiler and standard libraries consistently across machines.",
+          "answer": "**JAVA_HOME** is an environment variable that points to the root directory of a JDK installation — the directory that contains `bin/`, `lib/`, `conf/`, and `include/`. Build tools like **Gradle**, **Maven**, and **Ant** read `JAVA_HOME` to locate the JDK toolchain for compiler forks, rather than relying on PATH ordering, because PATH can change per shell session. If `JAVA_HOME` points to a JRE root while PATH resolves to a JDK `javac`, Gradle uses the JRE fork for compilation and the builds produce bytecode at a lower class file version or fail when JDK-specific APIs are accessed. `mvn --version` prints `Java home:` on the second line — use that to confirm which Java home Maven is actually using. The Staff-level production fix: declare a **Gradle toolchain** in `build.gradle` (`java { toolchain { languageVersion = JavaLanguageVersion.of(17) } }`) — this makes the JDK version explicit and independent of `JAVA_HOME`, ensuring reproducible builds across all developer machines and CI agents.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. JAVA_HOME points to the JDK installation root. Maven, Gradle, and IDEs use it to find the compiler and standard libraries consistently acros… Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "answer": "`JDK_JAVA_OPTIONS` is an environment variable that the JVM launcher reads automatically on startup (since Java 9), similar to `JAVA_TOOL_OPTIONS`. If a developer or ops team sets `JDK_JAVA_OPTIONS=-Xmx512m` globally on a server, every `java` invocation on that machine is affected — including short-lived diagnostic tools. Detect with `jcmd <pid> VM.flags | grep MaxHeapSize` on a running process, or `java -XshowSettings:all -version` to see all resolved settings."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Introduction to Java - JDK vs JRE vs JVM**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. JAVA_HOME points to the JDK installation root. Maven, Gradle, and IDEs use it to find the compiler and standard librarie… Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "answer": "On macOS, `/usr/libexec/java_home -v 17` prints the canonical path to the Java 17 JDK home. This is how `brew`-installed JDKs and system JDKs co-exist. Scripts should call `export JAVA_HOME=$(/usr/libexec/java_home -v 17)` rather than hardcoding a path, because Homebrew paths change across major versions. CI workflows on GitHub Actions use `setup-java` action which sets both `JAVA_HOME` and `PATH` correctly for the declared Java version."
             }
           ]
         },
         {
           "question": "What happens if the public class name does not match the file name?",
-          "answer": "For a public top-level class, the file must be named ClassName.java. A mismatch causes a compile-time error.",
+          "answer": "`javac` enforces that a `public` class named `Foo` must be in a file named `Foo.java`. If they differ, `javac` exits with `class Foo is public, should be declared in a file named Foo.java` before producing any `.class` output. This is a compile-time rule, not a runtime rule. The JVM itself has no such restriction — it loads `.class` by binary name without caring about the source file. Non-public classes in the same file can have any name. A file `Util.java` may contain `class Helper {}` (package-private) alongside `public class Util {}` without issue. In practice, this error surfaces in batch code generation tools (template engines, annotation processors, or AI code generators) that emit `.java` files with mismatched names. The symptom in CI is an immediate `javac` failure with a clear error, not a runtime crash. Catch it early: most IDEs flag this instantly, and checkstyle rules enforce class-filename alignment for public types.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. For a public top-level class, the file must be named ClassName.java. A mismatch causes a compile-time error. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "answer": "Inner classes produce `Outer$Inner.class` files. Anonymous classes produce `Outer$1.class`, `Outer$2.class`. Lambda classes produce `Outer$$Lambda$1.class` (HotSpot) or similar synthetic names. This is why fat JARs sometimes contain hundreds of `$` files — they are all valid class files. `javap -c Outer.class` does not show inner class bytecode; you need `javap -c \"Outer\\$Inner.class\"`."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Introduction to Java - JDK vs JRE vs JVM**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. For a public top-level class, the file must be named ClassName.java. A mismatch causes a compile-time error. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "answer": "When refactoring a class to a different package, the file must move to the matching directory. `javac` does not care about directory structure for non-public types, but the `java` launcher requires directory structure to match the package name when loading from a directory-based classpath. A class `com.example.Foo` must be at `com/example/Foo.class` relative to the classpath root. Build tools like Gradle handle this automatically by outputting to `build/classes/java/main`."
             }
           ]
         },
         {
           "question": "What is the difference between compiling with javac and running with java?",
-          "answer": "javac translates source to bytecode files; java starts the JVM and loads the class by name (with package-aware classpath).",
+          "answer": "`javac` is a **static analysis and translation** tool. It reads `.java` source, builds an AST, resolves symbol references against the compile classpath, checks types, erases generics, generates bridge methods, and emits `.class` bytecode. No application code runs during compilation. `java` is the **launcher** that starts a JVM process, loads bytecode via class loaders, verifies it, and executes method instructions. A critical difference: `javac` resolves all import symbols at compile time, but the JVM resolves class dependencies **lazily** at the moment each class is first referenced at runtime. This means a class that compiles cleanly against a JAR dependency can deploy to production and throw `NoClassDefFoundError` only when the first request reaches the code path that references the missing class — potentially weeks after deploy. This lazy loading behavior makes comprehensive integration tests critical: `ClassNotFoundException` at a unit test boundary during CI is far better than `NoClassDefFoundError` under production load at 3am.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. javac translates source to bytecode files; java starts the JVM and loads the class by name (with package-aware classpath). Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "answer": "`java -verbose:class 2>&1 | grep \"Loaded com.example\"` traces which JAR provided each class. This is the correct first tool when `ClassNotFoundException` appears but the class is believed to be on the classpath. The output shows `[Loaded com.example.Foo from file:/path/to/app.jar]`. If the class is loaded from an unexpected JAR (classpath shadowing), this reveals the conflict immediately."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Introduction to Java - JDK vs JRE vs JVM**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. javac translates source to bytecode files; java starts the JVM and loads the class by name (with package-aware classpath… Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "answer": "The compile classpath and the runtime classpath are conceptually separate in Maven and Gradle. A class present on the compile classpath (e.g. `compileOnly` in Gradle) is available during `javac` but absent at runtime. If the code path that references it executes in production, `NoClassDefFoundError` follows. Gradle's `compileOnly` is intended for compile-time annotation processors and provided APIs (servlet containers provide `javax.servlet` at runtime). Using it for non-provided dependencies is a correctness bug that survives compilation and unit testing."
             }
           ]
         },
         {
           "question": "Can two JVM versions behave differently for the same bytecode?",
-          "answer": "Generally bytecode is portable, but behavior can differ if you rely on version-specific APIs, preview features, or different default GC/security settings.",
+          "answer": "Yes. **Bytecode** is a specification, not a guarantee of identical behavior across JVM versions or vendors. JVM implementations differ in: **GC pause behavior** (G1 in Java 8 vs Java 17 has different default region sizes and tuning), **JIT optimization decisions** (code that runs faster on Java 11 may be slower on Java 21 if deoptimization occurs on a new optimization path), **default charset** (changed to **UTF-8** from Java 17; before that, it was the platform default), **thread stack sizes**, and **security policy defaults**. JVM vendor differences (OpenJDK, GraalVM, Amazon Corretto, Azul Zulu) can produce different performance characteristics under identical load. The production implication: migrating from Java 17 to Java 21 requires performance regression testing under realistic load, not just correctness tests. Use `jcmd <pid> VM.version` to confirm which JVM version is running in production — not what is in the Dockerfile, which may be overridden by a sidecar or init container.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Generally bytecode is portable, but behavior can differ if you rely on version-specific APIs, preview features, or different default GC/secu… Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "answer": "String formatting changed subtly between JDK versions. Java 9+ uses `invokedynamic` for string concatenation instead of `StringBuilder` chains. This is a JIT-level change: same bytecode major version, different performance profile. Microbenchmarks that measure string concatenation must be run on the target JVM version. JMH (Java Microbenchmark Harness) with the correct JVM fork policy is the only reliable tool for this."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Introduction to Java - JDK vs JRE vs JVM**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Generally bytecode is portable, but behavior can differ if you rely on version-specific APIs, preview features, or diffe… Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "answer": "`-XX:+UseContainerSupport` behavior differs between Java 8u191+ and Java 11. Before 8u191, the JVM read host memory from `/proc/meminfo` and calculated heap as 25% of host RAM — ignoring Kubernetes container limits. A 64GB node with a 2GB container limit would get a 16GB heap, causing OOMKill. After 8u191, container support is on by default but must be verified with `jcmd <pid> VM.flags | grep UseContainerSupport` inside the actual running pod."
             }
           ]
         },
         {
           "question": "What is classpath and when does it matter?",
-          "answer": "Classpath tells the JVM where to find .class files and JARs. Wrong classpath causes ClassNotFoundException even if the code compiled.",
+          "answer": "**Classpath** is an ordered list of directories, JAR files, and ZIP archives that the **application class loader** searches when loading a class by binary name. It is specified via `-cp` or `-classpath` flag on the `java` command, or via the `CLASSPATH` environment variable (the flag overrides the variable). The loader searches entries **left to right** and returns the first match — duplicate classes shadow later entries silently. Spring Boot fat JARs use a custom `LaunchedURLClassLoader` that handles nested JARs to prevent classpath shadowing across dependencies. Classpath matters in production when: (1) dependency JARs contain the same class (logging framework conflicts — `log4j-over-slf4j` and `slf4j-over-log4j` on the same classpath create infinite delegation loops); (2) WAR deployments mix container-provided JARs with application JARs; (3) agent JARs are injected via `-javaagent` and need to see application classes. Use `java -verbose:class 2>&1 | grep <className>` to trace exactly which entry provided a class.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Classpath tells the JVM where to find .class files and JARs. Wrong classpath causes ClassNotFoundException even if the code compiled. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "answer": "The `CLASSPATH` environment variable is a global default that affects every `java` invocation on the host. Leaving it set with old paths causes confusing `NoClassDefFoundError` in new projects. Best practice: never rely on `CLASSPATH`; always pass `-cp` explicitly in scripts and Dockerfiles. CI pipelines inherit the agent environment, so a stale `CLASSPATH` from a previous job can poison the next job on the same agent."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Introduction to Java - JDK vs JRE vs JVM**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Classpath tells the JVM where to find .class files and JARs. Wrong classpath causes ClassNotFoundException even if the c… Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "answer": "Shadow classpath conflicts are notoriously hard to debug. `java -verbose:class` is too verbose for production. A better approach: `jar tf app.jar | grep ClassName` to find which JARs inside the fat JAR contain a class. For Maven projects, `mvn dependency:tree` reveals transitive dependencies. For Gradle: `gradle dependencies --configuration runtimeClasspath`. If two JARs provide `org/slf4j/LoggerFactory.class`, the one listed first on the classpath wins."
             }
           ]
         },
         {
           "question": "What is JIT compilation in the JVM?",
-          "answer": "The JIT (Just-In-Time) compiler translates hot bytecode to native machine code at runtime to speed up frequently executed code after profiling.",
+          "answer": "**JIT** (**Just-In-Time**) compilation is HotSpot's adaptive optimization layer. The JVM starts by **interpreting** bytecode. It tracks **invocation counters** and **loop back-edges** per method. When a method's counter exceeds a threshold (default ~10,000 for C2), HotSpot queues it for compilation. **C1** (client compiler) compiles quickly with moderate optimization. **C2** (server compiler) compiles slowly with aggressive inlining, loop unrolling, and escape analysis — this is the tier that produces JVM performance comparable to C++. Deoptimization returns a method to the interpreter if a speculative assumption breaks (e.g., the class hierarchy changes after a monomorphic call site optimization). **Production consequence**: a freshly deployed service under load shows elevated CPU for 3–5 minutes while JIT compiles hot paths — this is normal **JVM warmup**. Load tests run before warmup completes measure interpreter performance, not steady-state. p50 latency during warmup can be 3–5x higher. **Staff signal**: async-profiler in JFR mode captures JIT compilation events and flamegraphs of both interpreter and native frames without significant overhead.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. The JIT (Just-In-Time) compiler translates hot bytecode to native machine code at runtime to speed up frequently executed code after profili… Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "answer": "Deoptimization causes a brief performance dip visible as a spike in async-profiler flamegraphs labeled `Deoptimization`. Common causes: a `@Override` method is added to a class hierarchy that HotSpot had already optimized as monomorphic (single-type dispatch). Spring's CGLIB proxies add subclasses at runtime — if a class was optimized before the proxy was registered, deoptimization occurs at proxy creation. This is one reason Spring Boot startup emits a brief CPU spike before the context is fully initialized."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Introduction to Java - JDK vs JRE vs JVM**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. The JIT (Just-In-Time) compiler translates hot bytecode to native machine code at runtime to speed up frequently execute… Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "answer": "`-XX:+PrintCompilation` logs every JIT compilation event with method name and compilation tier. This flag is production-safe but verbose. In JFR, enable the `jdk.Compilation` event to capture the same data with timestamps. Use `jcmd <pid> Compiler.queue` to inspect the pending compilation queue. If the queue is long at startup, it means the service receives traffic before JIT has warmed up — consider preloading common code paths with a warmup endpoint before shifting traffic in a canary deployment."
             }
           ]
         },
         {
           "question": "What does bytecode verification do?",
-          "answer": "Before execution, the JVM checks bytecode for type safety, stack consistency, and illegal jumps—reducing certain classes of memory corruption and invalid calls.",
+          "answer": "**Bytecode verification** is a safety gate inside the JVM that runs before any method executes. The **verifier** checks that: operand stack types match the expected types for each instruction, no stack overflow or underflow occurs at any reachable branch, local variables are assigned before use with the correct type, and all branch targets point to valid instruction offsets. This prevents malformed `.class` files — from a compromised JAR, a buggy code generator, or a corrupted download — from corrupting JVM memory or bypassing type safety. The verifier runs using **StackMapTable** attributes introduced in Java 6 (class file major version 50). Without stack maps, verification uses the older expensive algorithm; with them, it is an O(n) single pass. **Production consequence**: a `VerifyError` at class load time almost always comes from a code generator — CGLIB (Spring AOP proxies), Lombok, a custom annotation processor, or a bytecode manipulation library like ASM or Byte Buddy — emitting incorrect stack maps after a version upgrade.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Before execution, the JVM checks bytecode for type safety, stack consistency, and illegal jumps—reducing certain classes of memory corruptio… Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "answer": "`-Xverify:none` disables bytecode verification entirely. Some JVM startup optimization guides recommend this for trusted codebases, claiming ~5% faster startup. This is never acceptable in production — it removes the safety gate that prevents corrupted bytecode from reaching the interpreter. GraalVM native image applies verification offline during `native-image` compilation and can produce unverified native code safely, because the output is not dynamically loaded."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Introduction to Java - JDK vs JRE vs JVM**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Before execution, the JVM checks bytecode for type safety, stack consistency, and illegal jumps—reducing certain classes… Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "answer": "`javap -verbose MyClass.class` prints the `StackMapTable` for each method. Each frame describes the expected type state at a branch target. A mismatch between what the code generator wrote and what the verifier expects causes `VerifyError: bad type on operand stack`. Debugging: run with `-Xverify:all` (full verification even for trusted code) and enable `-Xlog:verification*:stdout` to see which class fails and why. Then file an issue against the code generator library with the javap output."
             }
           ]
         },
         {
           "question": "What is the difference between classpath and module path (Java 9+)?",
-          "answer": "Classpath loads classes/JARs the classic way; module path activates the module system (strong encapsulation, reliable configuration). Many apps still use classpath; libraries may publish as modules.",
+          "answer": "The **classpath** provides weak encapsulation: every public class in every JAR is reachable from every other JAR, regardless of intent. The **module path** enforces module-level encapsulation via `module-info.java`: a module must explicitly `exports` packages for other modules to access them, and must `requires` the modules it depends on. Unexported packages are inaccessible via reflection by default — `InaccessibleObjectException` is thrown. The module path also enables `jlink` to produce minimal custom JRE images containing only the required modules. **Production consequence**: migrating a large Spring Boot application from classpath to module path requires auditing all reflective access, because Spring heavily uses reflection to create beans, set fields, and invoke lifecycle methods. Without `opens` declarations, Spring fails at context startup. **Staff signal**: the practical migration path for most enterprise services is to keep classpath mode and add `--add-opens` JVM flags where needed, rather than a full JPMS migration. Spring Boot 3 supports both modes.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Introduction to Java - JDK vs JRE vs JVM** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Classpath loads classes/JARs the classic way; module path activates the module system (strong encapsulation, reliable configuration). Many a… Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "answer": "The `--add-opens` flag grants reflective access to a specific package from a specific module without adding a module dependency. Format: `--add-opens java.base/java.lang=ALL-UNNAMED` grants reflective access to `java.lang` for all unnamed module (classpath) code. Spring Boot's fat JAR launcher adds these flags automatically for known Spring modules. When you see `InaccessibleObjectException` in a Spring app, check whether the `--add-opens` for the affected module is missing from the JVM flags."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Introduction to Java - JDK vs JRE vs JVM**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Classpath loads classes/JARs the classic way; module path activates the module system (strong encapsulation, reliable co… Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "answer": "ServiceLoader with the module system enables a clean plugin architecture. A service interface is `exports`-ed from a module. Implementations are in separate modules that `provides` the interface. `ServiceLoader.load(MyService.class)` discovers all registered implementations at runtime. This replaces the old `META-INF/services/` SPI mechanism with compile-time-checked declarations. Spring Boot auto-configuration uses the old SPI via `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` — this is a classpath-mode mechanism, not JPMS-aware."
+            }
+          ]
+        },
+        {
+          "question": "When a teammate says they installed Java 21 but Gradle still compiles with 17, where do you look first?",
+          "answer": "**Gradle** daemon inherits **JAVA_HOME** and the **toolchain** DSL, not whatever your IDE splash screen advertises. A **production** failure here is silent bytecode built with an older **release** flag while the developer assumed 21 features were available. Start with `./gradlew -version` or `mvn -v` inside the same shell that fails. Compare that output to `echo %JAVA_HOME%` on Windows or `echo $JAVA_HOME` on Linux. Open `gradle.properties` or `.mvn/jvm.config` for pinned flags. Misaligned **JDK** selection causes preview API usage to compile locally on a laptop yet explode in CI with **IllegalAccessError** when the container uses 17. The fix is to declare an explicit **Java toolchain** and fail fast when the daemon cannot provision it. Always verify by re-running the compile with `--info` and capturing the **javac** executable path printed near the top of the log.",
+          "followUps": [
+            {
+              "question": "How would you prove which `javac` binary Gradle invoked without attaching a debugger?",
+              "answer": "Run `./gradlew compileJava --info` and grep for **forkOptions** or **compiler** metadata; Gradle prints the executable path when it forks **javac**. On **Maven**, `mvn -X compile` shows the **JAVA_HOME** used by the compiler plugin. If the path points to an old **JDK**, update **JAVA_HOME**, invalidate daemons with `./gradlew --stop`, and re-run. This is faster than guessing from IDE settings because CI uses the daemon, not the GUI."
+            },
+            {
+              "question": "What breaks if CI sets `JDK_JAVA_OPTIONS` globally in Kubernetes?",
+              "answer": "Every pod inherits surprise flags such as aggressive **GC** logging or huge **heap** sizes. **SRE** teams see noisy logs and unpredictable **OOMKilled** ratios. Detect with `kubectl exec` plus `jcmd <pid> VM.flags`. Fix by scoping flags to debug namespaces only and documenting allowed **JVM** options in the Helm chart values file."
+            }
+          ]
+        },
+        {
+          "question": "Why does `UnsupportedClassVersionError` appear only after deploy even though `mvn test` passed locally?",
+          "answer": "**Bytecode major version** is embedded in each **class file**. Local **Maven** used **JDK 21**, so tests passed. The **Dockerfile** `FROM eclipse-temurin:17-jre` runs **JVM 17**, which cannot load **major 65** classes. The symptom is a crash loop on the first class load, often before **Spring** prints its banner. This is not a flaky network issue. The detection path is `javap -verbose target/classes/com/example/App.class | findstr major` on Windows or `grep major` on Linux, then compare to `java -version` inside the running container using `kubectl exec`. The fix is either bump the base image to **JDK 21** or recompile with `--release 17` so **javac** emits **major 61**. Verification is redeploy plus a smoke test that exercises the failing class loader path.",
+          "followUps": [
+            {
+              "question": "How do you guard against this in GitHub Actions?",
+              "answer": "Add a job matrix that runs `mvn -B verify` using the same **Temurin** version as production, plus an optional **enforcer** rule that fails when **maven.compiler.release** exceeds the runtime image. Cache **JDK** tarballs to keep CI fast. If you must dual-target, build two artifacts or use **multi-release** JARs, but never assume a single **class** file serves every **JVM**."
+            },
+            {
+              "question": "What is the difference between `NoClassDefFoundError` and `ClassNotFoundException` in this context?",
+              "answer": "`ClassNotFoundException` usually means the **class loader** never saw the type name during resolution. `NoClassDefFoundError` means initialization succeeded earlier but a dependent class failed, often after a static block threw. Both look like missing **classpath** issues but the second points to deeper static init bugs; thread **stack traces** tell them apart quickly during **on-call**."
             }
           ]
         }
@@ -451,12 +481,40 @@
               "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. It lists observable platform modules on the module path—useful when debugging module visibility and dependenci… Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
             }
           ]
+        },
+        {
+          "question": "Show the `javac` and `java` commands for `package arch.demo; public class Boot { ... }` stored under `src/arch/demo/Boot.java` with classes emitted to `out`.",
+          "answer": "// mkdir -p out (Unix) or md out (Windows)\n// javac -d out src/arch/demo/Boot.java\n// java -cp out arch.demo.Boot\n// The -d flag chooses the output root; package folders are created automatically.\n// The runtime class name is always fully qualified when a package exists.\n// Mis-typing the name causes ClassNotFoundException even if compile succeeded.\n// Add -g if you need debug symbols for breakpoints during local runs.\n// In CI, mirror the same -cp layout your fat JAR or Spring Boot loader expects.",
+          "followUps": [
+            {
+              "question": "What happens if you run `java Boot` instead of `java arch.demo.Boot`?",
+              "answer": "The **application class loader** looks for `Boot` in the unnamed package while your bytecode lives in `arch.demo`. The **JVM** throws `ClassNotFoundException` or `NoClassDefFoundError` depending on timing. Fix by using the **FQCN** or adding `-cp` with the correct root. This mistake wastes hours because developers assume compile success implies launch success."
+            },
+            {
+              "question": "How does `java @args.txt` help long classpaths?",
+              "answer": "Windows command length limits break huge `-cp` strings. An args file stores each flag on its own line; the launcher expands it before parsing. **Production** scripts use the same trick for **JUnit** platform suites. Verify by echoing the resolved command from CI logs."
+            }
+          ]
+        },
+        {
+          "question": "Demonstrate reading `java.specification.version` and branching for feature gates.",
+          "answer": "// String spec = System.getProperty(\"java.specification.version\");\n// int major = Integer.parseInt(spec.split(\"\\\\.\")[0]);\n// if (major >= 21) { /* use virtual threads */ }\n// else { /* fall back to platform threads */ }\n// Always parse numbers safely; preview builds may include suffixes.\n// Pair this check with build-time --release to avoid compiling APIs that older runtimes lack.\n// Log the detected major in startup banners so operators can compare with Docker labels.\n// Never rely on string contains \"21\" alone; use Runtime.version() when you target Java 10+.",
+          "followUps": [
+            {
+              "question": "Why is runtime branching inferior to compile-time module checks?",
+              "answer": "Runtime branching hides missing **API** symbols until execution. **Module** `requires` clauses fail fast during **jlink** or **module** resolution. Prefer declaring minimum versions in **Gradle** or **Maven** and letting the build break early. Runtime checks belong to graceful degradation paths, not core correctness."
+            },
+            {
+              "question": "What security concern exists when exposing JVM properties via HTTP?",
+              "answer": "**Properties** can leak file paths, user names, or internal network drive letters. Attackers fingerprint **JDK** vendors for known CVEs. Gate `/actuator/env` behind auth in **Spring Boot** and scrub responses. Detect leaks via **security** scanners and **OWASP** dependency checks."
+            }
+          ]
         }
       ],
       "seniorScenario": [
         {
           "question": "CI builds with Java 11 but developers use Java 17 locally. What do you standardize?",
-          "answer": "Pin the JDK in the build (toolchains, Gradle JVM, Maven enforcer), align CI image and local dev with the same major version, and fail the build on mismatch.",
+          "answer": "**(1) Immediate response** — freeze merges that touch bytecode until you capture `./gradlew -version`, `mvn -v`, and the CI container `java -version` inside one ticket. Post the triage steps in Slack so nobody burns another hour on mystery test failures.\n\n**(2) Root cause** — local laptops picked up **JDK 17** while the GitHub Actions image still uses **Temurin 11**. **Bytecode** major versions differ, preview APIs compile locally, and CI either passes with warnings or fails unpredictably when plugins fork the wrong **javac**.\n\n**(3) Fix** — 1) Add **Gradle toolchains** or **Maven enforcer** requiring JDK 17. 2) Update `actions/setup-java` or Docker `FROM` line to **eclipse-temurin:17-jdk**. 3) Run `./gradlew --stop` and clear CI caches. 4) Re-run the pipeline with `--scan` archived. 5) Document the decision in `CONTRIBUTING.md`.\n\n**(4) Prevention** — require **pre-merge** checks that run both compile and integration tests on the production **JVM** major version, add **Renovate** rules for base images, and teach new hires to run `sdk env` or `direnv` so shells inherit the pinned **JDK** automatically.\n\nAt scale this mismatch creates two classes of bugs. First, Java 17 enables stricter reflective access by default — code that uses `Field.setAccessible(true)` without `--add-opens` works on Java 11 but fails with `InaccessibleObjectException` on Java 17. Developers do not see this because their IDEs and local builds run Java 17 correctly, but CI on Java 11 also does not catch it — the bug surfaces only when a Java 17 production deploy exposes a code path that Java 11 never hit. Second, Java 17 changes the default `String.getBytes()` charset to UTF-8. On a Java 11 CI agent running on a non-UTF-8 locale, byte arrays differ, breaking serialization assumptions silently. The Gradle toolchain declaration is the correct fix: it makes the JDK version explicit in the build script (`java { toolchain { languageVersion = JavaLanguageVersion.of(17) } }`) and downloads the exact version automatically. This eliminates JAVA_HOME drift across agents and developer machines permanently.",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Introduction to Java - JDK vs JRE vs JVM** situation?",
@@ -470,7 +528,7 @@
         },
         {
           "question": "A service fails at startup: \"Error: Could not find or load main class\". What do you check?",
-          "answer": "Verify the main class name, package declaration, classpath, JAR manifest Main-Class entry, and that you run from the correct working directory.",
+          "answer": "**(1) Immediate response** — grab `kubectl logs` or `docker logs` for the crashing pod, copy the exact class name from the error, and confirm whether the process exited before or after **Spring** started. Keep the broken pod around for `kubectl exec` inspection.\n\n**(2) Root cause** — the **JVM** could not resolve the entry class on the effective **classpath**. Typical mechanisms: wrong **FQCN** in the **Kubernetes** command, a shaded **JAR** that renamed packages, a missing **Main-Class** manifest attribute, or running `java -jar` from the wrong working directory so relative resource paths fail during static init.\n\n**(3) Fix** — 1) `jar tf app.jar | findstr Entry` on Windows to confirm the path. 2) `unzip -p app.jar META-INF/MANIFEST.MF | findstr Main-Class`. 3) Align `JAVA_OPTS` `-cp` with the **Spring Boot** layout. 4) Rebuild with `spring-boot-maven-plugin` repackage goal if the fat **JAR** was never created. 5) Redeploy and watch readiness probes.\n\n**(4) Prevention** — add a smoke test that executes `java -jar` in CI, enforce **manifest** checks in **Gradle**, and store canonical run commands next to Helm values so ops never invents a new class name during incidents.\n\nThe full diagnostic checklist at Staff level: (1) Confirm the fully-qualified class name matches the package declaration — `java com.example.App` requires the class to be in `com/example/App.class` relative to the classpath root. (2) Run `jar tf app.jar | grep App.class` to confirm the class is inside the JAR. (3) Check the `MANIFEST.MF` Main-Class attribute with `jar xf app.jar META-INF/MANIFEST.MF && cat META-INF/MANIFEST.MF`. (4) For Spring Boot fat JARs, the Main-Class is `org.springframework.boot.loader.JarLauncher`, not your application class — your class is in `Start-Class`. Running with `java -cp` instead of `java -jar` bypasses the Spring Boot launcher entirely, making `BOOT-INF/classes` invisible. This is the most common cause of \"Could not find or load main class\" when the JAR was built correctly but launched incorrectly.",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Introduction to Java - JDK vs JRE vs JVM** situation?",
@@ -484,7 +542,7 @@
         },
         {
           "question": "Someone installed JDK but terminal still says javac is not recognized on Windows. What steps?",
-          "answer": "Confirm JDK bin path, add it to user/system PATH, set JAVA_HOME to JDK root, open a new terminal, and ensure no conflicting older java earlier in PATH.",
+          "answer": "**(1) Immediate response** — screen-share with the engineer, run `where java` and `where javac` in the same PowerShell window, and screenshot the output for the ticket. Do not assume the GUI installer finished configuring **PATH**.\n\n**(2) Root cause** — Windows often leaves an old **JRE** `java.exe` ahead of the new **JDK**, or the installer never appended `C:\\\\Program Files\\\\Java\\\\jdk-17\\\\bin`. Another variant is corporate software blocking `javac.exe` via **AppLocker**.\n\n**(3) Fix** — 1) Open **Environment Variables** and prepend the **JDK** `bin`. 2) Set **JAVA_HOME** to the **JDK** root without `bin`. 3) Close all terminals and IDEs. 4) Verify `javac -version`. 5) If still broken, reinstall using the **MSI** interactive option that exposes **PATH** configuration.\n\n**(4) Prevention** — distribute **SDKMAN**-like scripts internally, document the exact **PATH** order in onboarding, and add a `doctor` script new hires run that fails loudly when `javac` is missing.\n\nAt Staff level, PATH debugging on Windows has a known subtlety: user PATH and system PATH are separate, and the Windows installer sometimes adds JDK to system PATH only. A terminal opened before the install does not inherit the new PATH. A terminal opened in a non-admin context may not see system PATH additions. The full diagnostic: (1) Open a new terminal as administrator and run `javac -version`. (2) Run `where java` and `where javac` — if they resolve to different paths, there are conflicting installs. (3) Check `echo %PATH%` for path entries containing Java, and check `echo %JAVA_HOME%`. (4) If SDKMAN, Chocolatey, or scoop installed a JDK alongside the manual install, the package manager's shim may intercept `javac`. Remove or reorder. The prevention: use a single JDK install managed by SDKMAN (bash on WSL) or Scoop (PowerShell) and declare toolchains in Gradle rather than relying on PATH.",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Introduction to Java - JDK vs JRE vs JVM** situation?",
@@ -498,7 +556,7 @@
         },
         {
           "question": "You need to run the same JAR on Linux servers with different Java patch levels. What policy?",
-          "answer": "Standardize minimum supported LTS, test on lowest supported patch, document required flags, and use container images with pinned JDK versions.",
+          "answer": "**(1) Immediate response** — inventory every host with `java -version` via Ansible, compare patch numbers, and mark any host below the security baseline as **out-of-policy** before discussing features.\n\n**(2) Root cause** — **patch** drift means some **JVMs** lack **TLS** fixes or **GC** bugfixes even though the **major** version matches. **JIT** defaults also shift between CPU vendors, so performance profiles differ subtly.\n\n**(3) Fix** — 1) Pick the lowest patch you must support. 2) Run the full regression suite on that build in CI. 3) Pin **Docker** images by digest, not tag. 4) Automate `apt upgrade openjdk-17-jdk` through change windows. 5) Capture `jcmd` outputs after upgrades for audit.\n\n**(4) Prevention** — adopt immutable infra with golden **AMI**s, integrate **OS** patching metrics into **SLO** dashboards, and block deploys when a node reports an unknown **JDK** build string.\n\nThe evaluation framework at Principal level covers three risk dimensions. First, **API risk**: patch versions within the same major version (17.0.x) are ABI-compatible — no new APIs, no removals. The risk is zero for standard library usage. Second, **behavior risk**: GC bug fixes and JIT changes ship in patch releases. A patch that fixes a GC correctness bug may change pause timing, exposing a latency regression. Run a 30-minute load test on the new patch before full rollout. Third, **security risk**: patch releases contain CVE fixes. Running older patches exposes known vulnerabilities. The Staff recommendation: always run the latest patch for a given LTS major version in production. Use `jcmd <pid> VM.version` (not the Dockerfile) to confirm the exact patch version running in each pod. Kubernetes node pool upgrades may not update JVM patch versions inside containers — the container image is the source of truth.",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Introduction to Java - JDK vs JRE vs JVM** situation?",
@@ -512,7 +570,7 @@
         },
         {
           "question": "How do you explain JVM vs JDK to a non-technical stakeholder?",
-          "answer": "JDK is the full developer kit to build and run; JVM is only the engine that runs the program once built—like needing a factory (JDK) to make a car part, then an engine (JVM) to run the car.",
+          "answer": "**(1) Immediate response** — acknowledge the release pressure, promise a five-minute analogy, and translate any acronyms on the whiteboard as you speak so finance and product stay aligned.\n\n**(2) Root cause** — stakeholders only hear \"Java\" and assume one blob; they do not know that **build** capacity (**JDK**) and **runtime** capacity (**JVM**) are purchased separately in the cloud bill.\n\n**(3) Fix** — 1) Draw **source → compiler → bytecode → JVM** boxes. 2) Compare **JDK** to a factory that forges parts. 3) Compare **JVM** to the engine installed in every server. 4) Tie savings to smaller **JRE** images in **Kubernetes**. 5) Offer to share **Grafana** cost charts after rightsizing.\n\n**(4) Prevention** — add the diagram to quarterly architecture reviews and include **JDK** line items explicitly in budget spreadsheets so nobody \"optimizes\" away compilers by accident.\n\nThe extended stakeholder framing that wins budget and credibility: connect each component to a business outcome the stakeholder cares about. The JVM is not an abstract concept — it is what determines whether the payment service can handle 50,000 orders per minute without 3am outages. Tuning the JVM (correct GC algorithm, container-aware heap sizing, enabling UseContainerSupport) reduced our p99 latency from 800ms to under 100ms without new hardware. The JDK is not just developer tooling — without the diagnostic tools it contains (jcmd, javap, jstat), the team cannot diagnose a memory leak in production without restarting the service. Budget the JDK. For Kubernetes teams that want to minimize image size, the correct answer is \"JDK for the debug sidecar, JRE or distroless for the production container\" — not \"remove the JDK from everything.\"",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Introduction to Java - JDK vs JRE vs JVM** situation?",
@@ -526,7 +584,7 @@
         },
         {
           "question": "Several JDKs are installed; `java -version` differs from `javac -version`. How do you fix it?",
-          "answer": "Ensure PATH lists the same JDK bin for both; on Windows use `where java` and `where javac`; align JAVA_HOME with the intended JDK and remove stale shims.",
+          "answer": "**(1) Immediate response** — stop all **Gradle** daemons, capture both version strings, and label each path with its vendor so the team sees the mismatch without guessing.\n\n**(2) Root cause** — **PATH** order picked `java.exe` from **Program Files (x86)** while `javac` resolves from **SDKMAN** or vice versa. **IDEA** terminal plugins sometimes inject another layer.\n\n**(3) Fix** — 1) Run `where java` / `where javac`. 2) Delete duplicate shims or rename them. 3) Prepend the desired **JDK** `bin`. 4) Set **JAVA_HOME** accordingly. 5) Reopen shells and run `java -version` && `javac -version` until they match.\n\n**(4) Prevention** — enforce **direnv** `.envrc` files in the repo and add CI lint that fails when `JAVA_HOME` differs from the compiler path printed by **Maven**.\n\nThe root cause at Staff level is almost always one of three patterns. Pattern A: a package manager (Homebrew, Chocolatey, SDKMAN) manages one JDK while another was installed manually and appears earlier on PATH. Fix: `type -a java` (bash) lists all `java` on PATH in order; identify and remove or reorder the conflicting entry. Pattern B: JAVA_HOME points to a different JDK than PATH resolves. Build tools (Gradle, Maven) use JAVA_HOME for compiler forks; the interactive shell uses PATH. Fix: `export JAVA_HOME=$(type -a java | head -1 | cut -d\" \" -f3 | xargs dirname | xargs dirname)`. Pattern C: IntelliJ or another IDE set its own JAVA_HOME in a launch script. Verify with `ps aux | grep java` on a running Gradle daemon — the process environment shows the actual JAVA_HOME the daemon used. Prevention: Gradle toolchain in `build.gradle` is the only production-grade fix because it makes the JDK version explicit and downloaded reproducibly.",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Introduction to Java - JDK vs JRE vs JVM** situation?",
@@ -540,18 +598,452 @@
         }
       ],
       "wrongAnswers": [
-        "JDK and JVM are the same thing.",
-        "You can compile .java files using only the JRE.",
-        "Java source code runs directly on the CPU without bytecode.",
-        "main can be private static void main and the JVM will still start it.",
-        "Classpath is only needed for web applications, not console programs.",
-        "The `java` command executes `.java` source files directly without compilation in all Java versions."
+        "JDK and JVM are the same thing — the **JDK** bundles compilers and tools while the **JVM** is only the execution engine inside the runtime; production servers may carry a **JRE** without ever exposing `javac`.",
+        "You can compile `.java` files using only the **JRE** — `javac` ships exclusively with a **JDK**; **JRE**-only images therefore break CI compile stages until you swap to a **JDK** base or toolchain.",
+        "Java source executes directly on the CPU — the **HotSpot** **JVM** always loads **bytecode**; native code appears later via **JIT**, never by feeding `.java` files to the processor.",
+        "`private static void main` still works — the launcher searches for the exact `public static void main(String[] args)` signature; anything else yields `NoSuchMethodError` after class load.",
+        "**Classpath** matters only for web apps — every **JVM** process needs a **classpath** or **module** path to locate classes, whether the entry point is **Spring** or a CLI tool.",
+        "`java` always runs `.java` sources unchanged — only **Java 11+** single-file mode does an in-memory compile; default launch still expects prebuilt `.class` files on the **classpath**.",
+        "Installing the latest **JDK** automatically updates every IDE project — **IntelliJ** and **Eclipse** keep per-project **SDK** settings; a global install fixes the shell but not the IDE until you reselect the **JDK**.",
+        "**JAVA_HOME** is optional if **PATH** contains `java` — **Maven**, **Gradle**, and **Tomcat** service scripts read **JAVA_HOME** first; mismatched variables cause split-brain compiler behavior."
+      ],
+      "jobSwitch": {
+        "resumeBullet": "Audited JVM configuration across 12 production services in week 2 at a new company; identified JRE-only CI images causing compile failures and misaligned JAVA_HOME causing silent version drift; migrated all services to Gradle toolchain declarations, eliminating cross-environment JDK mismatch incidents.",
+        "interviewPositioning": "In your first week, run `javac -version` and `java -version` on every CI agent and production pod — mismatches are common and fixing them in week 2 signals Staff-level instincts. Frame it as observability: \"I cannot reason about production without knowing exactly which JVM version and flags are active; `jcmd <pid> VM.version` and `jcmd <pid> VM.flags` are the first tools I check.\"",
+        "starAnchor": "Situation: CI pipeline on a monorepo failed intermittently with UnsupportedClassVersionError after library updates compiled against Java 17 while CI agents ran Java 11. Task: eliminate the version mismatch and prevent recurrence across 40 developer machines and 6 CI agents. Action: added Gradle toolchain declarations to all 12 service build files, pointed Gradle to Foojay resolver for JDK downloads, removed hardcoded JAVA_HOME from CI agent configuration. Result: zero JDK version mismatch incidents in 6 months post-migration; onboarding time for new developers reduced from 2 hours to 15 minutes."
+      }
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ — Introduction to Java: JDK vs JRE vs JVM",
+      "description": "30 questions across Basic, Intermediate, and Advanced levels covering JDK components, JVM internals, class loading, JIT, bytecode, and production diagnostics.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "Which component do you need to **compile** a Java source file into bytecode?",
+          "options": {
+            "A": "JRE (Java Runtime Environment)",
+            "B": "JVM (Java Virtual Machine)",
+            "C": "JDK (Java Development Kit)",
+            "D": "JLink"
+          },
+          "answer": "C",
+          "explanation": "The JDK bundles `javac` (the compiler). JRE and JVM only provide a runtime; they cannot compile `.java` files. JLink is a JDK tool for creating custom runtime images, not for compiling."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "What file extension does `javac` produce from a `.java` source file?",
+          "options": {
+            "A": ".exe",
+            "B": ".class",
+            "C": ".jar",
+            "D": ".obj"
+          },
+          "answer": "B",
+          "explanation": "`javac` compiles Java source into `.class` files containing platform-independent bytecode. `.jar` files are ZIP archives of many `.class` files, not the direct output of a single compilation."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "theory",
+          "question": "Which command checks the version of the Java runtime installed on your machine?",
+          "options": {
+            "A": "javac -version",
+            "B": "java --check",
+            "C": "java -version",
+            "D": "jvm -version"
+          },
+          "answer": "C",
+          "explanation": "`java -version` prints the runtime version. `javac -version` prints the compiler version — both should match. There is no `jvm` binary; `java` is the launcher that starts the JVM."
+        },
+        {
+          "id": 4,
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the purpose of `JAVA_HOME`?",
+          "options": {
+            "A": "Stores compiled class files",
+            "B": "Points to the JDK installation directory used by build tools",
+            "C": "Specifies the main class to run",
+            "D": "Sets the heap size for the JVM"
+          },
+          "answer": "B",
+          "explanation": "`JAVA_HOME` is an environment variable that Maven, Gradle, and many IDEs read to locate the JDK. Setting it incorrectly causes build failures even when `java` appears on PATH from a different installation."
+        },
+        {
+          "id": 5,
+          "level": "basic",
+          "category": "theory",
+          "question": "Why must a public class named `Calculator` be saved in a file called `Calculator.java`?",
+          "options": {
+            "A": "It is a convention but not enforced by the compiler",
+            "B": "The JVM requires it at runtime for class loading",
+            "C": "The compiler enforces that the file name matches the public class name",
+            "D": "Only Maven enforces this, not `javac`"
+          },
+          "answer": "C",
+          "explanation": "`javac` enforces that the file name matches the public class name — mismatches produce a compile error: \"class Calculator is public, should be declared in a file named Calculator.java\". This is a compiler rule, not just a convention."
+        },
+        {
+          "id": 6,
+          "level": "basic",
+          "category": "theory",
+          "question": "Which statement about the JRE is correct?",
+          "options": {
+            "A": "JRE includes `javac` so you can compile Java code",
+            "B": "JRE provides a runtime to execute Java programs but not a compiler",
+            "C": "JRE and JDK are identical; only the name differs",
+            "D": "JRE is only available on Windows"
+          },
+          "answer": "B",
+          "explanation": "JRE = JVM + standard libraries. It lets users run compiled Java applications but lacks developer tools like `javac`, `jdb`, or `jcmd`. From JDK 11+ Oracle no longer ships a separate JRE download; the JDK is the baseline."
+        },
+        {
+          "id": 7,
+          "level": "basic",
+          "category": "code",
+          "question": "What does this command do?\n```bash\njavac Hello.java && java Hello\n```",
+          "options": {
+            "A": "Compiles Hello.java, then runs the compiled bytecode",
+            "B": "Compiles and runs in a single pass without creating a .class file",
+            "C": "Only compiles — `java Hello` opens a GUI",
+            "D": "Creates a JAR and then executes it"
+          },
+          "answer": "A",
+          "explanation": "`javac Hello.java` creates `Hello.class`. `java Hello` launches the JVM and calls the `main` method in `Hello.class`. From Java 11+, `java Hello.java` (source-file mode) can skip the explicit `javac` step, but the two-command form still creates the `.class` file explicitly."
+        },
+        {
+          "id": 8,
+          "level": "basic",
+          "category": "theory",
+          "question": "What does \"platform independence\" mean for Java bytecode?",
+          "options": {
+            "A": "Java programs never need OS-specific system calls",
+            "B": "The same .class file can run on any OS with a compatible JVM without recompilation",
+            "C": "Java programs run equally fast on every platform",
+            "D": "Bytecode is converted to JavaScript to run in browsers"
+          },
+          "answer": "B",
+          "explanation": "Bytecode is an OS-neutral instruction set; any JVM that implements the JVM Specification can execute the same `.class` file on Windows, Linux, or macOS. Caveats: JNI native libraries and OS-specific APIs break portability. Performance varies by JVM and hardware."
+        },
+        {
+          "id": 9,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "In the JVM class-loader hierarchy, which loader loads `java.lang.String`?",
+          "options": {
+            "A": "Application ClassLoader",
+            "B": "Platform (Extension) ClassLoader",
+            "C": "Bootstrap ClassLoader",
+            "D": "Custom ClassLoader"
+          },
+          "answer": "C",
+          "explanation": "The Bootstrap ClassLoader (implemented in native code, not Java) loads core Java API classes from `rt.jar` / `java.base` module — including `java.lang.String`. Parent-delegation ensures your class can never shadow `java.lang.String` because Bootstrap always wins."
+        },
+        {
+          "id": 10,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is the \"parent-delegation model\" in class loading?",
+          "options": {
+            "A": "Child loaders load classes first, then fall back to parents",
+            "B": "Each loader delegates loading to its parent before trying itself",
+            "C": "Bootstrap loader delegates everything to the Application loader",
+            "D": "Every class is loaded by all loaders simultaneously"
+          },
+          "answer": "B",
+          "explanation": "Before a ClassLoader attempts to load a class, it asks its parent. If the parent succeeds, the child is never involved. This guarantees that core JDK classes cannot be replaced by user code, preventing security exploits like shadowing `java.security.SecureRandom`."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What does the JVM's bytecode verifier check when loading a class?",
+          "options": {
+            "A": "That the source code follows Google Java Style Guide",
+            "B": "That the bytecode is structurally valid: no stack overflows, legal type casts, no uninitialized reads",
+            "C": "That the .class file was compiled with the same `javac` version as the JVM",
+            "D": "That all methods have Javadoc comments"
+          },
+          "answer": "B",
+          "explanation": "The verifier enforces JVM Specification safety rules on the bytecode itself — not source-level style. It checks stack depth consistency (StackMapTable), that every field access is type-compatible, and that no uninitialized references are used. `VerifyError` at runtime means a framework (e.g., CGLIB, Lombok) generated invalid bytecode."
+        },
+        {
+          "id": 12,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What error does the JVM throw when a class compiled against Java 17 is run on a Java 11 JVM?",
+          "options": {
+            "A": "ClassNotFoundException",
+            "B": "UnsupportedClassVersionError",
+            "C": "VerifyError",
+            "D": "LinkageError"
+          },
+          "answer": "B",
+          "explanation": "`UnsupportedClassVersionError` is thrown when the `.class` major version number (61 for Java 17, 55 for Java 11) exceeds what the running JVM supports. Fix: align the compile `--release` flag with the JVM version, or upgrade the JVM. `ClassNotFoundException` means the file is missing, not version-mismatched."
+        },
+        {
+          "id": 13,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Which two JIT compiler tiers does HotSpot use, and what is each optimised for?",
+          "options": {
+            "A": "C0 (interpreter) and C1 (native code) — both optimise for throughput",
+            "B": "C1 (fast compilation, quick start) and C2 (heavy optimisation, peak throughput)",
+            "C": "C1 (garbage collection) and C2 (memory allocation)",
+            "D": "C1 (server mode) and C2 (client mode)"
+          },
+          "answer": "B",
+          "explanation": "C1 (Client compiler) compiles quickly with basic optimisations — good for startup. C2 (Server compiler) applies aggressive optimisations (loop unrolling, escape analysis, inlining) after profiling hot paths — good for peak throughput. Tiered Compilation (default since Java 8) uses C1 first, then promotes to C2."
+        },
+        {
+          "id": 14,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What does `javap -c Hello` show?",
+          "options": {
+            "A": "Java source code of Hello.java",
+            "B": "JVM bytecode instructions for Hello.class",
+            "C": "The runtime heap contents of a running Hello process",
+            "D": "Compilation errors from Hello.java"
+          },
+          "answer": "B",
+          "explanation": "`javap -c` disassembles `.class` files into human-readable JVM bytecode mnemonics (e.g., `iconst_1`, `iadd`, `invokevirtual`). Staff engineers use it to verify that compiler optimisations (e.g., string concatenation strategy, switch table vs lookup) occurred as expected."
+        },
+        {
+          "id": 15,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What memory region stores class metadata (method names, field types, constant pool) in Java 8+?",
+          "options": {
+            "A": "Young Generation heap",
+            "B": "PermGen (Permanent Generation)",
+            "C": "Metaspace (native memory)",
+            "D": "Code Cache"
+          },
+          "answer": "C",
+          "explanation": "Java 8 replaced PermGen with Metaspace, which grows in native (off-heap) memory by default. PermGen had a fixed upper bound causing `OutOfMemoryError: PermGen space` on large deployments. Metaspace is bounded by `-XX:MaxMetaspaceSize`; without it, a classloader leak will consume all native memory."
+        },
+        {
+          "id": 16,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is the classpath and when does it matter?",
+          "options": {
+            "A": "The directory where `.java` source files are stored",
+            "B": "A list of directories and JARs where the JVM looks for `.class` files at runtime",
+            "C": "The path to the JDK installation on disk",
+            "D": "An environment variable only used by Maven"
+          },
+          "answer": "B",
+          "explanation": "Classpath tells both `javac` and `java` where to find compiled classes and library JARs. A missing classpath entry causes `ClassNotFoundException` at runtime. Maven/Gradle manage classpath automatically; manual `-cp` is needed for one-off runs or legacy scripts."
+        },
+        {
+          "id": 17,
+          "level": "intermediate",
+          "category": "code",
+          "question": "A CI pipeline compiles with `javac --release 17` but the Docker image runs `java 11`. What happens at startup?",
+          "options": {
+            "A": "The app starts but prints a deprecation warning",
+            "B": "Java 11 automatically down-compiles the bytecode at startup",
+            "C": "The JVM throws `UnsupportedClassVersionError` before `main()` runs",
+            "D": "Only the classes that use Java 17 features fail; others load fine"
+          },
+          "answer": "C",
+          "explanation": "The JVM checks the `.class` major version at load time, before executing any user code. Version 61 (Java 17) > 55 (Java 11), so the JVM immediately throws `UnsupportedClassVersionError`. There is no automatic downgrade; you must align the compile target and runtime version."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is the difference between the module path (`--module-path`) and the classpath?",
+          "options": {
+            "A": "They are identical; `--module-path` is just an alias introduced in Java 9",
+            "B": "Module path is for JPMS modules that declare `module-info.class`; classpath is for unnamed-module JARs",
+            "C": "Module path is faster because the JVM skips bytecode verification for modules",
+            "D": "Classpath only works on Windows; module path works cross-platform"
+          },
+          "answer": "B",
+          "explanation": "Java Platform Module System (Java 9+) introduced `--module-path` for JARs containing `module-info.class`. These modules declare explicit `requires`/`exports`, giving strong encapsulation. Regular JARs without `module-info` go on the classpath as the \"unnamed module\". Most Spring Boot / Jakarta EE apps still use the classpath."
+        },
+        {
+          "id": 19,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Which Gradle build file snippet ensures the project always compiles and runs with JDK 17, regardless of `JAVA_HOME`?",
+          "options": {
+            "A": "```groovy\nsourceCompatibility = \"17\"\n```",
+            "B": "```groovy\njava { toolchain { languageVersion = JavaLanguageVersion.of(17) } }\n```",
+            "C": "```groovy\ncompileJava.options.release = 17\n```",
+            "D": "```groovy\nsystem.setProperty(\"java.version\", \"17\")\n```"
+          },
+          "answer": "B",
+          "explanation": "Gradle toolchain declaration (`java { toolchain { ... } }`) tells Gradle to download or locate the correct JDK version, completely overriding `JAVA_HOME`. `sourceCompatibility` only controls language-level syntax, not the actual JDK binary used, so JAVA_HOME drift still silently causes problems."
+        },
+        {
+          "id": 20,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What does `jcmd <pid> VM.flags` output?",
+          "options": {
+            "A": "All Java source files loaded by the JVM",
+            "B": "Active JVM flags — both those set via command line and defaults chosen by ergonomics",
+            "C": "A thread dump of all running threads",
+            "D": "The classpath used by the running process"
+          },
+          "answer": "B",
+          "explanation": "`jcmd VM.flags` is a Staff-level first step during on-call: it reveals the heap sizes, GC algorithm, and any non-default flags the JVM chose via ergonomics. Many JVM flags differ between JDK 11 and 17 defaults (G1GC became default in Java 9). Compare `VM.flags` on a broken pod vs a healthy one to find configuration drift."
+        },
+        {
+          "id": 21,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "After a library upgrade, tests pass locally (Java 17) but fail in CI (Java 11) with `VerifyError: Bad type on operand stack`. What is the most likely root cause?",
+          "options": {
+            "A": "The library uses a Java 17 preview feature not available in Java 11",
+            "B": "A bytecode-manipulation library (CGLIB, Lombok, ByteBuddy) generated class files that are valid per Java 17 rules but fail Java 11's stricter verifier",
+            "C": "The `.class` files are corrupt because of a file-system encoding difference",
+            "D": "Java 11 does not support generics"
+          },
+          "answer": "B",
+          "explanation": "`VerifyError` at runtime means the bytecode failed the JVM verifier — not a compile-time issue. Bytecode manipulation libraries sometimes generate code that passes newer verifier implementations but fails older ones. Fix: align Java version across all environments via Gradle toolchain or add the specific library version that fixed the verifier-compatible generation."
+        },
+        {
+          "id": 22,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "A containerised Spring Boot app (Alpine-based, JDK 17) starts 40% slower in production than locally. The only flag set is `-Xmx512m`. What is the most likely JVM cause?",
+          "options": {
+            "A": "The JIT compiler is disabled in Docker",
+            "B": "JVM ergonomics calculated a smaller heap based on the container CPU/memory limit, leaving too little room for JIT code cache, causing repeated deoptimisation",
+            "C": "Alpine's musl libc causes `javac` to recompile all classes on startup",
+            "D": "Docker networking latency delays class loading from the registry"
+          },
+          "answer": "B",
+          "explanation": "JVM ergonomics inspect available CPUs and memory. In a container with limits, the JVM may pick a small Code Cache (`-XX:ReservedCodeCacheSize`) causing the JIT to evict compiled code — the so-called \"code cache full\" deoptimisation loop. Add `-XX:+UseContainerSupport` (default on Java 10+) and set explicit `-XX:InitialCodeCacheSize` / `-XX:ReservedCodeCacheSize`. Check with `jcmd <pid> VM.flags | grep CodeCache`."
+        },
+        {
+          "id": 23,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "You run `java -version` → 17.0.9, but `javac -version` → 11.0.21. Which consequence is most likely?",
+          "options": {
+            "A": "No consequence — the runtime version is what matters",
+            "B": "Projects will compile against Java 11 API but run on Java 17, which may cause `NoSuchMethodError` if code depends on Java 17 APIs added after Java 11",
+            "C": "The JVM will auto-select the matching `javac` version",
+            "D": "Source files compile to Java 17 bytecode major version regardless of `javac` version"
+          },
+          "answer": "B",
+          "explanation": "A split `java`/`javac` version means PATH resolves them from different JDK installations. Code that uses Java 12–17 APIs (e.g., `String.isBlank()` added in Java 11, `Map.copyOf()`) will compile only if `javac` sees those APIs — with Java 11 `javac` you cannot even call Java 17-only methods. If somehow it compiles (via classpath tricks), you get `NoSuchMethodError` or `ClassNotFoundException` at runtime."
+        },
+        {
+          "id": 24,
+          "level": "advanced",
+          "category": "code",
+          "question": "What does `java -verbose:class MyApp 2>&1 | grep \"java.lang.String\"` help you diagnose?",
+          "options": {
+            "A": "Whether String pool is being used efficiently",
+            "B": "Which ClassLoader and from which JAR/module `java.lang.String` was loaded",
+            "C": "Whether String concatenation uses `StringBuilder` or `invokedynamic`",
+            "D": "The number of String instances on the heap"
+          },
+          "answer": "B",
+          "explanation": "`-verbose:class` prints a line for every class load: `[Loaded java.lang.String from /path/to/jdk/jmods/java.base.jmod]`. If you see String loaded from an unexpected JAR in your classpath, you have a classpath pollution or shading conflict. A Staff engineer adds this flag to a failing startup to confirm the class loader source before filing a bug."
+        },
+        {
+          "id": 25,
+          "level": "advanced",
+          "category": "theory",
+          "question": "What is JIT deoptimisation and when does it occur?",
+          "options": {
+            "A": "The JVM discards the JIT and falls back to interpretation when a profiling assumption is violated",
+            "B": "The JIT downgrades from C2 to C1 when memory is low",
+            "C": "Deoptimisation means the JVM disables GC to speed up a hot path",
+            "D": "It occurs when `System.gc()` is called during JIT compilation"
+          },
+          "answer": "A",
+          "explanation": "C2 makes speculative optimisations based on runtime profiling (e.g., \"this virtual call always goes to SubclassA\"). When the assumption breaks (a second subclass is loaded), the JVM \"deoptimises\" — discards the native code, restores the interpreter state, and re-profiles. Frequent deoptimisations appear as `@deopt` in `-XX:+PrintCompilation` output and cause JIT warm-up latency spikes in production."
+        },
+        {
+          "id": 26,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Why does the JVM store class metadata in Metaspace (native memory) rather than the heap after Java 8?",
+          "options": {
+            "A": "Native memory is faster than heap memory",
+            "B": "PermGen had a fixed upper bound causing `OutOfMemoryError`; Metaspace grows dynamically in native memory bounded only by the OS, eliminating a common tuning pain point",
+            "C": "The GC cannot collect objects in native memory, which keeps metadata stable",
+            "D": "Metaspace allows class metadata to be shared across JVM processes"
+          },
+          "answer": "B",
+          "explanation": "PermGen size was configured with `-XX:MaxPermSize` and commonly exhausted during hot-deploys of large applications (e.g., servlet containers redeploying WARs). Metaspace defaults to unlimited native memory growth, which shifts the failure mode from `PermGen OOM` to native memory exhaustion — easier to monitor with `-XX:MaxMetaspaceSize`. Note: classloader leaks still cause Metaspace to grow unboundedly."
+        },
+        {
+          "id": 27,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "A multi-stage Dockerfile uses `openjdk:17-jdk` to build and `openjdk:17-jre` to run. A security scan flags the runtime image for JDK tools. What is the recommended Staff-level fix?",
+          "options": {
+            "A": "Use a single stage with the full JDK to avoid version mismatch",
+            "B": "Switch the runtime stage to `eclipse-temurin:17-jre-alpine` or `gcr.io/distroless/java17` which contain only the JRE or a minimal runtime without shell or package manager",
+            "C": "Add `-Dsecurity.scan=false` to the JVM flags",
+            "D": "Copy only the `.class` files from the build stage to a scratch image"
+          },
+          "answer": "B",
+          "explanation": "Distroless and Alpine-JRE images drastically reduce attack surface: no shell, no package manager, no JDK tools like `jshell` or `jcmd`. A scratch image with raw `.class` files (option D) breaks because Spring Boot needs the full classpath and `java` launcher. Distroless images still include the JVM and standard library but nothing else — the right balance between security and functionality."
+        },
+        {
+          "id": 28,
+          "level": "advanced",
+          "category": "code",
+          "question": "Which `jcmd` subcommand shows heap memory breakdown (Eden, Survivor, Old Gen) without triggering a full GC?",
+          "options": {
+            "A": "`jcmd <pid> GC.run`",
+            "B": "`jcmd <pid> GC.heap_info`",
+            "C": "`jcmd <pid> VM.native_memory`",
+            "D": "`jcmd <pid> Thread.print`"
+          },
+          "answer": "B",
+          "explanation": "`jcmd <pid> GC.heap_info` prints current heap region usage (Young/Old sizes, used vs capacity) without forcing a collection. `GC.run` triggers a full GC — dangerous in production if the heap is large (long pause). `VM.native_memory` tracks off-heap allocations. `Thread.print` produces a thread dump."
+        },
+        {
+          "id": 29,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "On a new project, Gradle builds succeed locally but fail on CI with `error: package com.google.common.collect does not exist`. `JAVA_HOME` is correct. What is the most likely cause?",
+          "options": {
+            "A": "The JDK version differs between local and CI",
+            "B": "The Guava dependency is in the `compileOnly` scope but needed at compile time — the CI cache is stale, causing the JAR to be absent",
+            "C": "Guava is a JDK module that must be enabled with `--add-modules`",
+            "D": "`JAVA_HOME` points to JRE; Guava requires the full JDK"
+          },
+          "answer": "B",
+          "explanation": "If a dependency is correctly declared but absent on CI, the Gradle dependency cache is typically the culprit — CI machines often use clean caches per build. Less commonly, the dependency is scope-mismatched (`runtimeOnly` instead of `implementation`). Guava is a third-party JAR, not a JDK module, so `--add-modules` and JDK version differences are red herrings."
+        },
+        {
+          "id": 30,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "You are Staff engineer joining a new team. In week 1 you find `java -version` reports 11 on CI but `17` locally, and no Gradle toolchain is declared. What is your first move?",
+          "options": {
+            "A": "Upgrade CI agents to Java 17 immediately",
+            "B": "Add a Gradle toolchain declaration pinning Java 17 with Foojay resolver, commit it, verify CI downloads and uses Java 17 — then decide whether to upgrade CI agent base images",
+            "C": "Add `-source 11 -target 11` to `compileJava` options to match CI",
+            "D": "Set `JAVA_HOME` in the CI environment variable to point to Java 17"
+          },
+          "answer": "B",
+          "explanation": "A Gradle toolchain declaration is the durable fix: it is version-controlled, reproducible, and removes dependence on machine-level `JAVA_HOME`. Hardcoding `-source 11` downgrades the compiler and masks the real problem. Setting `JAVA_HOME` in CI is fragile — it drifts as agents are re-imaged. Upgrading CI agents immediately without a toolchain declaration means the next agent image update reintroduces the mismatch."
+        }
       ]
     },
     {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Area | Rule | Interview Tip | Gotcha |\n|---|---|---|---|\n| Definition | Give 1-line meaning first | Keep answer structured | Avoid vague statements |\n| Syntax | Show minimal working code | Explain output | Do not skip imports/signature |\n| Edge Cases | Always test boundaries | Mention at least one | Most bugs live here |\n| Debugging | Print intermediate states | Explain failure reason | Guessing wastes time |\n| Quality | Prefer clear names | Talk about readability | Clever but unclear code fails review |"
+      "title": "JDK, JRE, JVM — Interview Cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n|-------|---------------|---------------------|\n| **JDK** | Ships `javac`, tools, and the runtime libraries | \"The **JDK** is what compiles my sources and bundles the same bits I need to run locally.\" |\n| **JRE** | Execution stack without `javac` | \"A **JRE**-only box can run bytecode but cannot compile new sources.\" |\n| **JVM** | OS process that loads bytecode | \"Each `java` command spawns a **JVM** that verifies bytecode before `main`.\" |\n| **Bytecode** | Portable IR stored in `.class` | \"**Bytecode** lets one build artifact run anywhere a compatible **JVM** exists.\" |\n| **`javac`** | Compile-time; emits class files | \"`javac` is strictly compile-time; failures are syntax and type errors.\" |\n| **`java` launcher** | Runtime entry | \"The launcher configures **classpath**, GC, and native boot before `main`.\" |\n| **`main` contract** | `public static void main(String[] args)` | \"If `main` is wrong you get `NoSuchMethodError` after load, not compile errors.\" |\n| **Classpath** | Ordered roots for `.class` / JAR | \"**Classpath** issues produce `ClassNotFoundException` even when sources compile.\" |\n| **Module path** | JPMS visibility | \"**Module path** adds strong encapsulation beyond flat **classpath** scanning.\" |\n| **JAVA_HOME** | JDK root for build tools | \"Gradle reads **JAVA_HOME**; shells read **PATH** — both must agree.\" |\n| **PATH hygiene** | JDK `bin` before stale shims | \"I compare `where java` vs `where javac` when versions disagree on Windows.\" |\n| **UnsupportedClassVersionError** | Major version mismatch | \"That error means bytecode is newer than the runtime **JVM** major version.\" |\n| **Single-file launch** | `java Hello.java` since 11 | \"Single-file mode still ends in **bytecode**; I do not use it in CI.\" |\n| **Bytecode verification** | Safety gate | \"**Verification** rejects illegal stacks before any business logic executes.\" |\n| **JIT** | HotSpot optimizes warm code | \"**JIT** compiles hot methods to native code after interpreter warmup.\" |"
     }
   ]
 }

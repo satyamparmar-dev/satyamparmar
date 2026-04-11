@@ -17,540 +17,1028 @@
     "Day 21"
   ],
   "learningObjectives": [
-    "Explain HashMaps and Hashing with interview-grade clarity",
-    "Implement HashMaps and Hashing solutions in clean Java",
-    "Choose the right pattern and justify complexity",
-    "Handle boundary cases without brittle logic",
-    "Use this topic to solve coding-round problems confidently",
-    "Communicate trade-offs using concrete examples"
+    "Apply equals/hashCode rules for map keys",
+    "Choose HashMap, LinkedHashMap, TreeMap, or CHM appropriately",
+    "Implement frequency and grouping patterns in O(n)",
+    "Explain collision, load factor, and resize behavior",
+    "Design LRU-style structures with map + list",
+    "Recognize security and memory pitfalls of unbounded maps"
   ],
   "sections": [
     {
       "type": "why",
-      "title": "Why HashMaps and Hashing matters",
-      "content": "Hashing is the go-to interview tool for fast lookup; the key skill is choosing the right hash key representation.\n\nThis day is central to DSA interviews because it combines coding speed with reasoning quality. Interviewers usually evaluate three things:\n1. Can you identify the right pattern quickly?\n2. Can you explain why the approach is correct?\n3. Can you reason about complexity and edge cases?\n\nCollision intuition, key design, frequency maps, and lookup strategy.\n\nA high-quality answer should include:\n- concise approach summary,\n- small dry-run,\n- complexity analysis,\n- one alternative approach and trade-off.\n\nBy the end of Day 23, you should be able to solve representative problems and explain your decisions with confidence."
+      "title": "Why this topic shows up in real interviews",
+      "content": "Hash maps are the engine behind deduplication, caches, indexes, and frequency sketches in almost every backend service. Interviews love them because bugs are subtle: a broken **equals/hashCode** pair creates ghost keys, duplicate rows, or “impossible” cache misses. Production loves them until someone uses a **mutable key** or collides every key into one bucket under adversarial input.\n\nUnderstanding hashing is how you choose between **HashMap**, **LinkedHashMap**, **TreeMap**, and **ConcurrentHashMap**—not by memorizing names but by knowing whether you need **sorted keys**, **stable iteration**, **concurrency**, or raw **throughput**. That decision shows up when you build rate limiters, session stores, and inverted indexes.\n\nThis day also connects frequency problems to **O(n)** counting flows: first pass to accumulate, second pass to answer “first unique” or “top k.” Those patterns reappear in logging pipelines and stream windows where you cannot afford a quadratic pass over a growing vocabulary.\n\nOn call, “map memory exploded” often traces to **unbounded** `Map` growth in a cache without eviction, or to accidental retention via **static** maps holding request-scoped keys. The same structure that makes algorithms fast can hide leaks when lifecycle is unclear.\n\nFinally, hashing is a **security** surface: collision amplification used to be a real threat vector. You may never implement defenses yourself, but knowing why buckets **treeify** and why keys should be well-distributed keeps you credible in senior conversations."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - HashMaps and Hashing",
-      "content": "### Why this topic matters now\nHashing is the go-to interview tool for fast lookup; the key skill is choosing the right hash key representation.\n\n### Core interview mental model\nFor HashMaps and Hashing, first identify the problem family, then map it to a known pattern. Pattern-first thinking reduces random trial-and-error.\n\n### Implementation guidance\n1. Write the simplest correct version first.\n2. Validate using one normal and one edge case.\n3. Improve complexity only after correctness is locked.\n4. Refactor to readable helper methods.\n\n### Complexity and trade-off lens\nDo not state complexity by memory. Derive it from operations performed. Mention time + space and where each cost comes from.\n\n### Common failure mode\nMost failures in HashMaps and Hashing are not syntax errors. They come from broken invariants, weak boundary checks, or unclear state tracking.\n\n### Interview speaking template\n- \"I considered X because...\"\n- \"The invariant is...\"\n- \"Per iteration we do..., so complexity is...\"\n- \"An alternative would be..., but I chose this due to...\"\n\n### Production relevance\nEven outside interviews, these patterns improve throughput, latency, and correctness in backend data processing tasks.\n\n### Satyverse — deeper path (theory → practice)\n**Hash function + buckets** — collisions via chaining or open addressing; Java `HashMap` uses linked nodes and may treeify.\n\n**Load factor** trades memory vs collisions — default 0.75 is a good general default.\n\n**Equals/hashCode** must agree for keys; `IdentityHashMap` for reference semantics (rare).\n\n**Concurrent maps:** `ConcurrentHashMap` segment locking / node locking — avoid `null` keys."
+      "title": "HashMaps and Hashing — theory that sticks",
+      "content": "### Plain-language overview\n\nA **hash map** maps keys to values with expected **O(1)** get/put by hashing the key to a bucket, then resolving collisions with chaining or open addressing. Interviews focus on **equals/hashCode contracts**, **collision** behavior, and **when TreeMap wins**.\n\n**Interview angle:** separate **average** O(1) from **worst** O(n) without balanced buckets.\n\n### equals and hashCode contract\n\nIf two objects are **equal**, they **must** have the same **hashCode**. Violating this breaks **HashMap** lookups—entries appear missing. Symmetric: unequal objects may share hash codes (collision).\n\n**Interview angle:** in DTOs used as keys, override both or use immutable key types.\n\n### Collision strategies\n\n**Chaining:** bucket is list/tree of entries. **Open addressing:** probe sequence. Java **HashMap** bins become **treeified** when chains grow (Java 8+).\n\n**Interview angle:** worst case devolves to linear scan per bucket—adversarial keys.\n\n### Load factor and resize\n\nDefault load factor 0.75 balances space vs collisions. When size/capacity exceeds threshold, **resize** doubles buckets and **rehash**—amortized analysis matters.\n\n**Interview angle:** resizing is O(n) rare event; mention amortized O(1) insert.\n\n### HashMap vs TreeMap vs LinkedHashMap\n\n| Map | Order | get/put |\n| --- | --- | --- |\n| HashMap | undefined | O(1) expected |\n| LinkedHashMap | insertion/access | O(1) expected |\n| TreeMap | sorted keys | O(log n) |\n\n**Interview angle:** need sorted keys or range queries → TreeMap.\n\n### Immutable keys\n\nMutable keys that change hash after insert make entries **unreachable**. Prefer **String**, **Integer**, or immutable records.\n\n**Interview angle:** defensive copies for composite keys.\n\n### Frequency counting pattern\n\nSingle pass: **map.merge(k,1,Integer::sum)** or **getOrDefault**. Second pass for first unique character scans string with ordered iteration or LinkedHashMap.\n\n**Interview angle:** two passes O(n) time, O(min(n, alphabet)) space.\n\n### Multi-set and grouping\n\n**Map** keys to **List** values using **computeIfAbsent** to build adjacency-style structures—common in graphs and anagram buckets.\n\n### Security and hashing\n\n**Denial of service** via hash collision amplification—historical Java **String** hash seeding mitigations; know conceptually.\n\n### Production\n\nCaches, indexes, dedupe, counting. Watch **memory** of large maps and **concurrent** access—**ConcurrentHashMap** vs synchronized map.\n\n### 60-second story\n\n“I ensure equals/hashCode consistent for keys. I cite expected O(1) with collision caveats. I pick LinkedHashMap for predictable iteration, TreeMap for sorted keys. For frequency problems I do O(n) counting then O(n) answer scan. I mention unmodifiable keys and concurrent choices.”\n\n### Hash maps and hashing — discipline layer 1\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 1 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 1, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 2\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 2 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 2, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 3\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 3 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 3, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 4\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 4 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 4, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 5\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 5 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 5, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 6\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 6 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 6, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 7\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 7 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 7, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 8\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 8 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 8, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 9\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 9 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 9, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 10\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 10 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 10, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 11\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 11 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 11, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 12\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 12 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 12, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 13\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 13 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 13, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 14\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 14 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 14, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 15\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 15 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 15, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 16\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 16 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 16, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 17\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 17 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 17, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 18\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 18 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 18, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 19\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 19 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 19, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 20\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 20 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 20, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 21\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 21 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 21, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 22\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 22 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 22, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 23\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 23 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 23, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 24\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 24 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 24, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Hash maps and hashing — discipline layer 25\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 25 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 25, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n"
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "HashMaps and Hashing — basic",
       "language": "java",
       "filename": "Day23Basic.java",
-      "code": "package arch.day23;\n\npublic class Day23Basic {\n    public static void main(String[] args) {\n        String k = \"user:42\";\n        int buckets = 16;\n        int idx = Math.floorMod(k.hashCode(), buckets);\n        System.out.println(\"bucket=\" + idx);\n    }\n}",
       "level": "basic",
-      "output": "bucket=...\n",
-      "description": "Hash function idea: reduce key to bucket index with Math.abs(hash % n)."
+      "description": "Deterministic prints: reference shapes for dominant operations and common complexity classes.",
+      "code": "package arch.day23;\n\nimport java.util.*;\n\npublic class Day23Basic {\n\n    public static void main(String[] args) {\n        Map<String, Integer> m = new HashMap<>();\n        m.put(\"a\", 1);\n        m.put(\"b\", 2);\n        m.put(\"a\", m.get(\"a\") + 1);\n        System.out.println(\"=== HashMap basic ===\");\n        System.out.println(m);\n        System.out.println(\"size=\" + m.size());\n    }\n}\n",
+      "output": "=== HashMap basic ===\n{a=2, b=2}\nsize=2\n"
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "HashMaps and Hashing — intermediate",
       "language": "java",
       "filename": "Day23Intermediate.java",
-      "code": "package arch.day23;\n\nimport java.util.*;\n\npublic class Day23Intermediate {\n    public static void main(String[] args) {\n        Map<String, Integer> m = new HashMap<>(4, 0.75f);\n        for (int i = 0; i < 20; i++) {\n            m.put(\"k\" + i, i);\n        }\n        System.out.println(\"size=\" + m.size());\n    }\n}",
       "level": "intermediate",
-      "output": "size=20\n",
-      "description": "HashMap load: rehash when buckets get crowded — understand get/put O(1) average."
+      "description": "Four labeled scenarios comparing approaches with different asymptotic costs.",
+      "code": "package arch.day23;\n\nimport java.util.*;\n\npublic class Day23Intermediate {\n\n    static Map<Character, Integer> freq(String s) {\n        Map<Character, Integer> m = new HashMap<>();\n        for (char c : s.toCharArray()) {\n            m.put(c, m.getOrDefault(c, 0) + 1);\n        }\n        return m;\n    }\n\n    public static void main(String[] args) {\n        // --- Scenario 1: frequency map ---\n        System.out.println(\"--- Scenario 1: frequencies ---\");\n        System.out.println(freq(\"abracadabra\"));\n        System.out.println();\n\n        // --- Scenario 2: first non-repeating linear scan ---\n        System.out.println(\"--- Scenario 2: first unique char ---\");\n        String w = \"leetcode\";\n        Map<Character, Integer> f = freq(w);\n        char ans = '_';\n        for (char c : w.toCharArray()) {\n            if (f.get(c) == 1) {\n                ans = c;\n                break;\n            }\n        }\n        System.out.println(\"char=\" + ans);\n        System.out.println();\n\n        // --- Scenario 3: grouping by first letter ---\n        System.out.println(\"--- Scenario 3: group by bucket ---\");\n        String[] xs = { \"apple\", \"apricot\", \"banana\", \"cherry\" };\n        Map<Character, List<String>> g = new TreeMap<>();\n        for (String x : xs) {\n            g.computeIfAbsent(x.charAt(0), k -> new ArrayList<>()).add(x);\n        }\n        System.out.println(g);\n        System.out.println();\n\n        // --- Scenario 4: LinkedHashMap insertion order ---\n        System.out.println(\"--- Scenario 4: LinkedHashMap order ---\");\n        Map<Integer, String> ord = new LinkedHashMap<>();\n        ord.put(3, \"c\");\n        ord.put(1, \"a\");\n        ord.put(2, \"b\");\n        System.out.println(ord.keySet());\n    }\n}\n",
+      "output": "--- Scenario 1: frequencies ---\n{a=5, b=2, r=2, c=1, d=1}\n\n--- Scenario 2: first unique char ---\nchar=l\n\n--- Scenario 3: group by bucket ---\n{a=[apple, apricot], b=[banana], c=[cherry]}\n\n--- Scenario 4: LinkedHashMap order ---\n[3, 1, 2]\n"
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "HashMaps and Hashing — advanced",
       "language": "java",
       "filename": "Day23Advanced.java",
-      "code": "package arch.day23;\n\nimport java.util.*;\n\npublic class Day23Advanced {\n    public static void main(String[] args) {\n        Map<String, String> lru = new LinkedHashMap<>(16, 0.75f, true) {\n            @Override protected boolean removeEldestEntry(Map.Entry<String, String> e) {\n                return size() > 2;\n            }\n        };\n        lru.put(\"a\", \"1\");\n        lru.put(\"b\", \"2\");\n        lru.put(\"c\", \"3\");\n        lru.get(\"a\");\n        System.out.println(lru.keySet());\n    }\n}",
       "level": "advanced",
-      "output": "[b, c, a]\n",
-      "description": "LinkedHashMap access-order mode: LRU-style cache sketch."
+      "description": "Separated blocks plus printed decision tables for recurrences and tradeoffs.",
+      "code": "package arch.day23;\n\nimport java.util.*;\n\npublic class Day23Advanced {\n\n    record Key(String a, int b) {\n        @Override public boolean equals(Object o) {\n            return o instanceof Key k && a.equals(k.a) && b == k.b;\n        }\n        @Override public int hashCode() {\n            return Objects.hash(a, b);\n        }\n    }\n\n    public static void main(String[] args) {\n        // === Block 1: custom key with contract ===\n        System.out.println(\"=== Block 1: record key equals/hashCode ===\");\n        Map<Key, String> m = new HashMap<>();\n        m.put(new Key(\"x\", 1), \"found\");\n        System.out.println(m.get(new Key(\"x\", 1)));\n        System.out.println();\n\n        // === Block 2: choose map table ===\n        System.out.println(\"=== Block 2: pick your map ===\");\n        System.out.println(\"Need sorted keys        -> TreeMap\");\n        System.out.println(\"Need insertion order    -> LinkedHashMap\");\n        System.out.println(\"Need max throughput     -> HashMap + good hash\");\n        System.out.println(\"Need concurrent updates -> ConcurrentHashMap\");\n        System.out.println();\n\n        // === Block 3: load factor intuition ===\n        System.out.println(\"=== Block 3: resizing cost ===\");\n        System.out.println(\"When entries > capacity * loadFactor, capacity doubles and entries rehash.\");\n        System.out.println(\"Amortized O(1) insert despite rare O(n) resize.\");\n    }\n}\n",
+      "output": "=== Block 1: record key equals/hashCode ===\nfound\n\n=== Block 2: pick your map ===\nNeed sorted keys        -> TreeMap\nNeed insertion order    -> LinkedHashMap\nNeed max throughput     -> HashMap + good hash\nNeed concurrent updates -> ConcurrentHashMap\n\n=== Block 3: resizing cost ===\nWhen entries > capacity * loadFactor, capacity doubles and entries rehash.\nAmortized O(1) insert despite rare O(n) resize.\n"
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 23",
-      "diagramType": "component",
-      "description": "Visual model for HashMaps & Hashing",
-      "plantuml": "@startuml\ntitle Day 23 - HashMaps & Hashing\nactor Learner\nrectangle \"Satyverse(Satyam Parmar) Lesson Engine\" {\n  component \"Theory\"\n  component \"Code\"\n  component \"Exercise\"\n  component \"Interview Drill\"\n}\nLearner --> \"Theory\" : Understand concept\nLearner --> \"Code\" : Implement\nLearner --> \"Exercise\" : Practice\nLearner --> \"Interview Drill\" : Explain\n@enduml"
+      "title": "HashMap put — hash, bucket, resolve",
+      "diagramType": "sequence",
+      "description": "Caller, key object, hash function, bucket array, collision chain, and map API.",
+      "plantuml": "@startuml\ntitle HashMap put flow (conceptual)\n\nparticipant \"Caller\" as C\nparticipant \"key\" as K\nparticipant \"hashCode()\\n& spread\" as H\nparticipant \"bucket[]\\ntable\" as T\nparticipant \"Entry\\nchain/tree\" as E\nparticipant \"Map API\" as M\n\nC -> M : put(k,v)\nM -> K : hashCode()\nK -> H : mix bits\nH -> T : index = (n-1) & hash\nalt bucket empty\n  T -> E : new node\nelse collision\n  T -> E : equals scan / treeify\nend\nE -> M : assign value\nM -> C : previous value / null\n\nnote right of E : Worst case long chains\\ndegrade unless treeified\n@enduml"
     },
     {
       "type": "pitfalls",
-      "title": "Common Pitfalls",
+      "title": "Common pitfalls",
       "items": [
-        "Using mutable objects as map keys without stable hashCode/equals.",
-        "Choosing expensive key transformations inside tight loops.",
-        "Ignoring collision behavior and over-trusting O(1) claims.",
-        "Not handling missing keys safely with defaults.",
-        "Leaking memory by never removing stale cache entries."
+        "Breaking **equals/hashCode** symmetry — keys appear absent despite `contains` feeling true; add unit tests for key type; fix with IDE-generated methods or records.",
+        "**Mutable keys** mutated after `put` — entry stuck in wrong bucket; prod cache corruption; fix immutable keys or stable IDs.",
+        "Using **`hashCode` only** in equals — collisions cause false positives; must compare meaningful fields.",
+        "Choosing **TreeMap** for “speed” — adds O(log n) overhead when sort unused; profile; fix with HashMap unless range queries needed.",
+        "**ConcurrentHashMap** with **null** — `NullPointerException`; differs from HashMap; validate inputs.",
+        "Assuming **O(1) worst** case — crafted collisions degrade; monitor bucket stats in advanced cases; consider safer key types.",
+        "Storing **heavy values** without eviction — heap blowups; OOM during traffic; fix TTL, size caps, WeakReference values where appropriate.",
+        "Logging **map keys** with PII — compliance incidents; redact; fix structured logging policies."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - HashMaps and Hashing Problem Drill",
-      "problem": "Solve one medium-level Java problem for **HashMaps and Hashing**.\n\nRequirements:\n1. Provide brute-force and optimized approach.\n2. Explain why optimized approach is better.\n3. Include one edge-case test.\n4. Print expected output for sample input.\n5. State time/space complexity clearly.",
+      "title": "Practice exercise",
+      "difficulty": "Intermediate",
+      "problem": "**Day 23 — Hash maps (assignment alignment)**\n\n1. Build a **frequency map** for each character in a string (case-sensitive).\n2. Print the map for input `swiss`.\n3. Find the **first non-repeating character** in `leetcode` and print `char=...` (use frequency map + left-to-right scan).\n4. If none exists, print `char=_` (underscore).",
       "hints": [
-        "State invariant before writing loops/recursion.",
-        "Dry-run on paper for one non-trivial case.",
-        "Only optimize after baseline correctness."
+        "Use `HashMap<Character,Integer>` with `getOrDefault`.",
+        "Second pass must follow original string order, not map iteration order.",
+        "For `leetcode`, expect `l` as first unique."
       ],
-      "solution": "package arch.day23;\nimport java.util.*;\n\npublic class Day23Advanced {\n    static record Review(String topic, int confidence, boolean needsRevision) {}\n\n    public static void main(String[] args) {\n        List<Review> reviews = List.of(\n            new Review(\"HashMaps & Hashing\", 72, true),\n            new Review(\"Coding Practice\", 81, false),\n            new Review(\"Interview Explanation\", 68, true)\n        );\n\n        long reviseCount = reviews.stream().filter(Review::needsRevision).count();\n        int avg = (int) reviews.stream().mapToInt(Review::confidence).average().orElse(0);\n\n        System.out.println(\"avgConfidence = \" + avg);\n        System.out.println(\"needsRevision = \" + reviseCount);\n    }\n}\n",
-      "difficulty": "Intermediate"
+      "solution": "package arch.day23;\n\nimport java.util.*;\n\npublic class Day23Exercise {\n\n    static Map<Character, Integer> freq(String s) {\n        Map<Character, Integer> m = new HashMap<>();\n        for (char c : s.toCharArray()) {\n            m.put(c, m.getOrDefault(c, 0) + 1);\n        }\n        return m;\n    }\n\n    public static void main(String[] args) {\n        System.out.println(freq(\"swiss\"));\n        String w = \"leetcode\";\n        Map<Character, Integer> f = freq(w);\n        char ans = '_';\n        for (char c : w.toCharArray()) {\n            if (f.get(c) == 1) {\n                ans = c;\n                break;\n            }\n        }\n        System.out.println(\"char=\" + ans);\n    }\n}\n"
     },
     {
       "type": "interview",
       "title": "Interview Drill",
       "conceptual": [
         {
-          "question": "How does HashMap work?",
-          "answer": "Buckets from hash(key)%n; collision chains or trees; equals verifies key match.",
-          "followUps": [
-            {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Buckets from hash(key)%n; collision chains or trees; equals verifies key match. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            },
-            {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Buckets from hash(key)%n; collision chains or trees; equals verifies key match. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
-            }
-          ]
-        },
-        {
           "question": "equals/hashCode contract?",
-          "answer": "Equal objects must have same hashCode; unequal may collide—must handle collisions.",
+          "answer": "Equal objects must have equal hash codes; used by HashMap bucket choice and equality scan.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Equal objects must have same hashCode; unequal may collide—must handle collisions. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Equal objects must have same hashCode; unequal may collide—must handle collisions. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Load factor and resize?",
-          "answer": "When entries exceed capacity*loadFactor, table doubles (roughly)—rehash all entries.",
+          "question": "Average vs worst HashMap?",
+          "answer": "Expected O(1); worst O(n) with collisions; Java 8+ treeify mitigates long chains.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. When entries exceed capacity*loadFactor, table doubles (roughly)—rehash all entries. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. When entries exceed capacity*loadFactor, table doubles (roughly)—rehash all entries. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Java 8+ treeify?",
-          "answer": "Long chains convert to balanced trees—O(log n) worst per bucket vs O(n).",
+          "question": "Immutable keys why?",
+          "answer": "Mutation changes hash bucket placement—lost entries.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Long chains convert to balanced trees—O(log n) worst per bucket vs O(n). Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Long chains convert to balanced trees—O(log n) worst per bucket vs O(n). Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Why immutable keys preferred?",
-          "answer": "If key mutates after insert, bucket lookup breaks.",
+          "question": "HashMap vs TreeMap?",
+          "answer": "HashMap faster expected; TreeMap sorted keys O(log n).",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. If key mutates after insert, bucket lookup breaks. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. If key mutates after insert, bucket lookup breaks. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is consistent hashing?",
-          "answer": "Distributed caches—minimize key movement when nodes add/remove.",
+          "question": "LinkedHashMap when?",
+          "answer": "Need stable iteration order or access-order LRU.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Distributed caches—minimize key movement when nodes add/remove. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Distributed caches—minimize key movement when nodes add/remove. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Open addressing vs chaining?",
-          "answer": "Alternative collision strategies—Java HashMap uses chaining (with treeify).",
+          "question": "ConcurrentHashMap?",
+          "answer": "Thread-safe without locking whole map; no null keys/values.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Alternative collision strategies—Java HashMap uses chaining (with treeify). Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Alternative collision strategies—Java HashMap uses chaining (with treeify). Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Complexity average vs worst?",
-          "answer": "Average O(1); worst O(n) all collide—design hashes well.",
+          "question": "Load factor?",
+          "answer": "Triggers resize when size > capacity * lf—time/space tradeoff.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Average O(1); worst O(n) all collide—design hashes well. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Average O(1); worst O(n) all collide—design hashes well. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is IdentityHashMap?",
-          "answer": "Uses == instead of equals—reference identity keys.",
+          "question": "IdentityHashMap?",
+          "answer": "Uses reference identity, not equals.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Uses == instead of equals—reference identity keys. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Uses == instead of equals—reference identity keys. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "WeakHashMap use?",
-          "answer": "Entries garbage-collected when key only weakly reachable—caches with auto eviction.",
+          "question": "WeakHashMap?",
+          "answer": "Weak keys; entries may disappear when only weakly reachable—cache helper.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Entries garbage-collected when key only weakly reachable—caches with auto eviction. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Entries garbage-collected when key only weakly reachable—caches with auto eviction. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "LinkedHashMap access order?",
-          "answer": "LRU mode moves entries on get—useful for caches.",
+          "question": "computeIfAbsent?",
+          "answer": "Atomically initialize value if missing—avoid duplicate work races in concurrent contexts with care.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. LRU mode moves entries on get—useful for caches. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. LRU mode moves entries on get—useful for caches. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "ConcurrentHashMap vs Collections.synchronizedMap?",
-          "answer": "CHM finer locking/CAS segments—better concurrent throughput.",
+          "question": "How hashing DOS works?",
+          "answer": "Colliding keys degrade to linked lists; mitigated by salted hashes / treeify.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. CHM finer locking/CAS segments—better concurrent throughput. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. CHM finer locking/CAS segments—better concurrent throughput. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What makes a good hash function?",
-          "answer": "Uniform distribution, fast, uses all key fields relevant to equality.",
+          "question": "EnumMap?",
+          "answer": "Array indexed by enum ordinal—very fast small key universe.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Uniform distribution, fast, uses all key fields relevant to equality. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Uniform distribution, fast, uses all key fields relevant to equality. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Hash flooding attack?",
-          "answer": "Adversarial keys same bucket—mitigate with salted hashing or treeify.",
+          "question": "Records as keys?",
+          "answer": "Built-in equals/hashCode if components define them—good for DTO keys.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Adversarial keys same bucket—mitigate with salted hashing or treeify. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Adversarial keys same bucket—mitigate with salted hashing or treeify. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "ComputeIfAbsent?",
-          "answer": "Atomic “get or compute” for maps—careful with recursive compute.",
+          "question": "Why not mutable StringBuilder as key?",
+          "answer": "Changing contents breaks map invariants.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **HashMaps and Hashing** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Atomic “get or compute” for maps—careful with recursive compute. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **HashMaps and Hashing**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Atomic “get or compute” for maps—careful with recursive compute. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Resize cost?",
+          "answer": "O(n) rehash rare; amortized O(1) inserts.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Multiset with map?",
+          "answer": "Count values per key; or Guava Multiset in libraries.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "60-second story?",
+          "answer": "Contract, immutable keys, pick map variant by ordering/concurrency, cite collision caveats, O(n) frequency patterns.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "codeBased": [
         {
-          "question": "Count frequencies with HashMap merge.",
-          "answer": "map.merge(k,1,Integer::sum);",
+          "question": "Two-sum HashMap?",
+          "answer": "Map value→index; for each x check target-x.",
           "followUps": [
             {
-              "question": "What breaks if this **HashMaps and Hashing** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. map.merge(k,1,Integer::sum); Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. map.merge(k,1,Integer::sum); Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Group list of strings by first char.",
-          "answer": "Map<Character, List<String>> or computeIfAbsent.",
+          "question": "Anagram buckets?",
+          "answer": "Key = sorted chars or char count signature.",
           "followUps": [
             {
-              "question": "What breaks if this **HashMaps and Hashing** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Map<Character, List<String>> or computeIfAbsent. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Map<Character, List<String>> or computeIfAbsent. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Detect anagrams via character counts hash.",
-          "answer": "Normalize sorted string or count array as key.",
+          "question": "First unique character?",
+          "answer": "Count then scan string order.",
           "followUps": [
             {
-              "question": "What breaks if this **HashMaps and Hashing** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Normalize sorted string or count array as key. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Normalize sorted string or count array as key. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Two-sum complement with HashSet/Map.",
-          "answer": "Store seen values; check target-current in map.",
+          "question": "Longest substring k distinct?",
+          "answer": "Sliding window + freq map.",
           "followUps": [
             {
-              "question": "What breaks if this **HashMaps and Hashing** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Store seen values; check target-current in map. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Store seen values; check target-current in map. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Implement equals/hashCode for value class.",
-          "answer": "Use Objects.hash(field1,field2); equals on same fields.",
+          "question": "Subarray sum K?",
+          "answer": "Prefix sum counts in HashMap.",
           "followUps": [
             {
-              "question": "What breaks if this **HashMaps and Hashing** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Use Objects.hash(field1,field2); equals on same fields. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Use Objects.hash(field1,field2); equals on same fields. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Rehashing on resize—what happens?",
-          "answer": "Buckets redistributed; iterator may fail-fast if concurrent mod.",
+          "question": "Group anagrams?",
+          "answer": "Map signature to list of words.",
           "followUps": [
             {
-              "question": "What breaks if this **HashMaps and Hashing** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Buckets redistributed; iterator may fail-fast if concurrent mod. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Buckets redistributed; iterator may fail-fast if concurrent mod. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Use IdentityHashMap example.",
-          "answer": "Dedup object graph by reference not equals.",
+          "question": "Copy list with random?",
+          "answer": "Map original→clone nodes.",
           "followUps": [
             {
-              "question": "What breaks if this **HashMaps and Hashing** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Dedup object graph by reference not equals. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Dedup object graph by reference not equals. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "ConcurrentHashMap compute—thread safety?",
-          "answer": "Atomic per-bin; still document compound operations.",
+          "question": "Top K frequent?",
+          "answer": "Count map + min-heap of size k.",
           "followUps": [
             {
-              "question": "What breaks if this **HashMaps and Hashing** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Atomic per-bin; still document compound operations. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Atomic per-bin; still document compound operations. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "HashSet backed by HashMap—add complexity?",
-          "answer": "Same as map put—O(1) average.",
+          "question": "LRU?",
+          "answer": "HashMap + doubly linked list.",
           "followUps": [
             {
-              "question": "What breaks if this **HashMaps and Hashing** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Same as map put—O(1) average. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Same as map put—O(1) average. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Bad hash: only high bits—symptom?",
-          "answer": "Collisions cluster in low buckets—mask with spread functions (like HashMap mix).",
+          "question": "Design consistent hashing?",
+          "answer": "Ring of virtual nodes—beyond basic map.",
           "followUps": [
             {
-              "question": "What breaks if this **HashMaps and Hashing** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Collisions cluster in low buckets—mask with spread functions (like HashMap mix). Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Collisions cluster in low buckets—mask with spread functions (like HashMap mix). Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Union-Find alternative?",
+          "answer": "Sometimes map parent pointers; not HashMap heavy.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Word pattern match?",
+          "answer": "Bijection maps pattern char→word and word→char.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "seniorScenario": [
         {
-          "question": "Redis cluster resharding—conceptual tie?",
-          "answer": "Consistent hashing, slot migration—similar problem domain.",
+          "question": "Cache stampede on hot key?",
+          "answer": "Singleflight, locks per key, random TTL jitter.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **HashMaps and Hashing** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Consistent hashing, slot migration—similar problem domain. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Consistent hashing, slot migration—similar problem domain. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Large HashMap pause on resize?",
-          "answer": "Long pause if huge table—consider pre-sizing or off-heap structures.",
+          "question": "Large heap map memory?",
+          "answer": "Consider off-heap, sharding, eviction, compression of values.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **HashMaps and Hashing** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Long pause if huge table—consider pre-sizing or off-heap structures. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Long pause if huge table—consider pre-sizing or off-heap structures. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Custom key type in distributed map—serialization?",
-          "answer": "Stable equals across versions—schema evolution.",
+          "question": "Wrong equals in DTO breaks prod?",
+          "answer": "Symptoms: duplicates, missing lookups; add tests for hash/equals.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **HashMaps and Hashing** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Stable equals across versions—schema evolution. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Stable equals across versions—schema evolution. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Security: hashDoS on servlet parameter map?",
-          "answer": "JDK mitigations; limit input sizes; randomized hash seeds historically.",
+          "question": "CHM compute races?",
+          "answer": "Use compute methods carefully; avoid long-running callbacks.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **HashMaps and Hashing** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: JDK mitigations; limit input sizes; randomized hash seeds historically. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. JDK mitigations; limit input sizes; randomized hash seeds historically. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "ORM L2 cache keying—pitfall?",
-          "answer": "Include all relevant fields; mutable entities break cache.",
+          "question": "Migration from Hashtable?",
+          "answer": "Legacy synchronized; prefer CHM or HashMap single-thread.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **HashMaps and Hashing** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Include all relevant fields; mutable entities break cache. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Include all relevant fields; mutable entities break cache. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Metrics: HashMap memory per entry?",
-          "answer": "Footprint of nodes, pointers—tune initial capacity if known size.",
+          "question": "PII in map keys?",
+          "answer": "Logging leaks; redact; prefer opaque IDs.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **HashMaps and Hashing** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Footprint of nodes, pointers—tune initial capacity if known size. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Footprint of nodes, pointers—tune initial capacity if known size. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "wrongAnswers": [
-        "hashCode must be unique for every distinct object.",
-        "Equal objects can have different hashCodes if equals is overridden.",
-        "HashMap iteration order matches insertion order by default.",
-        "You can safely use mutable StringBuilder as HashMap key.",
-        "ConcurrentHashMap allows null keys like HashMap.",
-        "Worst-case HashMap get is always O(1)."
+        "Equal objects may have different hashCode — violates contract.",
+        "TreeMap has O(1) get — false: O(log n).",
+        "HashMap allows unlimited null keys — false: one null key.",
+        "ConcurrentHashMap allows null values — false.",
+        "Changing a key field updates map index automatically — false.",
+        "IdentityHashMap uses equals — false: reference identity.",
+        "hashCode must be unique per object — false: collisions allowed.",
+        "LinkedHashMap sorts keys — false: insertion or access order, not natural sort."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ Quiz — HashMaps and Hashing",
+      "description": "Thirty questions on contracts, map variants, concurrency, collisions, and classic counting problems.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "If two keys are equal per `equals`, `hashCode` must:",
+          "options": {
+            "A": "Differ",
+            "B": "Match",
+            "C": "Be zero",
+            "D": "Be random"
+          },
+          "answer": "B",
+          "explanation": "Contract required for HashMap correctness."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "HashMap get average time (simple model):",
+          "options": {
+            "A": "O(n)",
+            "B": "O(1) expected",
+            "C": "O(log n)",
+            "D": "O(1) worst always"
+          },
+          "answer": "B",
+          "explanation": "Worst can degrade with collisions."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "theory",
+          "question": "TreeMap ordering:",
+          "options": {
+            "A": "Insertion only",
+            "B": "Sorted by key",
+            "C": "Random",
+            "D": "Stack order"
+          },
+          "answer": "B",
+          "explanation": "Red-black tree backing."
+        },
+        {
+          "id": 4,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Mutable key modified after put:",
+          "options": {
+            "A": "Safe",
+            "B": "Likely breaks map lookup",
+            "C": "Auto updates",
+            "D": "Throws always"
+          },
+          "answer": "B",
+          "explanation": "Bucket index depends on original hash."
+        },
+        {
+          "id": 5,
+          "level": "intermediate",
+          "category": "code",
+          "question": "`computeIfAbsent` use:",
+          "options": {
+            "A": "Lazy map values",
+            "B": "Sort keys",
+            "C": "Delete all",
+            "D": "Thread lock"
+          },
+          "answer": "A",
+          "explanation": "Factory runs only if key missing."
+        },
+        {
+          "id": 6,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "LinkedHashMap offers:",
+          "options": {
+            "A": "Sorted keys always",
+            "B": "Predictable iteration order",
+            "C": "O(log n) get",
+            "D": "No hashing"
+          },
+          "answer": "B",
+          "explanation": "Insertion or access-order modes."
+        },
+        {
+          "id": 7,
+          "level": "intermediate",
+          "category": "code",
+          "question": "ConcurrentHashMap vs Collections.synchronizedMap:",
+          "options": {
+            "A": "Same locking",
+            "B": "CHM finer-grained concurrency",
+            "C": "CHM single lock",
+            "D": "Neither thread-safe"
+          },
+          "answer": "B",
+          "explanation": "Segment/bucket level synchronization."
+        },
+        {
+          "id": 8,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Java 8 HashMap long bucket chains:",
+          "options": {
+            "A": "Always list",
+            "B": "Treeify above threshold",
+            "C": "Throw",
+            "D": "Use BTree file"
+          },
+          "answer": "B",
+          "explanation": "Improves worst-case to O(log n) per bucket."
+        },
+        {
+          "id": 9,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Frequency count first pass:",
+          "options": {
+            "A": "O(n)",
+            "B": "O(n^2)",
+            "C": "O(1)",
+            "D": "O(log n)"
+          },
+          "answer": "A",
+          "explanation": "One char iteration with map updates."
+        },
+        {
+          "id": 10,
+          "level": "basic",
+          "category": "theory",
+          "question": "Load factor purpose:",
+          "options": {
+            "A": "Sort speed",
+            "B": "Space/time tradeoff before resize",
+            "C": "GC tuning",
+            "D": "Key order"
+          },
+          "answer": "B",
+          "explanation": "Triggers rehash when filling."
+        },
+        {
+          "id": 11,
+          "level": "advanced",
+          "category": "code",
+          "question": "Anagram grouping key:",
+          "options": {
+            "A": "Sorted chars string",
+            "B": "Object identity",
+            "C": "Random",
+            "D": "Array length only"
+          },
+          "answer": "A",
+          "explanation": "Canonical signature buckets anagrams."
+        },
+        {
+          "id": 12,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "equals symmetric requirement:",
+          "options": {
+            "A": "Optional",
+            "B": "a.equals(b)==b.equals(a)",
+            "C": "Only for String",
+            "D": "False always"
+          },
+          "answer": "B",
+          "explanation": "Equals contract."
+        },
+        {
+          "id": 13,
+          "level": "basic",
+          "category": "code",
+          "question": "`Map.merge` use:",
+          "options": {
+            "A": "Combine old and new values",
+            "B": "Delete key",
+            "C": "Sort map",
+            "D": "Lock map"
+          },
+          "answer": "A",
+          "explanation": "Remapping function for upserts."
+        },
+        {
+          "id": 14,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "IdentityHashMap uses:",
+          "options": {
+            "A": "equals/hashCode semantic",
+            "B": "reference identity",
+            "C": "Tree order",
+            "D": "FIFO"
+          },
+          "answer": "B",
+          "explanation": "`==` semantics for keys."
+        },
+        {
+          "id": 15,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Worst-case HashMap without treeify:",
+          "options": {
+            "A": "O(1)",
+            "B": "O(n) ops",
+            "C": "O(log n)",
+            "D": "O(1) log"
+          },
+          "answer": "B",
+          "explanation": "All keys one bucket chain."
+        },
+        {
+          "id": 16,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Subarray sum K with negatives:",
+          "options": {
+            "A": "Prefix sum + HashMap",
+            "B": "Two pointers only always",
+            "C": "Sort",
+            "D": "Stack"
+          },
+          "answer": "A",
+          "explanation": "Need frequency of prefix sums."
+        },
+        {
+          "id": 17,
+          "level": "basic",
+          "category": "theory",
+          "question": "hashCode for String cached:",
+          "options": {
+            "A": "Yes in JDK String",
+            "B": "Never",
+            "C": "Illegal",
+            "D": "Only in TreeMap"
+          },
+          "answer": "A",
+          "explanation": "Computed lazily and cached."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Two-sum with HashMap:",
+          "options": {
+            "A": "O(n) expected one pass",
+            "B": "O(n^2)",
+            "C": "O(log n)",
+            "D": "O(1) worst"
+          },
+          "answer": "A",
+          "explanation": "Store complement lookups."
+        },
+        {
+          "id": 19,
+          "level": "advanced",
+          "category": "code",
+          "question": "LRU cache design:",
+          "options": {
+            "A": "HashMap + doubly linked list",
+            "B": "TreeMap only",
+            "C": "Array only",
+            "D": "Stack only"
+          },
+          "answer": "A",
+          "explanation": "O(1) get and eviction."
+        },
+        {
+          "id": 20,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "EnumMap advantage:",
+          "options": {
+            "A": "Array-backed per enum ordinal",
+            "B": "Sorted strings",
+            "C": "Thread always safe",
+            "D": "Uses heap file"
+          },
+          "answer": "A",
+          "explanation": "Compact and fast for enum keys."
+        },
+        {
+          "id": 21,
+          "level": "basic",
+          "category": "code",
+          "question": "`keySet()` view modification:",
+          "options": {
+            "A": "Reflects map",
+            "B": "Always copy",
+            "C": "Immutable always",
+            "D": "Throws compile"
+          },
+          "answer": "A",
+          "explanation": "Backed by map; remove affects map."
+        },
+        {
+          "id": 22,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "WeakHashMap keys:",
+          "options": {
+            "A": "Strong always",
+            "B": "Weak references—GC can drop entries",
+            "C": "Sorted",
+            "D": "Primitive int"
+          },
+          "answer": "B",
+          "explanation": "Useful for caches with weak keys."
+        },
+        {
+          "id": 23,
+          "level": "advanced",
+          "category": "code",
+          "question": "Longest consecutive sequence nums:",
+          "options": {
+            "A": "Hash set + streak from starts",
+            "B": "Sort only O(n log n)",
+            "C": "O(n^3)",
+            "D": "BFS"
+          },
+          "answer": "A",
+          "explanation": "O(n) with set membership checks."
+        },
+        {
+          "id": 24,
+          "level": "intermediate",
+          "category": "code",
+          "question": "CopyOnWriteArrayList map analogy:",
+          "options": {
+            "A": "Read-heavy concurrency",
+            "B": "Write-heavy best",
+            "C": "Hash map variant",
+            "D": "Deque"
+          },
+          "answer": "A",
+          "explanation": "Different structure but similar read-mostly idea."
+        },
+        {
+          "id": 25,
+          "level": "basic",
+          "category": "theory",
+          "question": "null keys in HashMap:",
+          "options": {
+            "A": "One null key allowed",
+            "B": "Unlimited null keys",
+            "C": "Never",
+            "D": "Two null keys"
+          },
+          "answer": "A",
+          "explanation": "HashMap permits one null key."
+        },
+        {
+          "id": 26,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "ConcurrentHashMap null keys:",
+          "options": {
+            "A": "Allowed",
+            "B": "Not allowed",
+            "C": "Two nulls",
+            "D": "Only values null illegal"
+          },
+          "answer": "B",
+          "explanation": "Neither null keys nor null values in CHM."
+        },
+        {
+          "id": 27,
+          "level": "advanced",
+          "category": "theory",
+          "question": "equals consistent with hashCode across versions:",
+          "options": {
+            "A": "Irrelevant",
+            "B": "Must remain if persisted as key",
+            "C": "Can change freely",
+            "D": "Only for int"
+          },
+          "answer": "B",
+          "explanation": "Serialized maps break if contract shifts."
+        },
+        {
+          "id": 28,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Group by frequency for top K:",
+          "options": {
+            "A": "Heap + freq map",
+            "B": "Stack",
+            "C": "Deque only",
+            "D": "O(1) always"
+          },
+          "answer": "A",
+          "explanation": "Bucket frequencies then heapify."
+        },
+        {
+          "id": 29,
+          "level": "basic",
+          "category": "code",
+          "question": "`getOrDefault` when absent:",
+          "options": {
+            "A": "Throws",
+            "B": "Returns default without inserting",
+            "C": "Inserts default",
+            "D": "Removes key"
+          },
+          "answer": "B",
+          "explanation": "Read-only default."
+        },
+        {
+          "id": 30,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why avoid Float/Double as keys carelessly:",
+          "options": {
+            "A": "NaN and precision equals issues",
+            "B": "Always illegal",
+            "C": "Faster",
+            "D": "Sorted automatically"
+          },
+          "answer": "A",
+          "explanation": "Equality surprises with floating point."
+        }
       ]
     },
     {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Area | Day 23 Focus | Quick Reminder | Gotcha |\n|---|---|---|---|\n| Pattern | HashMaps and Hashing | Choose pattern before coding | Random brute-force wandering |\n| Correctness | Invariant + edge checks | Dry-run once | Off-by-one / null-state miss |\n| Complexity | Derive, do not guess | Mention time + space | Incomplete complexity answers |\n| Communication | Explain decisions | Use trade-off statement | Generic textbook responses |\n| Quality | Readable Java methods | Stable naming + small units | Clever but fragile logic |"
+      "title": "HashMaps and Hashing — cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n| --- | --- | --- |\n| equals/hashCode | Equal → same hash | Contract tests |\n| HashMap | expected O(1) | Watch collisions |\n| TreeMap | sorted keys | O(log n) |\n| LinkedHashMap | insert/access order | LRU mode |\n| CHM | concurrent | no null key/value |\n| Immutable key | stable hash | avoid lost entries |\n| Load factor | resize trigger | amortized cost |\n| Treeify | long buckets | Java 8+ |\n| computeIfAbsent | lazy init | grouping |\n| merge | upsert combine | counters |\n| Frequency | two pass O(n) | first unique |\n| Anagram key | char count sig | bucket words |\n| Two-sum | map complement | O(n) expected |\n| Subarray K | prefix sums | map counts |\n| Top K freq | heap + map | linearithmic |"
     }
   ]
 }

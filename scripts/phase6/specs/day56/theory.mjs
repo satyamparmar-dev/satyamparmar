@@ -1,0 +1,3 @@
+export const theoryTitle = "Saga Pattern & Distributed Transactions";
+
+export const theoryBase = "### Day 56 — **Saga** **pattern** **and** **distributed** **transactions**\n\n### 1. Problem\nCross-service **strong** **consistency** is rare without tight coupling.\n\n### 2. Saga basics\nSequence of local transactions plus compensations.\n\n### 3. Orchestration\nCentral coordinator issues commands.\n\n### 4. Choreography\nServices react to events.\n\n### 5. Compensation\nSemantic undo—not always a SQL delete.\n\n### 6. Idempotency\nForward and backward steps must tolerate retries.\n\n### 7. Persistence\nSaga instance row or event journal.\n\n### 8. Story\nPayment captured, inventory failed → refund compensation with audit trail.";

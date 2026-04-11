@@ -35,37 +35,37 @@
     {
       "type": "theory",
       "title": "Theory and Internals - Spring Kafka",
-      "content": "### Day 65 — **Spring** **Kafka**\n\n### 1. Producer side\n**KafkaTemplate**, **transactions**, **send** callbacks.\n\n### 2. Consumer side\n**@KafkaListener**, **batch** vs **record**, **manual** ack.\n\n### 3. Error handling\n**DefaultErrorHandler**, **retry** topics, **DLT** publishing.\n\n### 4. Concurrency\nContainer **threads** vs **partitions**.\n\n### 5. Observability\n**Micrometer** metrics and **tracing**.\n\n### 6. Story\nManual **ack** before DB commit causes **loss**; reorder with **transactional** listener or **outbox**."
+      "content": "### Day 65 — **Spring** **Kafka**\n\n### 1. Producer side\n**KafkaTemplate**, **transactions**, **send** callbacks.\n\n### 2. Consumer side\n**@KafkaListener**, **batch** vs **record**, **manual** ack.\n\n### 3. Error handling\n**DefaultErrorHandler**, **retry** topics, **DLT** publishing.\n\n### 4. Concurrency\nContainer **threads** vs **partitions**.\n\n### 5. Observability\n**Micrometer** metrics and **tracing**.\n\n### 6. Story\nManual **ack** before DB commit causes **loss**; reorder with **transactional** listener or **outbox**.\n"
     },
     {
       "type": "code",
       "title": "Basic — Spring Kafka vocabulary",
       "language": "java",
       "filename": "Day65Basic.java",
-      "code": "package arch.day65;\n\npublic class Day65Basic {\n    public static void main(String[] args) {\n        System.out.println(\"@KafkaListener: managed consumer callback entrypoint\");\n        System.out.println(\"KafkaTemplate: producer facade for send()\");\n        System.out.println(\"Acknowledgment: manual commit hook\");\n    }\n}\n",
       "level": "basic",
-      "output": "@KafkaListener: managed consumer callback entrypoint\nKafkaTemplate: producer facade for send()\nAcknowledgment: manual commit hook\n",
-      "description": "Listener vs template headline."
+      "description": "Listener vs template headline.",
+      "code": "package arch.day65;\n\npublic class Day65Basic {\n    public static void main(String[] args) {\n        System.out.println(\"@KafkaListener: managed consumer callback entrypoint\");\n        System.out.println(\"KafkaTemplate: producer facade for send()\");\n        System.out.println(\"Acknowledgment: manual commit hook\");\n    }\n}\n",
+      "output": "@KafkaListener: managed consumer callback entrypoint\nKafkaTemplate: producer facade for send()\nAcknowledgment: manual commit hook\n"
     },
     {
       "type": "code",
       "title": "Intermediate — Concurrency vs partitions",
       "language": "java",
       "filename": "Day65Intermediate.java",
-      "code": "package arch.day65;\n\npublic class Day65Intermediate {\n    public static void main(String[] args) {\n        System.out.println(\"concurrency should relate to partitions, not infinite threads\");\n    }\n}\n",
       "level": "intermediate",
-      "output": "concurrency should relate to partitions, not infinite threads\n",
-      "description": "Print reminder string from assignment."
+      "description": "Print reminder string from assignment.",
+      "code": "package arch.day65;\n\npublic class Day65Intermediate {\n    public static void main(String[] args) {\n        System.out.println(\"concurrency should relate to partitions, not infinite threads\");\n    }\n}\n",
+      "output": "concurrency should relate to partitions, not infinite threads\n"
     },
     {
       "type": "code",
       "title": "Advanced — Error handler pseudo-flow",
       "language": "java",
       "filename": "Day65Advanced.java",
-      "code": "package arch.day65;\n\npublic class Day65Advanced {\n    public static void main(String[] args) {\n        int attempts = 0;\n        int max = 4;\n        while (attempts < max) {\n            attempts++;\n            if (attempts == 3) break;\n        }\n        System.out.println(\"stoppedAfterAttempts=\" + attempts);\n    }\n}\n",
       "level": "advanced",
-      "output": "stoppedAfterAttempts=3\n",
-      "description": "Toy retry attempts counter."
+      "description": "Toy retry attempts counter.",
+      "code": "package arch.day65;\n\npublic class Day65Advanced {\n    public static void main(String[] args) {\n        int attempts = 0;\n        int max = 4;\n        while (attempts < max) {\n            attempts++;\n            if (attempts == 3) break;\n        }\n        System.out.println(\"stoppedAfterAttempts=\" + attempts);\n    }\n}\n",
+      "output": "stoppedAfterAttempts=3\n"
     },
     {
       "type": "diagram",
@@ -91,12 +91,19 @@
     {
       "type": "exercise",
       "title": "Exercise — Spring Kafka — concurrency literacy (Day 65 assignment)",
+      "difficulty": "Advanced",
       "problem": "Print **exactly**: concurrency should relate to partitions, not infinite threads",
       "hints": [
-        "Matches d65q4 expectedOutput verbatim."
+        "Matches d65q4 expectedOutput verbatim.",
+        "Name one **metric** and one **config** you would check on-call for this day’s topic.",
+        "State a **failure mode** (e.g. rebalance, ISR shrink, schema break) tied to your answer."
       ],
-      "solution": "package arch.day65;\n\npublic class Day65Exercise {\n    public static void main(String[] args) {\n        System.out.println(\"concurrency should relate to partitions, not infinite threads\");\n    }\n}\n",
-      "difficulty": "Advanced"
+      "solution": "package arch.day65;\n\npublic class Day65Exercise {\n    public static void main(String[] args) {\n        System.out.println(\"concurrency should relate to partitions, not infinite threads\");\n    }\n}\n"
+    },
+    {
+      "type": "useCases",
+      "title": "Use cases — Spring Kafka",
+      "content": "## Use cases — **Spring Kafka**\n\n### 1) **Order** **service** **@KafkaListener**\n**Context:** **Spring** **Boot** **microservice** **consumes** **order** **events** and **writes** **DB**.\n**Why Day 65:** **Container** **concurrency** vs **partition** count; **error** **handlers**.\n**Implementation outline:**\n1. Set **concurrency** ≤ meaningful **partition** **parallelism**.\n2. Use **DefaultErrorHandler** + **backoff** + **DLQ** **publisher** for **poison** **messages**.\n3. **AckMode** **MANUAL** when **commit** must follow **DB** **txn**.\n**Failure hook:** **Infinite** **retry** on **deserialization** **error** **blocks** **partition**.\n\n### 2) **KafkaTemplate** **for** **command** **topics**\n**Context:** **REST** **controller** **triggers** **async** **workflow** **via** **Kafka**.\n**Why Day 65:** **Producer** **config** in **Spring** **must** **mirror** **platform** **standards**.\n**Implementation outline:**\n1. Externalize **acks**, **retries**, ** linger**, **compression** in **config** **server**.\n2. **Micrometer** **metrics** for **send** **failures** and **latency**.\n3. **Integration** **test** with **EmbeddedKafka** + **Testcontainers** for **realism**.\n**Failure hook:** **Blocking** **send** on **metadata** **outage** **exhausts** **tomcat** **threads**.\n\n### 3) **Batch** **listener** **for** **bulk** **indexing**\n**Context:** **Elasticsearch** **bulk** **API** prefers **batches** of **records**.\n**Why Day 65:** **Batch** **error** **handling** and **partial** **failure** **semantics**.\n**Implementation outline:**\n1. **Parse** **batch**; **ack** **offsets** only after **successful** **bulk** **response**.\n2. **Split** **failures** into **retry** vs **DLQ** per **record** **key**.\n**Failure hook:** **One** **bad** **JSON** **record** **fails** **entire** **batch** without **splitting**.\n\n### 4) **Transactional** **outbox** **relay**\n**Context:** **@Transactional** **DB** **write** + **relay** **to** **Kafka** **same** **process**.\n**Why Day 65:** **KafkaTransactionManager** + **DB** **tx** **ordering** **must** **match** **design**.\n**Implementation outline:**\n1. **Chained** **transaction** **manager** only if **ops** **approved** **latency** **cost**.\n2. **Idempotent** **producer** as **baseline** even **without** **full** **transactions**.\n**Failure hook:** **Partial** **commit** **ordering** → **lost** **events** or **orphan** **rows**.\n"
     },
     {
       "type": "interview",
@@ -107,12 +114,12 @@
           "answer": "Spring **producer** facade with **transaction** support and **callbacks** for **send** results. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Spring **producer** facade with **transaction** support and **callbacks** for **send** results. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For **What is **KafkaTemplate**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Spring **producer** facade with **transaction** support and **callbacks** for **send** res Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -121,12 +128,12 @@
           "answer": "Annotated **listener** method invoked with **ConsumerRecord** or payload types; integrates with **container** factories. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Annotated **listener** method invoked with **ConsumerRecord** or payload types; integrates with **co Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For ****@KafkaListener** basics?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Annotated **listener** method invoked with **ConsumerRecord** or payload types; integrates Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -135,12 +142,12 @@
           "answer": "Call **acknowledge** after successful processing for **at-least-once** control. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Call **acknowledge** after successful processing for **at-least-once** control. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For ****Acknowledgment** manual commit?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Call **acknowledge** after successful processing for **at-least-once** control. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -149,12 +156,12 @@
           "answer": "Configures **concurrency**, **error** handlers, **deserializer** adapters. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Configures **concurrency**, **error** handlers, **deserializer** adapters. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For ****ConcurrentKafkaListenerContainerFactory**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Configures **concurrency**, **error** handlers, **deserializer** adapters. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -163,12 +170,12 @@
           "answer": "Policies for **retries** and **seek** behavior on failures with backoff and **DLT** support. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Policies for **retries** and **seek** behavior on failures with backoff and **DLT** support. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For ****DefaultErrorHandler** / **SeekToCurrentErrorHandler**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Policies for **retries** and **seek** behavior on failures with backoff and **DLT** suppor For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -177,12 +184,12 @@
           "answer": "Binds **DB** and **Kafka** transactions when using **chained** transaction managers carefully. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Binds **DB** and **Kafka** transactions when using **chained** transaction managers carefully. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For ****KafkaTransactionManager** role?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Binds **DB** and **Kafka** transactions when using **chained** transaction managers carefu Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -191,12 +198,12 @@
           "answer": "Declarative **retry** topics + **DLT** wiring with Spring Kafka support. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Declarative **retry** topics + **DLT** wiring with Spring Kafka support. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For ****@RetryableTopic** pattern?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Declarative **retry** topics + **DLT** wiring with Spring Kafka support. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -205,12 +212,12 @@
           "answer": "Hooks for **health** signals and **lag** based scaling integrations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Hooks for **health** signals and **lag** based scaling integrations. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For ****Listener** **container** **idle** events?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Hooks for **health** signals and **lag** based scaling integrations. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -219,12 +226,12 @@
           "answer": "Shared **configs** for **deserializers** and **security** settings. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Shared **configs** for **deserializers** and **security** settings. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For ****ConsumerFactory** immutable props?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Shared **configs** for **deserializers** and **security** settings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -233,12 +240,12 @@
           "answer": "Supplies **KafkaProducer** instances with Spring lifecycle management. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Supplies **KafkaProducer** instances with Spring lifecycle management. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For ****ProducerFactory** bean?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Supplies **KafkaProducer** instances with Spring lifecycle management. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -247,12 +254,12 @@
           "answer": "Threads should relate to **partition** **throughput** goals—too many waste resources. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Threads should relate to **partition** **throughput** goals—too many waste resources. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For **Why tune **concurrency** vs partitions?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Threads should relate to **partition** **throughput** goals—too many waste resources. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -261,12 +268,12 @@
           "answer": "Wrapper that routes **bad** records to handler instead of **fatal** consumer loop. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Wrapper that routes **bad** records to handler instead of **fatal** consumer loop. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For ****ErrorHandlingDeserializer**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Wrapper that routes **bad** records to handler instead of **fatal** consumer loop. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -275,12 +282,12 @@
           "answer": "Skip messages without committing offsets if policy matches—use carefully. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Skip messages without committing offsets if policy matches—use carefully. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For ****RecordFilterStrategy**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Skip messages without committing offsets if policy matches—use carefully. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -289,12 +296,12 @@
           "answer": "Receive **List** of records per poll for micro-batching but watch **timeout** **budgets**. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Receive **List** of records per poll for micro-batching but watch **timeout** **budgets**. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For ****Batch** listener mode?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Receive **List** of records per poll for micro-batching but watch **timeout** **budgets**. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         },
@@ -303,12 +310,40 @@
           "answer": "Metrics and **tracing** hooks for Spring Kafka 3+ observability stack. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**.",
           "followUps": [
             {
-              "question": "Production follow-up: which **dashboards** or **metrics** expose this for **Spring Kafka**?",
-              "answer": "Start with **client** **outbound** **histograms** and **resilience4j** **circuitbreaker** **state** **gauges**, then open **distributed** **traces** filtered by **service** **name** and **route**. Metrics and **tracing** hooks for Spring Kafka 3+ observability stack. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For ****Observation** / **Micrometer** integration?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
             },
             {
-              "question": "How do you **roll out** a policy change here without a **retry** **storm**?",
-              "answer": "Use **feature** **flags**, **canary** **deployments**, **tight** **retry** **budgets** on **non-idempotent** calls, and **verify** with **load** tests that **match** **production** **fan-out**. Metrics and **tracing** hooks for Spring Kafka 3+ observability stack. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**."
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+            }
+          ]
+        },
+        {
+          "question": "What is a **rebalance storm** and a common trigger?",
+          "answer": "Many consumers **enter** and **exit** the group rapidly, causing **constant** partition revocation. Common triggers: **handler** time exceeding **max.poll.interval.ms**, **GC** pauses, **too-small** session timeouts, or **buggy** deployment rollouts.",
+          "followUps": [
+            {
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For **What is a **rebalance storm** and a common trigger?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+            },
+            {
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+            }
+          ]
+        },
+        {
+          "question": "Why are **sticky partitioners** relevant for **null keys**?",
+          "answer": "They improve **batching** by keeping **null-key** records on the same partition for a while, improving **throughput** but changing **spread** versus pure round-robin. **Throughput** tuning can accidentally create **hotspots** when misread as random sharding.",
+          "followUps": [
+            {
+              "question": "What production metric would you watch first to validate that answer?",
+              "answer": "For **Why are **sticky partitioners** relevant for **null keys**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+            },
+            {
+              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
+              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
             }
           ]
         }
@@ -319,12 +354,12 @@
           "answer": "// @KafkaListener(topics = \"orders\", groupId = \"g1\")",
           "followUps": [
             {
-              "question": "What breaks at **runtime** if this snippet is mis-wired?",
-              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What failure mode shows up first when this is misconfigured under load?",
+              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// @KafkaListener(topics = \"orders\", groupId = \"g1\")** to observable signals before jumping to code changes."
             },
             {
-              "question": "How do you **test** this in **CI** without **flaky** **network**?",
-              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "How would you prove correctness in staging without flaky integration tests?",
+              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
             }
           ]
         },
@@ -333,12 +368,12 @@
           "answer": "// void onMsg(String v, Acknowledgment ack)",
           "followUps": [
             {
-              "question": "What breaks at **runtime** if this snippet is mis-wired?",
-              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What failure mode shows up first when this is misconfigured under load?",
+              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// void onMsg(String v, Acknowledgment ack)** to observable signals before jumping to code changes."
             },
             {
-              "question": "How do you **test** this in **CI** without **flaky** **network**?",
-              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "How would you prove correctness in staging without flaky integration tests?",
+              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
             }
           ]
         },
@@ -347,12 +382,12 @@
           "answer": "// template.send(topic, key, value).completable()",
           "followUps": [
             {
-              "question": "What breaks at **runtime** if this snippet is mis-wired?",
-              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What failure mode shows up first when this is misconfigured under load?",
+              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// template.send(topic, key, value).completable()** to observable signals before jumping to code changes."
             },
             {
-              "question": "How do you **test** this in **CI** without **flaky** **network**?",
-              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "How would you prove correctness in staging without flaky integration tests?",
+              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
             }
           ]
         },
@@ -361,12 +396,12 @@
           "answer": "// factory.setConcurrency(3);",
           "followUps": [
             {
-              "question": "What breaks at **runtime** if this snippet is mis-wired?",
-              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What failure mode shows up first when this is misconfigured under load?",
+              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// factory.setConcurrency(3);** to observable signals before jumping to code changes."
             },
             {
-              "question": "How do you **test** this in **CI** without **flaky** **network**?",
-              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "How would you prove correctness in staging without flaky integration tests?",
+              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
             }
           ]
         },
@@ -375,12 +410,12 @@
           "answer": "// publishes failed record to DLT",
           "followUps": [
             {
-              "question": "What breaks at **runtime** if this snippet is mis-wired?",
-              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What failure mode shows up first when this is misconfigured under load?",
+              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// publishes failed record to DLT** to observable signals before jumping to code changes."
             },
             {
-              "question": "How do you **test** this in **CI** without **flaky** **network**?",
-              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "How would you prove correctness in staging without flaky integration tests?",
+              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
             }
           ]
         },
@@ -389,12 +424,12 @@
           "answer": "// exponentialBackOff with maxAttempts",
           "followUps": [
             {
-              "question": "What breaks at **runtime** if this snippet is mis-wired?",
-              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What failure mode shows up first when this is misconfigured under load?",
+              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// exponentialBackOff with maxAttempts** to observable signals before jumping to code changes."
             },
             {
-              "question": "How do you **test** this in **CI** without **flaky** **network**?",
-              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "How would you prove correctness in staging without flaky integration tests?",
+              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
             }
           ]
         },
@@ -403,12 +438,12 @@
           "answer": "// enables listener annotation processing",
           "followUps": [
             {
-              "question": "What breaks at **runtime** if this snippet is mis-wired?",
-              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What failure mode shows up first when this is misconfigured under load?",
+              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// enables listener annotation processing** to observable signals before jumping to code changes."
             },
             {
-              "question": "How do you **test** this in **CI** without **flaky** **network**?",
-              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "How would you prove correctness in staging without flaky integration tests?",
+              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
             }
           ]
         },
@@ -417,12 +452,12 @@
           "answer": "// spring.json.trusted.packages",
           "followUps": [
             {
-              "question": "What breaks at **runtime** if this snippet is mis-wired?",
-              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What failure mode shows up first when this is misconfigured under load?",
+              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// spring.json.trusted.packages** to observable signals before jumping to code changes."
             },
             {
-              "question": "How do you **test** this in **CI** without **flaky** **network**?",
-              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "How would you prove correctness in staging without flaky integration tests?",
+              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
             }
           ]
         },
@@ -431,12 +466,12 @@
           "answer": "// KafkaAdmin creates topic if permitted",
           "followUps": [
             {
-              "question": "What breaks at **runtime** if this snippet is mis-wired?",
-              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What failure mode shows up first when this is misconfigured under load?",
+              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// KafkaAdmin creates topic if permitted** to observable signals before jumping to code changes."
             },
             {
-              "question": "How do you **test** this in **CI** without **flaky** **network**?",
-              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "How would you prove correctness in staging without flaky integration tests?",
+              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
             }
           ]
         },
@@ -445,12 +480,40 @@
           "answer": "// registerShutdownHook",
           "followUps": [
             {
-              "question": "What breaks at **runtime** if this snippet is mis-wired?",
-              "answer": "Misconfiguration usually surfaces as **timeouts**, **503**, or **silent** **fallbacks**—verify **beans**, **profiles**, and **classpath** **starters**. Reference **Actuator** **health** and **metrics** before guessing. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What failure mode shows up first when this is misconfigured under load?",
+              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// registerShutdownHook** to observable signals before jumping to code changes."
             },
             {
-              "question": "How do you **test** this in **CI** without **flaky** **network**?",
-              "answer": "Prefer **WireMock** or **MockWebServer** with **deterministic** **responses**, assert **Resilience4j** **events**, and keep **tests** **hermetic** so **pipelines** stay **green**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "How would you prove correctness in staging without flaky integration tests?",
+              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
+            }
+          ]
+        },
+        {
+          "question": "Why might **`fetch.max.wait.ms`** reduce empty fetches but raise latency?",
+          "answer": "Brokers **wait** up to this bound to **accumulate** data, reducing **busy** polling. Under **low** traffic it can add **wait** time—pair with **`fetch.min.bytes`** consciously.",
+          "followUps": [
+            {
+              "question": "What failure mode shows up first when this is misconfigured under load?",
+              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **Brokers **wait** up to this bound to **accumulate** data, reducing **busy** polling. Under **low** t** to observable signals before jumping to code changes."
+            },
+            {
+              "question": "How would you prove correctness in staging without flaky integration tests?",
+              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
+            }
+          ]
+        },
+        {
+          "question": "What does **`enable.idempotence=true`** typically imply for other producer configs?",
+          "answer": "It enables **idempotent** semantics and may adjust **retries** and **`acks`** expectations—**interviewers** expect you to read **docs** for your **exact** client version rather than memorizing defaults.",
+          "followUps": [
+            {
+              "question": "What failure mode shows up first when this is misconfigured under load?",
+              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **It enables **idempotent** semantics and may adjust **retries** and **`acks`** expectations—**intervi** to observable signals before jumping to code changes."
+            },
+            {
+              "question": "How would you prove correctness in staging without flaky integration tests?",
+              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
             }
           ]
         }
@@ -461,12 +524,12 @@
           "answer": "**(1) Immediate response** Thread dump.\n\n**(2) Root cause** Blocking calls in **@KafkaListener**.\n\n**(3) Fix** Offload or increase pool carefully.\n\n**(4) Prevention** Lint blocking calls. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
-              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "How do you communicate blast radius and ETA to stakeholders during the incident?",
+              "answer": "For ****Incident:** Listener **threads** exhausted.**, report **which topics/partitions** lag, **whether writes are still accepted**, **data-loss risk** (ISR), and **consumer backlog time**. Give a **bounded** ETA tied to a concrete mitigation (scale, pause traffic, fail over)."
             },
             {
-              "question": "Which **post-incident** **action** items are **non-negotiable**?",
-              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "What permanent guardrails prevent a repeat in six months?",
+              "answer": "Add **SLOs** on lag and ISR, **game days** for AZ loss and broker restarts, **capacity models** for partitions, and **review gates** for retention/compaction and ACL changes."
             }
           ]
         },
@@ -475,12 +538,12 @@
           "answer": "**(1) Immediate response** Duplication/loss confusion.\n\n**(2) Root cause** Wrong ordering.\n\n**(3) Fix** Transaction sync boundaries.\n\n**(4) Prevention** Tests. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
-              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "How do you communicate blast radius and ETA to stakeholders during the incident?",
+              "answer": "For ****Bug:** **Ack** before DB **commit**.**, report **which topics/partitions** lag, **whether writes are still accepted**, **data-loss risk** (ISR), and **consumer backlog time**. Give a **bounded** ETA tied to a concrete mitigation (scale, pause traffic, fail over)."
             },
             {
-              "question": "Which **post-incident** **action** items are **non-negotiable**?",
-              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "What permanent guardrails prevent a repeat in six months?",
+              "answer": "Add **SLOs** on lag and ISR, **game days** for AZ loss and broker restarts, **capacity models** for partitions, and **review gates** for retention/compaction and ACL changes."
             }
           ]
         },
@@ -489,12 +552,12 @@
           "answer": "**(1) Immediate response** Poison payload.\n\n**(2) Root cause** No DLT path.\n\n**(3) Fix** Error handler + DLT.\n\n**(4) Prevention** Schema CI. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
-              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "How do you communicate blast radius and ETA to stakeholders during the incident?",
+              "answer": "For ****Ops:** **Deserialization** exception infinite loop.**, report **which topics/partitions** lag, **whether writes are still accepted**, **data-loss risk** (ISR), and **consumer backlog time**. Give a **bounded** ETA tied to a concrete mitigation (scale, pause traffic, fail over)."
             },
             {
-              "question": "Which **post-incident** **action** items are **non-negotiable**?",
-              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "What permanent guardrails prevent a repeat in six months?",
+              "answer": "Add **SLOs** on lag and ISR, **game days** for AZ loss and broker restarts, **capacity models** for partitions, and **review gates** for retention/compaction and ACL changes."
             }
           ]
         },
@@ -503,12 +566,12 @@
           "answer": "**(1) Immediate response** Team skill mix.\n\n**(2) Root cause** Complexity.\n\n**(3) Fix** KafkaListener default; reactive for pipeline backpressure.\n\n**(4) Prevention** ADR. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
-              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "How do you communicate blast radius and ETA to stakeholders during the incident?",
+              "answer": "For ****Design:** **Reactive** vs **blocking** listeners.**, report **which topics/partitions** lag, **whether writes are still accepted**, **data-loss risk** (ISR), and **consumer backlog time**. Give a **bounded** ETA tied to a concrete mitigation (scale, pause traffic, fail over)."
             },
             {
-              "question": "Which **post-incident** **action** items are **non-negotiable**?",
-              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "What permanent guardrails prevent a repeat in six months?",
+              "answer": "Add **SLOs** on lag and ISR, **game days** for AZ loss and broker restarts, **capacity models** for partitions, and **review gates** for retention/compaction and ACL changes."
             }
           ]
         },
@@ -517,12 +580,12 @@
           "answer": "**(1) Immediate response** Idle threads.\n\n**(2) Root cause** Misunderstanding parallelism.\n\n**(3) Fix** Right-size concurrency.\n\n**(4) Prevention** Dashboard. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
-              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "How do you communicate blast radius and ETA to stakeholders during the incident?",
+              "answer": "For ****Scale:** **Over** **sharding** concurrency vs partitions.**, report **which topics/partitions** lag, **whether writes are still accepted**, **data-loss risk** (ISR), and **consumer backlog time**. Give a **bounded** ETA tied to a concrete mitigation (scale, pause traffic, fail over)."
             },
             {
-              "question": "Which **post-incident** **action** items are **non-negotiable**?",
-              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "What permanent guardrails prevent a repeat in six months?",
+              "answer": "Add **SLOs** on lag and ISR, **game days** for AZ loss and broker restarts, **capacity models** for partitions, and **review gates** for retention/compaction and ACL changes."
             }
           ]
         },
@@ -531,12 +594,12 @@
           "answer": "**(1) Immediate response** Leak.\n\n**(2) Root cause** Repo history.\n\n**(3) Fix** Vault + externalized config.\n\n**(4) Prevention** Rotation. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact** and **ETA** during this incident?",
-              "answer": "Share **SLO** **burn**, **customer** **regions** affected, **mitigation** steps in flight, and **explicit** unknowns. Avoid **blaming** **users**; focus on **measurable** recovery criteria. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "How do you communicate blast radius and ETA to stakeholders during the incident?",
+              "answer": "For ****Security:** **SASL** props in **application.yml** committed.**, report **which topics/partitions** lag, **whether writes are still accepted**, **data-loss risk** (ISR), and **consumer backlog time**. Give a **bounded** ETA tied to a concrete mitigation (scale, pause traffic, fail over)."
             },
             {
-              "question": "Which **post-incident** **action** items are **non-negotiable**?",
-              "answer": "At minimum: **runbook** update, **dashboard** gap closed, **test** that **reproduces** the failure, and **owner** with **deadline**. Tie themes to **error** **budget** policy. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "What permanent guardrails prevent a repeat in six months?",
+              "answer": "Add **SLOs** on lag and ISR, **game days** for AZ loss and broker restarts, **capacity models** for partitions, and **review gates** for retention/compaction and ACL changes."
             }
           ]
         }
@@ -553,9 +616,436 @@
       ]
     },
     {
+      "type": "mcq",
+      "title": "MCQ Quiz — Spring Kafka",
+      "description": "Thirty questions from basic to advanced — Spring Kafka. Read every option; distractors are plausible but wrong for a precise reason.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "[Spring Kafka] Which statement best describes **@KafkaListener** in production Kafka/messaging contexts?",
+          "options": {
+            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
+            "B": "It is purely a UI concern unrelated to brokers or clients.",
+            "C": "It disables all replication automatically.",
+            "D": "It guarantees global total order for every topic."
+          },
+          "answer": "A",
+          "explanation": "**@KafkaListener** belongs to the operational model for **Spring Kafka**—tie it to trade-offs and measurements, not absolutes."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "[Spring Kafka] Which option is a **plausible distractor** interviewers use about **ConcurrentKafkaListenerContainerFactory**?",
+          "options": {
+            "A": "A precise, bounded statement tied to ordering, ISR, or consumer groups.",
+            "B": "A blanket claim that ignores partition boundaries or client semantics.",
+            "C": "A metric-backed troubleshooting step.",
+            "D": "A configuration paired with a failure mode."
+          },
+          "answer": "B",
+          "explanation": "Watch for absolutes on **ConcurrentKafkaListenerContainerFactory** that ignore **per-partition** semantics and client responsibilities."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "scenario",
+          "question": "[Spring Kafka] Incident: user-visible delay worsens after a deploy touching **ErrorHandlingDeserializer**. What is a credible first hypothesis?",
+          "options": {
+            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
+            "B": "The system randomly deleted all state.",
+            "C": "DNS always causes delay; ignore application logic.",
+            "D": "You always need fewer threads when latency grows."
+          },
+          "answer": "A",
+          "explanation": "Tie **ErrorHandlingDeserializer** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+        },
+        {
+          "id": 4,
+          "level": "basic",
+          "category": "theory",
+          "question": "[Spring Kafka] Which statement best describes **SeekToCurrentErrorHandler** in production Kafka/messaging contexts?",
+          "options": {
+            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
+            "B": "It is purely a UI concern unrelated to brokers or clients.",
+            "C": "It disables all replication automatically.",
+            "D": "It guarantees global total order for every topic."
+          },
+          "answer": "A",
+          "explanation": "**SeekToCurrentErrorHandler** belongs to the operational model for **Spring Kafka**—tie it to trade-offs and measurements, not absolutes."
+        },
+        {
+          "id": 5,
+          "level": "basic",
+          "category": "code",
+          "question": "[Spring Kafka] You see misconfiguration around **DefaultErrorHandler** in a code review. What is the best first response?",
+          "options": {
+            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
+            "B": "Delete the topic and recreate it with fewer partitions.",
+            "C": "Set all timeouts to 1ms for safety.",
+            "D": "Disable metrics to reduce noise."
+          },
+          "answer": "A",
+          "explanation": "Validate **DefaultErrorHandler** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+        },
+        {
+          "id": 6,
+          "level": "basic",
+          "category": "scenario",
+          "question": "[Spring Kafka] Incident: user-visible delay worsens after a deploy touching **KafkaTemplate**. What is a credible first hypothesis?",
+          "options": {
+            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
+            "B": "The system randomly deleted all state.",
+            "C": "DNS always causes delay; ignore application logic.",
+            "D": "You always need fewer threads when latency grows."
+          },
+          "answer": "A",
+          "explanation": "Tie **KafkaTemplate** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+        },
+        {
+          "id": 7,
+          "level": "basic",
+          "category": "theory",
+          "question": "[Spring Kafka] Which statement best describes **ProducerFactory** in production Kafka/messaging contexts?",
+          "options": {
+            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
+            "B": "It is purely a UI concern unrelated to brokers or clients.",
+            "C": "It disables all replication automatically.",
+            "D": "It guarantees global total order for every topic."
+          },
+          "answer": "A",
+          "explanation": "**ProducerFactory** belongs to the operational model for **Spring Kafka**—tie it to trade-offs and measurements, not absolutes."
+        },
+        {
+          "id": 8,
+          "level": "basic",
+          "category": "code",
+          "question": "[Spring Kafka] You see misconfiguration around **ConsumerFactory** in a code review. What is the best first response?",
+          "options": {
+            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
+            "B": "Delete the topic and recreate it with fewer partitions.",
+            "C": "Set all timeouts to 1ms for safety.",
+            "D": "Disable metrics to reduce noise."
+          },
+          "answer": "A",
+          "explanation": "Validate **ConsumerFactory** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+        },
+        {
+          "id": 9,
+          "level": "basic",
+          "category": "scenario",
+          "question": "[Spring Kafka] Which option is a **plausible distractor** interviewers use about **retry topic**?",
+          "options": {
+            "A": "A precise, bounded statement tied to ordering, ISR, or consumer groups.",
+            "B": "A blanket claim that ignores partition boundaries or client semantics.",
+            "C": "A metric-backed troubleshooting step.",
+            "D": "A configuration paired with a failure mode."
+          },
+          "answer": "B",
+          "explanation": "Watch for absolutes on **retry topic** that ignore **per-partition** semantics and client responsibilities."
+        },
+        {
+          "id": 10,
+          "level": "basic",
+          "category": "theory",
+          "question": "[Spring Kafka] Which statement best describes **DeadLetterPublishingRecoverer** in production Kafka/messaging contexts?",
+          "options": {
+            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
+            "B": "It is purely a UI concern unrelated to brokers or clients.",
+            "C": "It disables all replication automatically.",
+            "D": "It guarantees global total order for every topic."
+          },
+          "answer": "A",
+          "explanation": "**DeadLetterPublishingRecoverer** belongs to the operational model for **Spring Kafka**—tie it to trade-offs and measurements, not absolutes."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "code",
+          "question": "[Spring Kafka] You see misconfiguration around **ackMode** in a code review. What is the best first response?",
+          "options": {
+            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
+            "B": "Delete the topic and recreate it with fewer partitions.",
+            "C": "Set all timeouts to 1ms for safety.",
+            "D": "Disable metrics to reduce noise."
+          },
+          "answer": "A",
+          "explanation": "Validate **ackMode** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+        },
+        {
+          "id": 12,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "[Spring Kafka] Incident: user-visible delay worsens after a deploy touching **MANUAL_IMMEDIATE**. What is a credible first hypothesis?",
+          "options": {
+            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
+            "B": "The system randomly deleted all state.",
+            "C": "DNS always causes delay; ignore application logic.",
+            "D": "You always need fewer threads when latency grows."
+          },
+          "answer": "A",
+          "explanation": "Tie **MANUAL_IMMEDIATE** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+        },
+        {
+          "id": 13,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "[Spring Kafka] Which statement best describes **batch listener** in production Kafka/messaging contexts?",
+          "options": {
+            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
+            "B": "It is purely a UI concern unrelated to brokers or clients.",
+            "C": "It disables all replication automatically.",
+            "D": "It guarantees global total order for every topic."
+          },
+          "answer": "A",
+          "explanation": "**batch listener** belongs to the operational model for **Spring Kafka**—tie it to trade-offs and measurements, not absolutes."
+        },
+        {
+          "id": 14,
+          "level": "intermediate",
+          "category": "code",
+          "question": "[Spring Kafka] You see misconfiguration around **KafkaTransactionManager** in a code review. What is the best first response?",
+          "options": {
+            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
+            "B": "Delete the topic and recreate it with fewer partitions.",
+            "C": "Set all timeouts to 1ms for safety.",
+            "D": "Disable metrics to reduce noise."
+          },
+          "answer": "A",
+          "explanation": "Validate **KafkaTransactionManager** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+        },
+        {
+          "id": 15,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "[Spring Kafka] Incident: user-visible delay worsens after a deploy touching **EmbeddedKafkaBroker**. What is a credible first hypothesis?",
+          "options": {
+            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
+            "B": "The system randomly deleted all state.",
+            "C": "DNS always causes delay; ignore application logic.",
+            "D": "You always need fewer threads when latency grows."
+          },
+          "answer": "A",
+          "explanation": "Tie **EmbeddedKafkaBroker** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+        },
+        {
+          "id": 16,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "[Spring Kafka] Which option is a **plausible distractor** interviewers use about **test @SpringBootTest**?",
+          "options": {
+            "A": "A precise, bounded statement tied to ordering, ISR, or consumer groups.",
+            "B": "A blanket claim that ignores partition boundaries or client semantics.",
+            "C": "A metric-backed troubleshooting step.",
+            "D": "A configuration paired with a failure mode."
+          },
+          "answer": "B",
+          "explanation": "Watch for absolutes on **test @SpringBootTest** that ignore **per-partition** semantics and client responsibilities."
+        },
+        {
+          "id": 17,
+          "level": "intermediate",
+          "category": "code",
+          "question": "[Spring Kafka] You see misconfiguration around **JsonDeserializer** in a code review. What is the best first response?",
+          "options": {
+            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
+            "B": "Delete the topic and recreate it with fewer partitions.",
+            "C": "Set all timeouts to 1ms for safety.",
+            "D": "Disable metrics to reduce noise."
+          },
+          "answer": "A",
+          "explanation": "Validate **JsonDeserializer** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "[Spring Kafka] Incident: user-visible delay worsens after a deploy touching **common error handler**. What is a credible first hypothesis?",
+          "options": {
+            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
+            "B": "The system randomly deleted all state.",
+            "C": "DNS always causes delay; ignore application logic.",
+            "D": "You always need fewer threads when latency grows."
+          },
+          "answer": "A",
+          "explanation": "Tie **common error handler** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+        },
+        {
+          "id": 19,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "[Spring Kafka] Which statement best describes **listener concurrency** in production Kafka/messaging contexts?",
+          "options": {
+            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
+            "B": "It is purely a UI concern unrelated to brokers or clients.",
+            "C": "It disables all replication automatically.",
+            "D": "It guarantees global total order for every topic."
+          },
+          "answer": "A",
+          "explanation": "**listener concurrency** belongs to the operational model for **Spring Kafka**—tie it to trade-offs and measurements, not absolutes."
+        },
+        {
+          "id": 20,
+          "level": "intermediate",
+          "category": "code",
+          "question": "[Spring Kafka] You see misconfiguration around **replying template** in a code review. What is the best first response?",
+          "options": {
+            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
+            "B": "Delete the topic and recreate it with fewer partitions.",
+            "C": "Set all timeouts to 1ms for safety.",
+            "D": "Disable metrics to reduce noise."
+          },
+          "answer": "A",
+          "explanation": "Validate **replying template** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+        },
+        {
+          "id": 21,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "[Spring Kafka] Incident: user-visible delay worsens after a deploy touching **@KafkaListener**. What is a credible first hypothesis?",
+          "options": {
+            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
+            "B": "The system randomly deleted all state.",
+            "C": "DNS always causes delay; ignore application logic.",
+            "D": "You always need fewer threads when latency grows."
+          },
+          "answer": "A",
+          "explanation": "Tie **@KafkaListener** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+        },
+        {
+          "id": 22,
+          "level": "advanced",
+          "category": "theory",
+          "question": "[Spring Kafka] Which statement best describes **ConcurrentKafkaListenerContainerFactory** in production Kafka/messaging contexts?",
+          "options": {
+            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
+            "B": "It is purely a UI concern unrelated to brokers or clients.",
+            "C": "It disables all replication automatically.",
+            "D": "It guarantees global total order for every topic."
+          },
+          "answer": "A",
+          "explanation": "**ConcurrentKafkaListenerContainerFactory** belongs to the operational model for **Spring Kafka**—tie it to trade-offs and measurements, not absolutes."
+        },
+        {
+          "id": 23,
+          "level": "advanced",
+          "category": "code",
+          "question": "[Spring Kafka] Which option is a **plausible distractor** interviewers use about **ErrorHandlingDeserializer**?",
+          "options": {
+            "A": "A precise, bounded statement tied to ordering, ISR, or consumer groups.",
+            "B": "A blanket claim that ignores partition boundaries or client semantics.",
+            "C": "A metric-backed troubleshooting step.",
+            "D": "A configuration paired with a failure mode."
+          },
+          "answer": "B",
+          "explanation": "Watch for absolutes on **ErrorHandlingDeserializer** that ignore **per-partition** semantics and client responsibilities."
+        },
+        {
+          "id": 24,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "[Spring Kafka] Incident: user-visible delay worsens after a deploy touching **SeekToCurrentErrorHandler**. What is a credible first hypothesis?",
+          "options": {
+            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
+            "B": "The system randomly deleted all state.",
+            "C": "DNS always causes delay; ignore application logic.",
+            "D": "You always need fewer threads when latency grows."
+          },
+          "answer": "A",
+          "explanation": "Tie **SeekToCurrentErrorHandler** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+        },
+        {
+          "id": 25,
+          "level": "advanced",
+          "category": "theory",
+          "question": "[Spring Kafka] Which statement best describes **DefaultErrorHandler** in production Kafka/messaging contexts?",
+          "options": {
+            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
+            "B": "It is purely a UI concern unrelated to brokers or clients.",
+            "C": "It disables all replication automatically.",
+            "D": "It guarantees global total order for every topic."
+          },
+          "answer": "A",
+          "explanation": "**DefaultErrorHandler** belongs to the operational model for **Spring Kafka**—tie it to trade-offs and measurements, not absolutes."
+        },
+        {
+          "id": 26,
+          "level": "advanced",
+          "category": "code",
+          "question": "[Spring Kafka] You see misconfiguration around **KafkaTemplate** in a code review. What is the best first response?",
+          "options": {
+            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
+            "B": "Delete the topic and recreate it with fewer partitions.",
+            "C": "Set all timeouts to 1ms for safety.",
+            "D": "Disable metrics to reduce noise."
+          },
+          "answer": "A",
+          "explanation": "Validate **KafkaTemplate** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+        },
+        {
+          "id": 27,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "[Spring Kafka] Incident: user-visible delay worsens after a deploy touching **ProducerFactory**. What is a credible first hypothesis?",
+          "options": {
+            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
+            "B": "The system randomly deleted all state.",
+            "C": "DNS always causes delay; ignore application logic.",
+            "D": "You always need fewer threads when latency grows."
+          },
+          "answer": "A",
+          "explanation": "Tie **ProducerFactory** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+        },
+        {
+          "id": 28,
+          "level": "advanced",
+          "category": "theory",
+          "question": "[Spring Kafka] Which statement best describes **ConsumerFactory** in production Kafka/messaging contexts?",
+          "options": {
+            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
+            "B": "It is purely a UI concern unrelated to brokers or clients.",
+            "C": "It disables all replication automatically.",
+            "D": "It guarantees global total order for every topic."
+          },
+          "answer": "A",
+          "explanation": "**ConsumerFactory** belongs to the operational model for **Spring Kafka**—tie it to trade-offs and measurements, not absolutes."
+        },
+        {
+          "id": 29,
+          "level": "advanced",
+          "category": "code",
+          "question": "[Spring Kafka] You see misconfiguration around **retry topic** in a code review. What is the best first response?",
+          "options": {
+            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
+            "B": "Delete the topic and recreate it with fewer partitions.",
+            "C": "Set all timeouts to 1ms for safety.",
+            "D": "Disable metrics to reduce noise."
+          },
+          "answer": "A",
+          "explanation": "Validate **retry topic** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+        },
+        {
+          "id": 30,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "[Spring Kafka] Which option is a **plausible distractor** interviewers use about **DeadLetterPublishingRecoverer**?",
+          "options": {
+            "A": "A precise, bounded statement tied to ordering, ISR, or consumer groups.",
+            "B": "A blanket claim that ignores partition boundaries or client semantics.",
+            "C": "A metric-backed troubleshooting step.",
+            "D": "A configuration paired with a failure mode."
+          },
+          "answer": "B",
+          "explanation": "Watch for absolutes on **DeadLetterPublishingRecoverer** that ignore **per-partition** semantics and client responsibilities."
+        }
+      ]
+    },
+    {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Bean | Recall |\n|---|---|\n| KafkaTemplate | Producer send |\n| ListenerContainerFactory | Concurrency + errors |\n| Acknowledgment | Manual commit |\n| ErrorHandler | Retry + DLT |\n| KafkaTransactionManager | Tx boundaries |\n| JsonDeserializer | trusted.packages |\n| Batch listener | List consumer records |\n| observationRegistry | metrics traces |\n| KafkaAdmin | Topic creation |\n| RetryableTopic | Retry + DLT wiring |"
+      "title": "Spring Kafka — cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n| --- | --- | --- |\n| Bean | Recall | Recall |\n| KafkaTemplate | Producer send | Producer send |\n| ListenerContainerFactory | Concurrency + errors | Concurrency + errors |\n| Acknowledgment | Manual commit | Manual commit |\n| ErrorHandler | Retry + DLT | Retry + DLT |\n| KafkaTransactionManager | Tx boundaries | Tx boundaries |\n| JsonDeserializer | trusted.packages | trusted.packages |\n| Batch listener | List consumer records | List consumer records |\n| observationRegistry | metrics traces | metrics traces |\n| KafkaAdmin | Topic creation | Topic creation |\n| RetryableTopic | Retry + DLT wiring | Retry + DLT wiring |\n| Operational metric | Watch lag + ISR + request latency | Say lag per partition and under-replicated partitions |\n| Failure drill | Broker bounce + consumer crash chaos | Prove rebalance and recovery SLOs in staging |\n| Capacity | Partitions bound parallelism per group | More consumers than partitions stay idle |\n| Security | ACLs least privilege per principal | Separate prod cluster or strict topic governance |"
     }
   ]
 }

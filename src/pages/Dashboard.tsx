@@ -9,6 +9,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import MenuBookIcon from '@mui/icons-material/MenuBook';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -257,6 +259,24 @@ const Dashboard: React.FC = () => {
                 sx={{ fontWeight: 600, py: 1, mb: 1.5 }}
               >
                 Scenario interview drill
+              </Button>
+              <Button
+                variant="outlined"
+                fullWidth
+                startIcon={<AutoAwesomeIcon />}
+                onClick={() => navigate('/llm')}
+                sx={{ fontWeight: 600, py: 1, mb: 1.5 }}
+              >
+                LLM &amp; GenAI overview
+              </Button>
+              <Button
+                variant="outlined"
+                fullWidth
+                startIcon={<MenuBookIcon />}
+                onClick={() => navigate('/blog')}
+                sx={{ fontWeight: 600, py: 1, mb: 1.5 }}
+              >
+                Topics &amp; blog
               </Button>
 
               {/* Recent Activity */}

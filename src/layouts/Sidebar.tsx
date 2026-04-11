@@ -23,9 +23,12 @@ import MapIcon from '@mui/icons-material/Map';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import SettingsIcon from '@mui/icons-material/Settings';
 import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import MenuBookIcon from '@mui/icons-material/MenuBook';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAppStore, selectCompletionRate } from '../store/useAppStore';
 import { getLevelColor } from '../utils/formatters';
@@ -37,11 +40,15 @@ const navItems = [
   { path: '/', icon: <DashboardIcon />, label: 'Dashboard' },
   { path: '/progress', icon: <BarChartIcon />, label: 'Progress' },
   { path: '/scenarios', icon: <RecordVoiceOverIcon />, label: 'Scenarios' },
+  { path: '/llm', icon: <AutoAwesomeIcon />, label: 'LLM & GenAI' },
+  { path: '/blog', icon: <MenuBookIcon />, label: 'Topics & blog' },
   { path: '/roadmap', icon: <MapIcon />, label: 'Roadmap' },
   { path: '/quiz', icon: <QuizIcon />, label: 'Quiz' },
   { path: '/bookmarks', icon: <BookmarkIcon />, label: 'Bookmarks' },
   { path: '/settings', icon: <SettingsIcon />, label: 'Settings' },
 ];
+
+const proNavItem = { path: '/pro', icon: <WorkspacePremiumIcon />, label: 'Pro Track' };
 
 interface Props {
   open: boolean;
@@ -159,6 +166,64 @@ const Sidebar: React.FC<Props> = ({ open, onClose }) => {
               </ListItem>
             );
           })}
+        </List>
+      </Box>
+
+      <Divider sx={{ mx: 1.5, my: 0.5 }} />
+      <Box sx={{ px: 1.5, pt: 1, pb: 0.5 }}>
+        <Typography
+          variant="overline"
+          sx={{
+            color: '#6366f1',
+            px: 1,
+            display: 'block',
+            mb: 0.5,
+            fontSize: '0.6rem',
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+          }}
+        >
+          Pro Track — AI/ML
+        </Typography>
+        <List disablePadding>
+          {(() => {
+            const isActive = location.pathname.startsWith(proNavItem.path);
+            return (
+              <ListItem disablePadding sx={{ mb: 0.25 }}>
+                <ListItemButton
+                  onClick={() => handleNav(proNavItem.path)}
+                  sx={{
+                    borderRadius: 2,
+                    py: 0.75,
+                    px: 1.5,
+                    bgcolor: isActive ? 'rgba(99,102,241,0.12)' : 'transparent',
+                    color: isActive ? '#6366f1' : 'text.secondary',
+                    '&:hover': { bgcolor: 'rgba(99,102,241,0.08)' },
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 36, color: 'inherit', '& svg': { fontSize: 20 } }}>
+                    <WorkspacePremiumIcon />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="Pro Track"
+                    primaryTypographyProps={{ variant: 'body2', fontWeight: isActive ? 700 : 500 }}
+                  />
+                  <Chip
+                    label="NEW"
+                    size="small"
+                    sx={{
+                      height: 16,
+                      fontSize: '0.55rem',
+                      fontWeight: 700,
+                      borderRadius: '4px',
+                      color: '#6366f1',
+                      bgcolor: 'rgba(99,102,241,0.15)',
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            );
+          })()}
         </List>
       </Box>
 

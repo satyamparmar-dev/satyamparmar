@@ -17,638 +17,869 @@
     "Day 27"
   ],
   "learningObjectives": [
-    "Explain Lambda and Functional Interfaces with advanced interview clarity",
-    "Implement Lambda and Functional Interfaces in Java with clean design",
-    "Identify runtime and maintainability trade-offs",
-    "Avoid high-frequency failure patterns in Lambda and Functional Interfaces",
-    "Apply this concept to production-oriented scenarios",
-    "Communicate decisions with concise technical reasoning"
+    "Use lambdas and method references with correct target typing",
+    "Explain SAM, capture rules, and invokedynamic at a high level",
+    "Compose Comparator, Predicate, and Function APIs safely",
+    "Avoid common parallel stream and serialization pitfalls",
+    "Relate functional style to readability and review standards",
+    "Debug stack traces involving synthetic lambda classes"
   ],
   "sections": [
     {
       "type": "why",
-      "title": "Why Lambda and Functional Interfaces matters",
-      "content": "Lambdas reduce boilerplate and enable behavior-as-data style design in modern Java.\n\nDay 29 is an inflection point between writing code that \"works\" and writing code that scales in maintainability and production reliability.\n\nInterviewers at this stage evaluate:\n1. Internal understanding (how it works, not only syntax)\n2. Trade-off reasoning (why this approach over alternatives)\n3. Runtime impact (performance, memory, contention, failure behavior)\n\nThis topic should be explained with one minimal example, one realistic failure mode, and one mitigation strategy.\n\nIf you can defend your design choices clearly, you will stand out from syntax-only answers."
+      "title": "Why lambdas, SAM contracts, and stream discipline decide real outages",
+      "content": "At 02:18 a **Spring Boot** payment worker pages you because **IllegalStateException: stream has already been operated upon or closed** bubbles out of a **forEach** that ran twice on the same **Stream** reference. The author copied a clever **lambda** from Stack Overflow, chained **filter** **map** **collect**, then tried to log another pass with the same variable for a metrics badge. CI never failed: the branch only parsed empty files in tests. The pod hits real CSV rows, the second pass explodes, and finance thinks payouts stalled because of a bad file when the bug is simply **Stream** reuse.\n\nIf you are newer to **Java**, think of a **lambda** as a tiny anonymous **method** you hand to an **interface** that has exactly one abstract **method**. That contract is the **SAM** shape. **javac** checks that your shorthand matches the abstract **accept**, **apply**, **test**, or **run** methods you are implementing. You are not typing magic; you are building a small **implementation** object without naming a **class**.\n\nWhen you already ship features, interviewers care what breaks after you ship. Weak answer: \"**Streams** are lazy.\" Strong answer: \"We leaked a **parallelStream** on a non-thread-safe **ArrayList**; **ForkJoinPool** races produced **ArrayIndexOutOfBoundsException**; I reproduced with **jcmd** Thread.print, switched to **sequential** or wrapped the list, proved the fix with concurrent integration tests.\" Another favorite failure is **lambda** capturing a counter you mutate in a loop so **javac** shouts about **local variables referenced from a lambda expression must be final or effectively final**. Teams blame the **IDE** quick fix instead of rewriting the accumulator.\n\nWhen you lead a squad, memorize the four-step pattern: Step one, name the **functional** **interface** target so nobody confuses **Consumer** with **Function**. Step two, write whether locals are **effectively final** before you paste another **lambda**; if not, promote state to **AtomicInteger** or a holder **record**. Step three, decide **parallel** versus **sequential** only after you prove the source is thread-safe and ordering does not matter; verify contention with **jcmd** JFR.start or **async-profiler**. Step four, paste **javap -v** bootstrap output into the ticket whenever **LinkageError** after a shaded **JAR** makes **invokedynamic** targets disappear. Fifty microservices mean one bad copy-paste **Stream** pattern becomes fifty silent double-processing bugs.\n\nAt Staff depth you anchor the story on **HotSpot** reality: **Java 8** introduced **LambdaMetafactory** so **invokedynamic** can bind lambdas without eager **anonymous** **class** classfiles for every site. **Java 11** tightened **NestHost** diagnostics so **jstack** across inner **lambdas** reads cleaner. **Java 17** kept the same model but warns harder when frameworks reflect into JDK internals. **Java 21** **virtual** threads make it easier to fire thousands of **Runnable** lambdas, which shifts pressure to pinning: a **synchronized** block inside a **lambda** can pin a carrier and spike latency—watch carrier stalls with **jcmd** Thread.print.\n\nIn your first six months somewhere new you will see this topic constantly. You review a PR that stores a **Stream** in a field: you demand **terminal** in one place or a **Supplier** of **Stream**. You chase **OutOfMemoryError** **Metaspace** after a hot reload feature keeps recreating **MethodHandles**: you capture **jcmd** VM.metaspace before and after. You explain to product why a **Serializable** **lambda** in a session bean is brittle: you swap to a named **class** and add a regression test that round-trips the session.\n\nThe emotional arc matters too. **Lambda** syntax made **Java** feel lighter, so teams overuse it where a boring **for** loop would be obvious. You are the engineer who steers people back to clarity when a pipeline spans three screens. That habit is what interviewers call senior judgement: you know when sugar helps and when it hides a mistake that only shows up under tenant scale.\n\nQuiet confidence beats buzzwords: you rehearse naming the **SAM**, the **terminal** you used, and the command that proved your story before you walk into the room."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Lambda and Functional Interfaces",
-      "content": "### Day 29: Lambda and Functional Interfaces\nLambdas reduce boilerplate and enable behavior-as-data style design in modern Java.\n\n### Deep understanding goal\nYou should understand the mechanism, its boundaries, and when to avoid it.\n\n### Practical workflow\n1. Implement baseline.\n2. Add correctness checks and edge handling.\n3. Evaluate runtime cost.\n4. Refactor for readability and team adoption.\n\n### Interview quality bar\n- Explain what problem it solves.\n- Show concise Java example.\n- Name one pitfall and one mitigation.\n- State complexity/runtime implication.\n- Compare with one alternative.\n\n### Production angle\nIn backend systems, this concept influences throughput, reliability, and debugging speed. A good implementation must support operations, not just local correctness.\n\n### Quick self-check\n- Can I explain this in <60 seconds?\n- Can I code it from memory?\n- Can I describe a failure scenario and fix?\n\n### Satyverse — deeper path (theory → practice)\n**Generics erase to raw types at runtime** — type parameters are compile-time checks; reflection and arrays need care (`GenericArrayCreation` errors).\n\n**Wildcards:** `PECS` — producer extends, consumer super — guides API signatures for collections.\n\n**Bounded type parameters** capture constraints (`T extends Comparable<T>`) — enables generic algorithms.\n\n**Practice:** write a generic `Pair<L,R>` and a static factory — feel erasure in arrays vs lists."
+      "title": "Lambda and Functional Interfaces — erasure of fear edition",
+      "content": "### Plain-language overview\n\nA **lambda** is a short block of code you pass where **Java** expects an object with one main action. Think: \"when you are ready, run this.\" The **interface** that receives it is called **functional** because it has exactly one abstract **method** (**SAM**). **Method references** are even shorter when an existing **method** already matches that shape.\n\n**Interview angle:** If the candidate cannot name the **SAM** before describing syntax, they are still at tutorial depth.\n\n### What a lambda is on day one (Fresher band)\n\nYou already used **SAM** types without slang: **Runnable**, **Comparator**, **FileFilter**. A **lambda** fills that slot without **new Runnable** plus brace noise. **javac** checks types the same way; the difference is readability.\n\n**Interview angle:** Ask which **interface** receives the **lambda** before debating syntactic sugar.\n\n### Your first lambda program (Fresher band)\n\n```java\nimport java.util.function.Predicate;\n\npublic class Demo {\n    public static void main(String[] args) {\n        Predicate<String> ok = s -> !s.isBlank();\n        System.out.println(ok.test(\"ready\"));\n    }\n}\n```\nYou just implemented **Predicate.test** without writing a **class** file by hand.\n\n**Interview angle:** Watch for confusion between **method** body braces and **anonymous** **class** syntax.\n\n### When the JVM runs your lambda (Fresher band)\n\nAt runtime you still invoke **test**, **apply**, or **accept** on some object implementing the **interface**. The **JVM** does not keep your **lambda** text around; it links a tiny adapter through **invokedynamic** machinery the first time the call site warms up.\n\n**Interview angle:** Freshers should say \"there is still an object\" even if they skip **LambdaMetafactory** details.\n\n### How lambdas compile to invokedynamic (Senior Developer band)\n\n**javac** does not always emit a dedicated **Lambda$0.class** file anymore. It plants an **invokedynamic** instruction whose **bootstrap** method calls **LambdaMetafactory.metafactory** with **MethodHandles** describing the real body. The **CallSite** targets a **generated** **lambda** **method** inside your **class**. **javap -v Demo.class** exposes **BootstrapMethods** and **RuntimeInvisibleAnnotations** showing which **interface** was requested.\n\n**Interview angle:** Strong seniors can point at **invokedynamic** line numbers instead of hand-waving about sugar.\n\n### Production comparison — functional shapes (Senior Developer band)\n\n| Shape | When to use it | What breaks if you pick the wrong one |\n| --- | --- | --- |\n| **Predicate** | **filter** tests | You try to **map** with it and lose type clarity |\n| **Function** | **map** transforms | **void** results belong to **Consumer** |\n| **Consumer** | **forEach** side effects | You hide IO or mutations and surprise teammates |\n| **Supplier** | lazy creation | Calling **get** in a hot loop without caching explodes allocation |\n\n**Interview angle:** Mapping symptoms to the wrong **java.util.function** type is a common mid-level slip.\n\n### Common stream mistakes that look like data bugs (Senior Developer band)\n\nReusing a **Stream** triggers **IllegalStateException** about already closed pipelines. **parallelStream** on a **HashMap** value view races with writers unless the map is **ConcurrentHashMap**. **peek** for business rules hides side effects until someone refactors the pipeline and deletes the **peek**.\n\n**Interview angle:** Ask how they would prove ordering bugs with deterministic fixtures before blaming upstream CSV quality.\n\n### Step-by-step: from lambda text to CallSite (Senior Developer band)\n\nStep 1: Write the **lambda** against the **SAM** you truly need. Step 2: **javac** the module with **-parameters** if frameworks reflect names. Step 3: Run **javap -v -p Target.class** and note **invokedynamic** entries plus **bootstrap_methods**. Step 4: On failures, diff **LinkageError** stack traces after dependency upgrades. Step 5: Capture **java -version** and **javac -version** because toolchain skew changes **MethodHandle** accessibility. Step 6: Add a regression test around the **Stream** **terminal** you rely on.\n\n**Interview angle:** Staff candidates attach **javap** snippets to PR evidence; juniors only paste stack traces.\n\n### Lambda versus method reference in API design (Technical Lead band)\n\nUse **method** **references** when they read like English (**String::trim**). Reach for a **lambda** when you must close over locals or guard nulls. For **public** SDK surfaces, prefer named **static** helpers when logic exceeds three lines so stack traces stay human.\n\n**Interview angle:** Tech Leads defend readability metrics, not line-count golf.\n\n### Code review checklist for functional style (Technical Lead band)\n\n| Review focus | Green flag | Red flag |\n| --- | --- | --- |\n| **Stream** lifetime | Single **terminal** or **Supplier** | **Stream** stored in fields |\n| Thread safety | **parallel** only on thread-safe sources | **parallelStream** on **ArrayList** under writers |\n| Side effects | **forEach** for IO | **peek** changing shared state |\n| Serialization | Named **class** | Anonymous **lambda** in **Serializable** beans |\n\n**Interview angle:** Checklists stop clever **peek** from shipping unnoticed.\n\n### How you explain stream cost to a stakeholder (Technical Lead band)\n\nSay **pipelines** allocate intermediate objects and may spin **ForkJoinPool** threads when marked **parallel**. Tie cost to dollars by showing **CPU** profiles (**JFR** or **async-profiler**) before rewriting **SQL**. Promise you will revert **parallel** if metrics regress.\n\n**Interview angle:** Leaders translate bytecode choices into observability charts, not jargon duels.\n\n### What **LambdaMetafactory** really does (Staff band)\n\n**LambdaMetafactory** builds **CallSite** objects that wire **invokedynamic** call sites to **private** **lambda** bodies encoded as **static** **synthetic** methods. The **JVM** reuses adapters when signatures match, which is why **Metaspace** is usually fine but can churn if class loaders reload bytecode constantly (devtools, dynamic plugins). **javap -v** shows **BootstrapMethods** referencing **java.lang.invoke.LambdaMetafactory**.\n\n**Interview angle:** Staff engineers explain **Metaspace** regressions with class loader + **lambda** linkage context.\n\n### On-call commands for scary lambda stack frames (Staff band)\n\n| Command | What it reveals | When to run it |\n| --- | --- | --- |\n| **javap -v -p Service.class** | **invokedynamic** targets + **NestMembers** | **LinkageError** after shading |\n| **jcmd** Thread.print | pinned threads inside **lambda** bodies | latency spikes on **virtual** threads |\n| **jcmd** JFR.start | allocation + fork join stalls | **parallelStream** regressions |\n| **jcmd** VM.metaspace | class metadata pressure | hot reload environments |\n\n**Interview angle:** If they only know **jstack** but never **javap -v**, they lack linkage literacy.\n\n### How lambda linkage evolved across **Java 8**, **11**, **17**, and **21** (Staff band)\n\n**Java 8** introduced **LambdaMetafactory** + **invokedynamic** lambdas. **Java 11** improved **Nest-based** access control so reflective stacks around **lambdas** align with source nests. **Java 17** removes **SecurityManager** workflows teams abused and makes illegal reflective opens fail loudly—important for frameworks wrapping **MethodHandles**. **Java 21** couples with **virtual** threads: **Runnable** lambdas explode in count, so pinning diagnostics matter more than micro-optimizing **lambda** allocation.\n\n**Interview angle:** Tie on-call stories to an LTS fact, not podcast trivia.\n\n### 60-second interview story\n\nYou define **lambdas** as **SAM** implementations linked with **invokedynamic**, prefer **method** **references** when they read cleaner, enforce **effectively final** capture rules, and treat **Stream** pipelines like single-use rituals. You close with **javap -v** proof whenever **LinkageError** strikes after shading. You practice **jcmd** Thread.print when **virtual** thread latency spikes flag **synchronized** inside callbacks.\n\n**Interview angle:** Story must mention **SAM** plus one diagnostic (**javap** or **jcmd**).\n\n### Satyverse drill — tie-down\n\nCompile any small **class** with two **lambdas** today, then run **javap -v** on that classfile. Highlight the **BootstrapMethods** block and the **synthetic** **lambda** methods. Re-run after replacing one **lambda** with **String::trim** and note how the bootstrap arguments change.\n\n**Interview angle:** Drill is done only when you can narrate the output without reading jargon off the slide.\n"
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "Lambda and Functional Interfaces — basic",
       "language": "java",
       "filename": "Day29Basic.java",
-      "code": "package arch.day29;\n\nimport java.util.*;\n\npublic class Day29Basic {\n    public static void main(String[] args) {\n        List<String> xs = new ArrayList<>(List.of(\"bb\", \"a\", \"ccc\"));\n        xs.sort((a, b) -> Integer.compare(a.length(), b.length()));\n        System.out.println(xs);\n    }\n}",
       "level": "basic",
-      "output": "[a, bb, ccc]\n",
-      "description": "Functional interface + lambda: implement Comparator without anonymous class boilerplate."
+      "description": "Deterministic reference: core syntax and one minimal end-to-end print.",
+      "code": "package arch.day29;\n\n/** println-only lambda + SAM reference card */\npublic class Day29Basic {\n\n    public static void main(String[] args) {\n        // Table: you must know which SAM you are implementing before syntax helps.\n        System.out.println(\"=== Core SAM table ===\");\n        System.out.println(\"Runnable      | run()          | side-effect, no IO return\");\n        System.out.println(\"Supplier<T>   | get()          | lazy factory\");\n        System.out.println(\"Consumer<T>   | accept(T)      | forEach / sinks\");\n        System.out.println(\"Function<T,R> | apply(T)->R    | map transforms\");\n        System.out.println(\"UnaryOperator<T> | apply(T)->T   | replaceAll style maps\");\n        System.out.println(\"Predicate<T>  | test(T) boolean| filter\");\n        System.out.println(\"BinaryOperator<T> | apply two Ts | reduce combiners\");\n        System.out.println();\n        // Week-one commands: prove sugar is linked, not magic.\n        System.out.println(\"=== How to use it (commands) ===\");\n        System.out.println(\"javap -v MyClass.class    see BootstrapMethods / invokedynamic\");\n        System.out.println(\"javap -p MyClass.class    list lambda synthetics\");\n        System.out.println(\"java -version             LTS behavior for virtual threads\");\n        System.out.println(\"jcmd <pid> Thread.print   peel lambda frames / pinning\");\n        System.out.println(\"javac --release 17        match CI SAM APIs\");\n        System.out.println(\"jshell                    quick SAM experiments\");\n        System.out.println(\"jcmd <pid> VM.flags     quick heap flag sanity on batch JVMs\");\n        System.out.println();\n        // Symptoms seniors recognize before blaming data feeds.\n        System.out.println(\"=== Beginner mistakes (symptoms) ===\");\n        System.out.println(\"IllegalStateException   | stream reused after terminal\");\n        System.out.println(\"effectively final error | mutated capture variable\");\n        System.out.println(\"ArrayIndexOutOfBounds   | parallelStream on mutating ArrayList\");\n        System.out.println(\"LinkageError            | broken MethodHandle after shade\");\n        System.out.println(\"NotSerializableException| session stored synthetic lambda\");\n        System.out.println(\"LambdaForm in flames     | churned MethodHandles | cache Function\");\n        System.out.println();\n        System.out.println(\"=== Remember this ===\");\n        System.out.println(\"one Stream terminal per object | use Supplier for replays\");\n        System.out.println(\"method refs need arity match  | else use lambda\");\n        System.out.println(\"parallel needs safe sources  | else sequential\");\n        System.out.println(\"eof\");\n    }\n}\n",
+      "output": "=== Core SAM table ===\nRunnable      | run()          | side-effect, no IO return\nSupplier<T>   | get()          | lazy factory\nConsumer<T>   | accept(T)      | forEach / sinks\nFunction<T,R> | apply(T)->R    | map transforms\nUnaryOperator<T> | apply(T)->T   | replaceAll style maps\nPredicate<T>  | test(T) boolean| filter\nBinaryOperator<T> | apply two Ts | reduce combiners\n\n=== How to use it (commands) ===\njavap -v MyClass.class    see BootstrapMethods / invokedynamic\njavap -p MyClass.class    list lambda synthetics\njava -version             LTS behavior for virtual threads\njcmd <pid> Thread.print   peel lambda frames / pinning\njavac --release 17        match CI SAM APIs\njshell                    quick SAM experiments\njcmd <pid> VM.flags     quick heap flag sanity on batch JVMs\n\n=== Beginner mistakes (symptoms) ===\nIllegalStateException   | stream reused after terminal\neffectively final error | mutated capture variable\nArrayIndexOutOfBounds   | parallelStream on mutating ArrayList\nLinkageError            | broken MethodHandle after shade\nNotSerializableException| session stored synthetic lambda\nLambdaForm in flames     | churned MethodHandles | cache Function\n\n=== Remember this ===\none Stream terminal per object | use Supplier for replays\nmethod refs need arity match  | else use lambda\nparallel needs safe sources  | else sequential\neof\n"
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "Lambda and Functional Interfaces — intermediate",
       "language": "java",
       "filename": "Day29Intermediate.java",
-      "code": "package arch.day29;\n\nimport java.util.*;\n\npublic class Day29Intermediate {\n    public static void main(String[] args) {\n        List<String> xs = new ArrayList<>(List.of(\"B\", \"a\", \"C\"));\n        xs.sort(String::compareToIgnoreCase);\n        System.out.println(xs);\n    }\n}",
       "level": "intermediate",
-      "output": "[a, B, C]\n",
-      "description": "Method references: String::compareToIgnoreCase as Comparator."
+      "description": "Four labeled scenarios contrasting APIs, safety, and readability.",
+      "code": "package arch.day29;\n\n/** Four println scenarios for senior readers; every path names a diagnostic tool. */\npublic class Day29Intermediate {\n\n    // Production teams often multiply terminals after adding observability; watch CI gap on big files.\n    // Dev velocity + streams: double terminal on same stream reference.\n    static void scenario1() {\n        System.out.println(\"--- Scenario 1: metrics lambda reuses Stream twice ---\");\n        System.out.println(\"symptom:  IllegalStateException stream already operated upon during nightly batch\");\n        System.out.println(\"cause:    second terminal on same java.util.stream.Stream reference\");\n        System.out.println(\"why:      terminals close pipelines; Stream is single-use by design\");\n        System.out.println(\"fix:      wrap source with Supplier<Stream> or collect to List once\");\n        System.out.println(\"lesson:   terminal closes stream — metrics need Supplier replay\");\n        System.out.println(\"context:  observability PR added count() before main map pass on same field\");\n        System.out.println(\"verify:   integration test that mirrors production CSV size\");\n        System.out.println(\"next:     grep for Stream fields stored in Spring beans\");\n        System.out.println();\n    }\n\n    // ForkJoinPool hides races until load; jcmd proves whether spliterator walked during mutation.\n    // Production: parallel + mutable ArrayList under concurrent writers.\n    static void scenario2() {\n        System.out.println(\"--- Scenario 2: parallel pipeline races shared ArrayList ---\");\n        System.out.println(\"symptom:  flaky ArrayIndexOutOfBoundsException in ForkJoinPool worker\");\n        System.out.println(\"cause:    parallelStream walked ArrayList while another thread resized backing array\");\n        System.out.println(\"why:     Spliterator assumes stable source during split iteration\");\n        System.out.println(\"fix:      copy-under-lock or use ConcurrentHashMap newKeySet style structures\");\n        System.out.println(\"lesson:   ArrayList buckets move under writers; spliterator assumes stability\");\n        System.out.println(\"diag:     jstack -e often noisy; prefer jcmd Thread.print -e for carrier vs worker\");\n        System.out.println(\"verify:   jcmd <pid> Thread.print shows ForkJoinPool next to ArrayList.add\");\n        System.out.println(\"next:     jcstress hammer on DAO results before enabling parallel\");\n        System.out.println();\n    }\n\n    // invoke/LambdaForm spikes are allocation + linkage; async-profiler differentiates them from GC pauses.\n    // Perf myth: nested lambdas allocating in hot JSON mapping loop.\n    static void scenario3() {\n        System.out.println(\"--- Scenario 3: profiler shows java.lang.invoke.LambdaForm hot ---\");\n        System.out.println(\"symptom:  CPU flat but p99 grows after microservice adds per-row lambdas\");\n        System.out.println(\"cause:    millions of distinct functional objects per request\");\n        System.out.println(\"why:      each captures unlike locals forcing new bootstrap linkage\");\n        System.out.println(\"fix:      hoist Function instances to static final fields reuse MethodHandles\");\n        System.out.println(\"lesson:   distinct captures defeat hotspot inlining for lambdas\");\n        System.out.println(\"context:  JSON row mapper allocates fresh Function per cell in nested loops\");\n        System.out.println(\"verify:   async-profiler flame graph collapsed to user packages\");\n        System.out.println(\"next:     compare javap -v bootstrap counts before/after refactor\");\n        System.out.println();\n    }\n\n    // Session replication turns language sugar into serialization contracts—use explicit types.\n    // Architecture: ban Serializable lambdas in HTTP session\n    static void scenario4() {\n        System.out.println(\"--- Scenario 4: session refresh blows after lambda stored in HttpSession ---\");\n        System.out.println(\"symptom:  NotSerializableException naming synthetic lambda class\");\n        System.out.println(\"cause:    cluster replication tries to serialize ad-hoc callbacks\");\n        System.out.println(\"why:      lambda classes lack stable serial forms across JDK builds\");\n        System.out.println(\"fix:      named static class implements Serializable Function\");\n        System.out.println(\"lesson:   synthetic lambda names are not a serialization ABI\");\n        System.out.println(\"diag:     grep HttpSession attribute keys for $$Lambda class names in logs\");\n        System.out.println(\"verify:   session serialization integration test in CI\");\n        System.out.println(\"next:     ArchUnit rule banning Serializable fields typed as lambdas\");\n        System.out.println();\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"banner: Day29Intermediate arch.day29\");\n        System.out.println(\"mode: println-only triage card — compile with javac --release 17\");\n        System.out.println();\n        scenario1();\n        scenario2();\n        scenario3();\n        scenario4();\n        System.out.println(\"eof: four scenarios complete — paste output beside jcmd captures\");\n    }\n}\n",
+      "output": "banner: Day29Intermediate arch.day29\nmode: println-only triage card — compile with javac --release 17\n\n--- Scenario 1: metrics lambda reuses Stream twice ---\nsymptom:  IllegalStateException stream already operated upon during nightly batch\ncause:    second terminal on same java.util.stream.Stream reference\nwhy:      terminals close pipelines; Stream is single-use by design\nfix:      wrap source with Supplier<Stream> or collect to List once\nlesson:   terminal closes stream — metrics need Supplier replay\ncontext:  observability PR added count() before main map pass on same field\nverify:   integration test that mirrors production CSV size\nnext:     grep for Stream fields stored in Spring beans\n\n--- Scenario 2: parallel pipeline races shared ArrayList ---\nsymptom:  flaky ArrayIndexOutOfBoundsException in ForkJoinPool worker\ncause:    parallelStream walked ArrayList while another thread resized backing array\nwhy:      Spliterator assumes stable source during split iteration\nfix:      copy-under-lock or use ConcurrentHashMap newKeySet style structures\nlesson:   ArrayList buckets move under writers; spliterator assumes stability\ndiag:     jstack -e often noisy; prefer jcmd Thread.print -e for carrier vs worker\nverify:   jcmd <pid> Thread.print shows ForkJoinPool next to ArrayList.add\nnext:     jcstress hammer on DAO results before enabling parallel\n\n--- Scenario 3: profiler shows java.lang.invoke.LambdaForm hot ---\nsymptom:  CPU flat but p99 grows after microservice adds per-row lambdas\ncause:    millions of distinct functional objects per request\nwhy:      each captures unlike locals forcing new bootstrap linkage\nfix:      hoist Function instances to static final fields reuse MethodHandles\nlesson:   distinct captures defeat hotspot inlining for lambdas\ncontext:  JSON row mapper allocates fresh Function per cell in nested loops\nverify:   async-profiler flame graph collapsed to user packages\nnext:     compare javap -v bootstrap counts before/after refactor\n\n--- Scenario 4: session refresh blows after lambda stored in HttpSession ---\nsymptom:  NotSerializableException naming synthetic lambda class\ncause:    cluster replication tries to serialize ad-hoc callbacks\nwhy:      lambda classes lack stable serial forms across JDK builds\nfix:      named static class implements Serializable Function\nlesson:   synthetic lambda names are not a serialization ABI\ndiag:     grep HttpSession attribute keys for $$Lambda class names in logs\nverify:   session serialization integration test in CI\nnext:     ArchUnit rule banning Serializable fields typed as lambdas\n\neof: four scenarios complete — paste output beside jcmd captures\n"
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "Lambda and Functional Interfaces — advanced",
       "language": "java",
       "filename": "Day29Advanced.java",
-      "code": "package arch.day29;\n\npublic class Day29Advanced {\n    @FunctionalInterface\n    interface Handler {\n        void onEvent(String msg);\n    }\n\n    static void emit(Handler h) {\n        h.onEvent(\"ping\");\n    }\n\n    public static void main(String[] args) {\n        emit(m -> System.out.println(\"got \" + m));\n    }\n}",
       "level": "advanced",
-      "output": "got ping\n",
-      "description": "Custom @FunctionalInterface for event handler style callbacks."
+      "description": "Three blocks plus printed decision or reference table for tradeoffs.",
+      "code": "package arch.day29;\n\nimport java.util.*;\nimport java.util.function.*;\n\n/** Lead/Staff triage matrix for lambda adoption */\npublic class Day29Advanced {\n\n    record Posture(String topic, String rule, int riskScore) {}\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Block 1: risk model ===\");\n        List<Posture> rows = new ArrayList<>();\n        rows.add(new Posture(\"Stream reuse\", \"one terminal\", 3));\n        rows.add(new Posture(\"parallel source\", \"immutable or concurrent\", 3));\n        rows.add(new Posture(\"session lambda\", \"named class\", 2));\n        rows.add(new Posture(\"invokedynamic shade\", \"exclude invoke pkgs\", 3));\n        rows.add(new Posture(\"virtual pin\", \"narrow synchronized\", 2));\n        rows.add(new Posture(\"checked IO in map\", \"lift IO boundary\", 3));\n        rows.add(new Posture(\"per-row lambda factory\", \"cache Function\", 3));\n        rows.sort(Comparator.comparingInt(Posture::riskScore));\n        for (Posture p : rows) {\n            System.out.println(p.topic() + \" | \" + p.rule() + \" | risk=\" + p.riskScore());\n        }\n        System.out.println();\n        System.out.println(\"=== Block 1b: Java 21 note ===\");\n        System.out.println(\"virtual threads multiply Runnable lambdas — lock audits beat allocation myths\");\n        System.out.println();\n\n        System.out.println(\"=== Block 2: scoring ===\");\n        Map<String, Integer> penalties = new LinkedHashMap<>();\n        penalties.put(\"mutable parallel\", 5);\n        penalties.put(\"serializable lambda\", 4);\n        penalties.put(\"noisy peek business\", 3);\n        penalties.put(\"static Function per request\", 2);\n        penalties.put(\"mutable capture\", 4);\n        penalties.put(\"peek billing\", 5);\n        penalties.put(\"no Supplier for replay\", 2);\n        penalties.put(\"unbounded lambda factory\", 2);\n        int total = 0;\n        for (Map.Entry<String, Integer> e : penalties.entrySet()) {\n            total += e.getValue();\n            System.out.println(e.getKey() + \" -> weight \" + e.getValue());\n        }\n        System.out.println(\"raw score=\" + total);\n        System.out.println(\"audit: sum of pattern weights — not CPU percent\");\n        System.out.println(\"=== Block 2b: weight >=4 escalates review ===\");\n        for (Map.Entry<String, Integer> e : penalties.entrySet()) {\n            if (e.getValue() >= 4) {\n                System.out.println(\"escalate | \" + e.getKey() + \" | weight=\" + e.getValue());\n            }\n        }\n        System.out.println();\n\n        System.out.println(\"=== Block 3: action table ===\");\n        System.out.println(\"mutable parallel      | force sequential + copy list | retest with jcmd Thread.print\");\n        System.out.println(\"serializable lambda   | replace with named class        | cluster serialization test\");\n        System.out.println(\"LinkageError          | javap -v bootstrap diff         | adjust shade relocation\");\n        System.out.println(\"invoke hotspots       | cache Function fields           | async-profiler before/after\");\n        System.out.println(\"virtual pin           | replace synchronized            | jcmd Thread.print diff\");\n        System.out.println(\"peek billing          | move to forEach after collect   | finance regression test\");\n        System.out.println(\"checked IO in map     | wrap UncheckedIOException at edge | replay batch fixture\");\n        System.out.println(\"per-row lambda factory| hoist static Function constants    | compare javap bootstrap arity\");\n        System.out.println(\"no Supplier replay    | Supplier of Stream or List materialize| double-pass integration test\");\n        System.out.println(\"eof\");\n    }\n}\n",
+      "output": "=== Block 1: risk model ===\nsession lambda | named class | risk=2\nvirtual pin | narrow synchronized | risk=2\nStream reuse | one terminal | risk=3\nparallel source | immutable or concurrent | risk=3\ninvokedynamic shade | exclude invoke pkgs | risk=3\nchecked IO in map | lift IO boundary | risk=3\nper-row lambda factory | cache Function | risk=3\n\n=== Block 1b: Java 21 note ===\nvirtual threads multiply Runnable lambdas — lock audits beat allocation myths\n\n=== Block 2: scoring ===\nmutable parallel -> weight 5\nserializable lambda -> weight 4\nnoisy peek business -> weight 3\nstatic Function per request -> weight 2\nmutable capture -> weight 4\npeek billing -> weight 5\nno Supplier for replay -> weight 2\nunbounded lambda factory -> weight 2\nraw score=27\naudit: sum of pattern weights — not CPU percent\n=== Block 2b: weight >=4 escalates review ===\nescalate | mutable parallel | weight=5\nescalate | serializable lambda | weight=4\nescalate | mutable capture | weight=4\nescalate | peek billing | weight=5\n\n=== Block 3: action table ===\nmutable parallel      | force sequential + copy list | retest with jcmd Thread.print\nserializable lambda   | replace with named class        | cluster serialization test\nLinkageError          | javap -v bootstrap diff         | adjust shade relocation\ninvoke hotspots       | cache Function fields           | async-profiler before/after\nvirtual pin           | replace synchronized            | jcmd Thread.print diff\npeek billing          | move to forEach after collect   | finance regression test\nchecked IO in map     | wrap UncheckedIOException at edge | replay batch fixture\nper-row lambda factory| hoist static Function constants    | compare javap bootstrap arity\nno Supplier replay    | Supplier of Stream or List materialize| double-pass integration test\neof\n"
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 29",
-      "diagramType": "component",
-      "description": "Visual model for Lambda & Functional Interfaces",
-      "plantuml": "@startuml\ntitle Day 29 - Lambda & Functional Interfaces\nactor Learner\nrectangle \"Satyverse(Satyam Parmar) Lesson Engine\" {\n  component \"Theory\"\n  component \"Code\"\n  component \"Exercise\"\n  component \"Interview Drill\"\n}\nLearner --> \"Theory\" : Understand concept\nLearner --> \"Code\" : Implement\nLearner --> \"Exercise\" : Practice\nLearner --> \"Interview Drill\" : Explain\n@enduml"
+      "title": "Lambda capture and SAM invocation",
+      "diagramType": "sequence",
+      "description": "Compiler captures values, bootstrap builds CallSite, target method invoked.",
+      "plantuml": "@startuml\ntitle Day 29 — lambda runtime path\n\nparticipant Dev as D\nparticipant \"javac\" as C\nparticipant \"Bytecode\\ninvokedynamic\" as B\nparticipant \"LambdaMetafactory\" as M\nparticipant \"CallSite\" as S\nparticipant \"JVM\" as J\n\nD -> C : lambda in stream pipeline\nC -> B : invokedynamic\\nfunctional interface\nB -> M : bootstrap linkage\nM -> S : install target\nloop pipeline ops\n  J -> S : invoke SAM\n  S -> J : forwarded to\\ninstance/static method\nend\nnote over M,S : Captured locals\\nstored in synthetic fields\n@enduml"
     },
     {
       "type": "pitfalls",
-      "title": "Common Pitfalls",
+      "title": "Common pitfalls",
       "items": [
-        "Capturing mutable external state and creating hidden side effects.",
-        "Overusing lambdas where named methods improve readability.",
-        "Forgetting functional interface contract constraints.",
-        "Using checked exceptions awkwardly inside functional pipelines.",
-        "Ignoring debugging complexity in deeply chained lambdas."
+        "// Fresher",
+        "Writing **x++** on a captured **int** you also read inside a **lambda** — **javac** emits **local variables referenced from a lambda expression must be final or effectively final** and the learner thinks the **IDE** is broken; fix by using **final int** snapshot vars or **AtomicInteger**; verify by compiling with **javac** **--release 17** in CI.",
+        "Calling **parallelStream** on a tiny **List** to 'wake up all cores' — **ForkJoinPool** overhead can make latency worse with no gain; switch to **stream** sequential until **JFR** proves benefit; verify with **jcmd** **JFR.start** on a canary comparing CPU versus wall clock.",
+        "// Senior Developer",
+        "Using **peek** to mutate shared totals in a **Stream** pipeline — refactors that remove **peek** silently delete business math and auditors see mismatched ledger lines; move side effects to **forEach** after **collect** or use **reduce**; verify by property-based tests comparing parallel vs sequential totals.",
+        "Capturing **this** inside a long **lambda** passed to async code — object graphs stay reachable and **unit** tests leak memory; extract **static** helper or weak references where safe; verify with **jmap** **-histo:live** after soaking workers overnight.",
+        "// Technical Lead",
+        "Publishing a **shared** **Function** field that **closes** over request-scoped **DTO** without synchronization — under load two threads observe partial mutation through the same **lambda** capture; fix by moving **Function** construction inside request scope or pass immutable snapshots; verify with concurrent **RestAssured** suite hitting the endpoint from fifty threads.",
+        "Standardizing on **Serializable** **lambdas** in every **Kafka** **callback** config stored in **Zookeeper** — upgrades deserialize ghost classes; fix by storing **class** names + configs, not bytecode-linked lambdas; verify with rolling restart test matrix on **Java 17** and **Java 21** brokers.",
+        "// Staff / Architect",
+        "Letting **maven-shade-plugin** relocate **java.lang.invoke** friendly packages alongside application **lambda** sites — canary throws **LinkageError** despite clean **javac**; fix relocation excludes for synthetic **bootstrap** dependencies; verify **javap -v** diffs nightly fat **JAR** versus thin module.",
+        "Running hot reload dev servers that regenerate endless **MethodHandle** graphs — **Metaspace** **OutOfMemoryError** appears after hours; fix by disabling plugin or isolating class loaders; verify **jcmd** **VM.metaspace** before/after reload marathons."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - Lambda and Functional Interfaces Applied Drill",
-      "problem": "Implement a Java solution demonstrating **Lambda and Functional Interfaces** in a realistic scenario.\n\nRequirements:\n1. Include one baseline approach and one improvement.\n2. Handle one edge/failure case.\n3. Add short explanation of trade-off.\n4. Keep code readable and testable.\n5. Show sample output.",
+      "title": "Exercise — first Predicate (fresher)",
+      "audience": "fresher",
+      "difficulty": "Beginner",
+      "problem": "You are writing your first **lambda** after reading about **Predicate**.\n\n1. Create **arch.day29.Day29FresherExercise** with **main**.\n2. Build a **Predicate<Integer>** that returns true when the value is positive.\n3. Print the result of **test** on **final** literals **-1** and **3**.\n4. Print one line explaining that **test** maps to the **SAM** **method** name.",
       "hints": [
-        "Start with correctness before optimization.",
-        "Use explicit naming for intent clarity.",
-        "Write one failure-case test and expected result."
+        "Use **Predicate<Integer>** with parentheses around parameter.",
+        "Call **test**, not **apply**.",
+        "Last line can be a fixed teaching **println**."
       ],
-      "solution": "package arch.day29;\nimport java.util.*;\n\npublic class Day29Advanced {\n    static record Review(String topic, int confidence, boolean needsRevision) {}\n\n    public static void main(String[] args) {\n        List<Review> reviews = List.of(\n            new Review(\"Lambda & Functional Interfaces\", 72, true),\n            new Review(\"Coding Practice\", 81, false),\n            new Review(\"Interview Explanation\", 68, true)\n        );\n\n        long reviseCount = reviews.stream().filter(Review::needsRevision).count();\n        int avg = (int) reviews.stream().mapToInt(Review::confidence).average().orElse(0);\n\n        System.out.println(\"avgConfidence = \" + avg);\n        System.out.println(\"needsRevision = \" + reviseCount);\n    }\n}\n",
-      "difficulty": "Intermediate"
+      "solution": "// Package groups this lesson file for class path runs.\npackage arch.day29;\n\nimport java.util.function.Predicate;\n\n/** Fresher drill: positive test with comments on every line. */\npublic class Day29FresherExercise {\n\n    public static void main(String[] args) {\n        // argv unused so output is deterministic across machines.\n        // Predicate captures the SAM shape for a boolean test.\n        Predicate<Integer> positive = n -> n > 0;\n        // negativeLiteral models bad input from upstream validation.\n        final int negativeLiteral = -1;\n        // positiveLiteral models good revenue line count.\n        final int positiveLiteral = 3;\n        // first println proves predicate rejects non-positive ints.\n        System.out.println(positive.test(negativeLiteral));\n        // second println proves predicate accepts positive ints.\n        System.out.println(positive.test(positiveLiteral));\n        // teaching line ties syntax back to SAM method name test.\n        System.out.println(\"teaching: Predicate uses abstract method test defined by the SAM\");\n    }\n}\n"
+    },
+    {
+      "type": "exercise",
+      "title": "Exercise — stream reuse triage (staff)",
+      "audience": "staff",
+      "difficulty": "Advanced",
+      "problem": "Your ingestion service logs **IllegalStateException: stream has already been operated upon or closed** only when EU tenants exceed one million rows.\n\n1. Model three **String** pipeline states (**cold**, **double_terminal**, **fixed**) as **final** constants.\n2. Build a **LinkedHashMap** mapping each state to the first command you run (**javap -v**, **jcmd** Thread.print, **unit** test harness).\n3. Print a triage line for **double_terminal** naming **Stream** single-use semantics.\n4. Print **fix** guidance referencing **Supplier** or **List** materialization.\n5. Print **prevention** referencing code review rule banning **Stream** instance fields.",
+      "hints": [
+        "Keep println-only; no real IO.",
+        "Order **LinkedHashMap** inserts for deterministic review output.",
+        "Mention **terminal** operations explicitly in fix line."
+      ],
+      "solution": "package arch.day29;\n\nimport java.util.LinkedHashMap;\nimport java.util.Map;\n\n/** Staff triage card: stream reuse incidents without live streams for CI determinism. */\npublic class Day29StaffExercise {\n\n    public static void main(String[] args) {\n        // cold models a healthy single-pass pipeline before metrics refactor.\n        final String cold = \"state:cold_single_terminal\";\n        // double_terminal models the failure mode from double count() calls.\n        final String doubleTerminal = \"state:double_terminal\";\n        // fixed models replay from supplier or list snapshot.\n        final String fixed = \"state:fixed_replay\";\n        // commands map ties human readable states to first diagnostics.\n        Map<String, String> commands = new LinkedHashMap<>();\n        commands.put(cold, \"javap -v IngestService.class for accidental Stream fields\");\n        commands.put(doubleTerminal, \"jcmd <pid> Thread.print + reproduce CSV in integration env\");\n        commands.put(fixed, \"run junit IngestReplayTest after Supplier refactor\");\n        System.out.println(\"=== Modeled pipeline states ===\");\n        for (Map.Entry<String, String> e : commands.entrySet()) {\n            System.out.println(e.getKey() + \" -> \" + e.getValue());\n        }\n        System.out.println(\"=== Triage double terminal ===\");\n        System.out.println(\"mechanism: java.util.stream.Stream allows one terminal; second pass throws IllegalStateException\");\n        System.out.println(\"=== Fix ===\");\n        System.out.println(\"fix: wrap Files.lines in Supplier<Stream<String>> or collect to List once then derive metrics\");\n        System.out.println(\"=== Prevention ===\");\n        System.out.println(\"prevention: review checklist bans Stream fields; ArchUnit guards on arch.ingest packages\");\n        System.out.println(\"=== Staff note ===\");\n        System.out.println(\"javap proves accidental Stream reuse fields; jcmd proves stack context during outage\");\n        System.out.println(\"Java 21 virtual thread issues differ; here root is classic Stream contract\");\n        System.out.println(\"Metaspace not implicated unless hot reload lambda spam appears\");\n        // Reviewer checklist: ensure metrics pass never stores Stream instance fields.\n        System.out.println(\"=== Review checklist (printable) ===\");\n        System.out.println(\"[ ] Stream fields banned in ingest module\");\n        System.out.println(\"[ ] Integration test opens pipeline twice like production\");\n        System.out.println(\"[ ] Ticket cites java.util.stream package in stack\");\n        System.out.println(\"[ ] Rollback plan documented before feature flag on\");\n        // Postmortem template: link to javap output and Thread.print capture paths.\n        System.out.println(\"=== Postmortem links ===\");\n        System.out.println(\"attach: splunk query for IllegalStateException ingest*\");\n        System.out.println(\"attach: grafana panel for EU tenant row volume threshold\");\n        // Coaching note: teach juniors Stream is Iterator sugar with fancy operators.\n        System.out.println(\"coaching: Supplier<Stream<String>> replays without mutating source Iterable\");\n        System.out.println(\"coaching: List.copyOf snapshot is acceptable when memory fits\");\n    }\n}\n"
     },
     {
       "type": "interview",
       "title": "Interview Drill",
       "conceptual": [
         {
-          "question": "What is a functional interface?",
-          "answer": "Single abstract method interface—target for lambda expressions.",
+          "question": "What is a **SAM** and why does every **lambda** need one?",
+          "answer": "A **SAM** (**single** **abstract** **method**) **interface** is exactly what **javac** expects on the left-hand side of a **lambda** assignment. **Runnable**, **Callable**, **Predicate**, and **Function** all qualify because only one abstract **method** remains after **default** **static** helpers are ignored. At **bytecode** level your **lambda** still becomes an object implementing that **interface**; the **JVM** just links it through **invokedynamic** instead of always generating a standalone extra class file. Mis-identifying the **SAM** produces confusing type errors in **Stream** chains because **map** wants a **Function**, not a **Consumer**. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Single abstract method interface—target for lambda expressions. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how do **lambdas** show up in production around SAM typing mistakes?",
+              "answer": "During an incident you grep logs for **SAM typing mistakes** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Single abstract method interface—target for lambda expressions. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What is a common trap interviewers set on SAM typing mistakes?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "Lambda vs anonymous class?",
-          "answer": "Lambda lighter syntax; captures effectively final vars; generates invokedynamic.",
+          "question": "What does **effectively final** mean for **lambda** capture?",
+          "answer": "Locals used inside **lambda** bodies cannot change after the **lambda** is created unless you wrap them in mutable carriers like **AtomicInteger**. **javac** enforces this so captured values stay safe when the **lambda** runs later on another **thread**. If you increment a primitive **int** counter in a loop and close over it, the compiler error is doing you a favor: concurrent pipelines would see torn reads otherwise. Promote state to a **final** holder object or use **reduce** operations instead of fighting the rule. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Lambda lighter syntax; captures effectively final vars; generates invokedynamic. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how do **lambdas** show up in production around capture and counters?",
+              "answer": "During an incident you grep logs for **capture and counters** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Lambda lighter syntax; captures effectively final vars; generates invokedynamic. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What is a common trap interviewers set on capture and counters?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "What is method reference?",
-          "answer": "String::length shorthand for s->s.length()—four kinds static, instance, ctor, arbitrary.",
+          "question": "How does **target typing** pick the **functional** **interface** for a **lambda**?",
+          "answer": "The compiler looks at the assignment context, **method** **parameter** types, **cast**, or **return** type to decide which **SAM** your **lambda** implements. That is why the same **x -> x** snippet can mean **Function.identity** or nonsense if the context is ambiguous. Explicit types on **parameters** fix most confusion in overloaded APIs. **javac** uses **inference** heavily here, which is why you sometimes add an explicit **Comparator** or **Predicate** type when the API overload explodes. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. String::length shorthand for s->s.length()—four kinds static, instance, ctor, arbitrary. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how do **lambdas** show up in production around overloaded SAM APIs?",
+              "answer": "During an incident you grep logs for **overloaded SAM APIs** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. String::length shorthand for s->s.length()—four kinds static, instance, ctor, arbitrary. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What is a common trap interviewers set on overloaded SAM APIs?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "What is effectively final?",
-          "answer": "Local variable assigned once—can be captured by lambdas.",
+          "question": "When do you choose **Predicate** versus **Function** in pipelines?",
+          "answer": "**Predicate** models a boolean test with **test**; **Function** models **apply** that returns a transformed value. **Stream.filter** wants **Predicate**, **map** wants **Function**. Swapping them either fails to compile or hides logic inside odd **Boolean** boxing. Name **variables** after the domain rule, not after syntax, so reviewers see intent without reading bodies. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Local variable assigned once—can be captured by lambdas. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how do **lambdas** show up in production around wrong functional choice?",
+              "answer": "During an incident you grep logs for **wrong functional choice** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Local variable assigned once—can be captured by lambdas. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What is a common trap interviewers set on wrong functional choice?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "Functional interfaces in java.util.function?",
-          "answer": "Predicate, Function, Consumer, Supplier—common shapes.",
+          "question": "Name the four **method** **reference** forms and when you reach for each.",
+          "answer": "**Static** (**String::valueOf**), bound instance (**s::length**), unbound instance (**String::compareTo**), and constructor (**ArrayList::new**) cover the grammar. They are sugar for **lambda**s when arity lines up. Unbound references put the stream element first automatically; juniors confuse that with bound references. When arity does not line up, stick to a **lambda** so you can name parameters clearly. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Predicate, Function, Consumer, Supplier—common shapes. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how do **lambdas** show up in production around method reference arity?",
+              "answer": "During an incident you grep logs for **method reference arity** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Predicate, Function, Consumer, Supplier—common shapes. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What is a common trap interviewers set on method reference arity?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "Exception handling in lambdas?",
-          "answer": "Checked exceptions must be handled or wrapped—can’t throw checked without signature allowing.",
+          "question": "How does **invokedynamic** differ from old **anonymous** **inner** **classes** at runtime?",
+          "answer": "**Anonymous** **classes** always generated separate class files per site in older style; **lambdas** lean on **LambdaMetafactory** to wire **CallSite** targets to **synthetic** methods holding bodies. That reduces class clutter and enables future optimizations, but stack traces still show generated names. When you shade **JARs**, both styles can break if **MethodHandle** accessibility changes; proof is **javap -v**, not guessing from line numbers. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Checked exceptions must be handled or wrapped—can’t throw checked without signature allowing. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how do **lambdas** show up in production around LinkageError after shading?",
+              "answer": "During an incident you grep logs for **LinkageError after shading** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Checked exceptions must be handled or wrapped—can’t throw checked without signature allowing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What is a common trap interviewers set on LinkageError after shading?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "Serialization of lambdas?",
-          "answer": "Fragile—avoid unless stable capturing rules understood.",
+          "question": "Why is **Stream.peek** dangerous for business rules?",
+          "answer": "**peek** exists for debugging and should not be the only place debits run. Intermediate operations can be fused or skipped when the **stream** short-circuits, so finance logic silently disappears. Move side effects to **forEach** after you are done transforming, or collect first. Violations show up as **silent** data loss without exceptions. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Fragile—avoid unless stable capturing rules understood. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how do **lambdas** show up in production around peek side effects?",
+              "answer": "During an incident you grep logs for **peek side effects** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Fragile—avoid unless stable capturing rules understood. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What is a common trap interviewers set on peek side effects?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "Default methods interaction?",
-          "answer": "Functional interface can have many defaults if single abstract method remains.",
+          "question": "How do **checked** **exceptions** interact with **lambda** bodies?",
+          "answer": "**SAM** **method** signatures on **java.util.function** do not declare **throws IOException** style clauses, so **lambda** bodies cannot throw checked types without **try/catch** or wrapping. That pushes teams toward **UncheckedIOException** patterns or narrower **APIs**. Production stacks then show **RuntimeException** wrappers; the fix is redesigning boundaries, not sprinkling **sneakyThrow**. **Java** has not added a general checked **lambda** escape hatch on purpose. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Functional interface can have many defaults if single abstract method remains. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how do **lambdas** show up in production around checked exceptions in streams?",
+              "answer": "During an incident you grep logs for **checked exceptions in streams** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Functional interface can have many defaults if single abstract method remains. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What is a common trap interviewers set on checked exceptions in streams?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "Composition Predicate.and/or/negate?",
-          "answer": "Combine boolean functions fluently.",
+          "question": "What happens when you reuse a **java.util.stream.Stream**?",
+          "answer": "**Stream** is single-use after a **terminal** operation. Holding onto the reference and calling **filter** again throws **IllegalStateException** with a message about stream reuse. Wrap source data in a **Supplier** of **Stream** if you need multiple passes. CI missed it because tests used tiny lists and only one pass. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Combine boolean functions fluently. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how do **lambdas** show up in production around stream reuse?",
+              "answer": "During an incident you grep logs for **stream reuse** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Combine boolean functions fluently. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What is a common trap interviewers set on stream reuse?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "Currying (mention)?",
-          "answer": "Partial application—higher-order functions in FP style.",
+          "question": "Why can **parallelStream** corrupt results on an **ArrayList**?",
+          "answer": "**ArrayList** is not thread-safe for writers while readers iterate. **parallelStream** splits work across **ForkJoinPool** threads; concurrent mutation triggers **ArrayIndexOutOfBoundsException** or silent corruption. Use **ConcurrentHashMap** values or copy the list first. Proof is a stress test plus **jcmd** **Thread.print** showing **ForkJoinPool** worker frames. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Partial application—higher-order functions in FP style. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how do **lambdas** show up in production around parallel streams and lists?",
+              "answer": "During an incident you grep logs for **parallel streams and lists** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Partial application—higher-order functions in FP style. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What is a common trap interviewers set on parallel streams and lists?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "Lambda performance vs anonymous?",
-          "answer": "Similar after JIT—avoid premature micro-optimization.",
+          "question": "How does **Comparator.comparing** improve readability?",
+          "answer": "It packages key extractors and **null** handling helpers so sort logic reads like product language. Chaining **thenComparing** encodes tie-breakers without nested ternaries. Production bugs from manual **compareTo** often come from forgotten **null** cases; **nullsFirst** fixes that story. Mixing **comparingInt** avoids boxing surprises in hot sorts. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Similar after JIT—avoid premature micro-optimization. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how do **lambdas** show up in production around Comparator chains?",
+              "answer": "During an incident you grep logs for **Comparator chains** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Similar after JIT—avoid premature micro-optimization. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What is a common trap interviewers set on Comparator chains?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "this in lambda vs anonymous?",
-          "answer": "Lambda uses enclosing this; anonymous has own this for inner class.",
+          "question": "When should you prefer a named **class** over a **lambda** in **Spring** beans?",
+          "answer": "Framework proxies and **serialization** sometimes need stable types. **Serializable** **lambdas** embed unstable names across releases. **Spring** scoped beans carrying **lambda** state risk **ClassCastException** after redeploys. Replace with a small **class** implementing **Function** and document thread safety. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Lambda uses enclosing this; anonymous has own this for inner class. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how do **lambdas** show up in production around framework lambdas?",
+              "answer": "During an incident you grep logs for **framework lambdas** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Lambda uses enclosing this; anonymous has own this for inner class. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What is a common trap interviewers set on framework lambdas?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "Target typing?",
-          "answer": "Compiler infers functional interface from assignment context.",
+          "question": "How do **Optional** methods use **lambdas** safely?",
+          "answer": "**map**, **flatMap**, and **ifPresent** take **Function** or **Consumer** implementations. Avoid **Optional.get** without **isPresent**; prefer **final** mapping chains that return new **Optional** values. Misuse surfaces as **NoSuchElementException** in edge cases that only hit certain tenants. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Compiler infers functional interface from assignment context. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how do **lambdas** show up in production around Optional chains?",
+              "answer": "During an incident you grep logs for **Optional chains** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Compiler infers functional interface from assignment context. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What is a common trap interviewers set on Optional chains?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "@FunctionalInterface purpose?",
-          "answer": "Compiler error if not exactly one abstract method—documentation.",
+          "question": "What does **Function.compose** versus **andThen** express?",
+          "answer": "**compose** applies the argument **Function** before the outer one; **andThen** applies after. They encode data-flow direction without extra variables. Confusing the order yields subtle **DTO** mapping bugs that unit tests miss when fixtures are symmetric. Draw arrows on a whiteboard during design reviews. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Compiler error if not exactly one abstract method—documentation. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how do **lambdas** show up in production around function composition order?",
+              "answer": "During an incident you grep logs for **function composition order** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Compiler error if not exactly one abstract method—documentation. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What is a common trap interviewers set on function composition order?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         },
         {
-          "question": "Parallel streams and lambdas?",
-          "answer": "Side effects dangerous—thread-safe operations required.",
+          "question": "Why do **virtual** threads change how you audit **lambda** bodies?",
+          "answer": "**Virtual** threads are cheap, so teams fire **Runnable** **lambdas** by the million. Any **synchronized** block inside those bodies can pin a carrier **thread**, spiking latency without classic thread-pool exhaustion. **Java 21** guidance is to replace **synchronized** with **ReentrantLock** on hot paths or narrow critical sections. Diagnose with **jcmd** thread dumps that mention pinned stacks. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Lambda and Functional Interfaces** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Side effects dangerous—thread-safe operations required. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how do **lambdas** show up in production around virtual thread pinning?",
+              "answer": "During an incident you grep logs for **virtual thread pinning** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Lambda and Functional Interfaces**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Side effects dangerous—thread-safe operations required. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What is a common trap interviewers set on virtual thread pinning?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
+            }
+          ]
+        },
+        {
+          "question": "How do you defend **Metaspace** investigations tied to **lambda** linkage?",
+          "answer": "Each unique **lambda** shape contributes to class metadata until classes unload. Dev servers with hot reload generate many **MethodHandle** graphs; **Metaspace** grows slowly then fails with **OutOfMemoryError**. Capture **jcmd** **VM.metaspace** before and after reload cycles. Production fix is class loader hygiene or disabling reckless reload plugins. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how do **lambdas** show up in production around Metaspace churn?",
+              "answer": "During an incident you grep logs for **Metaspace churn** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
+            },
+            {
+              "question": "What is a common trap interviewers set on Metaspace churn?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
+            }
+          ]
+        },
+        {
+          "question": "What is your **Staff**-level story for **LinkageError** after a **fat** **JAR** upgrade?",
+          "answer": "**LinkageError** means the **JVM** could not resolve a **method** handle target your **lambda** expects, often because relocation renamed packages or stripped **NestMembers** metadata. You diff **javap -v** between releases and search **BootstrapMethods** for dangling constants. You fix shade rules or split modules so **invoke** packages stay intact. This is not a **lambda** syntax bug; it is packaging hygiene. Run **javap -v** on the class that owns the **lambda** to read **BootstrapMethods** and **invokedynamic** constants; that separates sugar from linkage bugs. When stacks look fine but latency spikes on **Java 21** **virtual** threads, capture **jcmd** **Thread.print** and search for pinned carriers around **synchronized** blocks inside **lambda** bodies. Failures such as **IllegalStateException** on reused **Stream** pipelines or **ArrayIndexOutOfBoundsException** from **parallelStream** on mutable lists are the usual production shapes. **Java 8** introduced **LambdaMetafactory**; **Java 11** polished **NestHost** reflection; **Java 17** tightens illegal access; **Java 21** scales **Runnable** throughput so diagnostics shift toward pinning, not allocation trivia.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how do **lambdas** show up in production around shaded fat jars?",
+              "answer": "During an incident you grep logs for **shaded fat jars** failures, then open **jcmd** **Thread.print** on a canary pod and scroll to **ForkJoinPool** frames or **Stream** pipeline frames. You reproduce with a fixture copy of the customer payload, not with toy lists. You attach **javap -v** bootstrap output to the ticket so reviewers see the **invokedynamic** site you mean. You confirm **java -version** on the breaking node so nobody confuses **Java 17** access errors with business logic."
+            },
+            {
+              "question": "What is a common trap interviewers set on shaded fat jars?",
+              "answer": "Interviewers love claiming any **lambda** magically runs faster than an **anonymous** **class**; you answer that both allocate work and the win is readability until proven otherwise with **JFR**. Another trap is insisting **parallelStream** is free; you cite **ForkJoinPool** contention and mutable source races. A third trap is storing **Stream** instances for later; you teach single-pass pipelines or **Supplier** factories."
             }
           ]
         }
       ],
       "codeBased": [
         {
-          "question": "Runnable lambda sleep.",
-          "answer": "() -> { try { Thread.sleep(100);} catch...}",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. () -> { try { Thread.sleep(100);} catch...} Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. () -> { try { Thread.sleep(100);} catch...} Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
-            }
-          ]
+          "question": "What does this print?\n```java\nimport java.util.function.*;\npublic class A {\n  static void run(Consumer<Integer> c, Supplier<Integer> s) {\n    c.accept(s.get());\n  }\n  public static void main(String[] a) {\n    int[] box = { 1 };\n    run(x -> box[0] += x, () -> 2);\n    System.out.println(box[0]);\n  }\n}\n```",
+          "answer": "Prints 3 because **Consumer** runs after **Supplier** supplies 2, mutating the **int** array through the captured reference. **Lambda** capture copies the array reference, not the primitive slot, so mutation is legal. At **bytecode** level the **lambda** is a **synthetic** method that loads **box** and updates index 0. There is no **autoboxing** trick here, just shared mutable state.",
+          "followUps": []
         },
         {
-          "question": "Comparator.comparing(Person::getAge).reversed()",
-          "answer": "Method references chain.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Method references chain. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Method references chain. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
-            }
-          ]
+          "question": "What does this print?\n```java\nimport java.util.*;\npublic class B {\n  public static void main(String[] a) {\n    List<String> xs = Arrays.asList(\"b\",\"a\");\n    xs.sort(String::compareTo);\n    System.out.println(xs);\n  }\n}\n```",
+          "answer": "Prints **[a, b]** because **String::compareTo** is an unbound **instance** **method** **reference** feeding **Comparator**. **sort** uses merge/tim sort with that ordering. No new **String** objects are allocated; only reordering happens. This pattern is preferred over manual **compareTo** lambdas for readability.",
+          "followUps": []
         },
         {
-          "question": "Predicate<String> not blank.",
-          "answer": "s -> s != null && !s.isBlank().",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. s -> s != null && !s.isBlank(). Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. s -> s != null && !s.isBlank(). Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
-            }
-          ]
+          "question": "What does this print?\n```java\ninterface I { int get(); }\npublic class C {\n  static I twice(I i) { return () -> i.get() * 2; }\n  public static void main(String[] a) {\n    int[] v = { 3 };\n    I base = () -> v[0];\n    System.out.println(twice(base).get());\n    v[0] = 5;\n    System.out.println(base.get());\n  }\n}\n```",
+          "answer": "**twice** builds a new **SAM** that closes over **base**, not over the current **int** value. First line prints 6, second prints 5 because **base** still reads **v[0]** each call. This shows **lambda** capture is by reference to effective values, not deep snapshots of primitives inside arrays. Misreading that causes flaky pipeline math.",
+          "followUps": []
         },
         {
-          "question": "Function<String,Integer> parseInt safe.",
-          "answer": "Wrap parseInt in try or return Optional.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Wrap parseInt in try or return Optional. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Wrap parseInt in try or return Optional. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            }
-          ]
+          "question": "Does this compile?\n```java\nimport java.util.function.*;\npublic class D {\n  public static void main(String[] a) {\n    int x = 1;\n    Runnable r = () -> System.out.println(x);\n    x = 2;\n    r.run();\n  }\n}\n```",
+          "answer": "No. **x** is not **effectively final** because it is reassigned after the **lambda** is created; **javac** rejects it. If **x** stayed final, the program would compile and print **1** at capture time versus print time depending on whether the body reads **x** directly—here it would read the final value. Teams fix this with **final int** copy or **AtomicInteger**.",
+          "followUps": []
         },
         {
-          "question": "Consumer chain andThen.",
-          "answer": "log.andThen(metrics).",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. log.andThen(metrics). Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. log.andThen(metrics). When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
-            }
-          ]
+          "question": "What does this print?\n```java\nimport java.util.stream.*;\npublic class E {\n  public static void main(String[] a) {\n    Stream<Integer> s = Stream.of(1,2,3);\n    System.out.println(s.count() + s.count());\n  }\n}\n```",
+          "answer": "Throws **IllegalStateException: stream has already been operated upon or closed** because **count** is **terminal** and the second call reuses the spent **Stream**. Fix with **Stream.of(...)** twice or **Arrays.stream** inside a **Supplier**. This is a classic production footgun when metrics code logs mid-pipeline.",
+          "followUps": []
         },
         {
-          "question": "Supplier for lazy init.",
-          "answer": "() -> expensiveCompute().",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. () -> expensiveCompute(). Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. () -> expensiveCompute(). Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
-            }
-          ]
+          "question": "What does this print?\n```java\npublic class F {\n  public static void main(String[] a) {\n    java.util.function.Function<String,String> f = String::toUpperCase;\n    System.out.println(f.apply(\"java\"));\n  }\n}\n```",
+          "answer": "Prints **JAVA** using an unbound **instance** **method** **reference** interpreted as **Function**. **apply** passes the argument as the receiver. **HotSpot** still allocates nothing beyond the **Functional** wrapper already created by **invokedynamic** linkage.",
+          "followUps": []
         },
         {
-          "question": "Sort with lambda Comparator.",
-          "answer": "(a,b) -> Integer.compare(a.x,b.x).",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. (a,b) -> Integer.compare(a.x,b.x). Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. (a,b) -> Integer.compare(a.x,b.x). Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            }
-          ]
+          "question": "What does this print?\n```java\nimport java.util.function.*;\npublic class G2 {\n  public static void main(String[] a) {\n    Function<Integer, Integer> f = x -> x + 1;\n    Function<Integer, Integer> g = f.compose(y -> y * 2);\n    System.out.println(g.apply(3));\n  }\n}\n```",
+          "answer": "**compose** applies the inner **Function** first: **3 * 2 = 6**, then **6 + 1 = 7**, so it prints **7**. Order matters: **andThen** would add before multiply. **bytecode** still uses **invokedynamic** for both **lambda** bodies.",
+          "followUps": []
         },
         {
-          "question": "Replace anonymous Runnable with lambda.",
-          "answer": "new Thread(() -> ...).start()",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. new Thread(() -> ...).start() Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. new Thread(() -> ...).start() Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
-            }
-          ]
-        },
-        {
-          "question": "Constructor reference ArrayList::new.",
-          "answer": "Supplier<ArrayList<String>>.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Supplier<ArrayList<String>>. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Supplier<ArrayList<String>>. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            }
-          ]
-        },
-        {
-          "question": "Stream filter map collect with lambdas.",
-          "answer": "Classic pipeline.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Classic pipeline. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Classic pipeline. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
-            }
-          ]
-        },
-        {
-          "question": "Predicate.and vs composing two filters in stream?",
-          "answer": "Equivalent for filter; Predicate helpers readable for reuse.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Equivalent for filter; Predicate helpers readable for reuse. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Equivalent for filter; Predicate helpers readable for reuse. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
-            }
-          ]
-        },
-        {
-          "question": "Function.compose(f,g) order?",
-          "answer": "compose applies argument function first: this.compose(before).",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. compose applies argument function first: this.compose(before). Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. compose applies argument function first: this.compose(before). Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
-            }
-          ]
-        },
-        {
-          "question": "BiConsumer vs Consumer?",
-          "answer": "BiConsumer takes two args void return—e.g. Map.forEach.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. BiConsumer takes two args void return—e.g. Map.forEach. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. BiConsumer takes two args void return—e.g. Map.forEach. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            }
-          ]
-        },
-        {
-          "question": "UnaryOperator in List.replaceAll?",
-          "answer": "List.replaceAll(UnaryOperator) transforms each element in place.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. List.replaceAll(UnaryOperator) transforms each element in place. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. List.replaceAll(UnaryOperator) transforms each element in place. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
-            }
-          ]
-        },
-        {
-          "question": "Supplier<Double> Math::random vs () -> Math.random()?",
-          "answer": "Method ref to static method zero-arg matches Supplier.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Method ref to static method zero-arg matches Supplier. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Method ref to static method zero-arg matches Supplier. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
-            }
-          ]
-        },
-        {
-          "question": "Why Comparator.comparing(Person::getName)?",
-          "answer": "Key extractor Function; avoids manual null-safe compare boilerplate.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Key extractor Function; avoids manual null-safe compare boilerplate. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Key extractor Function; avoids manual null-safe compare boilerplate. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
-            }
-          ]
-        },
-        {
-          "question": "Lambda vs anonymous Runnable bytecode?",
-          "answer": "Lambdas use invokedynamic; anonymous class separate class file.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Lambda and Functional Interfaces** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Lambdas use invokedynamic; anonymous class separate class file. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Lambdas use invokedynamic; anonymous class separate class file. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
-            }
-          ]
+          "question": "What does this print?\n```java\nimport java.util.*;\npublic class H {\n  public static void main(String[] a) {\n    List<Integer> xs = Arrays.asList(2,1,3);\n    xs.sort(Comparator.naturalOrder());\n    System.out.println(xs);\n  }\n}\n```",
+          "answer": "Prints **[1, 2, 3]** because **naturalOrder** builds a **Comparator** using **compareTo** on **Integer**. **Arrays.asList** supports **sort** by delegating to **Array** merge sort. Autoboxing already happened when the list was built.",
+          "followUps": []
         }
       ],
       "seniorScenario": [
         {
-          "question": "Framework passes lambdas to threads—thread safety?",
-          "answer": "Capture only immutable or thread-safe state.",
-          "followUps": [
-            {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Lambda and Functional Interfaces** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Capture only immutable or thread-safe state. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
-            },
-            {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Capture only immutable or thread-safe state. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
-            }
-          ]
+          "question": "Payments staging throws **IllegalStateException: stream has already been operated upon** after you add a metrics **peek**; only EU tenants hit it.",
+          "answer": "**Immediate response:** Reproduce with the EU CSV in a **main** harness locally, then capture **jcmd** **Thread.print** on a staging pod to confirm the faulting frame is **java.util.stream** and not JDBC. Save the thread dump beside **java -version** from the pod so reviewers know whether you are on **Java 17** or **Java 21** **virtual** thread carriers.\n\n**Root cause:** A **Stream** reference from the ingestion pipeline is being **counted** for metrics and then reused for transformation. **Terminal** operations close the pipeline; the second pass throws **IllegalStateException** once real data crosses two terminals. The **JVM** is behaving exactly as **java.util.stream** documents; the defect is object lifetime in application code.\n\n**Fix:** Build the **Stream** twice from the **Supplier** `() -> Files.lines(path)` or materialize to **List** once if memory allows. Add an integration test that calls the service method twice with the same payload. If you need proof for leadership, run **javap -v** on the service class only when you suspect a generated **spliterator**, otherwise skip bytecode theatre.\n\n**Prevention:** Code review checklist bans stored **Stream** fields. Add **ArchUnit** or simple regex checks that fail when **Stream** is assigned to **instance** fields without **Supplier** wrappers. Document the decision in the service README so new hires do not resurrect the double-**count** pattern.\n\nClosing the loop at Staff depth means you treat **Stream** like a disposable iterator, not a reusable collection. When finance asks why tests missed it, you show that fixtures never exercised the million-row path and you ship a load test budget tied to that tenant profile. You also verify **Metaspace** remained stable because this bug class is unrelated to **lambda** **linkage**, which prevents the team from chasing the wrong **JVM** flag during panic tuning.",
+          "followUps": []
         },
         {
-          "question": "Debugging lambda stack traces?",
-          "answer": "Line numbers and method names sometimes obscure—use named methods if complex.",
-          "followUps": [
-            {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Lambda and Functional Interfaces** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Line numbers and method names sometimes obscure—use named methods if complex. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
-            },
-            {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Line numbers and method names sometimes obscure—use named methods if complex. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
-            }
-          ]
+          "question": "**jstack** on **Java 21** shows carrier threads blocked while **virtual** threads multiply during a **parallelStream** on a shared **ArrayList**.",
+          "answer": "**Immediate response:** Capture **jcmd** **Thread.print -e** output and diff **ForkJoinPool** worker stacks against **virtual** thread carriers; screenshot frames with **ArrayList** **add** next to **Spliterator**.\n\n**Root cause:** **parallelStream** assumes a **thread-safe** source or read-only data. Writers concurrently modify **ArrayList** internals while the spliterator walks backing storage, causing torn index updates that surface as **ArrayIndexOutOfBoundsException** or silent corruption.\n\n**Fix:** Switch to **CopyOnWriteArrayList**, synchronize mutations, or copy the list under lock before **parallel** processing. Prefer **IntStream.range** over parallelizing tiny lists. Prove with a **jcstress**-style hammer test.\n\n**Prevention:** Document **parallelStream** policy in the service README and block PRs that call it on DAO results without immutability proof.\n\nStaff closure: once the list is immutable or copied, re-run **jcmd** **JFR.start** to prove **ForkJoinPool** steal rates justify the complexity. If steals stay flat, you just paid for threads that shuffle corrupted indexes. Tie the postmortem to **Java 21** **virtual** thread adoption so leadership sees why carrier pinning and **ArrayList** races are different failure classes that share noisy dashboards. Publish a one-page decision tree: **parallel** only when source is **Concurrent** or snapshot-isolated, otherwise sequential pipelines win on clarity and safety.\n\nCarrier noise can mislead you: **Java 21** carriers may look busy while mounts of **virtual** threads queue behind a **synchronized** block, and that pattern is not the same root cause as **ArrayList** internal corruption. Keep both hypotheses on the whiteboard until **jcmd** **Thread.print** shows whether hot frames are **ForkJoinPool** steal loops, **ArrayList** growth, or pinned carriers. After the list is safe, re-benchmark **sequential** versus **parallel** on production-sized inputs; modest lists often favor **sequential** clarity over tiny wall-clock wins, which is an easy story for stakeholders who fear another race.",
+          "followUps": []
         },
         {
-          "question": "Kotlin SAM vs Java functional—interop?",
-          "answer": "SAM conversion rules in Kotlin for Java APIs.",
-          "followUps": [
-            {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Lambda and Functional Interfaces** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: SAM conversion rules in Kotlin for Java APIs. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            },
-            {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. SAM conversion rules in Kotlin for Java APIs. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
-            }
-          ]
+          "question": "After a **Maven Shade** upgrade, **LinkageError: bad receiver type** appears only in **lambda** heavy modules.",
+          "answer": "**Immediate response:** Download the fat **JAR** from artifactory and run **javap -v -p** on the class cited in the stack; paste **BootstrapMethods** into the incident channel. Compare the same class from the last known good build so the diff is obvious to every reviewer, not just bytecode specialists.\n\n**Root cause:** Relocation rules rewrote packages referenced by **invokedynamic** bootstrap arguments but did not update **NestHost** or **MethodHandle** constants consistently, so **LambdaMetafactory** cannot link. This is packaging interacting with **Java 8+** **lambda** machinery, not a business rule regression.\n\n**Fix:** Exclude **invoke** or **lambda** generating packages from relocation, or stop shading that module. Rebuild thin **JARs** for library consumers. Redeploy to staging with **java -verbose:class** smoke tests to catch early **LinkageError** before touching production traffic.\n\n**Prevention:** CI diff of **javap -v** bootstrap sections between releases for every shaded artifact. Add a release checklist item: \"Shade diff reviewed by engineer who understands **invokedynamic**.\"\n\nLonger lesson: teams assume shading only hurts reflection-heavy frameworks, but **lambda** call sites are equally sensitive because **MethodHandle** constants embed descriptors. A Staff answer names **LambdaMetafactory** explicitly and ties the failure to **ConstantPool** entries, which stops endless rollbacks of innocent library bumps. After the fix ships, you run the same **javap** diff in **staging** and **production** canaries so release management sees objective evidence, not tribal memory. You also log **java -version** beside every fat **JAR** filename so support can tell which artifact regressed when multiple trains overlap.",
+          "followUps": []
         },
         {
-          "question": "Reactive APIs functional style—errors?",
-          "answer": "Signal propagation, not exceptions through streams casually.",
-          "followUps": [
-            {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Lambda and Functional Interfaces** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Signal propagation, not exceptions through streams casually. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            },
-            {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Signal propagation, not exceptions through streams casually. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            }
-          ]
+          "question": "Profiler shows hot spots in **LambdaForm** frames after upgrading to **Java 17**; CPU is flat but latency grows.",
+          "answer": "**Immediate response:** Run **async-profiler** or **jcmd** **JFR.start** for sixty seconds on a canary, then open flame graphs filtered to **java.lang.invoke** packages. Capture **java -version** and **VM.flags** so **GC** differences do not pollute your comparison across pods.\n\n**Root cause:** Extra reflective checks or defensive **MethodHandle** guards triggered by **strong encapsulation** can increase linkage overhead when frameworks generate many distinct **lambdas** per request. **Java 17** tightened illegal access compared with **Java 11**, so frameworks that probe JDK internals pay more per request even when **bytecode** looks unchanged.\n\n**Fix:** Cache **Function** instances, reuse **MethodHandles**, or upgrade the framework version that adopted **Java 17** friendly patterns. Add **--add-opens** only with security review and on-call owners. Compare request latency with and without the upgrade on identical traffic replay.\n\n**Prevention:** Cap dynamic **lambda** generation in hot paths; prefer static **MethodReferences** where possible. Require load tests that mirror login storms where per-request **lambda** counts spike.\n\n**Stakeholder story:** this is not random slowness; it is **invokedynamic** amplification from framework reflection. Proof is flame graphs, not finger-pointing at **G1**.\n\nRunbook note: archive the before-and-after flame graphs in the ticket, link the **Gradle** or **Maven** dependency diff, and schedule a follow-up to remove temporary **--add-opens** lines with a tracked deadline so security stays satisfied.",
+          "followUps": []
         },
         {
-          "question": "Code coverage on lambda branches?",
-          "answer": "May need extract method for meaningful branch coverage names.",
-          "followUps": [
-            {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Lambda and Functional Interfaces** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: May need extract method for meaningful branch coverage names. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
-            },
-            {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. May need extract method for meaningful branch coverage names. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
-            }
-          ]
+          "question": "Session replication fails on **Tomcat** after developers store **Serializable** **lambdas** in **Spring** **session** attributes.",
+          "answer": "**Immediate response:** Turn on **session** serialization logging, capture **NotSerializableException** with the synthetic **lambda** class name, and identify the attribute key from stack frames. Pair that with **jcmd** **Thread.print** if the failure only happens during concurrent session migration across **Tomcat** nodes.\n\n**Root cause:** **Synthetic** **lambda** classes are not a stable **serialization** contract across **JDK** minor versions; **readResolve** expectations fail after restart. **Java** does not promise that **lambda** bodies survive cluster round-trips the way normal **DTO** classes do.\n\n**Fix:** Replace **lambda** fields with named **static** **classes** implementing **Serializable** **Function** or store plain **DTO** snapshots. Add a **session** migration checklist and regression test that serializes a mock **HttpSession** map in CI.\n\n**Prevention:** Ban anonymous **lambdas** in **Serializable** **Spring** beans via **Error Prone** or custom **ArchUnit** checks. Document why in the wiki so product understands this is not arbitrary dogma.\n\nLonger Staff angle: whenever you see **NotSerializableException** referencing **$$Lambda**, assume the fix is a named **class** with a **serialVersionUID** and explicit fields. Attach **javap -p** of the replacement class to the ticket so reviewers see a stable type on disk. Run a blue-green fail-over test that serializes sessions on **Java 17** nodes and hydrates them on **Java 21** nodes, because minor behavioral differences still appear in edge **readObject** paths. Keep a spreadsheet of **session** attribute keys allowed for replication so product cannot stash ad-hoc callbacks without review.",
+          "followUps": []
         },
         {
-          "question": "Serialization of captured closures in actors?",
-          "answer": "Dangerous—keep messages data-only.",
-          "followUps": [
-            {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Lambda and Functional Interfaces** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Dangerous—keep messages data-only. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            },
-            {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Dangerous—keep messages data-only. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
-            }
-          ]
+          "question": "Finance demands **deterministic** nightly totals but engineers added **parallelStream** 'for speed' on ledger lines.",
+          "answer": "**Immediate response:** Pause the deploy, rerun the job with **ForkJoinPool.commonPool** parallelism set to **1** in staging, and compare totals to sequential output. Log **java -version** on the batch host because **Java 17** **Math** tweaks can magnify tiny ordering differences.\n\n**Root cause:** **Floating** point combine order changed with parallel splits, or side effects inside **forEach** raced, producing non-deterministic accumulation even without exceptions. Auditors do not care about your **lambda** elegance; they care that debits equal credits every night.\n\n**Fix:** Remove **parallel**, or switch to **Long** accumulators with **reduce** that is associative and side-effect free. Document numeric tolerances if **BigDecimal** rounding must differ, and get finance sign-off in writing.\n\n**Prevention:** Require **property-based** tests that compare parallel vs sequential results for aggregation nightly jobs. Add alerts when totals diverge beyond a single cent.\n\nTeaching beat: **parallelStream** is not a free speed button for money math. If you need Staff credibility, quote the **JLS** associativity requirement and show **jcmd** **JFR** evidence that **parallel** saved fewer CPU seconds than it risked in reconciliation errors. Roll the deterministic job back to **stream** sequential in **prod**, then schedule a performance office hours where engineers learn to prove speedups before merging. Finally, add a finance sign-off checklist so nobody re-enables **parallel** during release freeze week without CFO awareness.",
+          "followUps": []
         }
       ],
       "wrongAnswers": [
-        "Lambdas can modify any local variable they read.",
-        "Functional interface can have two abstract methods if defaults exist.",
-        "Method references always allocate fewer objects than lambdas.",
-        "Lambda syntax works in Java 7.",
-        "You can throw checked exceptions freely from any lambda.",
-        "Anonymous inner class and lambda are identical at runtime always."
+        "You should always use **parallelStream** because it makes every pipeline faster on modern CPUs.",
+        "**Lambda** bodies are guaranteed **thread-safe** because the syntax is modern.",
+        "Storing a **Stream** in a **field** for reuse is fine as long as you never call **close** yourself.",
+        "**Method** **references** never allocate, so they are free at runtime.",
+        "You can throw any **checked** **exception** out of a **java.util.function.Consumer** **lambda** without wrapping.",
+        "**peek** is the right place to charge customers because it runs for every element exactly once.",
+        "**invokedynamic** means lambdas are interpreted slowly like **JavaScript**.",
+        "**Serializable** **lambdas** are stable across **JDK** upgrades and safe for **Hibernate** entities."
+      ],
+      "jobSwitch": {
+        "resumeBullet": "Replaced unsafe parallelStream usage on mutable DTO lists across 6 services, eliminating race crashes and restoring deterministic totals.",
+        "interviewPositioning": "When I join a team I map every **Stream** **terminal** in payment modules in week one, then align on a **Supplier** pattern where reuse is needed. I show **javap -v** bootstrap diffs when linkage regressions appear so nobody blames business rules first.",
+        "starAnchor": "Our invoicing job started throwing **IllegalStateException** after a metrics PR double-passed **Stream** pipelines whenever European files exceeded 50k lines. I reproduced in isolation, split pipelines with a **List** materialization step, and added CI tests that call the extractor twice. Incidents dropped to zero for three quarters and finance signed off on latency unchanged at p95 1.8s."
+      }
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ — Lambdas and Functional Interfaces",
+      "description": "30 questions: SAM, method refs, streams, linkage, and on-call diagnostics.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "What does a **functional** **interface** require?",
+          "options": {
+            "A": "Two abstract methods",
+            "B": "Exactly one abstract method",
+            "C": "Only default methods",
+            "D": "No methods"
+          },
+          "answer": "B",
+          "explanation": "SAM types power **lambda** target typing. Extra abstract methods break **lambda** assignment unless **Intersection** tricks appear, which is rare in interviews."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "Which API typically takes a **Predicate**?",
+          "options": {
+            "A": "**Stream.map**",
+            "B": "**Stream.filter**",
+            "C": "**Stream.flatMap**",
+            "D": "**Collectors.joining**"
+          },
+          "answer": "B",
+          "explanation": "**filter** tests elements; **map** needs **Function**."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "theory",
+          "question": "What does **String::trim** represent?",
+          "options": {
+            "A": "A **Supplier**",
+            "B": "An unbound **instance** **method** **reference** used as **Function**",
+            "C": "A **Constructor** reference",
+            "D": "A **Comparator**"
+          },
+          "answer": "B",
+          "explanation": "First argument becomes receiver for **trim**."
+        },
+        {
+          "id": 4,
+          "level": "basic",
+          "category": "theory",
+          "question": "Why must captured locals be **effectively final**?",
+          "options": {
+            "A": "To help GC",
+            "B": "So concurrent bodies see stable values",
+            "C": "Because **JVM** forbids ints",
+            "D": "No reason; it is stylistic"
+          },
+          "answer": "B",
+          "explanation": "**javac** enforces safe capture semantics across threads."
+        },
+        {
+          "id": 5,
+          "level": "basic",
+          "category": "code-reading",
+          "question": "What prints?\n```java\nRunnable r = () -> System.out.print(\"x\");\nr.run();\n```",
+          "options": {
+            "A": "Compile error",
+            "B": "x",
+            "C": "y",
+            "D": "Throws **NullPointerException**"
+          },
+          "answer": "B",
+          "explanation": "**Runnable** **run** invokes **lambda** body."
+        },
+        {
+          "id": 6,
+          "level": "basic",
+          "category": "code-reading",
+          "question": "What prints?\n```java\njava.util.function.Supplier<Double> s = () -> 2.0;\nSystem.out.println(s.get() + 1);\n```",
+          "options": {
+            "A": "21",
+            "B": "3.0",
+            "C": "31",
+            "D": "Compile error"
+          },
+          "answer": "B",
+          "explanation": "**Double** autobox adds with **int** promotes to **double**."
+        },
+        {
+          "id": 7,
+          "level": "basic",
+          "category": "code-reading",
+          "question": "Does **Arrays.asList(1,2).stream().count()** compile?",
+          "options": {
+            "A": "No",
+            "B": "Yes",
+            "C": "Only on **Java 7**",
+            "D": "Only inside **enum**"
+          },
+          "answer": "B",
+          "explanation": "**List** exposes **stream** since **Java 8**."
+        },
+        {
+          "id": 8,
+          "level": "basic",
+          "category": "real-world",
+          "question": "You need a no-arg factory for **ArrayList**; best **Supplier** usage?",
+          "options": {
+            "A": "**ArrayList::new**",
+            "B": "**new ArrayList** without **Supplier**",
+            "C": "**System::gc**",
+            "D": "**String::new**"
+          },
+          "answer": "A",
+          "explanation": "Constructor reference matches **Supplier** shape."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "code-reading",
+          "question": "What prints?\n```java\nimport java.util.*;\npublic class X {\n public static void main(String[] a){\n  List<String> xs = Arrays.asList(\"b\",\"A\");\n  xs.sort(String.CASE_INSENSITIVE_ORDER);\n  System.out.println(xs.get(0));\n }\n}\n```",
+          "options": {
+            "A": "A",
+            "B": "b",
+            "C": "Compile error",
+            "D": "Throws"
+          },
+          "answer": "A",
+          "explanation": "**CASE_INSENSITIVE_ORDER** treats **A** before **b**."
+        },
+        {
+          "id": 12,
+          "level": "intermediate",
+          "category": "code-reading",
+          "question": "Does this compile?\n```java\nimport java.util.function.*;\nclass Y { static Function<String,String> f = s -> s + s; }\n```",
+          "options": {
+            "A": "Yes",
+            "B": "No",
+            "C": "Only with **var**",
+            "D": "Only in **enum**"
+          },
+          "answer": "A",
+          "explanation": "**static** field **lambda** is allowed with **target** type **Function**."
+        },
+        {
+          "id": 13,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Which is true about **invokedynamic** and **lambdas**?",
+          "options": {
+            "A": "Every **lambda** becomes its own **class** file on disk every time",
+            "B": "**LambdaMetafactory** participates in linkage",
+            "C": "**invokedynamic** is only for dynamic languages",
+            "D": "**javac** ignores **lambda** types"
+          },
+          "answer": "B",
+          "explanation": "**Bootstrap** methods wire **CallSite** objects."
+        },
+        {
+          "id": 14,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Best fix for **checked** **IOException** inside **Stream.map**?",
+          "options": {
+            "A": "Add **throws** on **lambda**",
+            "B": "Wrap with **UncheckedIOException** or refactor IO boundary",
+            "C": "Use **parallelStream**",
+            "D": "Call **System.exit**"
+          },
+          "answer": "B",
+          "explanation": "**Function** cannot declare checked throws."
+        },
+        {
+          "id": 15,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "**Method** **reference** **System.out::println** has which **functional** type in **forEach**?",
+          "options": {
+            "A": "**Consumer**",
+            "B": "**Function**",
+            "C": "**Supplier**",
+            "D": "**Runnable**"
+          },
+          "answer": "A",
+          "explanation": "**forEach** expects **Consumer**."
+        },
+        {
+          "id": 16,
+          "level": "intermediate",
+          "category": "real-world",
+          "question": "Team stores **Stream<String>** in a **Spring** bean field for reuse. Risk?",
+          "options": {
+            "A": "None",
+            "B": "**IllegalStateException** on second pass",
+            "C": "Faster startup",
+            "D": "**GC** stops"
+          },
+          "answer": "B",
+          "explanation": "**Stream** is single-use."
+        },
+        {
+          "id": 17,
+          "level": "intermediate",
+          "category": "real-world",
+          "question": "You need stable ordering under nulls. Best **Comparator** helper?",
+          "options": {
+            "A": "**Comparator.reverseOrder** alone",
+            "B": "**Comparator.nullsFirst** combined with another **Comparator**",
+            "C": "**parallelStream**",
+            "D": "**Object::hashCode**"
+          },
+          "answer": "B",
+          "explanation": "Null unsafe sorts throw **NPE**."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "code-reading",
+          "question": "Output?\n```java\nimport java.util.stream.*;\npublic class Z {\n public static void main(String[] a){\n  System.out.println(Stream.of(1,2,3).map(i->i+1).findFirst().orElse(0));\n }\n}\n```",
+          "options": {
+            "A": "1",
+            "B": "2",
+            "C": "3",
+            "D": "0"
+          },
+          "answer": "B",
+          "explanation": "First mapped element is **2**."
+        },
+        {
+          "id": 19,
+          "level": "intermediate",
+          "category": "code-reading",
+          "question": "Output?\n```java\nimport java.util.function.*;\npublic class W {\n public static void main(String[] a){\n  Predicate<String> p = String::isEmpty;\n  System.out.println(p.negate().test(\"\"));\n }\n}\n```",
+          "options": {
+            "A": "true",
+            "B": "false",
+            "C": "error",
+            "D": "throws"
+          },
+          "answer": "B",
+          "explanation": "Empty string tests true, negate makes **false**."
+        },
+        {
+          "id": 20,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Which **BiFunction** signature fits **Map.compute** style lambdas?",
+          "options": {
+            "A": "(T,U) -> R using **BiFunction**",
+            "B": "() -> void",
+            "C": "boolean test(T)",
+            "D": "Supplier only"
+          },
+          "answer": "A",
+          "explanation": "**BiFunction** accepts two arguments and returns a value."
+        },
+        {
+          "id": 21,
+          "level": "intermediate",
+          "category": "code-reading",
+          "question": "Output?\n```java\nimport java.util.function.*;\npublic class BB {\n public static void main(String[] a){\n  IntUnaryOperator f = x -> x * 2;\n  System.out.println(f.applyAsInt(3));\n }\n}\n```",
+          "options": {
+            "A": "6",
+            "B": "9",
+            "C": "33",
+            "D": "Compile error"
+          },
+          "answer": "A",
+          "explanation": "**IntUnaryOperator** avoids **Integer** boxing in simple math."
+        },
+        {
+          "id": 22,
+          "level": "intermediate",
+          "category": "real-world",
+          "question": "You need idempotent HTTP callbacks; storing **Runnable** lambdas in a DB column is risky because?",
+          "options": {
+            "A": "It always works",
+            "B": "**Runnable** cannot be serialized safely as ad-hoc lambdas",
+            "C": "**GC** deletes lambdas instantly",
+            "D": "**JVM** forbids **Runnable**"
+          },
+          "answer": "B",
+          "explanation": "Persist command names or stable classes, not captured bytecode."
+        },
+        {
+          "id": 23,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Your **fat** **JAR** job fails with **LinkageError** referencing **LambdaMetafactory** after shade relocation. First suspect?",
+          "options": {
+            "A": "Bad CSV",
+            "B": "**MethodHandle** constants broken by relocation",
+            "C": "Need more **Xmx**",
+            "D": "Timezone bug"
+          },
+          "answer": "B",
+          "explanation": "Fix relocation excludes for **invoke** packages."
+        },
+        {
+          "id": 24,
+          "level": "advanced",
+          "category": "theory",
+          "question": "**Java 21** **virtual** threads show carrier pinning. Likely **lambda** pattern?",
+          "options": {
+            "A": "**synchronized** inside hot **lambda**",
+            "B": "Using **String** concat",
+            "C": "**final** locals",
+            "D": "**Comparator.naturalOrder**"
+          },
+          "answer": "A",
+          "explanation": "Replace with **ReentrantLock** or narrow lock."
+        },
+        {
+          "id": 25,
+          "level": "advanced",
+          "category": "code-reading",
+          "question": "Behavior?\n```java\nimport java.util.concurrent.*;\nimport java.util.function.*;\npublic class AA {\n public static void main(String[] a) throws Exception {\n  ExecutorService ex = Executors.newSingleThreadExecutor();\n  Supplier<Integer> sup = () -> 1;\n  ex.submit(() -> System.out.println(sup.get()));\n  ex.shutdown(); ex.awaitTermination(1, TimeUnit.SECONDS);\n }\n}\n```",
+          "options": {
+            "A": "Prints 1",
+            "B": "Hangs forever",
+            "C": "**RejectedExecutionException**",
+            "D": "Compile error"
+          },
+          "answer": "A",
+          "explanation": "**lambda** captures **Supplier** and runs on pool thread."
+        },
+        {
+          "id": 26,
+          "level": "advanced",
+          "category": "code-reading",
+          "question": "Danger in **list.parallelStream().forEach(i -> shared.add(i))** with **ArrayList** **shared**?",
+          "options": {
+            "A": "Safe",
+            "B": "Race corrupts **ArrayList**",
+            "C": "Only on **Java 11**",
+            "D": "Only if list empty"
+          },
+          "answer": "B",
+          "explanation": "Use **synchronized** collection or collector."
+        },
+        {
+          "id": 27,
+          "level": "advanced",
+          "category": "on-call or architecture",
+          "question": "After deploy **Metaspace** grows until **OOM** on dev servers with hot reload. Best mitigation?",
+          "options": {
+            "A": "Add more **-Xmx** only",
+            "B": "Disable reckless reload or fix class loaders",
+            "C": "**System.gc** hourly",
+            "D": "Use **parallelStream**"
+          },
+          "answer": "B",
+          "explanation": "Class metadata leaks from reloaders."
+        },
+        {
+          "id": 28,
+          "level": "advanced",
+          "category": "on-call or architecture",
+          "question": "Finance job non-deterministic after **parallelStream** **reduce** on **double** sums. Fix?",
+          "options": {
+            "A": "Increase pool size",
+            "B": "Go sequential or use **BigDecimal** associative folding with order docs",
+            "C": "Add **Thread.sleep**",
+            "D": "Ignore"
+          },
+          "answer": "B",
+          "explanation": "**Floating** point addition order matters."
+        },
+        {
+          "id": 29,
+          "level": "advanced",
+          "category": "on-call or architecture",
+          "question": "Synthetic **lambda** class inside **session** serialization fails after patch Tuesday. Policy?",
+          "options": {
+            "A": "Store more **lambdas**",
+            "B": "Named **Serializable** classes for callbacks",
+            "C": "Disable HTTPS",
+            "D": "Use **Raw** types"
+          },
+          "answer": "B",
+          "explanation": "**Lambda** classes are not a stable contract."
+        },
+        {
+          "id": 30,
+          "level": "advanced",
+          "category": "on-call or architecture",
+          "question": "**Profiler** shows **ForkJoinPool** hot under CSV ingest. First isolation step?",
+          "options": {
+            "A": "Buy bigger hosts",
+            "B": "Temporarily force **sequential** and compare throughput",
+            "C": "Delete unit tests",
+            "D": "Downgrade **JDK**"
+          },
+          "answer": "B",
+          "explanation": "Prove excess **parallel** is the cause."
+        },
+        {
+          "id": 31,
+          "level": "advanced",
+          "category": "on-call or architecture",
+          "question": "API exposes **Function** returning **DTO** built with IO inside **lambda**. Review comment?",
+          "options": {
+            "A": "Ship faster",
+            "B": "Move IO to service layer; keep **lambda** pure",
+            "C": "Add **@Transactional** on **lambda**",
+            "D": "Use **peek**"
+          },
+          "answer": "B",
+          "explanation": "Side effects belong at boundaries."
+        },
+        {
+          "id": 32,
+          "level": "advanced",
+          "category": "on-call or architecture",
+          "question": "Choosing between **method** **reference** **this::helper** versus **static** helper for **public** API?",
+          "options": {
+            "A": "**this::** always",
+            "B": "**static** helper when you need stable stack traces and test seams",
+            "C": "Always nest five **lambdas**",
+            "D": "Use reflection"
+          },
+          "answer": "B",
+          "explanation": "Clarity beats golf on shared surfaces."
+        }
       ]
     },
     {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Area | Phase 4 Focus | Quick Rule | Gotcha |\n|---|---|---|---|\n| Concept | Lambda and Functional Interfaces | Explain mechanism + boundary | Syntax-only answers |\n| Runtime | Performance/memory/concurrency | Mention impact explicitly | Hidden runtime costs |\n| Code | Clean composable units | Prefer readability first | Over-chained complexity |\n| Failure | Known pitfall + mitigation | Name one concrete case | Hand-wavy debugging |\n| Interview | Decision reasoning | Compare alternatives | No trade-off discussion |"
+      "title": "Lambda and Functional Interfaces — cheatsheet",
+      "content": "| Level | Concept | The rule in one line | Example or Command |\n| --- | --- | --- | --- |\n| Fresher | **SAM** | One abstract method receives your **lambda** | **Predicate<String>** p = s -> true; |\n| Fresher | **effectively final** | Do not mutate captured locals | use **AtomicInteger** |\n| Fresher | **Stream** | One **terminal** per object | **supplier** of **Stream** |\n| Senior Dev | **invokedynamic** | **LambdaMetafactory** links call sites | **javap -v** |\n| Senior Dev | **parallelStream** | Source must be safe to split | copy list first |\n| Senior Dev | **method ref** | Arity must match SAM | **String::trim** |\n| Senior Dev | **Comparator** | Use **comparing** + **nullsFirst** | **Comparator.comparing** |\n| Tech Lead | **review** | Ban **Stream** fields | **ArchUnit** rule |\n| Tech Lead | **session** | No **Serializable** lambdas | named **class** |\n| Tech Lead | **cost story** | Prove with **JFR** before parallel | **jcmd** **JFR.start** |\n| Staff | **shade** | Protect **bootstrap** constants | fix **maven-shade-plugin** |\n| Staff | **virtual threads** | Avoid **synchronized** in hot **lambda** | **jcmd** **Thread.print** |\n| Staff | **Metaspace** | Watch class churn from reload | **jcmd** **VM.metaspace** |\n| Staff | **LinkageError** | Diff **javap** bootstraps | **javap -v -p** |"
     }
   ]
 }

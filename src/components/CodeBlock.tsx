@@ -7,6 +7,9 @@ import {
   Collapse,
   Tooltip,
   Paper,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
@@ -18,6 +21,8 @@ import { highlightCode } from '../utils/markdown';
 
 interface Props {
   section: CodeSection;
+  /** When false, details start collapsed. Default true (expanded) for assignment/pro snippets. */
+  defaultExpanded?: boolean;
 }
 
 const levelColors: Record<string, string> = {
@@ -26,9 +31,10 @@ const levelColors: Record<string, string> = {
   advanced: '#764ba2',
 };
 
-const CodeBlock: React.FC<Props> = ({ section }) => {
+const CodeBlock: React.FC<Props> = ({ section, defaultExpanded = true }) => {
   const [copied, setCopied] = useState(false);
   const [showOutput, setShowOutput] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(section.code);
@@ -38,9 +44,9 @@ const CodeBlock: React.FC<Props> = ({ section }) => {
 
   const highlighted = highlightCode(section.code, section.language || 'java');
 
-  return (
-    <Box mb={3}>
-      {/* Header */}
+  const inner = (
+    <>
+      {/* Editor-style header */}
       <Box
         display="flex"
         alignItems="center"
@@ -49,7 +55,7 @@ const CodeBlock: React.FC<Props> = ({ section }) => {
           bgcolor: '#1c2128',
           px: 2,
           py: 1,
-          borderRadius: '10px 10px 0 0',
+          borderRadius: section.output ? '0' : '0 0 10px 10px',
           borderBottom: '1px solid #30363d',
         }}
       >
@@ -107,7 +113,6 @@ const CodeBlock: React.FC<Props> = ({ section }) => {
         </Box>
       </Box>
 
-      {/* Code */}
       <Box
         component="pre"
         sx={{
@@ -132,7 +137,6 @@ const CodeBlock: React.FC<Props> = ({ section }) => {
         />
       </Box>
 
-      {/* Output Panel */}
       {section.output && (
         <>
           <Box
@@ -186,7 +190,73 @@ const CodeBlock: React.FC<Props> = ({ section }) => {
           )}
         </>
       )}
-    </Box>
+    </>
+  );
+
+  return (
+    <Accordion
+      expanded={expanded}
+      onChange={(_, next) => setExpanded(next)}
+      disableGutters
+      elevation={0}
+      sx={{
+        mb: 2,
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: '10px !important',
+        overflow: 'hidden',
+        '&:before': { display: 'none' },
+        bgcolor: 'background.paper',
+      }}
+    >
+      <AccordionSummary
+        expandIcon={<ExpandMoreIcon />}
+        sx={{
+          px: 2,
+          minHeight: 56,
+          '& .MuiAccordionSummary-content': {
+            my: 1,
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 0.5,
+            overflow: 'hidden',
+          },
+        }}
+      >
+        <Typography variant="subtitle1" fontWeight={700} sx={{ width: '100%', pr: 1 }}>
+          {section.title}
+        </Typography>
+        <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+          <Typography variant="caption" color="text.secondary" fontFamily="JetBrains Mono, monospace">
+            {section.filename}
+          </Typography>
+          <Chip
+            label={section.level}
+            size="small"
+            variant="outlined"
+            sx={{
+              height: 22,
+              fontSize: '0.65rem',
+              borderColor: levelColors[section.level] || 'divider',
+              color: levelColors[section.level] || 'text.secondary',
+            }}
+          />
+          <Chip label={section.language?.toUpperCase() || 'JAVA'} size="small" variant="outlined" sx={{ height: 22, fontSize: '0.65rem' }} />
+        </Box>
+      </AccordionSummary>
+      <AccordionDetails sx={{ p: 0, borderTop: 1, borderColor: 'divider' }}>
+        {section.description && (
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ px: 2, pt: 2, pb: 1.5, lineHeight: 1.7 }}
+          >
+            {section.description}
+          </Typography>
+        )}
+        <Box sx={{ borderRadius: section.description ? 0 : undefined, overflow: 'hidden' }}>{inner}</Box>
+      </AccordionDetails>
+    </Accordion>
   );
 };
 

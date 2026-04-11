@@ -1,0 +1,510 @@
+/** Content payloads for Day 10 (phase2-day10.json) — Inheritance and Polymorphism */
+
+export const WHY_CONTENT = [
+  "At **03:42** the **Spring Boot** **pricing-aggregator** fleet throws a **ClassCastException** on the **Kafka** billing partition while the **canary** still routes eight percent of EU checkout traffic. The artifact is the merged monorepo **JAR** where **LoyaltyDiscount** refactors moved **apply()** up a new **CustomerPromotion** superclass; the symptom is **PremiumUser cannot be cast to LoyaltyCardHolder** even though both **extend** **RegisteredCustomer**. The incident is not a flaky broker. It is a bad downcast after **polymorphic** **List** processing that escaped the **HTTP** load test path, and it burns trust because dashboards show clean **500** latency while **consumer lag** climbs on the bad partition only.",
+  "They are not checking whether you memorized **extends** + **@Override** keywords. They want evidence that you know **dynamic dispatch** on **invokevirtual**, constructor chaining with **invokespecial**, and when a reference type vs runtime type mismatch explodes as **ClassCastException**. The mental model gap that separates a weak answer from a strong one is treating inheritance as syntax sugar instead of **class** layout, **vtable** selection, and **Liskov**-safe contracts. Weak answers stop at diagrams; strong ones open **javap** and read **Methodref** targets with the interviewer.",
+  "Use this four-step pattern in every answer. First, name the **compile-time** rule: valid **override** signatures, **super(...)** placement, **final** or **private** methods that block virtual dispatch. Second, name the **bytecode** mechanism: **invokevirtual** for instance methods, **invokestatic** for hidden statics, **invokespecial** for **<init>** and **super** calls. Third, name the production **symptom** class: **ClassCastException**, **AbstractMethodError**, **IncompatibleClassChangeError**, or silent wrong totals when you overloaded instead of overriding. Fourth, verify with **javap -c -p Service.class** on both **SHA** sides of a deploy and **jcmd** **Thread.print** to capture the consumer stack that proves which **receiver** type executed, then paste that evidence above the rollback button so leadership sees proof, not opinion. If you skip the fourth step, you are guessing which **implementation** ran while money moves.",
+  "At scale, ten engineers shipping fifty **JVM** services turns any hierarchy mistake into cross-repo breakage. One service compiles against **Customer v3** but a transitive **fat JAR** still shades **Customer v2**; the concrete failure mode is **IncompatibleClassChangeError** when **verifier** + **class** loader see incompatible **superclass** shapes during rolling restart. Another concrete failure mode is **AbstractMethodError** after a **bytecode** agent or bad modular **JPMS** split loads an **interface** implementation missing the freshly added **default** method bridge; observability shows **CPU** burn on retry loops that look like business logic bugs but are really **classpath** skew. Dashboards blame **consumer lag**, yet the root is **linkage**.",
+  "A senior candidate states **Java 17** **sealed** **permits** clauses combine with **pattern matching** **instanceof** to give **exhaustive switch** diagnostics at compile time, which **Java 11** lacked because hierarchies were open by default. Another senior signal is naming **bridge methods** the compiler synthesizes when **covariant** returns interact with **generic** erasure — **javap -p** shows **Synthetic** entries that explain odd **stack** frames. Mid-level candidates quote definitions; seniors connect those bridges to **NoSuchMethodError** tickets after **MapStruct** upgrades.",
+  "In your first six months on a new job this topic shows up weekly. A reviewer blocks your **PR** because **PaymentProcessor** **override** widened **throws** against the **interface** contract; you rewrite to wrap **checked** faults and align **signatures** before merge. **On-call** you pair on a **ClassCastException** from **JSON** polymorphism; you add **allowlisted** **@JsonTypeInfo** ids and prove with **jmap -dump** that duplicate **loader** definitions are gone. During **JDK 21** trial you chase **NoSuchMethodError** after a **record** refactor; you diff **javap -verbose** major versions across modules and pin the toolchain. This day trains you to defend **extends** with **bytecode**, not slogans, because promotions and **SRE** reviews both reward command receipts more than buzzwords. You rehearse the same story for interns so **Spring** **DI** proxies stop feeling like magic.",
+].join("\n\n");
+
+export const THEORY_CONTENT = `### Plain-language overview
+
+**Inheritance** lets one **class** **extend** another to reuse and specialize behavior; **polymorphism** lets you call **instance** methods through a **supertype** reference while the **JVM** picks the **subclass** implementation at runtime. **Interview angle:** If you only speak UML, add **invokevirtual** and **ClassCastException** before claiming mastery.
+
+### **Class** file linkage — **super_class** and **subtyping**
+
+Each **class** file records a **super_class** entry in its header so the **JVM** can validate **method** resolution order. **extends** creates an **is-a** relationship checked by the **compiler** and enforced again at class **load** time. **Interview angle:** Mention **IncompatibleClassChangeError** when two loaders disagree on **super** shape.
+
+### Dynamic dispatch — **invokevirtual** and vtables
+
+**HotSpot** resolves **virtual** **instance** calls with **invokevirtual**, which looks up the concrete **method** using the **receiver** object's **Klass** pointer at runtime. That is why **Animal a = new Dog(); a.speak();** prints the **Dog** version. **vtable** slots live on the **class**; **interfaces** use **itable** during **invokeinterface**, and megamorphic **call sites** show up as **CPU** cliffs in **JFR** after hierarchy refactors. **Interview angle:** Contrast with **invokestatic**, which binds to the **declared** type at **compile** time.
+
+### Constructor chain — **invokespecial** and field initialization
+
+Every **constructor** must start by chaining to **this(...)** or **super(...)** so **superclass** state initializes before **subclass** fields finalize. The **compiler** may insert an implicit **super()** only when a no-arg **super** exists. **Interview angle:** Explain **CompileError: call to super must be first statement** as protecting uninitialized **final** fields.
+
+### **static** hiding versus true **override**
+
+A **subclass** **static** method with the same signature **hides** the **super** **static** method; calls bind by **reference** type, not **receiver** object. **Interview angle:** This mismatch causes “phantom” bugs in **util** hierarchies during refactors.
+
+### Production comparison table — binding rules
+
+| Call shape | Resolution time | Typical foot-gun |
+|------------|-----------------|------------------|
+| **instance** method | runtime via **vtable** | overloaded vs overridden body |
+| **static** method | **compile** time on reference | looks polymorphic but is not |
+| **private** / **final** | **compile** time locked | accidental non-virtual calls |
+
+**Interview angle:** Pair this table with a **javap -c** diff in code review.
+
+### Fenced pattern — covariant returns still virtual
+
+\`\`\`java
+class Base { Number pick() { return 1; } }
+class Child extends Base {
+    @Override
+    Integer pick() { return 7; } // covariant return OK
+}
+// Child c = new Child(); Number n = c.pick(); // still invokes Child.pick at runtime
+\`\`\`
+
+**Interview angle:** Mention **bridge** methods **javap -p** exposes after **erasure**.
+
+### Step sequence — safe **override** checklist
+
+Step 1: copy **signature** exactly (names, params, **throws** compatibility). Step 2: annotate **@Override** so typos become **compile** errors. Step 3: decide **access** widens never narrows. Step 4: re-run **javap** if **generics** are near the **method**. Step 5: add a unit test that references the **supertype** to prove **virtual** dispatch. **Interview angle:** Tests that only invoke **subclass** types miss overloaded-call bugs.
+
+### Abstract classes and the **Template Method** pattern
+
+**abstract** methods force **subclasses** to supply specifics while **final** template methods lock the algorithm skeleton. **Interview angle:** Link **AbstractMethodError** to partial deployments where a **subclass** **JAR** lags the **base** **interface** change.
+
+### **interface** default methods and the “diamond”
+
+A **class** can **implement** multiple **interfaces**; conflicting **default** methods require an explicit **InterfaceName.super.method()** resolver. **Java 8+** brought **defaults**; **Java 17** tightened **sealed** modeling for safer sums. **Interview angle:** Cite **java --version** alignment when **default** resolution errors appear only in CI.
+
+### Second production comparison table — composition vs inheritance
+
+| Situation | Prefer | Reason |
+|-----------|--------|--------|
+| Pure code reuse | **composition** | avoids **fragile base class** |
+| True substitutability | **inheritance** + **Liskov** | callers rely on **supertype** contract |
+| Cross-cutting policy | **interface** + **delegation** | keeps graph shallow |
+
+**Interview angle:** Staff reviewers ask for **has-a** evidence before approving deep trees.
+
+### **equals**, **hashCode**, and **Liskov**
+
+Symmetry breaks when **subclasses** add fields but reuse **instanceof** **equals** on **supertype**. Collections then violate **Map** contracts and cause **hard-to-find** duplicates in **caches**. **Interview angle:** Mention **value-based** **records** in **Java 21** for simple immutable carriers.
+
+### Tooling table — what Staff prints first when dispatch lies
+
+| Symptom | Command | Expect |
+|---------|---------|--------|
+| Wrong method body | \javap -c -p Target.class\ | mismatched **invokevirtual** target |
+| Concurrency confusion | \jcmd <pid> Thread.print\ | exact **stack** with receiver type |
+| Loader conflicts | \java -verbose:class\ | duplicate **Class** from two **JARs** |
+
+**Interview angle:** Never guess dispatch without at least one artifact.
+
+### 60-second interview story
+
+You open with **extends** vs **implements**, then exemplify **Animal ref = new Dog()** invoking **Dog.speak** through **invokevirtual**. You warn about **static** hiding, **private** non-**inheritance**, **super** chaining, and **ClassCastException** on bad downcasts. You close with **Liskov**: subclass must honor expectations, and **javap** proves what code actually runs. **Interview angle:** Keep commands (**javap**, **jcmd**) in the story to signal Staff habits.
+
+### Satyverse drill — tie-down
+
+Sketch a three-level **Payment → CorporatePayment → VolumeDiscountPayment** hierarchy; mark **final** template steps, covariant **return** types, and a **List<Payment>** loop printing polymorphic **describe()**. Re-run **javap -c** after each rename to ensure **@Override** still binds. **Interview angle:** Treat **refactor** + **bytecode** diff as one motion, not two topics.`;
+
+export const BASIC_CODE = `package arch.day10;
+
+/**
+ * Day 10 basic: inheritance + polymorphism reference card (println only).
+ */
+public class Day10Basic {
+
+    static void sep() {
+        System.out.println("----------------------------------------");
+    }
+
+    public static void main(String[] args) {
+        // Core vocabulary for JVM dispatch reviews and interview narration.
+        System.out.println("=== Inheritance vs polymorphism - definitions ===");
+        System.out.println("extends  | single superclass contract | is-a for classes");
+        System.out.println("implements | many interfaces | protocol composition");
+        System.out.println("virtual instance call | invokevirtual + vtable | runtime receiver wins");
+        System.out.println("static call  | invokestatic + declared type | not polymorphic");
+        sep();
+
+        // Commands reviewers expect when inheritance bugs ship to prod.
+        System.out.println("=== Command reference ===");
+        System.out.println("javap -c -p Service.class | show invokevirtual targets + synthetic bridges");
+        System.out.println("javap -verbose Child.class | read major version + superclass index");
+        System.out.println("jcmd <pid> Thread.print     | capture stack proving receiver class");
+        System.out.println("java -verbose:class Demo    | log ClassLoader provenance for duplicates");
+        sep();
+
+        // Failure modes that masquerade as business logic regressions.
+        System.out.println("=== Failure modes table ===");
+        System.out.println("ClassCastException          | illegal downcast after polymorphic collection");
+        System.out.println("AbstractMethodError         | subclass missing new abstract/default");
+        System.out.println("IncompatibleClassChangeError| two jars disagree on superclass layout");
+        System.out.println("NoSuchMethodError           | shade/fat jar pinned stale override");
+        sep();
+
+        // Environment and build hygiene tied to hierarchy refactors.
+        System.out.println("=== Environment / configuration cues ===");
+        System.out.println("Align java --release with runtime image to avoid verify errors");
+        System.out.println("Gradle enforce platform BOM so Customer v2 never shadows v3");
+        System.out.println("JPMS split packages break reflective subclasses - watch module-info");
+        System.out.println("Canary + javap diff gates catch accidental overload-not-override");
+        sep();
+
+        System.out.println("=== Review cue ===");
+        System.out.println("@Override on every intentional override - compiler catches typos");
+        // Staff diff discipline: bytecode receipts beat hallway assertions during outages.
+        System.out.println("staff cue: diff javap output whenever inheritance touches pricing");
+        System.out.println("staff cue: log runtime class names before casting kafka payloads");
+        System.out.println("done");
+    }
+}
+`;
+
+export const BASIC_OUTPUT = `=== Inheritance vs polymorphism - definitions ===
+extends  | single superclass contract | is-a for classes
+implements | many interfaces | protocol composition
+virtual instance call | invokevirtual + vtable | runtime receiver wins
+static call  | invokestatic + declared type | not polymorphic
+----------------------------------------
+=== Command reference ===
+javap -c -p Service.class | show invokevirtual targets + synthetic bridges
+javap -verbose Child.class | read major version + superclass index
+jcmd <pid> Thread.print     | capture stack proving receiver class
+java -verbose:class Demo    | log ClassLoader provenance for duplicates
+----------------------------------------
+=== Failure modes table ===
+ClassCastException          | illegal downcast after polymorphic collection
+AbstractMethodError         | subclass missing new abstract/default
+IncompatibleClassChangeError| two jars disagree on superclass layout
+NoSuchMethodError           | shade/fat jar pinned stale override
+----------------------------------------
+=== Environment / configuration cues ===
+Align java --release with runtime image to avoid verify errors
+Gradle enforce platform BOM so Customer v2 never shadows v3
+JPMS split packages break reflective subclasses - watch module-info
+Canary + javap diff gates catch accidental overload-not-override
+----------------------------------------
+=== Review cue ===
+@Override on every intentional override - compiler catches typos
+staff cue: diff javap output whenever inheritance touches pricing
+staff cue: log runtime class names before casting kafka payloads
+done
+`;
+
+export const INTERMEDIATE_CODE = `package arch.day10;
+
+/**
+ * Day 10 intermediate: four dispatch + constructor scenarios (println narrative).
+ */
+public class Day10Intermediate {
+
+    // Multi-line comment policy: always pair on-call stories with a concrete JVM command.
+    /*
+     * Context: teams confuse overloaded helpers with overrides when IntelliJ
+     * quick-fixes method names — javap proves which body runs.
+     */
+    static void scenario1() {
+        System.out.println("--- Scenario 1: wrong body after rename (overload trap) ---");
+        System.out.println("symptom: totals unchanged after subclass 'fix'");
+        System.out.println("cause:    new method overload hides intended override");
+        System.out.println("why:      compiler bound call to superclass static type path");
+        System.out.println("fix:      add @Override and match signature exactly");
+        System.out.println("verify:   javap -c -p PricingService.class");
+        System.out.println("staff:    diff disassembly across release tag SHAs");
+        System.out.println("note:    overload accidents hide in review without @Override");
+        System.out.println();
+    }
+
+    /*
+     * Context: Kotlin / Java interop callers cast blindly after JSON joins.
+     */
+    static void scenario2() {
+        System.out.println("--- Scenario 2: ClassCastException on polymorphic list ---");
+        System.out.println("symptom: Kafka handler dies with ClassCastException");
+        System.out.println("cause:    Promotion pulled as Customer but payload is Vendor");
+        System.out.println("fix:      guard with instanceof or pattern switch (Java 17+)");
+        System.out.println("verify:   jcmd <pid> Thread.print");
+        System.out.println("staff:    log canonical type names before cast");
+        System.out.println("echo:     reproduce with java -verbose:class loader trace");
+        System.out.println("note:    pattern switch or sealed sums catch unknown subtype early");
+        System.out.println();
+    }
+
+    /*
+     * Context: parent adds abstract method; one microservice shard lags deploy.
+     */
+    static void scenario3() {
+        System.out.println("--- Scenario 3: partial deploy AbstractMethodError ---");
+        System.out.println("symptom: canary pod churn with AbstractMethodError");
+        System.out.println("cause:    old child JAR lacks new abstract hook method");
+        System.out.println("fix:      roll forward together or add temp default in base");
+        System.out.println("verify:   javap -p BaseProcessor.class child jar on node");
+        System.out.println("staff:    enforce atomic BOM + contract tests per tier");
+        System.out.println("metric:   spike in restart count correlates with skew");
+        System.out.println("note:    compare helm chart sha with jar manifest build stamp");
+        System.out.println();
+    }
+
+    static void scenario4() {
+        System.out.println("--- Scenario 4: constructor chain mis-order ---");
+        System.out.println("symptom: compile error: call to super must be first");
+        System.out.println("cause:    attempted logging before super(...) in ctor");
+        System.out.println("fix:      move super(...) or this(...) to line one, log after");
+        System.out.println("verify:   javac -Xlint:all DiscountOffer.java");
+        System.out.println("staff:    teach builders when ctor side-effects required");
+        System.out.println("context: invokespecial enforces definite assignment rules");
+        System.out.println("note:    builder pattern avoids ctor side-effect ordering drama");
+        System.out.println();
+    }
+
+    static void printBanner() {
+        System.out.println("banner: Day10 intermediate inheritance + dispatch lab");
+    }
+
+    public static void main(String[] args) {
+        printBanner();
+        scenario1();
+        scenario2();
+        scenario3();
+        scenario4();
+    }
+}
+`;
+
+export const INTERMEDIATE_OUTPUT = `banner: Day10 intermediate inheritance + dispatch lab
+--- Scenario 1: wrong body after rename (overload trap) ---
+symptom: totals unchanged after subclass 'fix'
+cause:    new method overload hides intended override
+why:      compiler bound call to superclass static type path
+fix:      add @Override and match signature exactly
+verify:   javap -c -p PricingService.class
+staff:    diff disassembly across release tag SHAs
+note:    overload accidents hide in review without @Override
+
+--- Scenario 2: ClassCastException on polymorphic list ---
+symptom: Kafka handler dies with ClassCastException
+cause:    Promotion pulled as Customer but payload is Vendor
+fix:      guard with instanceof or pattern switch (Java 17+)
+verify:   jcmd <pid> Thread.print
+staff:    log canonical type names before cast
+echo:     reproduce with java -verbose:class loader trace
+note:    pattern switch or sealed sums catch unknown subtype early
+
+--- Scenario 3: partial deploy AbstractMethodError ---
+symptom: canary pod churn with AbstractMethodError
+cause:    old child JAR lacks new abstract hook method
+fix:      roll forward together or add temp default in base
+verify:   javap -p BaseProcessor.class child jar on node
+staff:    enforce atomic BOM + contract tests per tier
+metric:   spike in restart count correlates with skew
+note:    compare helm chart sha with jar manifest build stamp
+
+--- Scenario 4: constructor chain mis-order ---
+symptom: compile error: call to super must be first
+cause:    attempted logging before super(...) in ctor
+fix:      move super(...) or this(...) to line one, log after
+verify:   javac -Xlint:all DiscountOffer.java
+staff:    teach builders when ctor side-effects required
+context: invokespecial enforces definite assignment rules
+note:    builder pattern avoids ctor side-effect ordering drama
+
+`;
+
+export const ADVANCED_CODE = `package arch.day10;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Day 10 advanced: dispatch budget + policy map (records + collections).
+ */
+public class Day10Advanced {
+
+    record ShapeBudget(String layer, int maxDepth, boolean sealedHint) {}
+
+    static List<ShapeBudget> tiers() {
+        List<ShapeBudget> list = new ArrayList<>();
+        list.add(new ShapeBudget("domain", 3, true));
+        list.add(new ShapeBudget("service", 2, false));
+        list.add(new ShapeBudget("adapter", 1, true));
+        return list;
+    }
+
+    static Map<String, String> violationPlaybook() {
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("ClassCastException", "downcast after raw list - tighten generics + instanceof");
+        m.put("AbstractMethodError", "lagging child jar - align deploy or add default hook");
+        m.put("IncompatibleClassChangeError", "two shapes of superclass - kill duplicate loaders");
+        return m;
+    }
+
+    public static void main(String[] args) {
+        System.out.println("banner: Day10 advanced polymorphism guardrails");
+
+        System.out.println("=== Block 1: inheritance depth budget ===");
+        int penalized = 0;
+        for (ShapeBudget b : tiers()) {
+            int score = b.maxDepth() + (b.sealedHint() ? 0 : 1);
+            System.out.println(b.layer() + " | budget=" + b.maxDepth() + " | score=" + score);
+            if (score > 3) {
+                penalized++;
+            }
+        }
+        System.out.println("tiers over budget = " + penalized);
+        System.out.println();
+
+        System.out.println("=== Block 2: playbook lookup order ===");
+        Map<String, String> book = violationPlaybook();
+        List<String> keys = List.of("ClassCastException", "AbstractMethodError", "Unknown");
+        for (String k : keys) {
+            String fix = book.getOrDefault(k, "fallback: jstack + javap both classpath sides");
+            System.out.println(k + " -> " + fix);
+        }
+        System.out.println();
+
+        System.out.println("=== Block 3: virtual readiness matrix ===");
+        Map<String, Boolean> checks = new LinkedHashMap<>();
+        checks.put("@Override present", true);
+        checks.put("covariant return documented", true);
+        checks.put("static helpers renamed away from override names", false);
+        int pass = 0;
+        for (Map.Entry<String, Boolean> e : checks.entrySet()) {
+            if (Boolean.TRUE.equals(e.getValue())) {
+                pass++;
+            }
+            System.out.println(e.getKey() + " | " + e.getValue());
+        }
+        System.out.println("pass count = " + pass + " / " + checks.size());
+        System.out.println("eof");
+    }
+}
+`;
+
+export const ADVANCED_OUTPUT = `banner: Day10 advanced polymorphism guardrails
+=== Block 1: inheritance depth budget ===
+domain | budget=3 | score=3
+service | budget=2 | score=3
+adapter | budget=1 | score=1
+tiers over budget = 0
+
+=== Block 2: playbook lookup order ===
+ClassCastException -> downcast after raw list - tighten generics + instanceof
+AbstractMethodError -> lagging child jar - align deploy or add default hook
+Unknown -> fallback: jstack + javap both classpath sides
+
+=== Block 3: virtual readiness matrix ===
+@Override present | true
+covariant return documented | true
+static helpers renamed away from override names | false
+pass count = 2 / 3
+eof
+`;
+
+export const PITFALLS = [
+  "Declaring a **static** helper with the same name as a **superclass** **instance** **method** you meant to **override** — production symptom is silently stale pricing because **`invokestatic`** keeps the **parent** body while reviewers assume **dynamic** dispatch; fix by renaming the helper or adding a real **`@Override`** **instance** **method**; verify with **`javap -c -p Child.class`** and confirm **`invokevirtual`** targets the **subclass** slot.",
+  "Shipping a **canary** where only the **base** **JAR** adds an **abstract** **method** while older **child** **JARs** remain on half the pool — symptom is **`AbstractMethodError`** bubbling through **Kafka** consumers; fix by pinning a single **BOM** version and rolling **fees** atomically; verify **`javap -p Base.class`** on every node matches **`git`** tag **`SHA`**.",
+  "Downcasting **`Object`** entries pulled from a raw **`List`** after **JSON** merge — symptom is **`ClassCastException`** at **02xx** timers; fix by migrating to **`List<Customer>`** plus **`instanceof`** guards or **Java 17** pattern **`switch`**; verify with **`jcmd <pid> Thread.print`** capturing exact receiver types.",
+  "Letting **subclasses** widen **`equals`** with **`instanceof`** on the **supertype** while **superclass** still uses **getClass** symmetry — symptom is duplicate **cache** keys and **`HashMap`** corruption metrics; fix by making **equals** **final** on the **base** **value** or by moving to **Java 21** **records**; verify with unit **`Assertions`** on asymmetric pairs plus **`jmap -dump`** **histogram** for duplicate entries.",
+  "Calling an **overridable** **instance** **method** from a **superclass** **constructor** before **subclass** fields initialize — symptom is **`NullPointerException`** during **Spring** **proxy** setup that traces like config; fix by moving hook to **`@PostConstruct`** or **factory**; verify with **`jstack <pid>`** focused on **`<init>`** frames and **`javac -Xlint:overrides`**.",
+  "Relying on **class** **inheritance** for cross-cutting **retry** policy instead of **composition** — symptom is **`StackOverflowError`** or deep **stack** during **error** handling after five decorators; fix by extracting **Resilience4j** policies; verify **`jcmd <pid> VM.native_memory summary`** while replaying fault.",
+  "Publishing **`final`** **methods** on a **library** **base** **class** without a **semver** major bump — integrators lose **`override`** hooks and see **`VerifyError`** or **`IllegalAccessError`** at **class** **load**; fix by **semantic** **versioning** plus **bytecode** compatibility tests; verify customers run **`javap -p`** on your **artifact** before bumping.",
+  "Mixing **JPMS** **modules** so **`opens`** **packages** expose two copies of the same **class** from different **layers** — **`LinkageError`** / **`IncompatibleClassChangeError`** at **runtime** despite clean **`javac`**; fix by collapsing **split** **packages** or adjusting **`module-info`**; verify with **`java --show-module-resolution`** in CI.",
+];
+
+export const EXERCISE_PROBLEM = [
+  "You join the **checkout** modernization squad that models discounts through **PaymentPromotion** hierarchies; reviewers insist **Liskov**-safe **overrides** and **javap -c** diff artifacts before **canary** promotion.",
+  "",
+  "Requirements:",
+  "1. Implement **arch.day10.Day10Exercise** with **public static void main(String[] args)** that prints a three-line **legend** labelled **dispatch:**, **static-hide:**, and **chain:** explaining **virtual** calls, **static** resolution, and **super(...)** ordering — each line ≤ 120 chars.",
+  "2. Declare **abstract class PaymentPromotion** with **abstract String rateLabel()** and **final String describe()** returning **rate=** concatenated with **rateLabel()** to demonstrate **template** + **final** guard.",
+  "3. Add **class SeasonalPromotion extends PaymentPromotion** **override** **String rateLabel()** returning literal **SEASONAL**, and **class PartnerPromotion extends PaymentPromotion** returning **PARTNER**.",
+  "4. Build **List<PaymentPromotion>** with one each concrete type (use **ArrayList**), iterate with **enhanced for**, and print **promo:** plus **p.describe()** for both entries on separate lines.",
+  "5. Print two lines demonstrating **static** hiding: **BaseUtil.name()** returns **base** while **ChildUtil.name()** defines **static String name()** returning **child**; assign **BaseUtil b = new ChildUtil();** call **System.out.println(b.name());** describe expected output **exactly** as **base**, then explain **compile-time** binding on the next line.",
+  "6. End with **done** on its own line after all prints.",
+].join("\n");
+
+export const EXERCISE_HINTS = [
+  "Keep **`describe`** **`final`** so subclasses cannot break the template skeleton — only **`rateLabel`** should vary.",
+  "Use **`ArrayList<PaymentPromotion>`** so the loop exercises **polymorphism** through the **supertype** reference.",
+  "For the **static** hide demo, narrate output literally; do not rely on hidden **reflection** — interviewers want the **`invokestatic`** story.",
+];
+
+export const EXERCISE_SOLUTION = `package arch.day10;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Day 10 exercise — template method + polymorphic iteration + static hide narration.
+ */
+public class Day10Exercise {
+
+    abstract static class PaymentPromotion {
+        abstract String rateLabel();
+
+        final String describe() {
+            return "rate=" + rateLabel();
+        }
+    }
+
+    static class SeasonalPromotion extends PaymentPromotion {
+        @Override
+        String rateLabel() {
+            return "SEASONAL";
+        }
+    }
+
+    static class PartnerPromotion extends PaymentPromotion {
+        @Override
+        String rateLabel() {
+            return "PARTNER";
+        }
+    }
+
+    static class BaseUtil {
+        static String name() {
+            return "base";
+        }
+    }
+
+    static class ChildUtil extends BaseUtil {
+        static String name() {
+            return "child";
+        }
+    }
+
+    public static void main(String[] args) {
+        final String dispatchLegend = "virtual instance calls bind to runtime receiver via invokevirtual";
+        final String staticLegend = "static calls bind to reference type at compile time (invokestatic)";
+        final String chainLegend = "constructors must invoke super(...) or this(...) before other logic";
+
+        System.out.println("dispatch: " + dispatchLegend);
+        System.out.println("static-hide: " + staticLegend);
+        System.out.println("chain: " + chainLegend);
+
+        List<PaymentPromotion> promos = new ArrayList<>();
+        promos.add(new SeasonalPromotion());
+        promos.add(new PartnerPromotion());
+        for (PaymentPromotion p : promos) {
+            System.out.println("promo:" + p.describe());
+        }
+
+        BaseUtil hidden = new ChildUtil();
+        System.out.println("static-demo output = " + hidden.name());
+        System.out.println("note: reference BaseUtil so invokestatic picks BaseUtil.name -> base");
+        System.out.println("done");
+    }
+}
+`;
+
+export const JOB_SWITCH = {
+  resumeBullet:
+    "Sealed promotion hierarchies and javap gates cut ClassCastException canary rollbacks by 40%.",
+  interviewPositioning:
+    "When interviewers probe **inheritance**, you narrate **reference vs object** types plus **`javap`** proof because that is how you defend real **Spring** services. In week one at a new company you triage every **`List<Customer>`** **downcast** in **Kafka** consumers and add **`instanceof`** guards or **sealed** sums before the next deploy train.",
+  starAnchor:
+    "Situation: a **canary** lost **`18%`** checkout conversions after a **`LoyaltyPromotion`** refactor. Task: stop **`ClassCastException`** storms without freezing releases. Action: added **`@Override`** lint, **sealed** **`permits`** on **`Promotion`**, and CI **`javap`** diffs on **pricing** **JARs**, paired with **`jcmd`** captures for bad stacks. Result: **`ClassCastException`** dropped to **zero** over **`90` days** and canary adoption returned to **full** traffic within **`48` hours**.",
+};
+
+export const WRONG_ANSWERS = [
+  "**static** **methods** participate in the same **dynamic** dispatch table as **instance** **methods** — you can “**override**” them polymorphically.",
+  "**private** **methods** in the **superclass** are inherited and may be **overridden** with **`@Override`** in the **child**.",
+  "**Constructors** are inherited, so **subclasses** automatically reuse **parent** **constructors** without **`super`** chaining.",
+  "**Polymorphism** means the **variable’s static type** alone decides which **method** body runs for **instance** calls.",
+  "You can freely narrow **access** modifiers when you **override** as long as the **subclass** is in the same **package**.",
+  "**Covariant** **returns** let you change **`void`** to **`int`** on **override** because **Java 21** relaxes rules.",
+  "**equals** symmetry holds automatically if the **subclass** checks **`instanceof Super`** even when **super** uses **`getClass`**.",
+  "**Abstract** **classes** cannot declare **constructors**, because **abstract** means “no **initialization** allowed.”",
+];

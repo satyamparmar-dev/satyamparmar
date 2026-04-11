@@ -17,540 +17,1028 @@
     "Day 24"
   ],
   "learningObjectives": [
-    "Explain Sorting and Binary Search with interview-grade clarity",
-    "Implement Sorting and Binary Search solutions in clean Java",
-    "Choose the right pattern and justify complexity",
-    "Handle boundary cases without brittle logic",
-    "Use this topic to solve coding-round problems confidently",
-    "Communicate trade-offs using concrete examples"
+    "Implement binary search variants: exact, bounds, duplicates",
+    "Explain comparison sort limits and stability",
+    "Choose appropriate JDK sort for objects vs primitives",
+    "Apply binary search on answer problems with feasibility checks",
+    "Analyze time/space for merge, quick, and heap sorts",
+    "Avoid overflow and off-by-one bugs in search loops"
   ],
   "sections": [
     {
       "type": "why",
-      "title": "Why Sorting and Binary Search matters",
-      "content": "Sorting and binary search are foundational optimization tools; using them correctly often changes interview outcomes.\n\nThis day is central to DSA interviews because it combines coding speed with reasoning quality. Interviewers usually evaluate three things:\n1. Can you identify the right pattern quickly?\n2. Can you explain why the approach is correct?\n3. Can you reason about complexity and edge cases?\n\nChoosing sort strategy and writing robust binary search variants.\n\nA high-quality answer should include:\n- concise approach summary,\n- small dry-run,\n- complexity analysis,\n- one alternative approach and trade-off.\n\nBy the end of Day 26, you should be able to solve representative problems and explain your decisions with confidence."
+      "title": "Why this topic shows up in real interviews",
+      "content": "Sorting and binary search are the “make data speak” pair: once values are **ordered**, you can **halve** uncertainty each step instead of scanning everything. That shows up in databases, configuration UIs, feature flags, and any service that maintains **sorted runs** for merge or seek. Interviews test whether you can separate **comparison costs**, **stability**, and **access patterns** from buzzwords.\n\nBinary search is also a **mindset**: many “find minimum feasible capacity” problems are binary search on the answer with a greedy check. That pattern is how teams size batches, rate limits, and autoscaling bounds without exhaustive search.\n\nSorting stability sounds academic until your **multi-column** export shuffles rows with identical primary keys and auditors complain. Knowing that **TimSort** is stable helps you pick the right tool when you sort Java objects.\n\nOn call, “binary search wrong” bugs are often **off-by-one** invariants or **unsorted** inputs after a bad merge. The defensive habit is to assert preconditions, use **safe mid**, and write tests for **duplicates** and **endpoints**.\n\nThis day closes the loop with **two pointers** (Day 20) and **heaps** (Day 25): sometimes you sort once and scan linearly; sometimes you maintain order incrementally with a heap; sometimes you never fully sort and only binary-search a virtual space."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Sorting and Binary Search",
-      "content": "### Why this topic matters now\nSorting and binary search are foundational optimization tools; using them correctly often changes interview outcomes.\n\n### Core interview mental model\nFor Sorting and Binary Search, first identify the problem family, then map it to a known pattern. Pattern-first thinking reduces random trial-and-error.\n\n### Implementation guidance\n1. Write the simplest correct version first.\n2. Validate using one normal and one edge case.\n3. Improve complexity only after correctness is locked.\n4. Refactor to readable helper methods.\n\n### Complexity and trade-off lens\nDo not state complexity by memory. Derive it from operations performed. Mention time + space and where each cost comes from.\n\n### Common failure mode\nMost failures in Sorting and Binary Search are not syntax errors. They come from broken invariants, weak boundary checks, or unclear state tracking.\n\n### Interview speaking template\n- \"I considered X because...\"\n- \"The invariant is...\"\n- \"Per iteration we do..., so complexity is...\"\n- \"An alternative would be..., but I chose this due to...\"\n\n### Production relevance\nEven outside interviews, these patterns improve throughput, latency, and correctness in backend data processing tasks.\n\n### Satyverse — deeper path (theory → practice)\n**Binary search** requires monotonic predicate — not only on arrays but on answer space (“min capacity to ship packages”).\n\n**Invariant style:** define `[lo, hi)` or `[lo, hi]` and never mix — off-by-one bugs dominate.\n\n**Sorting stability** matters when secondary keys exist — `Collections.sort` guarantees stable merge sort / TimSort behaviour.\n\n**Custom comparators** in `Arrays.sort(T[], Comparator)` — avoid violating transitivity."
+      "title": "Sorting and Binary Search — theory that sticks",
+      "content": "### Plain-language overview\n\n**Sorting** orders elements so you can **binary search**, merge streams, or satisfy monotonic invariants. **Binary search** halves a sorted searchable space each step—O(log n) comparisons when random access is O(1).\n\n**Interview angle:** identify **duplicates**, **rotated** arrays, and **bounds** variants (first ≥ x).\n\n### Comparison sort lower bound\n\nΩ(n log n) comparisons for general comparison sorts—mergesort/heapsort achieve; quicksort average O(n log n), worst O(n²) without care.\n\n### Stability\n\n**Stable** sorts preserve relative order of equal keys—important for multi-key sorting. Mergesort stable; typical quicksort unstable.\n\n**Interview angle:** Java **Arrays.sort(Object[])** uses TimSort—stable O(n log n).\n\n### Java primitives sort\n\n**Arrays.sort(int[])** uses dual-pivot quicksort—fast but know worst-case pathologies conceptually.\n\n### Binary search template\n\nMaintain **[lo, hi]** invariant; mid = lo + (hi-lo)/2 avoids overflow. Lower bound: first index with **a[i] ≥ target**.\n\n**Interview angle:** avoid **lo+hi** overflow.\n\n### Rotated sorted array\n\nStill partially monotonic—modified binary search compares against endpoints.\n\n### Counting / radix (awareness)\n\nNon-comparison sorts can be O(n) with bounded key domains—not universal.\n\n### Applications\n\nIndexes, joins, scheduling by time, percentile queries after sort.\n\n### 60-second story\n\n“I pick sort when order unlocks log search or two pointers. I state stability needs. For binary search I define invariant on lo/hi, use safe mid, handle duplicates with bound variants. I note O(n log n) sort cost if input unsorted.”\n\n### Sorting and binary search — discipline layer 1\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 1 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 1, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 2\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 2 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 2, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 3\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 3 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 3, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 4\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 4 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 4, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 5\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 5 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 5, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 6\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 6 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 6, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 7\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 7 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 7, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 8\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 8 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 8, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 9\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 9 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 9, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 10\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 10 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 10, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 11\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 11 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 11, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 12\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 12 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 12, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 13\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 13 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 13, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 14\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 14 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 14, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 15\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 15 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 15, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 16\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 16 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 16, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 17\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 17 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 17, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 18\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 18 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 18, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 19\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 19 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 19, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 20\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 20 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 20, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 21\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 21 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 21, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 22\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 22 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 22, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 23\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 23 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 23, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 24\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 24 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 24, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Sorting and binary search — discipline layer 25\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 25 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 25, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n"
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "Sorting and Binary Search — basic",
       "language": "java",
       "filename": "Day26Basic.java",
-      "code": "package arch.day26;\n\nimport java.util.*;\n\npublic class Day26Basic {\n    public static void main(String[] args) {\n        int[] a = {3, 1, 2};\n        Arrays.sort(a);\n        System.out.println(Arrays.toString(a));\n    }\n}",
       "level": "basic",
-      "output": "[1, 2, 3]\n",
-      "description": "Arrays.sort: O(n log n) default sort for primitives."
+      "description": "Deterministic prints: reference shapes for dominant operations and common complexity classes.",
+      "code": "package arch.day26;\n\nimport java.util.*;\n\npublic class Day26Basic {\n\n    public static void main(String[] args) {\n        int[] a = { 5, 1, 4, 2, 3 };\n        Arrays.sort(a);\n        System.out.println(\"=== Sorted array ===\");\n        System.out.println(Arrays.toString(a));\n        String[] w = { \"banana\", \"apple\", \"Apricot\" };\n        Arrays.sort(w, String.CASE_INSENSITIVE_ORDER);\n        System.out.println(Arrays.toString(w));\n    }\n}\n",
+      "output": "=== Sorted array ===\n[1, 2, 3, 4, 5]\n[apple, Apricot, banana]\n"
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "Sorting and Binary Search — intermediate",
       "language": "java",
       "filename": "Day26Intermediate.java",
-      "code": "package arch.day26;\n\nimport java.util.*;\n\npublic class Day26Intermediate {\n    public static void main(String[] args) {\n        int[] a = {1, 3, 5, 7};\n        int i = Arrays.binarySearch(a, 4);\n        System.out.println(i);\n    }\n}",
       "level": "intermediate",
-      "output": "-3\n",
-      "description": "Binary search on sorted array: find insertion point when missing."
+      "description": "Four labeled scenarios comparing approaches with different asymptotic costs.",
+      "code": "package arch.day26;\n\npublic class Day26Intermediate {\n\n    static int binarySearch(int[] a, int t) {\n        int lo = 0, hi = a.length - 1;\n        while (lo <= hi) {\n            int mid = lo + ((hi - lo) >>> 1);\n            if (a[mid] == t) return mid;\n            if (a[mid] < t) lo = mid + 1;\n            else hi = mid - 1;\n        }\n        return -1;\n    }\n\n    static int lowerBound(int[] a, int t) {\n        int lo = 0, hi = a.length;\n        while (lo < hi) {\n            int mid = lo + ((hi - lo) >>> 1);\n            if (a[mid] < t) lo = mid + 1;\n            else hi = mid;\n        }\n        return lo;\n    }\n\n    public static void main(String[] args) {\n        int[] a = { 1, 3, 3, 5, 7, 9 };\n\n        // --- Scenario 1: exact search hit ---\n        System.out.println(\"--- Scenario 1: exact ---\");\n        System.out.println(binarySearch(a, 7));\n        System.out.println();\n\n        // --- Scenario 2: missing ---\n        System.out.println(\"--- Scenario 2: missing ---\");\n        System.out.println(binarySearch(a, 4));\n        System.out.println();\n\n        // --- Scenario 3: lower bound first >= target ---\n        System.out.println(\"--- Scenario 3: lowerBound 3 ---\");\n        System.out.println(lowerBound(a, 3));\n        System.out.println();\n\n        // --- Scenario 4: lowerBound insert position ---\n        System.out.println(\"--- Scenario 4: lowerBound 6 ---\");\n        System.out.println(lowerBound(a, 6));\n    }\n}\n",
+      "output": "--- Scenario 1: exact ---\n3\n\n--- Scenario 2: missing ---\n-1\n\n--- Scenario 3: lowerBound 3 ---\n1\n\n--- Scenario 4: lowerBound 6 ---\n4\n"
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "Sorting and Binary Search — advanced",
       "language": "java",
       "filename": "Day26Advanced.java",
-      "code": "package arch.day26;\n\nimport java.util.*;\n\npublic class Day26Advanced {\n    record Item(String k, int p) {}\n\n    public static void main(String[] args) {\n        List<Item> xs = new ArrayList<>(List.of(\n            new Item(\"b\", 2), new Item(\"a\", 9), new Item(\"a\", 1)));\n        xs.sort(Comparator.comparing(Item::k).thenComparingInt(Item::p));\n        System.out.println(xs.get(0));\n    }\n}",
       "level": "advanced",
-      "output": "Item[k=a, p=1]\n",
-      "description": "Custom Comparator for objects; stable sort with TimSort for objects."
+      "description": "Separated blocks plus printed decision tables for recurrences and tradeoffs.",
+      "code": "package arch.day26;\n\npublic class Day26Advanced {\n\n    static int peak(int[] a) {\n        int lo = 0, hi = a.length - 1;\n        while (lo < hi) {\n            int mid = lo + ((hi - lo) >>> 1);\n            if (a[mid] < a[mid + 1]) lo = mid + 1;\n            else hi = mid;\n        }\n        return lo;\n    }\n\n    public static void main(String[] args) {\n        // === Block 1: peak index (unimodal) ===\n        System.out.println(\"=== Block 1: peak ===\");\n        int[] m = { 1, 3, 5, 4, 2 };\n        System.out.println(\"peakIndex=\" + peak(m));\n        System.out.println();\n\n        // === Block 2: sort stability note ===\n        System.out.println(\"=== Block 2: stability ===\");\n        System.out.println(\"TimSort on Object[]: stable O(n log n).\");\n        System.out.println(\"Arrays.sort int[]: fast primitive sort, not stable concern.\");\n        System.out.println();\n\n        // === Block 3: when binary search fails ===\n        System.out.println(\"=== Block 3: prerequisites ===\");\n        System.out.println(\"Need sorted order + random access O(1) index.\");\n        System.out.println(\"Linked list mid not O(1) -> avoid classic BS on list.\");\n    }\n}\n",
+      "output": "=== Block 1: peak ===\npeakIndex=2\n\n=== Block 2: stability ===\nTimSort on Object[]: stable O(n log n).\nArrays.sort int[]: fast primitive sort, not stable concern.\n\n=== Block 3: prerequisites ===\nNeed sorted order + random access O(1) index.\nLinked list mid not O(1) -> avoid classic BS on list.\n"
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 26",
+      "title": "Binary search — invariant on [lo, hi]",
       "diagramType": "sequence",
-      "description": "Visual model for Sorting & Binary Search",
-      "plantuml": "@startuml\ntitle Day 26 - Sorting & Binary Search\nactor Learner\nrectangle \"Satyverse(Satyam Parmar) Lesson Engine\" {\n  component \"Theory\"\n  component \"Code\"\n  component \"Exercise\"\n  component \"Interview Drill\"\n}\nLearner --> \"Theory\" : Understand concept\nLearner --> \"Code\" : Implement\nLearner --> \"Exercise\" : Practice\nLearner --> \"Interview Drill\" : Explain\n@enduml"
+      "description": "Engineer, sorted array, mid computation, three-way compare, loop until convergence.",
+      "plantuml": "@startuml\ntitle Binary search for exact target\n\nparticipant \"Engineer\" as E\nparticipant \"sorted\\nint[] a\" as A\nparticipant \"lo/hi\\nbounds\" as B\nparticipant \"mid\\nindex\" as M\nparticipant \"compare\\na[mid]:target\" as C\n\nE -> B : lo=0 hi=n-1\nloop lo <= hi\n  E -> M : mid = lo + (hi-lo)/2\n  M -> C : read a[mid]\n  alt a[mid] == target\n    C -> E : return mid\n  else a[mid] < target\n    C -> B : lo = mid+1\n  else\n    C -> B : hi = mid-1\n  end\nend\nE -> E : return -1\n@enduml"
     },
     {
       "type": "pitfalls",
-      "title": "Common Pitfalls",
+      "title": "Common pitfalls",
       "items": [
-        "Mid calculation overflow in binary search on large bounds.",
-        "Using binary search on unsorted input.",
-        "Infinite loops from incorrect low/high update rules.",
-        "Not distinguishing lower_bound vs upper_bound style goals.",
-        "Overusing O(n log n) sort when linear approach exists."
+        "**Unsorted** input to binary search — silent wrong index; assert sorted or sort first; fix precondition checks.",
+        "**Integer overflow** in `lo+hi` — infinite loops or wrong mid; use `lo + ((hi-lo)>>>1)`.",
+        "**Inclusive vs exclusive** bounds confusion — infinite loop or skip answers; pick one template and stick to it.",
+        "Using **`Collections.binarySearch`** on shuffled `ArrayList` — undefined; sort first.",
+        "Expecting **stability** from primitive `Arrays.sort(int[])` — not the same concern as object TimSort; document requirements.",
+        "**Duplicates**: needing **first/last** occurrence but using only exact equality BS — wrong index; use lower/upper bound variants.",
+        "Binary search on **linked list** pretending O(log n) — mid not O(1); fix with different structure.",
+        "Confusing **lower bound** returning `n` as “past end” — valid insert position; document API semantics."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - Sorting and Binary Search Problem Drill",
-      "problem": "Solve one medium-level Java problem for **Sorting and Binary Search**.\n\nRequirements:\n1. Provide brute-force and optimized approach.\n2. Explain why optimized approach is better.\n3. Include one edge-case test.\n4. Print expected output for sample input.\n5. State time/space complexity clearly.",
+      "title": "Practice exercise",
+      "difficulty": "Intermediate",
+      "problem": "**Day 26 — Sorting and binary search (assignment alignment)**\n\n1. Implement **binary search** on a sorted int array that may contain **duplicates**.\n2. Return the **index** of the target if present; otherwise return **-1**.\n3. If multiple equal values exist, return the **smallest index** (first occurrence).\n4. Use array `[1,2,2,2,3,4]` and target `2` — expect index **1**.",
       "hints": [
-        "State invariant before writing loops/recursion.",
-        "Dry-run on paper for one non-trivial case.",
-        "Only optimize after baseline correctness."
+        "When a[mid]==target, record answer and move hi=mid-1 to search left half for earlier occurrence.",
+        "Use `lo + ((hi - lo) >>> 1)` for mid.",
+        "Initialize answer as -1 and update when hit."
       ],
-      "solution": "package arch.day26;\nimport java.util.*;\n\npublic class Day26Advanced {\n    static record Review(String topic, int confidence, boolean needsRevision) {}\n\n    public static void main(String[] args) {\n        List<Review> reviews = List.of(\n            new Review(\"Sorting & Binary Search\", 72, true),\n            new Review(\"Coding Practice\", 81, false),\n            new Review(\"Interview Explanation\", 68, true)\n        );\n\n        long reviseCount = reviews.stream().filter(Review::needsRevision).count();\n        int avg = (int) reviews.stream().mapToInt(Review::confidence).average().orElse(0);\n\n        System.out.println(\"avgConfidence = \" + avg);\n        System.out.println(\"needsRevision = \" + reviseCount);\n    }\n}\n",
-      "difficulty": "Intermediate"
+      "solution": "package arch.day26;\n\npublic class Day26Exercise {\n\n    static int firstOccurrence(int[] a, int t) {\n        int lo = 0, hi = a.length - 1;\n        int ans = -1;\n        while (lo <= hi) {\n            int mid = lo + ((hi - lo) >>> 1);\n            if (a[mid] == t) {\n                ans = mid;\n                hi = mid - 1;\n            } else if (a[mid] < t) {\n                lo = mid + 1;\n            } else {\n                hi = mid - 1;\n            }\n        }\n        return ans;\n    }\n\n    public static void main(String[] args) {\n        int[] a = { 1, 2, 2, 2, 3, 4 };\n        System.out.println(firstOccurrence(a, 2));\n        System.out.println(firstOccurrence(a, 5));\n    }\n}\n"
     },
     {
       "type": "interview",
       "title": "Interview Drill",
       "conceptual": [
         {
-          "question": "Stable sort definition?",
-          "answer": "Equal elements keep relative order—important for multi-key sorts.",
-          "followUps": [
-            {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Equal elements keep relative order—important for multi-key sorts. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
-            },
-            {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Equal elements keep relative order—important for multi-key sorts. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
-            }
-          ]
-        },
-        {
-          "question": "Which sorts are stable in Java?",
-          "answer": "TimSort (objects), merge sort stable; typical quicksort unstable.",
-          "followUps": [
-            {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. TimSort (objects), merge sort stable; typical quicksort unstable. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
-            },
-            {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. TimSort (objects), merge sort stable; typical quicksort unstable. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
-            }
-          ]
-        },
-        {
-          "question": "Quicksort average vs worst?",
-          "answer": "Average O(n log n); worst O(n²) bad pivot—randomize or median-of-three.",
-          "followUps": [
-            {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Average O(n log n); worst O(n²) bad pivot—randomize or median-of-three. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
-            },
-            {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Average O(n log n); worst O(n²) bad pivot—randomize or median-of-three. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
-            }
-          ]
-        },
-        {
-          "question": "Merge sort properties?",
-          "answer": "O(n log n) worst, O(n) extra space, stable.",
-          "followUps": [
-            {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. O(n log n) worst, O(n) extra space, stable. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
-            },
-            {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. O(n log n) worst, O(n) extra space, stable. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            }
-          ]
-        },
-        {
-          "question": "Insertion sort when good?",
-          "answer": "Small n nearly sorted—O(n) best case adaptive.",
-          "followUps": [
-            {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Small n nearly sorted—O(n) best case adaptive. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
-            },
-            {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Small n nearly sorted—O(n) best case adaptive. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            }
-          ]
-        },
-        {
-          "question": "Counting sort radix sort?",
-          "answer": "Linear when range constraints—not comparison lower bound.",
-          "followUps": [
-            {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Linear when range constraints—not comparison lower bound. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
-            },
-            {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Linear when range constraints—not comparison lower bound. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
-            }
-          ]
-        },
-        {
           "question": "Binary search precondition?",
-          "answer": "Monotonic ordering on indexed access—array sorted or rotated variants with care.",
+          "answer": "Sorted monotonic array with O(1) index access.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Monotonic ordering on indexed access—array sorted or rotated variants with care. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Monotonic ordering on indexed access—array sorted or rotated variants with care. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Find rotation point in rotated sorted array?",
-          "answer": "Modified binary search O(log n).",
+          "question": "Why mid overflow matters?",
+          "answer": "lo+hi can overflow int; use lo+(hi-lo)/2.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Modified binary search O(log n). Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Modified binary search O(log n). Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Lower_bound / upper_bound concepts?",
-          "answer": "First position where predicate true—Arrays.binarySearch variants.",
+          "question": "Lower vs upper bound?",
+          "answer": "First >= x vs first > x—predicate binary search.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. First position where predicate true—Arrays.binarySearch variants. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. First position where predicate true—Arrays.binarySearch variants. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Stability in sorting?",
+          "answer": "Equal keys keep relative input order—important multi-key sorts.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Java Object[] sort?",
+          "answer": "TimSort O(n log n) stable.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Primitive int[] sort?",
+          "answer": "Dual-pivot quicksort family—fast average.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Comparison lower bound?",
+          "answer": "Ω(n log n) comparisons general.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "When counting sort?",
+          "answer": "Small bounded integer key range.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Binary search on answer?",
+          "answer": "Monotonic feasibility check over value space.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Rotated sorted array?",
+          "answer": "Determine which half is sorted; compare targets.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Merge sort space?",
+          "answer": "O(n) auxiliary for merges.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Quickselect?",
+          "answer": "Average O(n) kth element with partition.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
           "question": "External sort?",
-          "answer": "Merge sorted chunks from disk—streaming large data.",
+          "answer": "Chunk sort + multi-way merge.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Merge sorted chunks from disk—streaming large data. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Merge sorted chunks from disk—streaming large data. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Parallel sort Arrays.parallelSort?",
-          "answer": "ForkJoin for large primitive arrays—speed vs overhead.",
+          "question": "Linked list binary search?",
+          "answer": "No O(1) mid—use skip list or linear.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. ForkJoin for large primitive arrays—speed vs overhead. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. ForkJoin for large primitive arrays—speed vs overhead. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Inversion count?",
-          "answer": "Merge sort augmentation—count cross inversions while merging.",
+          "question": "Duplicates in BS?",
+          "answer": "Use bound variants for first/last occurrence.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Merge sort augmentation—count cross inversions while merging. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Merge sort augmentation—count cross inversions while merging. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Selection vs quickselect?",
-          "answer": "Quickselect finds kth element average O(n).",
+          "question": "Heapsort properties?",
+          "answer": "In-place O(n log n) not stable.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Quickselect finds kth element average O(n). Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Quickselect finds kth element average O(n). Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Bitonic sort (mention)?",
-          "answer": "Parallel sorting networks—niche.",
+          "question": "60-second story?",
+          "answer": "Sort unlocks log search; stable vs speed; BS invariant; safe mid; bound searches for duplicates; rotated variants.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Parallel sorting networks—niche. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Parallel sorting networks—niche. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            }
-          ]
-        },
-        {
-          "question": "Compare sort vs heap for “top K”.",
-          "answer": "Heap O(n log k) often beats full O(n log n) sort when k small.",
-          "followUps": [
-            {
-              "question": "Interview follow-up: how does **Sorting and Binary Search** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Heap O(n log k) often beats full O(n log n) sort when k small. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
-            },
-            {
-              "question": "What is a **common trap** or **follow-up** question on **Sorting and Binary Search**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Heap O(n log k) often beats full O(n log n) sort when k small. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "codeBased": [
         {
-          "question": "Binary search first >= target (lower bound).",
-          "answer": "lo/hi loop variants—know one by heart.",
+          "question": "Exact binary search return?",
+          "answer": "Index or -1.",
           "followUps": [
             {
-              "question": "What breaks if this **Sorting and Binary Search** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. lo/hi loop variants—know one by heart. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. lo/hi loop variants—know one by heart. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Merge two sorted arrays in place (with extra space at end).",
-          "answer": "Three pointers from end.",
+          "question": "Insert position?",
+          "answer": "lower_bound for sorted insert.",
           "followUps": [
             {
-              "question": "What breaks if this **Sorting and Binary Search** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Three pointers from end. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Three pointers from end. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Quicksort partition Lomuto outline.",
-          "answer": "Pivot placement; i,j pointers.",
+          "question": "sqrt int?",
+          "answer": "BS on m*m<=x.",
           "followUps": [
             {
-              "question": "What breaks if this **Sorting and Binary Search** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Pivot placement; i,j pointers. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Pivot placement; i,j pointers. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Count inversions merge step.",
-          "answer": "When a[i]>b[j] add remaining left elements to count.",
+          "question": "Peak element?",
+          "answer": "BS on slope.",
           "followUps": [
             {
-              "question": "What breaks if this **Sorting and Binary Search** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. When a[i]>b[j] add remaining left elements to count. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. When a[i]>b[j] add remaining left elements to count. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Arrays.sort int[] vs Integer[]?",
-          "answer": "Primitives dual-pivot quicksort; objects TimSort.",
+          "question": "Split array largest sum?",
+          "answer": "BS capacity + greedy segments.",
           "followUps": [
             {
-              "question": "What breaks if this **Sorting and Binary Search** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Primitives dual-pivot quicksort; objects TimSort. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Primitives dual-pivot quicksort; objects TimSort. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Comparator nullsFirst for sort.",
-          "answer": "Handle null keys safely.",
+          "question": "Aggressive cows?",
+          "answer": "BS min distance + greedy fit.",
           "followUps": [
             {
-              "question": "What breaks if this **Sorting and Binary Search** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Handle null keys safely. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Handle null keys safely. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Search insert position in sorted array.",
-          "answer": "Binary search boundary.",
+          "question": "First bad version?",
+          "answer": "BS on isBad.",
           "followUps": [
             {
-              "question": "What breaks if this **Sorting and Binary Search** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Binary search boundary. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Binary search boundary. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Rotated array find minimum index.",
-          "answer": "Compare mid with right boundary.",
+          "question": "Search 2D matrix?",
+          "answer": "Treat as sorted list or staircase BS.",
           "followUps": [
             {
-              "question": "What breaks if this **Sorting and Binary Search** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Compare mid with right boundary. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Compare mid with right boundary. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Stable counting sort for small range integers.",
-          "answer": "Prefix sums for positions.",
+          "question": "Koko eating bananas?",
+          "answer": "BS on eating rate.",
           "followUps": [
             {
-              "question": "What breaks if this **Sorting and Binary Search** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Prefix sums for positions. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Prefix sums for positions. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Parallel sort threshold?",
-          "answer": "JDK uses size threshold before parallel—tunable implementation detail.",
+          "question": "Median two arrays?",
+          "answer": "Partition BS.",
           "followUps": [
             {
-              "question": "What breaks if this **Sorting and Binary Search** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. JDK uses size threshold before parallel—tunable implementation detail. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. JDK uses size threshold before parallel—tunable implementation detail. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Sort colors?",
+          "answer": "Dutch flag O(n) three pointers.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Merge two sorted arrays end?",
+          "answer": "Fill from rear avoiding overwrite.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "seniorScenario": [
         {
-          "question": "DB ORDER BY vs app sort—when which?",
-          "answer": "Large data: sort in DB with index; paginate—avoid loading all rows.",
+          "question": "Sort stability in ETL?",
+          "answer": "Preserve duplicate key ties for determinism.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Sorting and Binary Search** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Large data: sort in DB with index; paginate—avoid loading all rows. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Large data: sort in DB with index; paginate—avoid loading all rows. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Sort huge file on disk—approach?",
-          "answer": "External merge sort chunks; k-way merge.",
+          "question": "Locale aware sort prod?",
+          "answer": "Collator rules; normalization; performance.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Sorting and Binary Search** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: External merge sort chunks; k-way merge. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. External merge sort chunks; k-way merge. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Non-transitive Comparator bug—symptom?",
-          "answer": "IllegalArgumentException from TimSort or inconsistent ordering—deadly in production.",
+          "question": "Huge file sort?",
+          "answer": "External merge; distributed sort; spill to disk.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Sorting and Binary Search** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: IllegalArgumentException from TimSort or inconsistent ordering—deadly in production. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. IllegalArgumentException from TimSort or inconsistent ordering—deadly in production. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Locale-sensitive sort mismatch?",
-          "answer": "Use Collator; binary sort wrong for human display.",
+          "question": "Index cardinality estimates?",
+          "answer": "Order statistics; histograms.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Sorting and Binary Search** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Use Collator; binary sort wrong for human display. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Use Collator; binary sort wrong for human display. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Distributed sort (MapReduce)?",
-          "answer": "Shuffle by key, sort partitions—different paradigm.",
+          "question": "Comparator performance?",
+          "answer": "Hot path expensive compares dominate sort.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Sorting and Binary Search** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Shuffle by key, sort partitions—different paradigm. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Shuffle by key, sort partitions—different paradigm. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Time-series data out-of-order ingest?",
-          "answer": "Sort windows or use data structures accepting disorder.",
+          "question": "Binary search micro-benchmark?",
+          "answer": "Branch prediction effects; still O(log n) comparisons.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Sorting and Binary Search** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Sort windows or use data structures accepting disorder. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Sort windows or use data structures accepting disorder. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "wrongAnswers": [
-        "Arrays.sort on primitives uses TimSort.",
-        "Binary search works on unsorted array if you check each step.",
-        "Quicksort worst case cannot be avoided.",
-        "Merge sort is in-place with O(1) extra space typically.",
-        "Stable sort means equal elements swap randomly.",
-        "Binary search always returns an index when element missing."
+        "Binary search works on unsorted array — false.",
+        "mid = (lo+hi)/2 always safe — overflow risk.",
+        "TimSort on int[] — false: primitives use other algorithms.",
+        "Heapsort stable — false.",
+        "Merge sort O(1) space — false.",
+        "Collections.binarySearch works unsorted — undefined behavior.",
+        "BS on linked list standard O(log n) — false without extra structure.",
+        "Quicksort worst O(n log n) always — false can be O(n²)."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ Quiz — Sorting and Binary Search",
+      "description": "Thirty questions on binary search variants, sort stability, JDK sorts, and classic theory.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "Binary search requires:",
+          "options": {
+            "A": "Unsorted data",
+            "B": "Monotonic order + random access",
+            "C": "Linked list only",
+            "D": "Heap only"
+          },
+          "answer": "B",
+          "explanation": "Halving needs order and O(1) mid access."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "Each binary search step eliminates:",
+          "options": {
+            "A": "All elements",
+            "B": "Roughly half remaining",
+            "C": "One element total",
+            "D": "None"
+          },
+          "answer": "B",
+          "explanation": "Halving interval."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "theory",
+          "question": "Comparison sort lower bound:",
+          "options": {
+            "A": "O(n)",
+            "B": "Ω(n log n)",
+            "C": "O(1)",
+            "D": "O(n^2)"
+          },
+          "answer": "B",
+          "explanation": "Decision tree argument."
+        },
+        {
+          "id": 4,
+          "level": "intermediate",
+          "category": "code",
+          "question": "mid = lo + (hi-lo)/2 avoids:",
+          "options": {
+            "A": "Wrong answer",
+            "B": "int overflow of lo+hi",
+            "C": "GC",
+            "D": "Null pointer"
+          },
+          "answer": "B",
+          "explanation": "Classic Java trick."
+        },
+        {
+          "id": 5,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Stable sort preserves:",
+          "options": {
+            "A": "Reverse order",
+            "B": "Relative order of equal keys",
+            "C": "Heap property",
+            "D": "Random order"
+          },
+          "answer": "B",
+          "explanation": "Definition of stability."
+        },
+        {
+          "id": 6,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Arrays.sort(Object[]):",
+          "options": {
+            "A": "TimSort stable",
+            "B": "QuickSort unstable always",
+            "C": "O(n)",
+            "D": "Not in JDK"
+          },
+          "answer": "A",
+          "explanation": "JDK uses TimSort."
+        },
+        {
+          "id": 7,
+          "level": "advanced",
+          "category": "code",
+          "question": "Lower bound first i with a[i]>=x uses:",
+          "options": {
+            "A": "lo<hi shrink half",
+            "B": "Only == compare",
+            "C": "BFS",
+            "D": "Stack"
+          },
+          "answer": "A",
+          "explanation": "Binary search on predicate."
+        },
+        {
+          "id": 8,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Quicksort average:",
+          "options": {
+            "A": "O(n log n)",
+            "B": "O(n)",
+            "C": "O(1)",
+            "D": "O(2^n)"
+          },
+          "answer": "A",
+          "explanation": "Worst O(n²) pathological."
+        },
+        {
+          "id": 9,
+          "level": "basic",
+          "category": "code",
+          "question": "Binary search time:",
+          "options": {
+            "A": "O(n)",
+            "B": "O(log n)",
+            "C": "O(n log n)",
+            "D": "O(1)"
+          },
+          "answer": "B",
+          "explanation": "Halving steps."
+        },
+        {
+          "id": 10,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Search in rotated sorted array:",
+          "options": {
+            "A": "Modified binary search",
+            "B": "Always linear",
+            "C": "Heap",
+            "D": "Impossible"
+          },
+          "answer": "A",
+          "explanation": "Identify sorted half."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Mergesort extra space:",
+          "options": {
+            "A": "O(1)",
+            "B": "O(n)",
+            "C": "O(log n)",
+            "D": "O(n^2)"
+          },
+          "answer": "B",
+          "explanation": "Temporary array merge."
+        },
+        {
+          "id": 12,
+          "level": "advanced",
+          "category": "code",
+          "question": "Find min in rotated array:",
+          "options": {
+            "A": "BS compare mid with right",
+            "B": "Sort O(n log n)",
+            "C": "O(n^2)",
+            "D": "Heapify"
+          },
+          "answer": "A",
+          "explanation": "Classic variant."
+        },
+        {
+          "id": 13,
+          "level": "basic",
+          "category": "theory",
+          "question": "Counting sort when:",
+          "options": {
+            "A": "Keys bounded small integer range",
+            "B": "Any objects",
+            "C": "Linked list only",
+            "D": "Graphs"
+          },
+          "answer": "A",
+          "explanation": "Non-comparison linear."
+        },
+        {
+          "id": 14,
+          "level": "intermediate",
+          "category": "code",
+          "question": "upper_bound first > x:",
+          "options": {
+            "A": "Tweak lower bound predicate",
+            "B": "Same as lower",
+            "C": "Heap",
+            "D": "Queue"
+          },
+          "answer": "A",
+          "explanation": "Symmetric binary search."
+        },
+        {
+          "id": 15,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Heapsort stable?",
+          "options": {
+            "A": "Yes",
+            "B": "No",
+            "C": "Always",
+            "D": "Only strings"
+          },
+          "answer": "B",
+          "explanation": "Heap operations not stable."
+        },
+        {
+          "id": 16,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Binary search on answer (min capacity):",
+          "options": {
+            "A": "Monotonic feasibility check",
+            "B": "Requires unsorted",
+            "C": "O(1)",
+            "D": "Impossible"
+          },
+          "answer": "A",
+          "explanation": "Search value space."
+        },
+        {
+          "id": 17,
+          "level": "advanced",
+          "category": "code",
+          "question": "Median of two sorted arrays:",
+          "options": {
+            "A": "Binary partition O(log(min(n,m)))",
+            "B": "Merge full O(1)",
+            "C": "O(n^3)",
+            "D": "Stack"
+          },
+          "answer": "A",
+          "explanation": "Hard classic."
+        },
+        {
+          "id": 18,
+          "level": "basic",
+          "category": "code",
+          "question": "Sort doubles primitive:",
+          "options": {
+            "A": "Arrays.sort(double[])",
+            "B": "Cannot",
+            "C": "TreeMap",
+            "D": "Stack"
+          },
+          "answer": "A",
+          "explanation": "JDK primitive sorts."
+        },
+        {
+          "id": 19,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Radix sort base:",
+          "options": {
+            "A": "Digit buckets",
+            "B": "Heap",
+            "C": "BST",
+            "D": "Stack only"
+          },
+          "answer": "A",
+          "explanation": "Non-comparison."
+        },
+        {
+          "id": 20,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Insertion sort best case:",
+          "options": {
+            "A": "O(n) nearly sorted",
+            "B": "O(n log n)",
+            "C": "O(n^2)",
+            "D": "O(1)"
+          },
+          "answer": "A",
+          "explanation": "Inner while stops early."
+        },
+        {
+          "id": 21,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Adaptive sorts:",
+          "options": {
+            "A": "TimSort exploits runs",
+            "B": "All O(n^2)",
+            "C": "Heapsort adaptive",
+            "D": "None"
+          },
+          "answer": "A",
+          "explanation": "Real data patterns."
+        },
+        {
+          "id": 22,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Sqrt monotonic BS on int:",
+          "options": {
+            "A": "lo/hi on answer",
+            "B": "Only linear",
+            "C": "Math.sqrt only",
+            "D": "Impossible int"
+          },
+          "answer": "A",
+          "explanation": "Predicate m*m<=x."
+        },
+        {
+          "id": 23,
+          "level": "basic",
+          "category": "theory",
+          "question": "After sort, duplicate groups:",
+          "options": {
+            "A": "Adjacent",
+            "B": "Random",
+            "C": "Far",
+            "D": "Removed"
+          },
+          "answer": "A",
+          "explanation": "Enables linear scan grouping."
+        },
+        {
+          "id": 24,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Binary search tree inorder:",
+          "options": {
+            "A": "Sorted keys",
+            "B": "Heap order",
+            "C": "Random",
+            "D": "Postfix"
+          },
+          "answer": "A",
+          "explanation": "BST property."
+        },
+        {
+          "id": 25,
+          "level": "advanced",
+          "category": "code",
+          "question": "Aggressive cows (max min distance):",
+          "options": {
+            "A": "BS on distance + greedy place",
+            "B": "DP O(n^3)",
+            "C": "BFS",
+            "D": "Impossible"
+          },
+          "answer": "A",
+          "explanation": "Classic BS on answer."
+        },
+        {
+          "id": 26,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "External sort:",
+          "options": {
+            "A": "Chunk sort + k-way merge",
+            "B": "Heap only",
+            "C": "O(1) memory",
+            "D": "No merge"
+          },
+          "answer": "A",
+          "explanation": "Disk-based mergesort variant."
+        },
+        {
+          "id": 27,
+          "level": "basic",
+          "category": "code",
+          "question": "`Collections.binarySearch` needs:",
+          "options": {
+            "A": "Sorted list",
+            "B": "Unsorted",
+            "C": "Empty",
+            "D": "Map"
+          },
+          "answer": "A",
+          "explanation": "Documented precondition."
+        },
+        {
+          "id": 28,
+          "level": "intermediate",
+          "category": "code",
+          "question": "First bad version:",
+          "options": {
+            "A": "BS on boolean predicate",
+            "B": "Linear only",
+            "C": "Heap",
+            "D": "Trie"
+          },
+          "answer": "A",
+          "explanation": "Monotone bad versions."
+        },
+        {
+          "id": 29,
+          "level": "advanced",
+          "category": "code",
+          "question": "Split array largest sum BS:",
+          "options": {
+            "A": "Check feasible subarray sums",
+            "B": "Greedy no BS",
+            "C": "O(1)",
+            "D": "Impossible"
+          },
+          "answer": "A",
+          "explanation": "Binary search on cap."
+        },
+        {
+          "id": 30,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Quickselect average:",
+          "options": {
+            "A": "O(n)",
+            "B": "O(n log n) always",
+            "C": "O(n^2) always",
+            "D": "O(1)"
+          },
+          "answer": "A",
+          "explanation": "Partition like quicksort."
+        }
       ]
     },
     {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Area | Day 26 Focus | Quick Reminder | Gotcha |\n|---|---|---|---|\n| Pattern | Sorting and Binary Search | Choose pattern before coding | Random brute-force wandering |\n| Correctness | Invariant + edge checks | Dry-run once | Off-by-one / null-state miss |\n| Complexity | Derive, do not guess | Mention time + space | Incomplete complexity answers |\n| Communication | Explain decisions | Use trade-off statement | Generic textbook responses |\n| Quality | Readable Java methods | Stable naming + small units | Clever but fragile logic |"
+      "title": "Sorting and Binary Search — cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n| --- | --- | --- |\n| Binary search | halve interval | sorted + index |\n| Safe mid | lo+(hi-lo)/2 | avoid overflow |\n| Lower bound | first >= x | predicate BS |\n| Upper bound | first > x | symmetric |\n| First equal | shrink left on hit | duplicates |\n| TimSort | stable n log n | Object[] |\n| int[] sort | dual-pivot | fast avg |\n| Merge sort | stable | O(n) space |\n| Quick sort | avg n log n | worst n^2 |\n| Heap sort | in-place | unstable |\n| Counting sort | bounded keys | O(n+k) |\n| Radix sort | digits | integer strings |\n| BS on answer | monotone check | capacity |\n| Rotated array | which half sorted | compare ends |\n| Quickselect | partition | avg O(n) |"
     }
   ]
 }

@@ -3,55 +3,173 @@
   "title": "Spring Bean Lifecycle & Advanced DI",
   "phaseId": "phase5",
   "tags": [
-    "lifecycle",
+    "bean lifecycle",
     "BeanPostProcessor",
-    "scope"
+    "@PostConstruct",
+    "@PreDestroy",
+    "@DependsOn",
+    "bean scope",
+    "ObjectProvider",
+    "graceful shutdown"
   ],
   "scenarios": [
     {
       "id": "d39-s1",
-      "question": "`@PostConstruct` runs before or after dependency injection?",
-      "signals": [
-        "initialization",
-        "order"
-      ],
-      "answer": "**After** dependencies injected—use for **validation** or **warmup** that needs collaborators.\n\nKnow **`InitializingBean`** / **`init-method`** alternatives.",
+      "question": "Code review: `PricingService` implements **`InitializingBean`** and does a **blocking HTTP call** plus **JDBC** work inside **`afterPropertiesSet()`**. Teammate says: \"Tests pass and prod works.\" In plain language, why is this still a bad idea?",
+      "signals": ["InitializingBean", "afterPropertiesSet", "startup latency", "fail-fast"],
+      "answer": "**`InitializingBean`** is valid Spring API, but **`afterPropertiesSet()`** runs while the **`ApplicationContext`** is still starting — before the application is fully “up.”\n\n**Problem 1 — Startup time.** Blocking **network** calls and **database** work on the startup thread add **startup latency**. In **Kubernetes**, slow boot can exceed **liveness** checks → pods restart in a loop even though the code “works” on a fast laptop.\n\n**Problem 2 — Wrong place for remote work.** Remote systems can time out or fail. Doing that inside **bean init** mixes “create objects” with “talk to the world” without clear retries or feature flags.\n\n**Problem 3 — Weaker fail-fast story.** You still fail if init throws, but the JVM may sit in a long half-started state while waiting on slow partners.\n\n**Better approach:** Keep **`afterPropertiesSet()`** for cheap checks only (or avoid **`InitializingBean`** in app code and use **`@PostConstruct`** for light validation). Put heavy warm-up in **`ApplicationRunner`** / **`CommandLineRunner`** after the context is ready, optionally on a **background** thread, with **timeouts** and metrics.\n\n```java\n@Component\npublic class PricingWarmup implements ApplicationRunner {\n  private final PricingClient client;\n  public void run(ApplicationArguments args) {\n    CompletableFuture.runAsync(() -> client.refreshCache());\n  }\n}\n```\n\n**How to verify:** Enable **`management.endpoint.startup.enabled=true`** and inspect **`/actuator/startup`** for slow steps; compare boot time before and after refactor.\n\n**Bottom line:** **`afterPropertiesSet()`** is not “free” — it runs at the worst possible time for long I/O.",
       "followUps": [
         {
-          "question": "Prototype scoped bean with singleton?",
-          "answer": "Injection issues—**lookup** via **`ObjectProvider`**, **`Provider<T>`**, or **scope proxy**—understand **why**."
+          "question": "If **`afterPropertiesSet()`** throws versus an **`ApplicationRunner`** throws, when do we notice the failure?",
+          "answer": "**`afterPropertiesSet()`** throws during **bean creation** while the context refreshes — the app may exit immediately with a stack trace. That is harsh for flaky remote services. **`ApplicationRunner`** runs **after** the context object graph exists; failure still stops a healthy Boot app, but you can sometimes structure **try/catch**, **retries**, or degraded modes more cleanly. Teams often prefer **`ApplicationRunner`** for **network** work so startup logic is in one visible place. Neither option magically makes outages disappear — both need **timeouts** and good **logging**."
+        },
+        {
+          "question": "Why avoid **`InitializingBean`** in new application services?",
+          "answer": "**`InitializingBean`** ties your domain class to Spring’s `org.springframework` package. **`@PostConstruct`** (standard Java EE / Jakarta API) is usually enough for “run one method after injection.” Reserve **`InitializingBean`** for framework-style code or integrating libraries you cannot annotate. Interviewers like hearing: business services → **`@PostConstruct`** or **`ApplicationRunner`**; framework glue → **`InitializingBean`** / **`BeanPostProcessor`** when needed."
         }
       ]
     },
     {
       "id": "d39-s2",
-      "question": "Circular dependency between two `@Service` beans via constructor injection—what happens?",
-      "signals": [
-        "BeanCurrentlyInCreation",
-        "refactor",
-        "setter"
-      ],
-      "answer": "Boot **fails** at startup—**constructor** cycles unsolvable without **refactor** (extract third bean), **setter/@Lazy** (careful), or **redesign**.",
+      "question": "On-call: after deploy, pods flip between **Running** and **CrashLoopBackOff**. Logs show Spring starting, then ~90 seconds of silence, then the process dies. **Actuator** never responds. Explain how you troubleshoot this as a **lifecycle / startup** issue.",
+      "signals": ["startup probe", "@PostConstruct", "actuator", "HikariCP"],
+      "answer": "**First — stop the bleeding.** Scale to one replica if needed. Loosen **liveness** timing or add a **`startupProbe`** so Kubernetes does not kill the JVM while Spring is still legitimately booting. **Liveness** should not fire during normal slow startup.\n\n**Step 1 — Read logs.** `kubectl logs POD --previous` if it restarted. Find the last log line before silence — often **`@PostConstruct`**, schema migration (**Flyway**), or **HikariCP** opening the pool.\n\n**Step 2 — Reproduce locally** with the same **`spring.profiles.active`**. Time the boot. Turn on **Actuator** startup reporting: **`management.endpoint.startup.enabled=true`**, then after a good boot run `curl -s localhost:8080/actuator/startup | jq` to see which steps are slow.\n\n**Step 3 — Check Kubernetes events.** `kubectl describe pod POD` shows probe failures. If **liveness** fires before refresh finishes, you get **SIGTERM** and may never reach clean **`@PreDestroy`**.\n\n**Step 4 — Fix the app.** Move blocking work out of **`@PostConstruct`**, shrink component scan, **`@Lazy`** rarely used beans, fix DB network or migration slowness.\n\n**Step 5 — Redeploy and watch** readiness and error rates.\n\n**Simple lesson:** Slow Spring boot + aggressive **liveness** = fake “crashes.” **Startup probe** + **Actuator** data = calmer deploys.\n\n**HikariCP** and **`@PostConstruct`** are usual suspects — name them in the postmortem.",
       "followUps": [
         {
-          "question": "`@Lazy` on param?",
-          "answer": "Breaks cycle by **proxy** delaying injection—**document**—not free complexity."
+          "question": "Why did unit tests miss a slow **`@PostConstruct`** that calls a partner API?",
+          "answer": "Many tests **mock** HTTP clients or skip that bean path. **`@SpringBootTest`** might not hit the slow branch, or tests use stubs and fast DNS. Production uses real URLs and cluster DNS — different world. Add an **integration test** that measures init time with **timeouts**, or move the call behind **`ApplicationRunner`** with flags. Also validate **client timeouts** so one bad partner cannot block boot forever."
+        },
+        {
+          "question": "Is **`spring.main.lazy-initialization=true`** a permanent fix?",
+          "answer": "It can shorten boot by delaying bean creation until first use. Trade-offs: first requests pay creation cost (**latency spike**), and some wiring errors appear only when a rare path runs (**fail-later**). Acceptable for some internal tools; risky for customer APIs unless you warm critical paths after deploy. Treat **lazy** as a tactical knob, not architecture."
         }
       ]
     },
     {
       "id": "d39-s3",
-      "question": "`BeanPostProcessor` use cases?",
-      "signals": [
-        "proxy",
-        "metrics",
-        "cross-cutting"
-      ],
-      "answer": "**AOP proxies**, **metrics**, **validation** wrappers—powerful but **ordering** sensitive (`Ordered`, `@Order`).",
+      "question": "At startup you must load feature flags, register metrics, and warm a cache. Half the team wants **`@PostConstruct`** on a `@Component`; half wants **`ApplicationRunner`**. Explain both sides simply and give a recommendation.",
+      "signals": ["ApplicationRunner", "@PostConstruct", "ordering", "ApplicationContext"],
+      "answer": "**`@PostConstruct`** runs while the **`ApplicationContext`** is still building individual beans. Good for **small**, **local** checks: validate properties, sanity-check config, register a lightweight meter. Bad for “orchestrate the whole world” because **ordering** across unrelated beans is unclear unless you add **`@DependsOn`** or similar.\n\n**`ApplicationRunner`** runs **after** the full context refresh succeeds. Good for **ordered** startup tasks: call flag service, fail fast if required flags missing, warm cache. You can use **`@Order`** on multiple runners to control **ordering**.\n\n**Recommendation:** Put the three tasks in **one** cohesive **`ApplicationRunner`** (or a small set with explicit **`@Order`**). Use **`@PostConstruct`** only for bean-local setup.\n\n**When to flip:** If something must exist **before** another bean’s constructor runs — rare in apps — you need **`@DependsOn`** or lower-level hooks, not a runner.\n\n**Verify:** One class a new engineer can read to understand “what runs at boot.”\n\n**Plain rule:** Big coordinated startup → **`ApplicationRunner`**. Tiny per-bean setup → **`@PostConstruct`**.",
       "followUps": [
         {
-          "question": "Request scope bean?",
-          "answer": "Tied to **HTTP request**—inject via **proxy** into singleton controller—understand **thread** boundaries."
+          "question": "`ContextRefreshedEvent` listener vs **`ApplicationRunner`**?",
+          "answer": "Both run near “context is ready.” **Listeners** are event-based; if you add many, **ordering** can get fuzzy unless they implement **`Ordered`**. **`ApplicationRunner`** is idiomatic in Boot, easy to find in code review, and works well with test slices. Use listeners for loose side effects (metrics registration); use **`ApplicationRunner`** for mandatory ordered pipelines."
+        },
+        {
+          "question": "Does **`@Order`** on **`@PostConstruct`** methods work across beans?",
+          "answer": "No — not reliably. **`@DependsOn`** affects **bean creation order**, not a global order of all **`@PostConstruct`** methods. For cross-bean **ordering**, use **`ApplicationRunner`** / **`SmartLifecycle`** phases. Believing **`@Order`** fixes **`@PostConstruct`** chains is a common mistake that causes flaky startup."
+        }
+      ]
+    },
+    {
+      "id": "d39-s4",
+      "question": "Interview: \"From the moment Spring starts creating a **singleton** bean until it is ready for other beans to use it — what happens inside the container?\" Give a clear ordered explanation.",
+      "signals": ["populateBean", "BeanPostProcessor", "initializeBean", "AbstractAutowireCapableBeanFactory"],
+      "answer": "The core class to name is **`AbstractAutowireCapableBeanFactory`** — it performs the steps.\n\n**Rough flow:**\n1. **Create instance** — constructor or factory (`instantiateBean` / `createBeanInstance`). **Constructor injection** is satisfied here in current Spring.\n2. **`populateBean`** — inject **`@Autowired`** fields/setters if any; resolve **`@Value`** from **`Environment`**.\n3. **`BeanPostProcessor.postProcessBeforeInitialization`** — framework hooks run before your init callbacks.\n4. **`initializeBean`** — runs **`@PostConstruct`**, then **`InitializingBean.afterPropertiesSet()`** if present, then custom `init-method`.\n5. **`BeanPostProcessor.postProcessAfterInitialization`** — often where **AOP** wraps the bean (**`@Transactional`**, etc.).\n\n**Why interviewers care:** If **`initializeBean`** throws, dependent beans never start. If a **`BeanPostProcessor`** is wrong, **every** bean might miss **transactions** or metrics.\n\n**Tie to **`self-invocation`:** After step 5, callers outside the class use the **proxy**; internal `this` calls do not.\n\n**Simple memory aid:** populate → init callbacks → wrap.\n\n**Class name to say aloud:** **`AbstractAutowireCapableBeanFactory`** plus **`BeanPostProcessor`**.",
+      "followUps": [
+        {
+          "question": "Where do **`BeanFactoryPostProcessor`** beans run compared to this?",
+          "answer": "**Earlier** — they touch **BeanDefinition** metadata before normal instances exist (for example resolve property placeholders in XML or `@Configuration`). **`BeanPostProcessor`** runs **per instance** after creation. Confusing the two leads to bugs like autowiring a normal service into a **`BeanFactoryPostProcessor`** — too early. **`@Conditional`** also evaluates at definition-registration time, not after beans are alive."
+        },
+        {
+          "question": "Why are **`BeanPostProcessor`** order bugs nasty?",
+          "answer": "Processors run for **every** bean and often run **early** themselves. If two wrappers fight (wrong **order**), you can get double **proxies**, missing **transactions**, or security advice not applied — sometimes only after a dependency upgrade. Fix with **`Ordered`**, documented **processor** beans, and integration tests that assert a **`@Transactional`** method really has an active transaction."
+        }
+      ]
+    },
+    {
+      "id": "d39-s5",
+      "question": "Should we turn on **global lazy initialization** (`spring.main.lazy-initialization=true`) for a busy API? List pros and cons in simple language and say when it breaks.",
+      "signals": ["lazy initialization", "fail-fast", "cold path", "latency SLO"],
+      "answer": "**Global lazy initialization** means: do not create most beans until something first needs them.\n\n**Pros:** Faster **`refresh()`**; smaller immediate memory; nicer **Kubernetes** rollout if boot time was killing you; faster local dev on huge apps.\n\n**Cons:** (1) You trade some **fail-fast** behavior — a broken bean might throw on the **first request** that touches it, under real users. (2) First caller pays the **cold path** (construction + **`@PostConstruct`** + **proxy**), which can hurt **p99** and your **latency SLO** after **scale-out**. (3) Some features assume eager beans (**`@Scheduled`** registration is a classic footgun — if nothing injects that bean, schedules may never appear).\n\n**When it breaks:** High **RPS** APIs that autoscale often — every new pod pays many **cold** first hits unless you warm routes.\n\n**Practical default:** Keep eager for customer-facing services. Use **per-bean** **`@Lazy`** on known optional dependencies instead of global lazy unless you have a warm-up plan.\n\n**Verify:** Load test after deploy; watch **p99** and error spikes on fresh pods.\n\n**Simple summary:** **Lazy** speeds boot; **eager** speeds confidence at startup.",
+      "followUps": [
+        {
+          "question": "Lazy + **`@Scheduled`** — what goes wrong?",
+          "answer": "If nothing else injects that **`@Component`**, it might never be created, so scheduled methods never register — silent failure. Force creation by injecting the bean somewhere required, or avoid **global lazy** for that app. This surprises teams who turn **lazy** on for “easy wins.”"
+        },
+        {
+          "question": "Does **global lazy** skip **`BeanPostProcessor`** registration?",
+          "answer": "**`BeanPostProcessor`** beans are special — they still come up early. **Global lazy** mainly delays normal application beans. Timing of some **events** can shift, which makes logs harder to read and can expose rare races. Integration tests under load still matter."
+        }
+      ]
+    },
+    {
+      "id": "d39-s6",
+      "question": "**CI tests pass**, but after the **second deploy** the DBA sees **orphaned DB connections** from old pods. You have **`@PreDestroy`** on the **DataSource** to close **HikariCP**. Why did tests miss this?",
+      "signals": ["@PreDestroy", "SIGKILL", "gracePeriod", "integration test"],
+      "answer": "**What tests usually do:** Start and stop the Spring context inside the same JVM. Shutdown hooks run; **`@PreDestroy`** runs — looks fine.\n\n**What Kubernetes does:** Send **SIGTERM**, wait **`terminationGracePeriodSeconds`** (the pod **grace period**), then **SIGKILL** if the process is still there. **`SIGKILL`** cannot run Java shutdown hooks — **`@PreDestroy`** never runs. If closing the pool is slow or blocked, you exceed the **grace period** and lose cleanup.\n\n**Another real issue:** Traffic draining — in-flight requests still hold connections while shutdown races the clock.\n\n**Fixes:** **`server.shutdown=graceful`** on servlet stacks; tune **`spring.lifecycle.timeout-per-shutdown-phase`**; close the pool early in a **`SmartLifecycle.stop()`** with a hard timeout; increase **grace period** to match worst-case drain; ensure liveness/readiness match reality.\n\n**Better test:** Harder — run app in subprocess, open connections, **SIGTERM**, assert DB session count drops (or use staging chaos drills).\n\n**Simple line:** Tests show “JVM exited nicely”; prod shows “**SIGKILL** skipped **`@PreDestroy`**.”\n\n**Integration tests** alone often miss signal semantics.",
+      "followUps": [
+        {
+          "question": "**`DisposableBean.destroy()`** vs **`@PreDestroy`**?",
+          "answer": "Both are destroy callbacks during context shutdown, with defined ordering rules. Prefer **`@PreDestroy`** for app beans to avoid coupling to Spring interfaces. For DB pools, the big issue is still **SIGKILL** and drain time, not which interface you implemented."
+        },
+        {
+          "question": "Can closing context in a test prove production shutdown?",
+          "answer": "It helps more than pure mocks, but it does not model **Kubernetes** signals or in-flight HTTP. Watch **`hikaricp.connections.active`** during rolling deploys in staging; old pod IPs should disappear within the **grace period**."
+        }
+      ]
+    },
+    {
+      "id": "d39-s7",
+      "question": "Design: **`TenantContext`** must be **per HTTP request**, but **`CheckoutController`** is a **singleton**. Traffic grows from **20k** to **200k** RPS. How do you wire this, and what changes at 10× scale?",
+      "signals": ["request scope", "scoped proxy", "ThreadLocal", "ObjectFactory"],
+      "answer": "**Problem in one sentence:** A **singleton** lives for the app lifetime; **tenant data** must not be shared across requests.\n\n**Standard Spring answer:** Define **`TenantContext`** as **`@RequestScope`** and inject it into the controller using a **scoped proxy** (`proxyMode = TARGET_CLASS` for concrete classes). Spring puts a small **proxy** in the **singleton**; each request resolves to a fresh **`TenantContext`** stored via **`RequestContextHolder`** (built on **ThreadLocal**-style request binding — do not reimplement that by hand).\n\n```java\n@RequestScope(proxyMode = ScopedProxyMode.TARGET_CLASS)\n@Component\npublic class TenantContext { /* tenantId, flags */ }\n```\n\n**Alternative:** Inject **`ObjectFactory<TenantContext>`** and call **`getObject()`** only inside request code.\n\n**Also add** a filter or interceptor to populate tenant data early.\n\n**At 200k RPS:** Usually you shard pods, move tenant resolution to the **API gateway** (JWT claims), pass plain IDs into services, cache static per-tenant config in **Redis**. **Proxy** cost is rarely the first bottleneck — allocation and filters are.\n\n**Verify:** Two parallel requests see different tenant values; no static fields holding **`TenantContext`**.\n\n**Interview keywords:** **request scope**, **scoped proxy**, **`ObjectFactory`**.",
+      "followUps": [
+        {
+          "question": "`@Async` method uses **`TenantContext`** — what breaks?",
+          "answer": "**Async** workers are not bound to the original HTTP request. **`RequestContextHolder`** is empty or wrong. Pass tenant id explicitly or use **`TaskDecorator`** to copy **MDC**/context. Otherwise you risk **cross-tenant** data leaks — a severity-1 bug."
+        },
+        {
+          "question": "**Scoped proxy** vs **`ObjectFactory`**?",
+          "answer": "**Proxy** is the usual ergonomic choice for controller injection. **`ObjectFactory`** helps when you want explicit creation timing or avoid **CGLIB** on **`final`** classes (rare). Both still require an active **request** scope when resolving."
+        }
+      ]
+    },
+    {
+      "id": "d39-s8",
+      "question": "Someone added a **static** `ApplicationContextHolder` and calls **`getBean()`** from domain code. What goes wrong — for **security**, **tests**, and maintenance?",
+      "signals": ["static ApplicationContext", "service locator", "least privilege", "test pollution"],
+      "answer": "This is the **service locator** pattern with a **static** **`ApplicationContext`**.\n\n**Tests:** If the static field is not reset, tests leak context between cases → **flaky** order-dependent CI (**test pollution**).\n\n**Design:** Dependencies are hidden. Reviewers cannot see what a class needs from its constructor — refactors become dangerous.\n\n**Security / least privilege:** `getBean` by name or type from random code widens who can reach **admin** beans. If user input can influence lookups (directly or through gadgets), **blast radius** grows. Not every issue is a named **CVE**, but it violates **least privilege** for your object graph.\n\n**Fix:** Delete the holder. Use **constructor injection**; use **`ObjectProvider<T>`** for optional or lazy collaborators.\n\n**Verify:** **ArchUnit** rule — no **`ApplicationContextAware`** in domain packages.\n\n**Simple mantra:** Spring already has a container; domain code should not run a second hidden one.\n\n**Production:** Static graphs can also contribute to **memory** leaks if they pin old contexts.",
+      "followUps": [
+        {
+          "question": "Is **`ApplicationContextAware`** ever OK?",
+          "answer": "Rarely in domain code. Sometimes in small infrastructure adapters (publish events, integrate legacy libs). Wrap it: one facade bean, injected normally, instead of statics everywhere."
+        },
+        {
+          "question": "Can **`ObjectProvider`** be abused?",
+          "answer": "Yes — calling **`getObject()`** in tight loops driven by user input can create **denial-of-service** by materializing heavy beans. **Whitelist** allowed types, **rate-limit**, and keep **`ObjectProvider`** on constructors for declared dependencies, not as a generic service locator."
+        }
+      ]
+    },
+    {
+      "id": "d39-s9",
+      "question": "At **50k RPS**, profiling shows heavy time in **`DefaultSingletonBeanRegistry.getSingleton`** and lock contention from calling **`ObjectProvider.getObject()`** inside a hot servlet **filter**. What is happening and how do you fix it?",
+      "signals": ["singleton", "ObjectProvider", "contention", "bean retrieval"],
+      "answer": "**Plain explanation:** Every **`getObject()`** can touch the bean factory’s internal locks and bookkeeping. Doing that **per request** on a hot path is like calling the container thousands of times per second — it becomes **contention** on **`singleton`** / registry code.\n\n**Fix 1:** Stop resolving scoped/prototype beans inside the filter per hit. Parse **JWT** or headers in a **singleton** **`TenantResolver`** that returns immutable value objects without **`getBean`** churn.\n\n**Fix 2:** Cache only safe immutable data (bounded cache with **TTL**), not arbitrary Spring beans.\n\n**Measure:** **JFR**, **async-profiler**, **`jcmd`**, Micrometer timers around filter work — CPU and **p99** should drop after removing per-request **bean retrieval**.\n\n**Monitor:** **`process_cpu_usage`**, **`http_server_requests`**, pool metrics.\n\n**Mistake to avoid:** “More **`@Scope(\"prototype\")`**” — that can increase allocations; the real issue is **too many container lookups**.\n\n**Verify:** Load test before/after; same RPS, lower CPU.\n\n**Keywords:** **`ObjectProvider`**, **contention**, **singleton** registry.",
+      "followUps": [
+        {
+          "question": "Would **prototype** scope fix this?",
+          "answer": "Usually no — you would still call the factory per request and allocate more objects. Reduce **lookups** and keep hot paths as plain Java on **singleton** helpers."
+        },
+        {
+          "question": "How to prove the fix?",
+          "answer": "Run **k6**/**Gatling** at fixed RPS, compare CPU and **p99** before/after; capture lock profiles. Acceptance: meaningful drop in CPU or tail latency without losing correctness."
+        }
+      ]
+    },
+    {
+      "id": "d39-s10",
+      "question": "New hire thinks: \"**Singleton** beans are new every HTTP request — that is why **`@Autowired`** fields look reset.\" Correct them and name a real bug this mistake causes.",
+      "signals": ["singleton scope", "request scope", "state leak", "concurrency"],
+      "answer": "**Singleton scope** = one shared instance per **`ApplicationContext`** for the life of the JVM (until restart). It is **not** per request.\n\n**`@Autowired`** fields on that bean do **not** reset between requests. The same object serves many threads from the pool.\n\n**Wrong mental model leads to:** storing **user id**, **cart**, or request flags in **singleton** fields. Under **concurrency**, requests interleave → **state leak** between users → data corruption. Unit tests often miss it because they run one thread.\n\n**Right model:** **Singleton** services hold **stateless** logic + injected collaborators. Per-request data lives in **local variables**, **`@RequestScope`** beans, or security context — not **singleton** fields.\n\n**Quick demo:** Two parallel **`curl`** calls mutate a **singleton** field — both see each other’s values.\n\n**Production impact:** Serious privacy bug (User A sees User B’s data).\n\n**Teach with:** contrast **`SCOPE_PROTOTYPE`** and **`@RequestScope`**.\n\n**Keywords:** **singleton scope**, **request scope**, **concurrency**.",
+      "followUps": [
+        {
+          "question": "Why might dev “feel” like beans reset every request?",
+          "answer": "**DevTools** restarts or frequent context reloads recreate **singletons** often, masking shared state. Under real **concurrency** in staging, the bug appears. Explain **singleton** lifetime = JVM/context, not HTTP."
+        },
+        {
+          "question": "Spring MVC **`Model`** vs **singleton** field for request data?",
+          "answer": "**`Model`** is tied to the **request** for rendering views. Do not mirror that data into **singleton** fields. Controllers should stay **stateless** per request parameters. Using **`synchronized`** on controller methods to “fix” shared fields destroys **throughput** and hides the real bug."
         }
       ]
     }

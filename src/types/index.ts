@@ -67,10 +67,20 @@ export type LessonSection =
   | CodeSection
   | DiagramSection
   | PitfallsSection
-  | InterviewSection
-  | CheatsheetSection
   | ExerciseSection
-  | AssignmentSection;
+  | UseCasesSection
+  | InterviewSection
+  | McqSection
+  | CheatsheetSection
+  | AssignmentSection
+  | VideoSection;
+
+export interface VideoSection {
+  type: 'video';
+  title: string;
+  url: string;
+  description?: string;
+}
 
 export interface WhySection {
   type: 'why';
@@ -125,6 +135,12 @@ export interface ExerciseSection {
   difficulty: Difficulty;
 }
 
+export interface UseCasesSection {
+  type: 'useCases';
+  title: string;
+  content: string;
+}
+
 // ─── Assignment Section ───────────────────────────────────────
 export type AssignmentQuestionType = 'conceptual' | 'scenario' | 'coding';
 
@@ -173,6 +189,23 @@ export interface InterviewSection {
   codeBased: InterviewQuestionItem[];
   seniorScenario: InterviewQuestionItem[];
   wrongAnswers: string[];
+}
+
+export interface McqQuestion {
+  id: number;
+  level: 'basic' | 'intermediate' | 'advanced';
+  category: 'theory' | 'code' | 'scenario';
+  question: string;
+  options: Record<'A' | 'B' | 'C' | 'D', string>;
+  answer: 'A' | 'B' | 'C' | 'D';
+  explanation: string;
+}
+
+export interface McqSection {
+  type: 'mcq';
+  title: string;
+  description?: string;
+  questions: McqQuestion[];
 }
 
 export interface ScenarioItem {

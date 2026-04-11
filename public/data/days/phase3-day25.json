@@ -17,540 +17,1028 @@
     "Day 23"
   ],
   "learningObjectives": [
-    "Explain Heaps and Priority Queues with interview-grade clarity",
-    "Implement Heaps and Priority Queues solutions in clean Java",
-    "Choose the right pattern and justify complexity",
-    "Handle boundary cases without brittle logic",
-    "Use this topic to solve coding-round problems confidently",
-    "Communicate trade-offs using concrete examples"
+    "Use PriorityQueue with correct comparators and tie-breaks",
+    "Implement top-k and k-way merge patterns with heaps",
+    "Contrast heaps with sorting, FIFO queues, and TreeSet",
+    "State time complexity for offer, poll, peek, and batch build",
+    "Model schedulers and streaming aggregates with bounded heaps",
+    "Recognize thread-safety and comparator contract pitfalls"
   ],
   "sections": [
     {
       "type": "why",
-      "title": "Why Heaps and Priority Queues matters",
-      "content": "Heaps are ideal when you need top-k or running extremum queries without full sorting.\n\nThis day is central to DSA interviews because it combines coding speed with reasoning quality. Interviewers usually evaluate three things:\n1. Can you identify the right pattern quickly?\n2. Can you explain why the approach is correct?\n3. Can you reason about complexity and edge cases?\n\nHeap invariants, top-k design, and streaming scenarios.\n\nA high-quality answer should include:\n- concise approach summary,\n- small dry-run,\n- complexity analysis,\n- one alternative approach and trade-off.\n\nBy the end of Day 25, you should be able to solve representative problems and explain your decisions with confidence."
+      "title": "Why this topic shows up in real interviews",
+      "content": "Heaps are the hidden engine behind **job schedulers**, **top-k dashboards**, and **graph shortest paths**. They are also a frequent interview trap because candidates confuse **PriorityQueue** with **Queue** fairness. In production, mis-specified comparators cause tasks to run out of order, retries to starve, or “urgent” work to never surface.\n\nLearning heaps trains you to recognize **logarithmic** extraction of the best candidate under changing data—something arrays only give you after an **O(n log n)** sort. That distinction matters when you process streaming metrics where recomputing a full sort each tick is wasteful.\n\nTop-k problems map directly to **bounded memory** dashboards: keep only k items in a heap instead of materializing the full distribution. The same pattern appears in fraud alerts, leaderboard snapshots, and sampling heavy tails.\n\nOn call, “scheduler acting weird” sometimes traces to **non-transitive** or **volatile** comparators, or to **duplicate** priorities collapsing ordering unpredictably. Knowing that `PriorityQueue` is **not stable** helps you design tie-break keys deliberately.\n\nFinally, heaps bridge to **trees** (complete binary tree view) and **sorting** (heapsort). Seeing these as one family prevents the interview silo effect where each topic feels unrelated."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Heaps and Priority Queues",
-      "content": "### Why this topic matters now\nHeaps are ideal when you need top-k or running extremum queries without full sorting.\n\n### Core interview mental model\nFor Heaps and Priority Queues, first identify the problem family, then map it to a known pattern. Pattern-first thinking reduces random trial-and-error.\n\n### Implementation guidance\n1. Write the simplest correct version first.\n2. Validate using one normal and one edge case.\n3. Improve complexity only after correctness is locked.\n4. Refactor to readable helper methods.\n\n### Complexity and trade-off lens\nDo not state complexity by memory. Derive it from operations performed. Mention time + space and where each cost comes from.\n\n### Common failure mode\nMost failures in Heaps and Priority Queues are not syntax errors. They come from broken invariants, weak boundary checks, or unclear state tracking.\n\n### Interview speaking template\n- \"I considered X because...\"\n- \"The invariant is...\"\n- \"Per iteration we do..., so complexity is...\"\n- \"An alternative would be..., but I chose this due to...\"\n\n### Production relevance\nEven outside interviews, these patterns improve throughput, latency, and correctness in backend data processing tasks.\n\n### Satyverse — deeper path (theory → practice)\n**Heap property:** parent dominates children — `PriorityQueue` is min-heap by default; custom `Comparator` for max.\n\n**Heapify** is O(n) for building from array — know why (bottom-up is cheaper than n inserts).\n\n**Top-K** problems: fixed-size heap streaming over large inputs — memory-friendly pattern.\n\n**Dijkstra** uses heap for frontier — connect theory to graph algorithms you will reuse."
+      "title": "Heaps and Priority Queues — theory that sticks",
+      "content": "### Plain-language overview\n\nA **binary heap** is a complete tree with **heap order**: min-heap parent ≤ children; max-heap parent ≥ children. Java’s **PriorityQueue** is a min-heap by default (smallest at head). **offer/poll** are O(log n); **peek** is O(1).\n\n**Interview angle:** heap is **not** FIFO—tie-breaks need explicit comparator.\n\n### Array indexing\n\nFor 0-based heap array: parent **(i-1)/2**, children **2i+1** and **2i+2**. Complete tree ⇒ dense array storage.\n\n### Build-heap\n\nBottom-up heapify can build in O(n) for n elements—better than n successive inserts for static batch (theory question).\n\n### Top-K patterns\n\nKeep size-k heap: for “k largest” in min-heap of size k storing the k biggest seen so far; for “k smallest” use max-heap of size k.\n\n**Interview angle:** clarify ascending vs descending desired order.\n\n### k-way merge\n\nUse min-heap of iterators across k sorted lists—classic pattern.\n\n### Dijkstra awareness\n\nPriority queue drives shortest path on graphs—mention if interviewer goes advanced.\n\n### Limited capacity\n\n**PriorityBlockingQueue** for concurrent bounded priority scheduling.\n\n### Production\n\nJob schedulers, rate limiting windows, streaming top-k, A* search. Watch **comparator consistency with equals** for correctness.\n\n### 60-second story\n\n“I use PriorityQueue with explicit Comparator. I know offer/poll logarithmic, peek constant. For top-k I bound heap size k. I distinguish heap from FIFO queue. I mention O(n) build-heap if batch static.”\n\n### Heaps and priority queues — discipline layer 1\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 1 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 1, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 2\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 2 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 2, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 3\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 3 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 3, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 4\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 4 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 4, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 5\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 5 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 5, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 6\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 6 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 6, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 7\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 7 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 7, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 8\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 8 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 8, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 9\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 9 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 9, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 10\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 10 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 10, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 11\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 11 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 11, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 12\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 12 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 12, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 13\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 13 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 13, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 14\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 14 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 14, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 15\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 15 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 15, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 16\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 16 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 16, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 17\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 17 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 17, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 18\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 18 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 18, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 19\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 19 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 19, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 20\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 20 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 20, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 21\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 21 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 21, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 22\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 22 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 22, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 23\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 23 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 23, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 24\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 24 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 24, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Heaps and priority queues — discipline layer 25\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 25 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 25, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n"
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "Heaps and Priority Queues — basic",
       "language": "java",
       "filename": "Day25Basic.java",
-      "code": "package arch.day25;\n\nimport java.util.*;\n\npublic class Day25Basic {\n    public static void main(String[] args) {\n        Queue<Integer> pq = new PriorityQueue<>();\n        pq.add(5); pq.add(1); pq.add(3);\n        System.out.println(pq.poll() + \" \" + pq.poll());\n    }\n}",
       "level": "basic",
-      "output": "1 3\n",
-      "description": "PriorityQueue (min-heap): poll() returns smallest element."
+      "description": "Deterministic prints: reference shapes for dominant operations and common complexity classes.",
+      "code": "package arch.day25;\n\nimport java.util.*;\n\npublic class Day25Basic {\n\n    public static void main(String[] args) {\n        PriorityQueue<Integer> pq = new PriorityQueue<>();\n        pq.offer(5);\n        pq.offer(1);\n        pq.offer(3);\n        System.out.println(\"=== Min-heap poll order ===\");\n        while (!pq.isEmpty()) {\n            System.out.print(pq.poll() + (pq.isEmpty() ? \"\" : \" \"));\n        }\n        System.out.println();\n    }\n}\n",
+      "output": "=== Min-heap poll order ===\n1 3 5\n"
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "Heaps and Priority Queues — intermediate",
       "language": "java",
       "filename": "Day25Intermediate.java",
-      "code": "package arch.day25;\n\nimport java.util.*;\n\npublic class Day25Intermediate {\n    public static void main(String[] args) {\n        Queue<Integer> pq = new PriorityQueue<>(Comparator.reverseOrder());\n        for (int x : new int[] {3, 9, 2, 8}) pq.add(x);\n        System.out.println(pq.peek());\n    }\n}",
       "level": "intermediate",
-      "output": "9\n",
-      "description": "Max-heap via reversed comparator: k largest elements."
+      "description": "Four labeled scenarios comparing approaches with different asymptotic costs.",
+      "code": "package arch.day25;\n\nimport java.util.*;\n\npublic class Day25Intermediate {\n\n    static int kthLargest(int[] a, int k) {\n        PriorityQueue<Integer> pq = new PriorityQueue<>();\n        for (int x : a) {\n            pq.offer(x);\n            if (pq.size() > k) {\n                pq.poll();\n            }\n        }\n        return pq.peek();\n    }\n\n    public static void main(String[] args) {\n        int[] a = { 3, 2, 1, 5, 6, 4 };\n\n        // --- Scenario 1: kth largest ---\n        System.out.println(\"--- Scenario 1: kth largest k=2 ---\");\n        System.out.println(kthLargest(a, 2));\n        System.out.println();\n\n        // --- Scenario 2: max-heap via comparator ---\n        System.out.println(\"--- Scenario 2: max-heap peek ---\");\n        PriorityQueue<Integer> maxh = new PriorityQueue<>(Comparator.reverseOrder());\n        maxh.offer(1);\n        maxh.offer(9);\n        maxh.offer(4);\n        System.out.println(maxh.peek());\n        System.out.println();\n\n        // --- Scenario 3: merge two sorted with PQ ---\n        System.out.println(\"--- Scenario 3: k-way style pair merge ---\");\n        int[] x = { 1, 4, 7 };\n        int[] y = { 2, 5 };\n        int i = 0, j = 0;\n        StringBuilder sb = new StringBuilder();\n        while (i < x.length && j < y.length) {\n            if (x[i] <= y[j]) {\n                sb.append(x[i++]).append(' ');\n            } else {\n                sb.append(y[j++]).append(' ');\n            }\n        }\n        while (i < x.length) sb.append(x[i++]).append(' ');\n        while (j < y.length) sb.append(y[j++]).append(' ');\n        System.out.println(sb.toString().trim());\n        System.out.println();\n\n        // --- Scenario 4: tie-break comparator ---\n        System.out.println(\"--- Scenario 4: string length then lex ---\");\n        PriorityQueue<String> s = new PriorityQueue<>(\n            Comparator.comparingInt(String::length).thenComparing(Comparator.naturalOrder()));\n        s.offer(\"bb\");\n        s.offer(\"a\");\n        s.offer(\"ccc\");\n        System.out.println(s.poll() + \",\" + s.poll() + \",\" + s.poll());\n    }\n}\n",
+      "output": "--- Scenario 1: kth largest k=2 ---\n5\n\n--- Scenario 2: max-heap peek ---\n9\n\n--- Scenario 3: k-way style pair merge ---\n1 2 4 5 7\n\n--- Scenario 4: string length then lex ---\na,bb,ccc\n"
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "Heaps and Priority Queues — advanced",
       "language": "java",
       "filename": "Day25Advanced.java",
-      "code": "package arch.day25;\n\nimport java.util.*;\n\npublic class Day25Advanced {\n    static class Node {\n        int v;\n        Node next;\n        Node(int v) { this.v = v; }\n    }\n\n    public static void main(String[] args) {\n        Node a = new Node(1); a.next = new Node(4);\n        Node b = new Node(2); b.next = new Node(5);\n        Queue<Node> pq = new PriorityQueue<>(Comparator.comparingInt(n -> n.v));\n        pq.add(a); pq.add(b);\n        StringBuilder sb = new StringBuilder();\n        while (!pq.isEmpty()) {\n            Node n = pq.poll();\n            sb.append(n.v).append(' ');\n            if (n.next != null) pq.add(n.next);\n        }\n        System.out.println(sb.toString().trim());\n    }\n}",
       "level": "advanced",
-      "output": "1 2 4 5\n",
-      "description": "Merge k sorted lists using a heap of heads (pattern)."
+      "description": "Separated blocks plus printed decision tables for recurrences and tradeoffs.",
+      "code": "package arch.day25;\n\nimport java.util.*;\n\npublic class Day25Advanced {\n\n    static void heapifyDown(int[] h, int n, int i) {\n        while (true) {\n            int l = 2 * i + 1;\n            int r = 2 * i + 2;\n            int sm = i;\n            if (l < n && h[l] < h[sm]) sm = l;\n            if (r < n && h[r] < h[sm]) sm = r;\n            if (sm == i) break;\n            int t = h[i];\n            h[i] = h[sm];\n            h[sm] = t;\n            i = sm;\n        }\n    }\n\n    public static void main(String[] args) {\n        // === Block 1: manual sift demo ===\n        System.out.println(\"=== Block 1: array heapify root ===\");\n        int[] h = { 2, 5, 1 };\n        heapifyDown(h, 3, 0);\n        System.out.println(Arrays.toString(h));\n        System.out.println();\n\n        // === Block 2: complexity ===\n        System.out.println(\"=== Block 2: PQ operations ===\");\n        System.out.println(\"offer/poll: O(log n)\");\n        System.out.println(\"peek: O(1)\");\n        System.out.println(\"build-heap batch: O(n) bottom-up\");\n        System.out.println();\n\n        // === Block 3: when not PQ ===\n        System.out.println(\"=== Block 3: choose structure ===\");\n        System.out.println(\"Need FIFO fairness -> Queue not PQ\");\n        System.out.println(\"Need exact median stream -> two heaps\");\n        System.out.println(\"Need all elements sorted -> sort array\");\n    }\n}\n",
+      "output": "=== Block 1: array heapify root ===\n[1, 5, 2]\n\n=== Block 2: PQ operations ===\noffer/poll: O(log n)\npeek: O(1)\nbuild-heap batch: O(n) bottom-up\n\n=== Block 3: choose structure ===\nNeed FIFO fairness -> Queue not PQ\nNeed exact median stream -> two heaps\nNeed all elements sorted -> sort array\n"
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 25",
-      "diagramType": "component",
-      "description": "Visual model for Heaps & Priority Queues",
-      "plantuml": "@startuml\ntitle Day 25 - Heaps & Priority Queues\nactor Learner\nrectangle \"Satyverse(Satyam Parmar) Lesson Engine\" {\n  component \"Theory\"\n  component \"Code\"\n  component \"Exercise\"\n  component \"Interview Drill\"\n}\nLearner --> \"Theory\" : Understand concept\nLearner --> \"Code\" : Implement\nLearner --> \"Exercise\" : Practice\nLearner --> \"Interview Drill\" : Explain\n@enduml"
+      "title": "PriorityQueue offer — bubble up",
+      "diagramType": "sequence",
+      "description": "Caller, heap array, parent index math, comparator, and poll sink.",
+      "plantuml": "@startuml\ntitle Min-heap offer (conceptual)\n\nparticipant \"Caller\" as C\nparticipant \"PriorityQueue\" as P\nparticipant \"heap[]\\nstorage\" as A\nparticipant \"parent/\\nchild idx\" as I\nparticipant \"Comparator\" as Cmp\nparticipant \"size\" as S\n\nC -> P : offer(x)\nP -> S : size++\nP -> I : child = size-1\nloop while child > 0\n  I -> I : parent = (child-1)/2\n  P -> Cmp : compare(heap[child], heap[parent])\n  alt child < parent (min-heap)\n    P -> A : swap child/parent\n    I -> I : child = parent\n  else stop\nend\n@enduml"
     },
     {
       "type": "pitfalls",
-      "title": "Common Pitfalls",
+      "title": "Common pitfalls",
       "items": [
-        "Building max-heap/min-heap with wrong comparator direction.",
-        "Sorting entire array when only top-k is required.",
-        "Forgetting heap size control in streaming top-k problems.",
-        "Assuming heap iteration returns sorted order.",
-        "Not accounting for duplicate values in ranking problems."
+        "Treating **`PriorityQueue` as FIFO** — tasks run by priority, not arrival; incidents of starvation; fix comparator + aging policy.",
+        "**Null** elements — `NullPointerException`; validate before offer; fix guards.",
+        "**Comparator inconsistent with equals** — subtle ordering bugs; unit test transitivity; fix with composite keys.",
+        "Using **`remove(element)`** on hot paths — O(n) scan; restructure or maintain index map.",
+        "Wrong heap for **kth largest** — using max-heap unbounded; memory blow; fix bounded min-heap size k.",
+        "**Integer overflow** in custom compare on differences — broken ordering; use `Integer.compare`.",
+        "Assuming **stability** — equal priorities reorder arbitrarily; fix secondary sort key.",
+        "Ignoring **thread safety** — `PriorityQueue` not concurrent; use `PriorityBlockingQueue` or external lock."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - Heaps and Priority Queues Problem Drill",
-      "problem": "Solve one medium-level Java problem for **Heaps and Priority Queues**.\n\nRequirements:\n1. Provide brute-force and optimized approach.\n2. Explain why optimized approach is better.\n3. Include one edge-case test.\n4. Print expected output for sample input.\n5. State time/space complexity clearly.",
+      "title": "Practice exercise",
+      "difficulty": "Intermediate",
+      "problem": "**Day 25 — Heaps (assignment alignment)**\n\n1. Given an integer array, return the **k-th largest** element using a `PriorityQueue` (k is 1-based largest).\n2. Use a **min-heap** of size **k** (store the k largest values seen).\n3. For array `[3,2,1,5,6,4]` and `k=2`, print the result (expect **5**).\n4. Print no extra randomness—deterministic main only.",
       "hints": [
-        "State invariant before writing loops/recursion.",
-        "Dry-run on paper for one non-trivial case.",
-        "Only optimize after baseline correctness."
+        "When size > k, poll the smallest of the k+1 to drop the smallest among top candidates.",
+        "Use `long` if you aggregate products in variants; not needed for this sample.",
+        "After loop, peek is kth largest."
       ],
-      "solution": "package arch.day25;\nimport java.util.*;\n\npublic class Day25Advanced {\n    static record Review(String topic, int confidence, boolean needsRevision) {}\n\n    public static void main(String[] args) {\n        List<Review> reviews = List.of(\n            new Review(\"Heaps & Priority Queues\", 72, true),\n            new Review(\"Coding Practice\", 81, false),\n            new Review(\"Interview Explanation\", 68, true)\n        );\n\n        long reviseCount = reviews.stream().filter(Review::needsRevision).count();\n        int avg = (int) reviews.stream().mapToInt(Review::confidence).average().orElse(0);\n\n        System.out.println(\"avgConfidence = \" + avg);\n        System.out.println(\"needsRevision = \" + reviseCount);\n    }\n}\n",
-      "difficulty": "Intermediate"
+      "solution": "package arch.day25;\n\nimport java.util.*;\n\npublic class Day25Exercise {\n\n    static int kthLargest(int[] a, int k) {\n        PriorityQueue<Integer> pq = new PriorityQueue<>();\n        for (int x : a) {\n            pq.offer(x);\n            if (pq.size() > k) {\n                pq.poll();\n            }\n        }\n        return pq.peek();\n    }\n\n    public static void main(String[] args) {\n        int[] a = { 3, 2, 1, 5, 6, 4 };\n        System.out.println(kthLargest(a, 2));\n    }\n}\n"
     },
     {
       "type": "interview",
       "title": "Interview Drill",
       "conceptual": [
         {
-          "question": "What is a binary heap?",
-          "answer": "Complete binary tree with heap property: min-heap parent ≤ children; max-heap opposite.",
+          "question": "Binary heap properties?",
+          "answer": "Complete tree + heap order parent/children.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Complete binary tree with heap property: min-heap parent ≤ children; max-heap opposite. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Complete binary tree with heap property: min-heap parent ≤ children; max-heap opposite. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Array representation of heap?",
-          "answer": "Index i: children 2i+1,2i+2; parent (i-1)/2—no pointers needed.",
+          "question": "Java PriorityQueue default order?",
+          "answer": "Min-heap smallest first.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Index i: children 2i+1,2i+2; parent (i-1)/2—no pointers needed. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Index i: children 2i+1,2i+2; parent (i-1)/2—no pointers needed. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Heapify up vs down?",
-          "answer": "After insert sift up; after replace root sift down—O(log n).",
+          "question": "offer vs poll complexity?",
+          "answer": "O(log n); peek O(1).",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. After insert sift up; after replace root sift down—O(log n). Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. After insert sift up; after replace root sift down—O(log n). When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Build heap from array complexity?",
-          "answer": "O(n) bottom-up heapify—not O(n log n) n inserts.",
+          "question": "kth largest with heap?",
+          "answer": "Maintain min-heap size k of largest elements; peek is answer.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. O(n) bottom-up heapify—not O(n log n) n inserts. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. O(n) bottom-up heapify—not O(n log n) n inserts. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "PriorityQueue in Java min or max?",
-          "answer": "Min-heap by default; reverse Comparator for max.",
+          "question": "Why not FIFO queue?",
+          "answer": "PQ orders by priority comparator, not arrival.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Min-heap by default; reverse Comparator for max. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Min-heap by default; reverse Comparator for max. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is d-ary heap?",
-          "answer": "More children per node—shallower, wider—used in some algorithms.",
+          "question": "Comparator tie handling?",
+          "answer": "Add secondary key for deterministic ordering.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. More children per node—shallower, wider—used in some algorithms. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. More children per node—shallower, wider—used in some algorithms. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Heap sort steps?",
-          "answer": "Build max heap, swap root with end, heapify reduced heap—O(n log n) in-place unstable.",
+          "question": "Build heap O(n)?",
+          "answer": "Bottom-up heapify all nodes.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Build max heap, swap root with end, heapify reduced heap—O(n log n) in-place unstable. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Build max heap, swap root with end, heapify reduced heap—O(n log n) in-place unstable. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Median from two heaps?",
-          "answer": "Low max-heap + high min-heap balance—O(log n) insert, O(1) median.",
+          "question": "Indexed heap?",
+          "answer": "Map element→index for decrease-key.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Low max-heap + high min-heap balance—O(log n) insert, O(1) median. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Low max-heap + high min-heap balance—O(log n) insert, O(1) median. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Fibonacci heap (mention)?",
-          "answer": "Theoretical improvements for decrease-key—rare in practice interviews.",
+          "question": "Median streaming?",
+          "answer": "Two heaps: low max-heap, high min-heap balanced.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Theoretical improvements for decrease-key—rare in practice interviews. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Theoretical improvements for decrease-key—rare in practice interviews. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "When heap beats sorting full array?",
-          "answer": "When only top K needed—not full sort.",
+          "question": "k-way merge?",
+          "answer": "Min-heap tracks smallest head among k lists.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. When only top K needed—not full sort. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. When only top K needed—not full sort. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Indexed priority queue?",
-          "answer": "Supports decrease-key by index—Dijkstra optimizations.",
+          "question": "Dijkstra role?",
+          "answer": "PQ selects minimum tentative distance vertex.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Supports decrease-key by index—Dijkstra optimizations. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Supports decrease-key by index—Dijkstra optimizations. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Latency of poll vs peek?",
-          "answer": "peek O(1) root; poll O(log n) restore heap.",
+          "question": "Stable ordering?",
+          "answer": "PQ not stable; encode order in comparator.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. peek O(1) root; poll O(log n) restore heap. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. peek O(1) root; poll O(log n) restore heap. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Parallel heaps?",
-          "answer": "Hard—need concurrent priority structures (lock-free heaps advanced).",
+          "question": "Duplicates in PQ?",
+          "answer": "Allowed; TreeSet would dedupe.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Hard—need concurrent priority structures (lock-free heaps advanced). Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Hard—need concurrent priority structures (lock-free heaps advanced). Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "External memory heap?",
-          "answer": "For data larger than RAM—layered with disk.",
+          "question": "remove(object) cost?",
+          "answer": "O(n) find + log n bubble.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. For data larger than RAM—layered with disk. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. For data larger than RAM—layered with disk. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Compare TreeSet vs PriorityQueue ordering?",
-          "answer": "TreeSet sorted unique; PQ allows duplicates, only min/max efficient.",
+          "question": "When heapsort?",
+          "answer": "In-place O(n log n) not stable.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Heaps and Priority Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. TreeSet sorted unique; PQ allows duplicates, only min/max efficient. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Heaps and Priority Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. TreeSet sorted unique; PQ allows duplicates, only min/max efficient. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Blocking PQ?",
+          "answer": "PriorityBlockingQueue for concurrent schedulers.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "60-second story?",
+          "answer": "Min vs max comparator, k-top patterns, log ops, not FIFO, O(n) build, tie-break comparator.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "codeBased": [
         {
-          "question": "Top K frequent elements—heap approach.",
-          "answer": "Min-heap size k of pairs (freq,key) or bucket sort alternative.",
+          "question": "Top K frequent?",
+          "answer": "Count map + heap on frequency.",
           "followUps": [
             {
-              "question": "What breaks if this **Heaps and Priority Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Min-heap size k of pairs (freq,key) or bucket sort alternative. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Min-heap size k of pairs (freq,key) or bucket sort alternative. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Merge k sorted lists with heap.",
-          "answer": "Poll min head, push next from that list.",
+          "question": "Merge k lists?",
+          "answer": "Heap Node{listHead,val}.",
           "followUps": [
             {
-              "question": "What breaks if this **Heaps and Priority Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Poll min head, push next from that list. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Poll min head, push next from that list. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Implement heapify down for max heap.",
-          "answer": "Compare with left/right child swap down.",
+          "question": "Closest points?",
+          "answer": "Max-heap size k on squared distance.",
           "followUps": [
             {
-              "question": "What breaks if this **Heaps and Priority Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Compare with left/right child swap down. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Compare with left/right child swap down. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "PriorityQueue with Comparator.reverseOrder.",
-          "answer": "Max-heap for integers.",
+          "question": "Task scheduler?",
+          "answer": "Heap ready time + queue wait.",
           "followUps": [
             {
-              "question": "What breaks if this **Heaps and Priority Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Max-heap for integers. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Max-heap for integers. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "kth largest element—quickselect vs heap?",
-          "answer": "Trade average time vs worst and memory.",
+          "question": "Rearrange string k distance?",
+          "answer": "Max-heap counts greedy placement.",
           "followUps": [
             {
-              "question": "What breaks if this **Heaps and Priority Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Trade average time vs worst and memory. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Trade average time vs worst and memory. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Sliding window median (hard)—data structures?",
-          "answer": "Two heaps or multiset—know existence.",
+          "question": "Sliding window median?",
+          "answer": "Two heaps lazy deletion tricky.",
           "followUps": [
             {
-              "question": "What breaks if this **Heaps and Priority Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Two heaps or multiset—know existence. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Two heaps or multiset—know existence. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Dijkstra PQ relaxation sketch.",
-          "answer": "Dist map + PQ of nodes by tentative distance.",
+          "question": "Ugly numbers II?",
+          "answer": "Pointer merge or PQ BFS on factors.",
           "followUps": [
             {
-              "question": "What breaks if this **Heaps and Priority Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Dist map + PQ of nodes by tentative distance. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Dist map + PQ of nodes by tentative distance. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Heap sort in-place swap root/end.",
-          "answer": "Classic loop.",
+          "question": "Smallest range covering k lists?",
+          "answer": "Heap track min/max across lists.",
           "followUps": [
             {
-              "question": "What breaks if this **Heaps and Priority Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Classic loop. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Classic loop. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Insert into min heap array manually.",
-          "answer": "Add end, sift up.",
+          "question": "Meeting rooms II?",
+          "answer": "Min-heap of end times sweep starts.",
           "followUps": [
             {
-              "question": "What breaks if this **Heaps and Priority Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Add end, sift up. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Add end, sift up. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Why offer/poll vs add/remove in PriorityQueue?",
-          "answer": "add throws on failure; offer returns false—prefer offer in bounded settings.",
+          "question": "Find median from data stream?",
+          "answer": "Two heaps balance sizes.",
           "followUps": [
             {
-              "question": "What breaks if this **Heaps and Priority Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. add throws on failure; offer returns false—prefer offer in bounded settings. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. add throws on failure; offer returns false—prefer offer in bounded settings. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Super ugly numbers?",
+          "answer": "Generalize primes heap merge.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Sort characters by frequency?",
+          "answer": "Heap or bucket sort by freq.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "seniorScenario": [
         {
-          "question": "Job scheduler priority inversion?",
-          "answer": "Lower priority task holds lock needed by high—OS topic related to priorities.",
+          "question": "Starvation in priority schedulers?",
+          "answer": "Aging boosts priority over time.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Heaps and Priority Queues** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Lower priority task holds lock needed by high—OS topic related to priorities. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Lower priority task holds lock needed by high—OS topic related to priorities. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Storm of timer tasks in PQ—lag?",
-          "answer": "O(log n) each; millions of timers—time wheel alternative.",
+          "question": "Comparator hot path perf?",
+          "answer": "Avoid expensive compares; cache keys.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Heaps and Priority Queues** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: O(log n) each; millions of timers—time wheel alternative. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. O(log n) each; millions of timers—time wheel alternative. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "GC root scanning vs heap?",
-          "answer": "Different “heap”—don’t confuse memory heap with data structure heap.",
+          "question": "Distributed priority queues?",
+          "answer": "Shards, clock sync, tie external ordering.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Heaps and Priority Queues** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Different “heap”—don’t confuse memory heap with data structure heap. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Different “heap”—don’t confuse memory heap with data structure heap. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Distributed priority queue?",
-          "answer": "Hard—often shard by priority bands or use external broker priority topics.",
+          "question": "Backpressure with bounded PQ?",
+          "answer": "Drop lowest priority or block producers.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Heaps and Priority Queues** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Hard—often shard by priority bands or use external broker priority topics. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Hard—often shard by priority bands or use external broker priority topics. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Real-time system missed deadline—heap size?",
-          "answer": "Check priority ordering bugs and clock skew.",
+          "question": "Observability?",
+          "answer": "Depth, wait time, stale tasks metrics.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Heaps and Priority Queues** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Check priority ordering bugs and clock skew. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Check priority ordering bugs and clock skew. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Cache eviction LFU with heap?",
-          "answer": "Frequency counts + min-heap complexity—often combined structures.",
+          "question": "GC impact of many boxed entries?",
+          "answer": "Primitive arrays or specialized heaps.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Heaps and Priority Queues** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Frequency counts + min-heap complexity—often combined structures. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Frequency counts + min-heap complexity—often combined structures. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "wrongAnswers": [
-        "Binary heap allows O(1) search for any element.",
-        "PriorityQueue in Java iterates elements in priority order.",
-        "Heaps are always implemented with pointers, never arrays.",
-        "Build heap from n elements is always Ω(n log n).",
-        "Max heap means largest element is at the leaves.",
-        "Heap sort is stable by default."
+        "PriorityQueue is FIFO — false.",
+        "peek removes element — false: poll does.",
+        "Heap insert always O(1) — false: O(log n).",
+        "Cannot max-heap in Java — false: reverseOrder comparator.",
+        "kth largest uses max-heap size k directly — usually min-heap size k.",
+        "PriorityQueue allows null — false.",
+        "Build heap from n inserts always O(n) — successive inserts O(n log n); batch heapify O(n).",
+        "Comparator can violate equals freely — risks contract issues."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ Quiz — Heaps and Priority Queues",
+      "description": "Thirty questions on binary heaps, Java PriorityQueue, top-k, merges, and comparators.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "Java PriorityQueue default:",
+          "options": {
+            "A": "Max-heap",
+            "B": "Min-heap",
+            "C": "FIFO",
+            "D": "LIFO"
+          },
+          "answer": "B",
+          "explanation": "Smallest element first."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "offer/poll complexity:",
+          "options": {
+            "A": "O(1)",
+            "B": "O(log n)",
+            "C": "O(n)",
+            "D": "O(n^2)"
+          },
+          "answer": "B",
+          "explanation": "Heap bubble/sink."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "theory",
+          "question": "peek head:",
+          "options": {
+            "A": "O(n)",
+            "B": "O(1)",
+            "C": "O(log n)",
+            "D": "O(n^2)"
+          },
+          "answer": "B",
+          "explanation": "Root access."
+        },
+        {
+          "id": 4,
+          "level": "intermediate",
+          "category": "code",
+          "question": "kth largest with min-heap size k:",
+          "options": {
+            "A": "O(n log k)",
+            "B": "O(n)",
+            "C": "O(1)",
+            "D": "O(n^2)"
+          },
+          "answer": "A",
+          "explanation": "Each offer/poll log k."
+        },
+        {
+          "id": 5,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Heap vs sorted array insert:",
+          "options": {
+            "A": "Heap insert O(log n) vs array insert O(n)",
+            "B": "Same always",
+            "C": "Array faster always",
+            "D": "Heap O(n)"
+          },
+          "answer": "A",
+          "explanation": "Sorted array shift costly."
+        },
+        {
+          "id": 6,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Max-heap in Java:",
+          "options": {
+            "A": "new PriorityQueue<>(Comparator.reverseOrder())",
+            "B": "Cannot",
+            "C": "Stack",
+            "D": "TreeSet only"
+          },
+          "answer": "A",
+          "explanation": "Custom comparator."
+        },
+        {
+          "id": 7,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Build heap bottom-up:",
+          "options": {
+            "A": "O(n log n)",
+            "B": "O(n)",
+            "C": "O(n^2)",
+            "D": "O(1)"
+          },
+          "answer": "B",
+          "explanation": "Linear build analysis."
+        },
+        {
+          "id": 8,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Median from stream two heaps:",
+          "options": {
+            "A": "Min low half + Max high half",
+            "B": "One PQ only",
+            "C": "Deque",
+            "D": "HashMap"
+          },
+          "answer": "A",
+          "explanation": "Balance sizes."
+        },
+        {
+          "id": 9,
+          "level": "basic",
+          "category": "theory",
+          "question": "Complete binary tree property:",
+          "options": {
+            "A": "Heap array mapping",
+            "B": "BST always",
+            "C": "Skew always",
+            "D": "No array"
+          },
+          "answer": "A",
+          "explanation": "Enables array storage."
+        },
+        {
+          "id": 10,
+          "level": "intermediate",
+          "category": "code",
+          "question": "k-way merge sorted lists:",
+          "options": {
+            "A": "Min-heap of heads",
+            "B": "Stack",
+            "C": "Queue only",
+            "D": "O(1)"
+          },
+          "answer": "A",
+          "explanation": "Poll min, push next from list."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Comparator inconsistent with equals risk:",
+          "options": {
+            "A": "PQ undefined behavior",
+            "B": "No issue",
+            "C": "Compile error",
+            "D": "Sorts faster"
+          },
+          "answer": "A",
+          "explanation": "Contract note in JDK."
+        },
+        {
+          "id": 12,
+          "level": "advanced",
+          "category": "code",
+          "question": "Dijkstra uses:",
+          "options": {
+            "A": "PriorityQueue on distance",
+            "B": "Stack only",
+            "C": "FIFO queue only",
+            "D": "Deque only"
+          },
+          "answer": "A",
+          "explanation": "Greedy shortest path."
+        },
+        {
+          "id": 13,
+          "level": "basic",
+          "category": "code",
+          "question": "PriorityQueue allows null?",
+          "options": {
+            "A": "Yes",
+            "B": "No",
+            "C": "One null",
+            "D": "Two nulls"
+          },
+          "answer": "B",
+          "explanation": "NPE if offered null."
+        },
+        {
+          "id": 14,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Stable PQ?",
+          "options": {
+            "A": "Stable ties",
+            "B": "Not stable—tie order unspecified",
+            "C": "FIFO always",
+            "D": "LIFO"
+          },
+          "answer": "B",
+          "explanation": "Use secondary comparator for stability."
+        },
+        {
+          "id": 15,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Top K frequent elements:",
+          "options": {
+            "A": "Count map + min-heap size k on counts",
+            "B": "Sort only O(1)",
+            "C": "Stack",
+            "D": "Impossible"
+          },
+          "answer": "A",
+          "explanation": "Heap stores k best candidates."
+        },
+        {
+          "id": 16,
+          "level": "advanced",
+          "category": "code",
+          "question": "Merge k sorted O(N log k):",
+          "options": {
+            "A": "Heap of size k",
+            "B": "k scans O(kN)",
+            "C": "O(N)",
+            "D": "O(1)"
+          },
+          "answer": "A",
+          "explanation": "Classic complexity."
+        },
+        {
+          "id": 17,
+          "level": "basic",
+          "category": "theory",
+          "question": "Heap sort in-place:",
+          "options": {
+            "A": "Heapsort O(n log n)",
+            "B": "O(n)",
+            "C": "O(1) always",
+            "D": "Impossible"
+          },
+          "answer": "A",
+          "explanation": "Extract max repeatedly."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "code",
+          "question": "`remove(Object)` in PQ:",
+          "options": {
+            "A": "O(n) find + log n remove",
+            "B": "O(1)",
+            "C": "O(log n) always",
+            "D": "Unsupported"
+          },
+          "answer": "A",
+          "explanation": "Linear search bottleneck."
+        },
+        {
+          "id": 19,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Indexed heap improvement:",
+          "options": {
+            "A": "Decrease-key O(log n) with position map",
+            "B": "Impossible",
+            "C": "O(1) always",
+            "D": "Stack"
+          },
+          "answer": "A",
+          "explanation": "Advanced Dijkstra optimization."
+        },
+        {
+          "id": 20,
+          "level": "basic",
+          "category": "code",
+          "question": "Poll empty PQ:",
+          "options": {
+            "A": "null",
+            "B": "throws",
+            "C": "0",
+            "D": "peek"
+          },
+          "answer": "A",
+          "explanation": "`poll` returns null; `remove` throws."
+        },
+        {
+          "id": 21,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Fibonacci heap (awareness):",
+          "options": {
+            "A": "Amortized improved decrease-key",
+            "B": "Used in Java PQ",
+            "C": "O(1) worst insert always",
+            "D": "Same as binary heap always"
+          },
+          "answer": "A",
+          "explanation": "Theory; JDK uses binary heap."
+        },
+        {
+          "id": 22,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Schedule tasks by time:",
+          "options": {
+            "A": "PQ ordered by deadline",
+            "B": "Stack",
+            "C": "HashMap only",
+            "D": "Array unsorted"
+          },
+          "answer": "A",
+          "explanation": "Earliest deadline first."
+        },
+        {
+          "id": 23,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Last k elements streaming max:",
+          "options": {
+            "A": "Deque sliding window + monotonic dq",
+            "B": "PQ size k min for max window",
+            "C": "Both patterns exist",
+            "D": "Impossible O(n)"
+          },
+          "answer": "C",
+          "explanation": "Different constraints."
+        },
+        {
+          "id": 24,
+          "level": "basic",
+          "category": "code",
+          "question": "Initialize PQ from collection:",
+          "options": {
+            "A": "O(n) build heap",
+            "B": "O(n log n) always",
+            "C": "O(1)",
+            "D": "Throws"
+          },
+          "answer": "A",
+          "explanation": "Constructor runs heapify."
+        },
+        {
+          "id": 25,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Closest points to origin k:",
+          "options": {
+            "A": "Max-heap distance size k",
+            "B": "Min-heap unbounded",
+            "C": "Sort O(1)",
+            "D": "BFS"
+          },
+          "answer": "A",
+          "explanation": "Keep k smallest distances."
+        },
+        {
+          "id": 26,
+          "level": "advanced",
+          "category": "code",
+          "question": "Reorganize string distance apart:",
+          "options": {
+            "A": "Greedy with max-heap counts",
+            "B": "Sort string",
+            "C": "Impossible",
+            "D": "Deque only"
+          },
+          "answer": "A",
+          "explanation": "Place most frequent with gaps."
+        },
+        {
+          "id": 27,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "PriorityBlockingQueue:",
+          "options": {
+            "A": "Thread-safe unbounded option",
+            "B": "Not in JDK",
+            "C": "Stack",
+            "D": "Map"
+          },
+          "answer": "A",
+          "explanation": "Concurrent PQ."
+        },
+        {
+          "id": 28,
+          "level": "basic",
+          "category": "theory",
+          "question": "PQ vs TreeSet:",
+          "options": {
+            "A": "TreeSet unique sorted",
+            "B": "Same",
+            "C": "PQ sorted unique",
+            "D": "TreeSet heap"
+          },
+          "answer": "A",
+          "explanation": "PQ allows duplicates."
+        },
+        {
+          "id": 29,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Sort nearly sorted array k away:",
+          "options": {
+            "A": "Min-heap of size k+1 sliding",
+            "B": "Always O(n^2)",
+            "C": "Impossible",
+            "D": "Stack"
+          },
+          "answer": "A",
+          "explanation": "Variant of k-distance sort."
+        },
+        {
+          "id": 30,
+          "level": "advanced",
+          "category": "code",
+          "question": "Ugly number II (2,3,5 factors):",
+          "options": {
+            "A": "Min-heap seen set or pointers",
+            "B": "Brute all integers",
+            "C": "O(1)",
+            "D": "BFS tree"
+          },
+          "answer": "A",
+          "explanation": "Merge pointer pattern similar."
+        }
       ]
     },
     {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Area | Day 25 Focus | Quick Reminder | Gotcha |\n|---|---|---|---|\n| Pattern | Heaps and Priority Queues | Choose pattern before coding | Random brute-force wandering |\n| Correctness | Invariant + edge checks | Dry-run once | Off-by-one / null-state miss |\n| Complexity | Derive, do not guess | Mention time + space | Incomplete complexity answers |\n| Communication | Explain decisions | Use trade-off statement | Generic textbook responses |\n| Quality | Readable Java methods | Stable naming + small units | Clever but fragile logic |"
+      "title": "Heaps and Priority Queues — cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n| --- | --- | --- |\n| Min-heap | smallest at root | Default PQ |\n| offer/poll | O(log n) | bubble/sink |\n| peek | O(1) | root |\n| kth largest | min-heap size k | peek answer |\n| k smallest | max-heap size k | reverse comparator |\n| k-way merge | heap of heads | O(N log k) |\n| Median stream | two heaps | balance sizes |\n| Build heap | bottom-up | O(n) |\n| Not FIFO | priority order | tie-break |\n| Not stable | add key | secondary compare |\n| remove(x) | O(n) find | avoid hot path |\n| Concurrent | PriorityBlockingQueue | schedulers |\n| Heapsort | in-place | not stable |\n| Indexed heap | pos map | decrease-key |\n| Dijkstra | PQ distances | graphs |"
     }
   ]
 }

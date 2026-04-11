@@ -27,43 +27,43 @@
   "sections": [
     {
       "type": "why",
-      "title": "Why Microservices Principles & DDD matters",
+      "title": "Why this topic shows up in real interviews",
       "content": "People often sell microservices as “scale.” In real systems, they change how teams **own data** and how **money and orders stay correct** when the network is slow or a service is down. If you split services but still use **one shared database**, share JPA entities across “areas,” or chain many **blocking HTTP calls** for a single button, you do not get independence. You get a **distributed monolith**: releases still block each other, but failures are **partial**, retries can **double-charge** or **double-ship**, and on-call needs many tools to see the full story.\n\nInterviewers usually do not want book quotes. They want to hear **where you draw lines**, **who owns which rules**, and **what happens when a call fails or runs twice**. Good answers use simple words for hard topics: same word (“total,” “account”) can mean different things in billing vs CRM; **aggregates** match “what must stay consistent in one commit”; **context map** means “how teams depend on each other.”\n\nA strong answer often has four simple parts: (1) name the **business area** and the words experts use for it, (2) say what must stay **consistent in one transaction** vs what can catch up later, (3) give **one real failure** from messy boundaries (duplicates, rounding fights, migration fights), (4) give a **fix** people can operate (dedup keys, outbox, one owner for tax rules, module rules in the build).\n\nAt company scale, this matters because “more services” means **more choices about blast radius**. True independent deploys need **clear data ownership**, **clear SLOs**, and teams that match the architecture. DDD is a shared language for talking with product: what is **core** to the business, what is **supporting**, which team leads a model, and where **eventual consistency** is acceptable if you say it out loud.\n\nSenior answers sound operational in plain English: **timeouts** so threads do not hang forever, **idempotency** so retries are safe, **at-least-once messaging** so consumers must handle duplicates, **projection lag** so search is slightly behind writes, and **tracing** so async bugs are visible — not “clean code” alone."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Microservices Principles & DDD",
-      "content": "### Day 51 — Microservices and DDD in simple terms\n\nThis day links two ideas: **why** we split systems (team ownership, different scale needs, fault isolation) and **how** we model the business so services are not just “remote function calls over HTTP.”\n\n---\n\n### 1. What is DDD in one interview sentence?\n**Domain-Driven Design** means building software around a **clear business model**. Experts and developers share the **same words** (**ubiquitous language**). The model is split into **bounded contexts** (areas where words and rules stay consistent). Inside a context you use **tactical patterns**: **entities**, **value objects**, **aggregates**, **repositories**, **domain events**, and sometimes **domain services** — all to keep **business rules** true.\n\n**Microservices** means separate deployable services, usually **one team owns one service**, talking over the network. **Important:** DDD does **not** require microservices. Microservices do **not** require DDD. They work well together when **service boundaries** match **real business boundaries** and **real team ownership**.\n\n---\n\n### 2. Bounded context — the real line between “modules”\nA **bounded context** is the smallest place where the model **fits together**: one meaning per term, rules hold, and refactors do not surprise other teams. The word **Account** can mean one thing in CRM and another in the ledger — that is **two models**, not sloppy naming. Between contexts you **translate** data and language.\n\nCommon relationship names (for interviews): **anti-corruption layer** (translate messy external data into your model), **published language** (a stable shared format), **open host service** (upstream offers a clear integration API), **conformist** (downstream accepts upstream’s model), **customer–supplier** (downstream can negotiate priorities with upstream).\n\n**Interview angle:** If you cannot say “this rule must always be true here” and “across the line we may be slightly behind,” you only renamed packages — you do not have a real boundary.\n\n---\n\n### 3. Aggregates — keep one database transaction focused\nAn **aggregate** is a small cluster of objects with one **aggregate root** as the front door. Outside code talks to the root, not to hidden inner objects, so **rules cannot be bypassed**. Other aggregates should reference each other by **id**, not by loaded object graphs, to avoid huge loads, accidental cross-service joins, and fake “distributed transactions.”\n\nUsually **one transaction changes one aggregate**. If a business process spans aggregates, you **finish one commit**, then use **events** and **async steps**, or a **saga** (a multi-step flow with undo steps). Trying to “make one HTTP chain atomic” across many services is a common source of production pain.\n\n---\n\n### 4. Microservice ideas — what the network changes\nSimple principles people expect: **one main business reason to change per service**, **each service owns its data** (goal: separate database), **failures should not spread** (timeouts, circuit breakers, bulkheads), **good logs and traces**, and **shared standards** (auth, tracing IDs) without one team controlling every detail.\n\n**Cost to name honestly:** more latency, more ops work, **eventual consistency** in many flows, and you must design **retries** and **duplicate handling** on purpose.\n\n| Idea | Healthy sign | Bad smell |\n|------|--------------|----------|\n| Team owns service | Team can deploy on its own | Every change needs a meeting with three teams |\n| Loose coupling | Translate at edges with APIs/events | Share JPA entities between services |\n| Cohesive service | Features belong together | “Tiny service for one helper table” |\n| Resilience | Timeouts, safe retries, dead-letter queues | Endless retries on non-idempotent work |\n| Observable | Traces across sync and async | “We cannot tell why loyalty doubled” |\n\n---\n\n### 5. Interview questions you should expect (plain versions)\n1. **Where do you cut services?** By **business capability** and **team ownership**, not by “one table = one service.”\n2. **How do you keep data consistent?** **Sync** when the user must see the result now (with timeouts). **Async + eventual** for many cross-team updates, with **outbox** and **idempotent** consumers.\n3. **What is an anti-corruption layer?** A **translator** at the edge so legacy or vendor models do not leak into your core names and rules.\n4. **Aggregates vs transactions?** **One aggregate per commit** is the default; **sagas** for long flows; avoid pretending six REST calls are one database transaction.\n\n**Interview angle:** If you say Kafka, also say **messages can arrive more than once** — so the consumer must **deduplicate** or use **unique keys** in the database.\n\n---\n\n### 6. Java / Spring — how this looks in real code (high level)\n- Start with a **modular monolith**: separate Maven/Gradle modules per context; **ArchUnit** can fail the build if `orders` imports `catalog` domain classes.\n- **Ports and adapters:** domain defines `InventoryPort`; infrastructure implements it with `WebClient` and timeouts.\n- Do not return or share **`@Entity`** across service boundaries — use **DTOs** and map in one place.\n- **Transactional outbox:** in the **same database transaction** as saving the order, insert an **outbox row**; a small publisher process sends to Kafka (or poll another process). That avoids “saved in DB but message never sent” or “message sent twice.”\n- **Tests:** domain tests without Spring; **contract tests** (e.g. Pact) at boundaries when two teams disagree.\n\n---\n\n### 7. Strategic vs tactical — do not mix them up\n| Level | Plain question | Typical output |\n|-------|----------------|----------------|\n| Strategic | Where are the business areas? How do teams relate? | Context map, workshops |\n| Tactical | How do we code rules cleanly inside one area? | Aggregates, events, repositories |\n\nA common trap: pretty **tactical** code inside one giant service with **no strategic** lines — you still have a big ball of mud, just with nicer class names.\n\n---\n\n### 8. Sixty-second story (simple wording)\n**What users saw:** finance said order totals and invoices differed by **pennies**. **What went wrong:** **Orders** and **Billing** both calculated **tax** with slightly different rounding. Each team thought they were right. **Fix:** pick **one owner** for tax rules (often billing/pricing), version the policy, and store **frozen prices** on the order when the customer pays. **Prevention:** a small **glossary** for money fields, **contract tests** on totals, and a dashboard for mismatches. **Takeaway:** splitting services does not fix unclear business language — **talking and agreeing** does.\n\n---\n\n### 9. Conway’s Law — short and practical\n**Conway’s Law:** your system shape tends to match how people talk at work. If teams are unclear, the code will be unclear too. **Platform teams** help most when they give **easy patterns** (tracing, auth, outbox helpers), not when they force “microservices everywhere” on day one."
+      "title": "Microservices Principles & DDD — theory that sticks",
+      "content": "### Day 51 — Microservices and DDD in simple terms\n\nThis day links two ideas: **why** we split systems (team ownership, different scale needs, fault isolation) and **how** we model the business so services are not just “remote function calls over HTTP.”\n\n---\n\n### 1. What is DDD in one interview sentence?\n**Domain-Driven Design** means building software around a **clear business model**. Experts and developers share the **same words** (**ubiquitous language**). The model is split into **bounded contexts** (areas where words and rules stay consistent). Inside a context you use **tactical patterns**: **entities**, **value objects**, **aggregates**, **repositories**, **domain events**, and sometimes **domain services** — all to keep **business rules** true.\n\n**Microservices** means separate deployable services, usually **one team owns one service**, talking over the network. **Important:** DDD does **not** require microservices. Microservices do **not** require DDD. They work well together when **service boundaries** match **real business boundaries** and **real team ownership**.\n\n---\n\n### 2. Bounded context — the real line between “modules”\nA **bounded context** is the smallest place where the model **fits together**: one meaning per term, rules hold, and refactors do not surprise other teams. The word **Account** can mean one thing in CRM and another in the ledger — that is **two models**, not sloppy naming. Between contexts you **translate** data and language.\n\nCommon relationship names (for interviews): **anti-corruption layer** (translate messy external data into your model), **published language** (a stable shared format), **open host service** (upstream offers a clear integration API), **conformist** (downstream accepts upstream’s model), **customer–supplier** (downstream can negotiate priorities with upstream).\n\n**Interview angle:** If you cannot say “this rule must always be true here” and “across the line we may be slightly behind,” you only renamed packages — you do not have a real boundary.\n\n---\n\n### 3. Aggregates — keep one database transaction focused\nAn **aggregate** is a small cluster of objects with one **aggregate root** as the front door. Outside code talks to the root, not to hidden inner objects, so **rules cannot be bypassed**. Other aggregates should reference each other by **id**, not by loaded object graphs, to avoid huge loads, accidental cross-service joins, and fake “distributed transactions.”\n\nUsually **one transaction changes one aggregate**. If a business process spans aggregates, you **finish one commit**, then use **events** and **async steps**, or a **saga** (a multi-step flow with undo steps). Trying to “make one HTTP chain atomic” across many services is a common source of production pain.\n\n---\n\n### 4. Microservice ideas — what the network changes\nSimple principles people expect: **one main business reason to change per service**, **each service owns its data** (goal: separate database), **failures should not spread** (timeouts, circuit breakers, bulkheads), **good logs and traces**, and **shared standards** (auth, tracing IDs) without one team controlling every detail.\n\n**Cost to name honestly:** more latency, more ops work, **eventual consistency** in many flows, and you must design **retries** and **duplicate handling** on purpose.\n\n| Idea | Healthy sign | Bad smell |\n|------|--------------|----------|\n| Team owns service | Team can deploy on its own | Every change needs a meeting with three teams |\n| Loose coupling | Translate at edges with APIs/events | Share JPA entities between services |\n| Cohesive service | Features belong together | “Tiny service for one helper table” |\n| Resilience | Timeouts, safe retries, dead-letter queues | Endless retries on non-idempotent work |\n| Observable | Traces across sync and async | “We cannot tell why loyalty doubled” |\n\n---\n\n### 5. Interview questions you should expect (plain versions)\n1. **Where do you cut services?** By **business capability** and **team ownership**, not by “one table = one service.”\n2. **How do you keep data consistent?** **Sync** when the user must see the result now (with timeouts). **Async + eventual** for many cross-team updates, with **outbox** and **idempotent** consumers.\n3. **What is an anti-corruption layer?** A **translator** at the edge so legacy or vendor models do not leak into your core names and rules.\n4. **Aggregates vs transactions?** **One aggregate per commit** is the default; **sagas** for long flows; avoid pretending six REST calls are one database transaction.\n\n**Interview angle:** If you say Kafka, also say **messages can arrive more than once** — so the consumer must **deduplicate** or use **unique keys** in the database.\n\n---\n\n### 6. Java / Spring — how this looks in real code (high level)\n- Start with a **modular monolith**: separate Maven/Gradle modules per context; **ArchUnit** can fail the build if `orders` imports `catalog` domain classes.\n- **Ports and adapters:** domain defines `InventoryPort`; infrastructure implements it with `WebClient` and timeouts.\n- Do not return or share **`@Entity`** across service boundaries — use **DTOs** and map in one place.\n- **Transactional outbox:** in the **same database transaction** as saving the order, insert an **outbox row**; a small publisher process sends to Kafka (or poll another process). That avoids “saved in DB but message never sent” or “message sent twice.”\n- **Tests:** domain tests without Spring; **contract tests** (e.g. Pact) at boundaries when two teams disagree.\n\n---\n\n### 7. Strategic vs tactical — do not mix them up\n| Level | Plain question | Typical output |\n|-------|----------------|----------------|\n| Strategic | Where are the business areas? How do teams relate? | Context map, workshops |\n| Tactical | How do we code rules cleanly inside one area? | Aggregates, events, repositories |\n\nA common trap: pretty **tactical** code inside one giant service with **no strategic** lines — you still have a big ball of mud, just with nicer class names.\n\n---\n\n### 8. Sixty-second story (simple wording)\n**What users saw:** finance said order totals and invoices differed by **pennies**. **What went wrong:** **Orders** and **Billing** both calculated **tax** with slightly different rounding. Each team thought they were right. **Fix:** pick **one owner** for tax rules (often billing/pricing), version the policy, and store **frozen prices** on the order when the customer pays. **Prevention:** a small **glossary** for money fields, **contract tests** on totals, and a dashboard for mismatches. **Takeaway:** splitting services does not fix unclear business language — **talking and agreeing** does.\n\n---\n\n### 9. Conway’s Law — short and practical\n**Conway’s Law:** your system shape tends to match how people talk at work. If teams are unclear, the code will be unclear too. **Platform teams** help most when they give **easy patterns** (tracing, auth, outbox helpers), not when they force “microservices everywhere” on day one.\n"
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough — When to split services + DDD building blocks (plain tables)",
+      "title": "Microservices Principles & DDD — basic",
       "language": "java",
       "filename": "Day51Basic.java",
-      "code": "package arch.day51;\n\n/**\n * Prints simple reference tables. No Spring needed.\n * Spring idea: // split code into modules per business area + test imports with ArchUnit\n */\npublic class Day51Basic {\n\n    public static void main(String[] args) {\n        System.out.println(\"=== When separate services often make sense ===\");\n        System.out.println(\"Situation                         | Plain explanation\");\n        System.out.println(\"Read-heavy search vs writes       | Scale or deploy search differently\");\n        System.out.println(\"Different release schedules       | One team ships often, one ships rarely\");\n        System.out.println(\"Compliance / card data            | Isolate sensitive parts\");\n        System.out.println(\"Many teams, clear ownership       | Matches who maintains what\");\n        System.out.println();\n\n        System.out.println(\"=== When one well-structured app is often better ===\");\n        System.out.println(\"Situation                         | Plain explanation\");\n        System.out.println(\"Small team, early product         | Extra services add ops work\");\n        System.out.println(\"Boundaries still unclear          | Draw lines before splitting\");\n        System.out.println(\"Heavy shared rules across areas   | Model first, then split data\");\n        System.out.println(\"Low traffic internal tool         | Network calls add little value\");\n        System.out.println();\n\n        System.out.println(\"=== DDD building blocks (simple meanings) ===\");\n        System.out.println(\"Block              | Plain meaning\");\n        System.out.println(\"Entity             | Thing with identity that can change over time\");\n        System.out.println(\"Value object       | Small immutable piece (e.g. money with currency)\");\n        System.out.println(\"Aggregate root     | The one door to change a cluster safely\");\n        System.out.println(\"Domain event       | Something that already happened (past tense)\");\n        System.out.println(\"Repository         | Load/save aggregates; hides the database\");\n        System.out.println(\"Domain service     | Rule that does not fit one entity\");\n        System.out.println(\"Factory            | Creates a new aggregate with valid start state\");\n        System.out.println(\"ACL                | Translator for external or legacy data shapes\");\n        System.out.println();\n\n        System.out.println(\"=== How areas relate (names interviewers like) ===\");\n        System.out.println(\"Partnership        | Two teams share and evolve one model\");\n        System.out.println(\"Customer-Supplier  | Downstream asks upstream for roadmap help\");\n        System.out.println(\"Conformist         | Downstream copies upstream model as-is\");\n        System.out.println(\"Anti-corruption    | Downstream translates foreign model\");\n        System.out.println(\"Open Host          | Upstream publishes a clear integration API\");\n        System.out.println(\"Published Language | Shared stable format between areas\");\n    }\n}\n",
       "level": "basic",
-      "output": "=== When separate services often make sense ===\nSituation                         | Plain explanation\nRead-heavy search vs writes       | Scale or deploy search differently\nDifferent release schedules       | One team ships often, one ships rarely\nCompliance / card data            | Isolate sensitive parts\nMany teams, clear ownership       | Matches who maintains what\n\n=== When one well-structured app is often better ===\nSituation                         | Plain explanation\nSmall team, early product         | Extra services add ops work\nBoundaries still unclear          | Draw lines before splitting\nHeavy shared rules across areas   | Model first, then split data\nLow traffic internal tool         | Network calls add little value\n\n=== DDD building blocks (simple meanings) ===\nBlock              | Plain meaning\nEntity             | Thing with identity that can change over time\nValue object       | Small immutable piece (e.g. money with currency)\nAggregate root     | The one door to change a cluster safely\nDomain event       | Something that already happened (past tense)\nRepository         | Load/save aggregates; hides the database\nDomain service     | Rule that does not fit one entity\nFactory            | Creates a new aggregate with valid start state\nACL                | Translator for external or legacy data shapes\n\n=== How areas relate (names interviewers like) ===\nPartnership        | Two teams share and evolve one model\nCustomer-Supplier  | Downstream asks upstream for roadmap help\nConformist         | Downstream copies upstream model as-is\nAnti-corruption    | Downstream translates foreign model\nOpen Host          | Upstream publishes a clear integration API\nPublished Language | Shared stable format between areas\n",
-      "description": "Runnable Java that only prints fixed text: when microservices help vs staying modular, simple definitions of DDD building blocks, and plain labels for context-map relationships."
+      "description": "Plain Java reference output aligned with REST/API concepts for this day.",
+      "code": "package arch.day51;\n\n/**\n * Prints simple reference tables. No Spring needed.\n * Spring idea: // split code into modules per business area + test imports with ArchUnit\n */\npublic class Day51Basic {\n\n    public static void main(String[] args) {\n        System.out.println(\"=== When separate services often make sense ===\");\n        System.out.println(\"Situation                         | Plain explanation\");\n        System.out.println(\"Read-heavy search vs writes       | Scale or deploy search differently\");\n        System.out.println(\"Different release schedules       | One team ships often, one ships rarely\");\n        System.out.println(\"Compliance / card data            | Isolate sensitive parts\");\n        System.out.println(\"Many teams, clear ownership       | Matches who maintains what\");\n        System.out.println();\n\n        System.out.println(\"=== When one well-structured app is often better ===\");\n        System.out.println(\"Situation                         | Plain explanation\");\n        System.out.println(\"Small team, early product         | Extra services add ops work\");\n        System.out.println(\"Boundaries still unclear          | Draw lines before splitting\");\n        System.out.println(\"Heavy shared rules across areas   | Model first, then split data\");\n        System.out.println(\"Low traffic internal tool         | Network calls add little value\");\n        System.out.println();\n\n        System.out.println(\"=== DDD building blocks (simple meanings) ===\");\n        System.out.println(\"Block              | Plain meaning\");\n        System.out.println(\"Entity             | Thing with identity that can change over time\");\n        System.out.println(\"Value object       | Small immutable piece (e.g. money with currency)\");\n        System.out.println(\"Aggregate root     | The one door to change a cluster safely\");\n        System.out.println(\"Domain event       | Something that already happened (past tense)\");\n        System.out.println(\"Repository         | Load/save aggregates; hides the database\");\n        System.out.println(\"Domain service     | Rule that does not fit one entity\");\n        System.out.println(\"Factory            | Creates a new aggregate with valid start state\");\n        System.out.println(\"ACL                | Translator for external or legacy data shapes\");\n        System.out.println();\n\n        System.out.println(\"=== How areas relate (names interviewers like) ===\");\n        System.out.println(\"Partnership        | Two teams share and evolve one model\");\n        System.out.println(\"Customer-Supplier  | Downstream asks upstream for roadmap help\");\n        System.out.println(\"Conformist         | Downstream copies upstream model as-is\");\n        System.out.println(\"Anti-corruption    | Downstream translates foreign model\");\n        System.out.println(\"Open Host          | Upstream publishes a clear integration API\");\n        System.out.println(\"Published Language | Shared stable format between areas\");\n    }\n}\n",
+      "output": "=== When separate services often make sense ===\nSituation                         | Plain explanation\nRead-heavy search vs writes       | Scale or deploy search differently\nDifferent release schedules       | One team ships often, one ships rarely\nCompliance / card data            | Isolate sensitive parts\nMany teams, clear ownership       | Matches who maintains what\n\n=== When one well-structured app is often better ===\nSituation                         | Plain explanation\nSmall team, early product         | Extra services add ops work\nBoundaries still unclear          | Draw lines before splitting\nHeavy shared rules across areas   | Model first, then split data\nLow traffic internal tool         | Network calls add little value\n\n=== DDD building blocks (simple meanings) ===\nBlock              | Plain meaning\nEntity             | Thing with identity that can change over time\nValue object       | Small immutable piece (e.g. money with currency)\nAggregate root     | The one door to change a cluster safely\nDomain event       | Something that already happened (past tense)\nRepository         | Load/save aggregates; hides the database\nDomain service     | Rule that does not fit one entity\nFactory            | Creates a new aggregate with valid start state\nACL                | Translator for external or legacy data shapes\n\n=== How areas relate (names interviewers like) ===\nPartnership        | Two teams share and evolve one model\nCustomer-Supplier  | Downstream asks upstream for roadmap help\nConformist         | Downstream copies upstream model as-is\nAnti-corruption    | Downstream translates foreign model\nOpen Host          | Upstream publishes a clear integration API\nPublished Language | Shared stable format between areas\n"
     },
     {
       "type": "code",
-      "title": "Intermediate — Order rules, fake inventory, duplicate message handling",
+      "title": "Microservices Principles & DDD — intermediate",
       "language": "java",
       "filename": "Day51Intermediate.java",
-      "code": "package arch.day51;\n\nimport java.util.*;\n\n/**\n * Small simulation: order as aggregate root, inventory as a \"port,\"\n * a list of domain events, and duplicate message handling.\n * Spring mapping (comments only):\n * // @Transactional service calls InventoryClient implementing InventoryPort\n * // Save outbox rows in same DB transaction as order save\n */\npublic class Day51Intermediate {\n\n    static final List<String> domainEvents = new ArrayList<>();\n\n    static final class Line {\n        final String sku;\n        final int qty;\n        Line(String sku, int qty) {\n            this.sku = sku;\n            this.qty = qty;\n        }\n    }\n\n    static final class OrderAggregate {\n        private final String id;\n        private final List<Line> lines = new ArrayList<>();\n        private String status = \"DRAFT\";\n\n        OrderAggregate(String id) {\n            this.id = id;\n        }\n\n        void addLine(String sku, int qty) {\n            if (sku == null || sku.isBlank()) {\n                throw new IllegalArgumentException(\"sku required\");\n            }\n            if (qty <= 0) {\n                throw new IllegalArgumentException(\"qty must be positive\");\n            }\n            lines.add(new Line(sku, qty));\n        }\n\n        void submit(InventoryPort inventory) {\n            if (lines.isEmpty()) {\n                throw new IllegalStateException(\"cannot submit empty order\");\n            }\n            for (Line line : lines) {\n                if (!inventory.tryReserve(line.sku, line.qty)) {\n                    throw new IllegalStateException(\"insufficient stock: \" + line.sku);\n                }\n            }\n            status = \"SUBMITTED\";\n            domainEvents.add(\"OrderSubmitted:\" + id);\n            for (Line line : lines) {\n                domainEvents.add(\"InventoryReserved:\" + line.sku + \":\" + line.qty);\n            }\n        }\n\n        String status() {\n            return status;\n        }\n    }\n\n    interface InventoryPort {\n        boolean tryReserve(String sku, int qty);\n    }\n\n    static final class FakeWarehouse implements InventoryPort {\n        private final Map<String, Integer> stock = new HashMap<>();\n\n        FakeWarehouse() {\n            stock.put(\"SKU-A\", 10);\n            stock.put(\"SKU-B\", 1);\n        }\n\n        @Override\n        public boolean tryReserve(String sku, int qty) {\n            int available = stock.getOrDefault(sku, 0);\n            if (available < qty) {\n                return false;\n            }\n            stock.put(sku, available - qty);\n            return true;\n        }\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Order context simulation (aggregate + port) ===\\n\");\n\n        // --- Scenario 1: happy path ---\n        System.out.println(\"--- Scenario 1: happy path ---\");\n        domainEvents.clear();\n        FakeWarehouse wh1 = new FakeWarehouse();\n        OrderAggregate o1 = new OrderAggregate(\"ord-7001\");\n        o1.addLine(\"SKU-A\", 2);\n        o1.submit(wh1);\n        System.out.println(\"status=\" + o1.status() + \" events=\" + domainEvents.size());\n        System.out.println();\n\n        // --- Scenario 2: retry / replay (at-least-once consumer) ---\n        System.out.println(\"--- Scenario 2: idempotent consumer replay ---\");\n        List<String> seen = new ArrayList<>();\n        String dedup = \"evt-order-7001\";\n        Runnable handle = () -> {\n            if (!seen.contains(dedup)) {\n                seen.add(dedup);\n                System.out.println(\"processed \" + dedup);\n            } else {\n                System.out.println(\"skipped duplicate \" + dedup);\n            }\n        };\n        handle.run();\n        handle.run();\n        System.out.println();\n\n        // --- Scenario 3: failure / edge (stock breaks invariant) ---\n        System.out.println(\"--- Scenario 3: failure — insufficient stock ---\");\n        domainEvents.clear();\n        FakeWarehouse wh2 = new FakeWarehouse();\n        OrderAggregate o2 = new OrderAggregate(\"ord-7002\");\n        o2.addLine(\"SKU-B\", 5);\n        try {\n            o2.submit(wh2);\n            System.out.println(\"unexpected success\");\n        } catch (IllegalStateException ex) {\n            System.out.println(\"rejected: \" + ex.getMessage());\n            System.out.println(\"status=\" + o2.status() + \" events=\" + domainEvents.size());\n        }\n        System.out.println();\n\n        // --- Scenario 4: summary rules ---\n        System.out.println(\"--- Scenario 4: summary rules ---\");\n        System.out.println(\"Rule 1: modify one aggregate per transaction when possible\");\n        System.out.println(\"Rule 2: cross-context integration uses ports, not foreign entities\");\n        System.out.println(\"Rule 3: domain events are past-tense facts after state change\");\n        System.out.println(\"Rule 4: consumers must be idempotent under at-least-once delivery\");\n    }\n}\n",
       "level": "intermediate",
-      "output": "=== Order context simulation (aggregate + port) ===\n\n--- Scenario 1: happy path ---\nstatus=SUBMITTED events=2\n\n--- Scenario 2: idempotent consumer replay ---\nprocessed evt-order-7001\nskipped duplicate evt-order-7001\n\n--- Scenario 3: failure — insufficient stock ---\nrejected: insufficient stock: SKU-B\nstatus=DRAFT events=0\n\n--- Scenario 4: summary rules ---\nRule 1: modify one aggregate per transaction when possible\nRule 2: cross-context integration uses ports, not foreign entities\nRule 3: domain events are past-tense facts after state change\nRule 4: consumers must be idempotent under at-least-once delivery\n",
-      "description": "Four labeled runs: a valid submit with two recorded events, the same logical message processed twice safely, a stock failure that records zero events, and four short rules in everyday language."
+      "description": "Scenarios and simulations mirroring production API behavior.",
+      "code": "package arch.day51;\n\nimport java.util.*;\n\n/**\n * Small simulation: order as aggregate root, inventory as a \"port,\"\n * a list of domain events, and duplicate message handling.\n * Spring mapping (comments only):\n * // @Transactional service calls InventoryClient implementing InventoryPort\n * // Save outbox rows in same DB transaction as order save\n */\npublic class Day51Intermediate {\n\n    static final List<String> domainEvents = new ArrayList<>();\n\n    static final class Line {\n        final String sku;\n        final int qty;\n        Line(String sku, int qty) {\n            this.sku = sku;\n            this.qty = qty;\n        }\n    }\n\n    static final class OrderAggregate {\n        private final String id;\n        private final List<Line> lines = new ArrayList<>();\n        private String status = \"DRAFT\";\n\n        OrderAggregate(String id) {\n            this.id = id;\n        }\n\n        void addLine(String sku, int qty) {\n            if (sku == null || sku.isBlank()) {\n                throw new IllegalArgumentException(\"sku required\");\n            }\n            if (qty <= 0) {\n                throw new IllegalArgumentException(\"qty must be positive\");\n            }\n            lines.add(new Line(sku, qty));\n        }\n\n        void submit(InventoryPort inventory) {\n            if (lines.isEmpty()) {\n                throw new IllegalStateException(\"cannot submit empty order\");\n            }\n            for (Line line : lines) {\n                if (!inventory.tryReserve(line.sku, line.qty)) {\n                    throw new IllegalStateException(\"insufficient stock: \" + line.sku);\n                }\n            }\n            status = \"SUBMITTED\";\n            domainEvents.add(\"OrderSubmitted:\" + id);\n            for (Line line : lines) {\n                domainEvents.add(\"InventoryReserved:\" + line.sku + \":\" + line.qty);\n            }\n        }\n\n        String status() {\n            return status;\n        }\n    }\n\n    interface InventoryPort {\n        boolean tryReserve(String sku, int qty);\n    }\n\n    static final class FakeWarehouse implements InventoryPort {\n        private final Map<String, Integer> stock = new HashMap<>();\n\n        FakeWarehouse() {\n            stock.put(\"SKU-A\", 10);\n            stock.put(\"SKU-B\", 1);\n        }\n\n        @Override\n        public boolean tryReserve(String sku, int qty) {\n            int available = stock.getOrDefault(sku, 0);\n            if (available < qty) {\n                return false;\n            }\n            stock.put(sku, available - qty);\n            return true;\n        }\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Order context simulation (aggregate + port) ===\\n\");\n\n        // --- Scenario 1: happy path ---\n        System.out.println(\"--- Scenario 1: happy path ---\");\n        domainEvents.clear();\n        FakeWarehouse wh1 = new FakeWarehouse();\n        OrderAggregate o1 = new OrderAggregate(\"ord-7001\");\n        o1.addLine(\"SKU-A\", 2);\n        o1.submit(wh1);\n        System.out.println(\"status=\" + o1.status() + \" events=\" + domainEvents.size());\n        System.out.println();\n\n        // --- Scenario 2: retry / replay (at-least-once consumer) ---\n        System.out.println(\"--- Scenario 2: idempotent consumer replay ---\");\n        List<String> seen = new ArrayList<>();\n        String dedup = \"evt-order-7001\";\n        Runnable handle = () -> {\n            if (!seen.contains(dedup)) {\n                seen.add(dedup);\n                System.out.println(\"processed \" + dedup);\n            } else {\n                System.out.println(\"skipped duplicate \" + dedup);\n            }\n        };\n        handle.run();\n        handle.run();\n        System.out.println();\n\n        // --- Scenario 3: failure / edge (stock breaks invariant) ---\n        System.out.println(\"--- Scenario 3: failure — insufficient stock ---\");\n        domainEvents.clear();\n        FakeWarehouse wh2 = new FakeWarehouse();\n        OrderAggregate o2 = new OrderAggregate(\"ord-7002\");\n        o2.addLine(\"SKU-B\", 5);\n        try {\n            o2.submit(wh2);\n            System.out.println(\"unexpected success\");\n        } catch (IllegalStateException ex) {\n            System.out.println(\"rejected: \" + ex.getMessage());\n            System.out.println(\"status=\" + o2.status() + \" events=\" + domainEvents.size());\n        }\n        System.out.println();\n\n        // --- Scenario 4: summary rules ---\n        System.out.println(\"--- Scenario 4: summary rules ---\");\n        System.out.println(\"Rule 1: modify one aggregate per transaction when possible\");\n        System.out.println(\"Rule 2: cross-context integration uses ports, not foreign entities\");\n        System.out.println(\"Rule 3: domain events are past-tense facts after state change\");\n        System.out.println(\"Rule 4: consumers must be idempotent under at-least-once delivery\");\n    }\n}\n",
+      "output": "=== Order context simulation (aggregate + port) ===\n\n--- Scenario 1: happy path ---\nstatus=SUBMITTED events=2\n\n--- Scenario 2: idempotent consumer replay ---\nprocessed evt-order-7001\nskipped duplicate evt-order-7001\n\n--- Scenario 3: failure — insufficient stock ---\nrejected: insufficient stock: SKU-B\nstatus=DRAFT events=0\n\n--- Scenario 4: summary rules ---\nRule 1: modify one aggregate per transaction when possible\nRule 2: cross-context integration uses ports, not foreign entities\nRule 3: domain events are past-tense facts after state change\nRule 4: consumers must be idempotent under at-least-once delivery\n"
     },
     {
       "type": "code",
-      "title": "Advanced — Simple score for “should this be its own service?” plus a symptom table",
+      "title": "Microservices Principles & DDD — advanced",
       "language": "java",
       "filename": "Day51Advanced.java",
-      "code": "package arch.day51;\n\nimport java.util.*;\n\n/**\n * Records + a small scoring formula + printed tables.\n * Not a real decision engine — a learning aid only.\n * Spring note:\n * // Split services when teams and SLOs truly differ; keep a modular app until then\n */\npublic class Day51Advanced {\n\n    record ServiceBoundaryCandidate(\n            String name,\n            int teamAutonomy0to10,\n            int dataCohesion0to10,\n            int changeCoupling0to10,\n            int slaConflict0to10) {\n    }\n\n    record ContextLink(String upstream, String downstream, String relationship) {\n    }\n\n    static int boundaryScore(ServiceBoundaryCandidate c) {\n        return c.teamAutonomy0to10() * 2\n                + c.dataCohesion0to10() * 3\n                - c.changeCoupling0to10() * 2\n                - c.slaConflict0to10() * 2;\n    }\n\n    static void printScores(List<ServiceBoundaryCandidate> candidates) {\n        List<ServiceBoundaryCandidate> sorted = new ArrayList<>(candidates);\n        sorted.sort(Comparator.comparingInt(Day51Advanced::boundaryScore).reversed());\n        for (ServiceBoundaryCandidate c : sorted) {\n            System.out.println(c.name() + \" score=\" + boundaryScore(c));\n        }\n    }\n\n    public static void main(String[] args) {\n\n        // === Block 1: candidate scoring ===\n        System.out.println(\"=== Block 1: boundary candidate scores ===\");\n        System.out.println(\"Formula: +2*autonomy +3*cohesion -2*coupling -2*slaConflict\");\n        System.out.println();\n        List<ServiceBoundaryCandidate> candidates = List.of(\n                new ServiceBoundaryCandidate(\"billing\", 8, 9, 3, 2),\n                new ServiceBoundaryCandidate(\"catalog\", 7, 8, 4, 1),\n                new ServiceBoundaryCandidate(\"search-read\", 6, 5, 8, 6)\n        );\n        printScores(candidates);\n        System.out.println();\n\n        // === Block 2: context map links ===\n        System.out.println(\"=== Block 2: example context map links ===\");\n        List<ContextLink> links = List.of(\n                new ContextLink(\"pricing\", \"orders\", \"Customer-Supplier + PublishedLanguage\"),\n                new ContextLink(\"legacy-crm\", \"subscriptions\", \"Anti-corruption Layer\"),\n                new ContextLink(\"identity\", \"all\", \"Open Host Service (OIDC claims)\")\n        );\n        for (ContextLink l : links) {\n            System.out.println(l.upstream() + \" -> \" + l.downstream() + \" : \" + l.relationship());\n        }\n        System.out.println();\n\n        // === Block 3: decision reference table ===\n        System.out.println(\"=== Block 3: decomposition decision reference ===\");\n        System.out.println(\"Symptom                              | Likely move\");\n        System.out.println(\"Shared DB + cross-team migrations    | Split data + events/API\");\n        System.out.println(\"Chatty sync chain p95 high             | Consolidate or async + saga\");\n        System.out.println(\"Different RPS on read vs write         | CQRS projection service\");\n        System.out.println(\"Team communication bottleneck          | Align Conway + contexts\");\n        System.out.println(\"Duplicate business rules in 2 services | Upstream published language\");\n        System.out.println(\"Unknown vocabulary drift               | Event storming + glossary\");\n        System.out.println(\"Legacy model leaking in               | ACL + translation DTOs\");\n        System.out.println(\"Duplicate side effects on retry        | Idempotency + outbox\");\n        System.out.println(\"Heavy join queries pre-split           | Read model + CDC/events\");\n        System.out.println(\"One team owns all                      | Modular monolith first\");\n    }\n}\n",
       "level": "advanced",
-      "output": "=== Block 1: boundary candidate scores ===\nFormula: +2*autonomy +3*cohesion -2*coupling -2*slaConflict\n\nbilling score=33\ncatalog score=28\nsearch-read score=-1\n\n=== Block 2: example context map links ===\npricing -> orders : Customer-Supplier + PublishedLanguage\nlegacy-crm -> subscriptions : Anti-corruption Layer\nidentity -> all : Open Host Service (OIDC claims)\n\n=== Block 3: decomposition decision reference ===\nSymptom                              | Likely move\nShared DB + cross-team migrations    | Split data + events/API\nChatty sync chain p95 high             | Consolidate or async + saga\nDifferent RPS on read vs write         | CQRS projection service\nTeam communication bottleneck          | Align Conway + contexts\nDuplicate business rules in 2 services | Upstream published language\nUnknown vocabulary drift               | Event storming + glossary\nLegacy model leaking in               | ACL + translation DTOs\nDuplicate side effects on retry        | Idempotency + outbox\nHeavy join queries pre-split           | Read model + CDC/events\nOne team owns all                      | Modular monolith first\n",
-      "description": "Ranks example candidates with a simple formula, prints three example links between business areas, then prints a plain “if you see X, try Y” table — stdout in three blocks."
+      "description": "Combined patterns: errors, pagination, contracts, or trade-off tables.",
+      "code": "package arch.day51;\n\nimport java.util.*;\n\n/**\n * Records + a small scoring formula + printed tables.\n * Not a real decision engine — a learning aid only.\n * Spring note:\n * // Split services when teams and SLOs truly differ; keep a modular app until then\n */\npublic class Day51Advanced {\n\n    record ServiceBoundaryCandidate(\n            String name,\n            int teamAutonomy0to10,\n            int dataCohesion0to10,\n            int changeCoupling0to10,\n            int slaConflict0to10) {\n    }\n\n    record ContextLink(String upstream, String downstream, String relationship) {\n    }\n\n    static int boundaryScore(ServiceBoundaryCandidate c) {\n        return c.teamAutonomy0to10() * 2\n                + c.dataCohesion0to10() * 3\n                - c.changeCoupling0to10() * 2\n                - c.slaConflict0to10() * 2;\n    }\n\n    static void printScores(List<ServiceBoundaryCandidate> candidates) {\n        List<ServiceBoundaryCandidate> sorted = new ArrayList<>(candidates);\n        sorted.sort(Comparator.comparingInt(Day51Advanced::boundaryScore).reversed());\n        for (ServiceBoundaryCandidate c : sorted) {\n            System.out.println(c.name() + \" score=\" + boundaryScore(c));\n        }\n    }\n\n    public static void main(String[] args) {\n\n        // === Block 1: candidate scoring ===\n        System.out.println(\"=== Block 1: boundary candidate scores ===\");\n        System.out.println(\"Formula: +2*autonomy +3*cohesion -2*coupling -2*slaConflict\");\n        System.out.println();\n        List<ServiceBoundaryCandidate> candidates = List.of(\n                new ServiceBoundaryCandidate(\"billing\", 8, 9, 3, 2),\n                new ServiceBoundaryCandidate(\"catalog\", 7, 8, 4, 1),\n                new ServiceBoundaryCandidate(\"search-read\", 6, 5, 8, 6)\n        );\n        printScores(candidates);\n        System.out.println();\n\n        // === Block 2: context map links ===\n        System.out.println(\"=== Block 2: example context map links ===\");\n        List<ContextLink> links = List.of(\n                new ContextLink(\"pricing\", \"orders\", \"Customer-Supplier + PublishedLanguage\"),\n                new ContextLink(\"legacy-crm\", \"subscriptions\", \"Anti-corruption Layer\"),\n                new ContextLink(\"identity\", \"all\", \"Open Host Service (OIDC claims)\")\n        );\n        for (ContextLink l : links) {\n            System.out.println(l.upstream() + \" -> \" + l.downstream() + \" : \" + l.relationship());\n        }\n        System.out.println();\n\n        // === Block 3: decision reference table ===\n        System.out.println(\"=== Block 3: decomposition decision reference ===\");\n        System.out.println(\"Symptom                              | Likely move\");\n        System.out.println(\"Shared DB + cross-team migrations    | Split data + events/API\");\n        System.out.println(\"Chatty sync chain p95 high             | Consolidate or async + saga\");\n        System.out.println(\"Different RPS on read vs write         | CQRS projection service\");\n        System.out.println(\"Team communication bottleneck          | Align Conway + contexts\");\n        System.out.println(\"Duplicate business rules in 2 services | Upstream published language\");\n        System.out.println(\"Unknown vocabulary drift               | Event storming + glossary\");\n        System.out.println(\"Legacy model leaking in               | ACL + translation DTOs\");\n        System.out.println(\"Duplicate side effects on retry        | Idempotency + outbox\");\n        System.out.println(\"Heavy join queries pre-split           | Read model + CDC/events\");\n        System.out.println(\"One team owns all                      | Modular monolith first\");\n    }\n}\n",
+      "output": "=== Block 1: boundary candidate scores ===\nFormula: +2*autonomy +3*cohesion -2*coupling -2*slaConflict\n\nbilling score=33\ncatalog score=28\nsearch-read score=-1\n\n=== Block 2: example context map links ===\npricing -> orders : Customer-Supplier + PublishedLanguage\nlegacy-crm -> subscriptions : Anti-corruption Layer\nidentity -> all : Open Host Service (OIDC claims)\n\n=== Block 3: decomposition decision reference ===\nSymptom                              | Likely move\nShared DB + cross-team migrations    | Split data + events/API\nChatty sync chain p95 high             | Consolidate or async + saga\nDifferent RPS on read vs write         | CQRS projection service\nTeam communication bottleneck          | Align Conway + contexts\nDuplicate business rules in 2 services | Upstream published language\nUnknown vocabulary drift               | Event storming + glossary\nLegacy model leaking in               | ACL + translation DTOs\nDuplicate side effects on retry        | Idempotency + outbox\nHeavy join queries pre-split           | Read model + CDC/events\nOne team owns all                      | Modular monolith first\n"
     },
     {
       "type": "diagram",
@@ -74,7 +74,7 @@
     },
     {
       "type": "pitfalls",
-      "title": "Common Pitfalls",
+      "title": "Common pitfalls",
       "items": [
         "Splitting by technical layer (only “database service”) instead of by business area — you still need every layer for each feature, but now with network calls in the middle.",
         "Keeping one shared database “to go faster” — teams step on each other’s schema changes and true independent releases are almost impossible.",
@@ -89,14 +89,14 @@
     {
       "type": "exercise",
       "title": "Exercise — Checkout boundaries without one shared database",
+      "difficulty": "Advanced",
       "problem": "You are breaking a monolith checkout into separate areas owned by different teams: **Orders**, **Inventory**, **Payments**, **Notifications**.\n\nWrite an architecture-first answer (prose is fine; code is optional).\n\n1. Name **three business areas** (bounded contexts) and one **language risk** for each (same word, different meaning).\n2. Say which steps should be **synchronous** (user waits) vs **async** (can finish shortly after), and give a **simple reason** for each choice.\n3. Explain how the **order** keeps its own rules **without** calling another team’s JPA repository directly.\n4. Describe **idempotency** for handling **PaymentCaptured** twice from the message bus.\n5. Name **one metric or alert** you would use to catch **slow background steps** or **stuck workflows**.\n\nGoal: show clear boundaries, not a perfect diagram.",
       "hints": [
         "If totals must not change after submit, decide **one owner** for price/tax and store **frozen numbers** on the order.",
         "Model checkout as **steps with states** (draft, submitted, paid) instead of one giant method.",
         "Build dedup keys from **business ids** (order id + payment ref), not from Kafka offset numbers."
       ],
-      "solution": "package arch.day51;\n\nimport java.util.*;\n\n/**\n * Small runnable sketch: order aggregate, two \"ports,\" payment dedup.\n * Comments use plain language on purpose.\n */\npublic class Day51Exercise {\n\n    interface InventoryPort {\n        boolean reserve(String sku, int qty);\n    }\n\n    interface PaymentGatewayPort {\n        String capture(String orderId, int amountMinor);\n    }\n\n    static final class StubInventory implements InventoryPort {\n        public boolean reserve(String sku, int qty) {\n            return qty > 0 && sku.startsWith(\"SKU-\");\n        }\n    }\n\n    static final class StubPay implements PaymentGatewayPort {\n        public String capture(String orderId, int amountMinor) {\n            return \"pay-\" + orderId + \"-\" + amountMinor;\n        }\n    }\n\n    static final class OrderAggregate {\n        private final String id;\n        private final List<String> lines = new ArrayList<>();\n        private String status = \"DRAFT\";\n        private int totalMinor = 0;\n\n        OrderAggregate(String id) {\n            this.id = id;\n        }\n\n        void addLine(String sku, int qty, int unitMinor) {\n            if (qty <= 0 || unitMinor <= 0) {\n                throw new IllegalArgumentException(\"invalid line\");\n            }\n            lines.add(sku + \"x\" + qty);\n            totalMinor += qty * unitMinor;\n        }\n\n        void submit(InventoryPort inventory) {\n            if (lines.isEmpty()) {\n                throw new IllegalStateException(\"empty\");\n            }\n            if (!inventory.reserve(\"SKU-DEMO\", 1)) {\n                throw new IllegalStateException(\"inventory unavailable\");\n            }\n            status = \"SUBMITTED\";\n        }\n\n        String pay(PaymentGatewayPort pay) {\n            if (!\"SUBMITTED\".equals(status)) {\n                throw new IllegalStateException(\"wrong state\");\n            }\n            String ref = pay.capture(id, totalMinor);\n            status = \"PAID\";\n            return ref;\n        }\n\n        String status() {\n            return status;\n        }\n    }\n\n    // In production: store keys in DB with a unique index — not only in memory.\n    static String handlePaymentCaptured(String dedupKey,\n                                        String orderId,\n                                        Set<String> processedKeys) {\n        if (processedKeys.contains(dedupKey)) {\n            return \"DUPLICATE_IGNORED\";\n        }\n        processedKeys.add(dedupKey);\n        return \"LEDGER_UPDATED:\" + orderId;\n    }\n\n    public static void main(String[] args) {\n        StubInventory inv = new StubInventory();\n        StubPay pay = new StubPay();\n        OrderAggregate order = new OrderAggregate(\"ord-ex-1\");\n        order.addLine(\"SKU-DEMO\", 1, 500);\n        order.submit(inv);\n        String ref = order.pay(pay);\n        System.out.println(\"orderStatus=\" + order.status() + \" paymentRef=\" + ref);\n\n        Set<String> keys = new HashSet<>();\n        String businessDedup = \"ord-ex-1:capture\";\n        System.out.println(handlePaymentCaptured(businessDedup, \"ord-ex-1\", keys));\n        System.out.println(handlePaymentCaptured(businessDedup, \"ord-ex-1\", keys));\n\n        System.out.println(\"metric: saga_stage_latency_ms{stage=CAPTURE} p99 + DLQ depth\");\n    }\n}\n",
-      "difficulty": "Advanced"
+      "solution": "package arch.day51;\n\nimport java.util.*;\n\n/**\n * Small runnable sketch: order aggregate, two \"ports,\" payment dedup.\n * Comments use plain language on purpose.\n */\npublic class Day51Exercise {\n\n    interface InventoryPort {\n        boolean reserve(String sku, int qty);\n    }\n\n    interface PaymentGatewayPort {\n        String capture(String orderId, int amountMinor);\n    }\n\n    static final class StubInventory implements InventoryPort {\n        public boolean reserve(String sku, int qty) {\n            return qty > 0 && sku.startsWith(\"SKU-\");\n        }\n    }\n\n    static final class StubPay implements PaymentGatewayPort {\n        public String capture(String orderId, int amountMinor) {\n            return \"pay-\" + orderId + \"-\" + amountMinor;\n        }\n    }\n\n    static final class OrderAggregate {\n        private final String id;\n        private final List<String> lines = new ArrayList<>();\n        private String status = \"DRAFT\";\n        private int totalMinor = 0;\n\n        OrderAggregate(String id) {\n            this.id = id;\n        }\n\n        void addLine(String sku, int qty, int unitMinor) {\n            if (qty <= 0 || unitMinor <= 0) {\n                throw new IllegalArgumentException(\"invalid line\");\n            }\n            lines.add(sku + \"x\" + qty);\n            totalMinor += qty * unitMinor;\n        }\n\n        void submit(InventoryPort inventory) {\n            if (lines.isEmpty()) {\n                throw new IllegalStateException(\"empty\");\n            }\n            if (!inventory.reserve(\"SKU-DEMO\", 1)) {\n                throw new IllegalStateException(\"inventory unavailable\");\n            }\n            status = \"SUBMITTED\";\n        }\n\n        String pay(PaymentGatewayPort pay) {\n            if (!\"SUBMITTED\".equals(status)) {\n                throw new IllegalStateException(\"wrong state\");\n            }\n            String ref = pay.capture(id, totalMinor);\n            status = \"PAID\";\n            return ref;\n        }\n\n        String status() {\n            return status;\n        }\n    }\n\n    // In production: store keys in DB with a unique index — not only in memory.\n    static String handlePaymentCaptured(String dedupKey,\n                                        String orderId,\n                                        Set<String> processedKeys) {\n        if (processedKeys.contains(dedupKey)) {\n            return \"DUPLICATE_IGNORED\";\n        }\n        processedKeys.add(dedupKey);\n        return \"LEDGER_UPDATED:\" + orderId;\n    }\n\n    public static void main(String[] args) {\n        StubInventory inv = new StubInventory();\n        StubPay pay = new StubPay();\n        OrderAggregate order = new OrderAggregate(\"ord-ex-1\");\n        order.addLine(\"SKU-DEMO\", 1, 500);\n        order.submit(inv);\n        String ref = order.pay(pay);\n        System.out.println(\"orderStatus=\" + order.status() + \" paymentRef=\" + ref);\n\n        Set<String> keys = new HashSet<>();\n        String businessDedup = \"ord-ex-1:capture\";\n        System.out.println(handlePaymentCaptured(businessDedup, \"ord-ex-1\", keys));\n        System.out.println(handlePaymentCaptured(businessDedup, \"ord-ex-1\", keys));\n\n        System.out.println(\"metric: saga_stage_latency_ms{stage=CAPTURE} p99 + DLQ depth\");\n    }\n}\n"
     },
     {
       "type": "interview",
@@ -107,12 +107,12 @@
           "answer": "A **bounded context** is a line around a part of the business where **words and rules stay consistent**. Package names alone do not stop teams from sharing one database or calling each other’s tables. In production, the real question is **who owns the data** and **who can deploy alone**. Interviewers want you to talk about **contracts** (APIs, events) and **ownership**, not folder trees.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. A **bounded context** is a line around a part of the business where **words and rules stay consistent**. Package names alone do not stop tea… Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. A **bounded context** is a line around a part of the business where **words and rules stay consistent**. Package names a… Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -121,12 +121,12 @@
           "answer": "**Ubiquitous language** means developers and business experts use the **same words** for the same ideas, in code, APIs, and UI. When words drift, two services can both use `total` but mean **different things** — local tests still pass, but month-end reports disagree. A small **glossary** and **contract tests** on important fields catch drift before customers do.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. **Ubiquitous language** means developers and business experts use the **same words** for the same ideas, in code, APIs, and UI. When words d… Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. **Ubiquitous language** means developers and business experts use the **same words** for the same ideas, in code, APIs, … Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -135,12 +135,12 @@
           "answer": "The **aggregate root** is the **only supported way** to change a cluster of objects so **rules cannot be skipped**. Other aggregates should point with **ids** so you do not accidentally load giant graphs or pretend two services share one database transaction. In Spring, deep JPA links across areas often hide **coupling** — explicit ports and queries keep boundaries clear.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. The **aggregate root** is the **only supported way** to change a cluster of objects so **rules cannot be skipped**. Other aggregates should … Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. The **aggregate root** is the **only supported way** to change a cluster of objects so **rules cannot be skipped**. Othe… When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -149,12 +149,12 @@
           "answer": "A **domain event** records **something that already happened** (`OrderPlaced`). Use **messages** when the next step can happen **a moment later** and you want **looser coupling**. Use **sync HTTP** when the user or the next step **must know the answer now** — but always add **timeouts** and failure handling. To avoid “saved in DB but message lost,” many teams use a **transactional outbox** in the same database transaction as the save.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. A **domain event** records **something that already happened** (`OrderPlaced`). Use **messages** when the next step can happen **a moment la… Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. A **domain event** records **something that already happened** (`OrderPlaced`). Use **messages** when the next step can … Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -163,12 +163,12 @@
           "answer": "An **anti-corruption layer** is a **translator** at the edge of your system. Example: a legacy CRM sends `cust_status=GOLD`. Your app maps that to `LoyaltyTier.PREMIUM` with clear rules. Without a translator, foreign field names leak into your core code and **every vendor change** breaks your service. The ACL keeps your **core language** clean.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. An **anti-corruption layer** is a **translator** at the edge of your system. Example: a legacy CRM sends `cust_status=GOLD`. Your app maps t… When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. An **anti-corruption layer** is a **translator** at the edge of your system. Example: a legacy CRM sends `cust_status=GO… For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -177,12 +177,12 @@
           "answer": "A **context map** is a simple picture of **business areas** and **how they depend on each other**. Two common names: **Customer–Supplier** (downstream can ask upstream for changes) and **Anti-corruption layer** (downstream translates a foreign model). Saying “we call REST” is not enough — say **who leads the model** and **how translation happens**.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. A **context map** is a simple picture of **business areas** and **how they depend on each other**. Two common names: **Customer–Supplier** (… Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. A **context map** is a simple picture of **business areas** and **how they depend on each other**. Two common names: **C… Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -191,12 +191,12 @@
           "answer": "They are **related but not the same**. **DDD** helps you **draw good boundaries** and **name things well**. **Microservices** are **how you deploy**. You can use DDD inside **one modular app** (often smart early). You can split microservices **without** DDD and get a messy distributed system. Strong answers pick microservices when **independence** is worth the **extra ops work**.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. They are **related but not the same**. **DDD** helps you **draw good boundaries** and **name things well**. **Microservices** are **how you … Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. They are **related but not the same**. **DDD** helps you **draw good boundaries** and **name things well**. **Microservi… Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -205,12 +205,12 @@
           "answer": "An **entity** has **identity** that stays the same even when fields change (`Customer`, `Order`). A **value object** is a **small immutable bundle** of data (`Money`, `Address`) compared by value. Mixing them causes bugs like sharing one `Money` object and mutating it from two places. Java **records** often fit value objects well.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. An **entity** has **identity** that stays the same even when fields change (`Customer`, `Order`). A **value object** is a **small immutable … Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. An **entity** has **identity** that stays the same even when fields change (`Customer`, `Order`). A **value object** is … Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -219,12 +219,12 @@
           "answer": "A **repository** **loads and saves aggregates** and hides SQL or JPA details. It should **not** own core business decisions like “should we refund?” — those belong in the **domain model**. If repositories grow huge if-else blocks, you likely slid back to a **transaction script** style.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. A **repository** **loads and saves aggregates** and hides SQL or JPA details. It should **not** own core business decisions like “should we … When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. A **repository** **loads and saves aggregates** and hides SQL or JPA details. It should **not** own core business decisi… Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -233,12 +233,12 @@
           "answer": "A **domain service** holds a rule that does not fit one entity cleanly (for example, moving value between two accounts with joint rules). An **application service** is the **thin coordinator** for a use case: load aggregates, call domain code, save, publish integration messages. It should not become a **god class** with every rule inside.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. A **domain service** holds a rule that does not fit one entity cleanly (for example, moving value between two accounts with joint rules). An… Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. A **domain service** holds a rule that does not fit one entity cleanly (for example, moving value between two accounts w… Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -247,12 +247,12 @@
           "answer": "**Anemic domain model** means entities are mostly getters/setters and all logic sits in services — it often becomes hard-to-follow procedural code. For **simple CRUD** with almost no rules, that can be fine. For **money, risk, or compliance**, you usually want **richer domain objects** so rules stay in one obvious place.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. **Anemic domain model** means entities are mostly getters/setters and all logic sits in services — it often becomes hard-to-follow procedura… Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. **Anemic domain model** means entities are mostly getters/setters and all logic sits in services — it often becomes hard… Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -261,12 +261,12 @@
           "answer": "Finish **one commit**, then **tell others with an event** (often via **outbox**). The next step runs in **another transaction**. Long flows use **sagas**: forward steps plus **undo steps** when something fails. In Java services, test that **duplicate messages** do not break the flow — because message systems usually deliver **at least once**.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. Finish **one commit**, then **tell others with an event** (often via **outbox**). The next step runs in **another transaction**. Long flows … Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. Finish **one commit**, then **tell others with an event** (often via **outbox**). The next step runs in **another transa… For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -275,12 +275,12 @@
           "answer": "**Strategic** work answers **where the lines are** between business areas and teams (context map, workshops). **Tactical** work answers **how to code** inside one area (aggregates, events, repositories). Mixing them up gives either perfect diagrams with **messy code**, or pretty low-level code in the **wrong boundaries**.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. **Strategic** work answers **where the lines are** between business areas and teams (context map, workshops). **Tactical** work answers **ho… When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. **Strategic** work answers **where the lines are** between business areas and teams (context map, workshops). **Tactical… Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -289,12 +289,12 @@
           "answer": "**Conway’s Law** says software structure tends to match **how people communicate**. If communication is messy, boundaries will be messy too. Good splits align **service ownership** with **real teams**. Some teams also cite **Team Topologies** for platform vs stream-aligned teams — same idea in modern words.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. **Conway’s Law** says software structure tends to match **how people communicate**. If communication is messy, boundaries will be messy too.… For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. **Conway’s Law** says software structure tends to match **how people communicate**. If communication is messy, boundarie… Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -303,12 +303,40 @@
           "answer": "**CQRS** means **separate models for reads and writes** when reads are heavy or very different from writes. DDD does **not** require it. In microservices, you often see **read databases** or **search indexes** filled from **events** or **CDC**. **Trade-off:** reads may be **slightly stale** — measure lag and agree with product what is acceptable.",
           "followUps": [
             {
-              "question": "Production follow-up: which **metrics** or **CI gates** expose **DDD and service boundaries** drift early?",
-              "answer": "Watch **openapi-diff** failure rate, **Spectral** **error** counts on PRs, **partner** **SDK** **build** breakage, and **gateway** **4xx/5xx** by **operationId**. Anchor debugging in **versioned** spec artifacts per release, not only **Swagger UI** screenshots. **CQRS** means **separate models for reads and writes** when reads are heavy or very different from writes. DDD does **not** require it. In … Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **ship** a **DDD and service boundaries** change without a **consumer** **surprise**?",
-              "answer": "Prefer **additive** fields, **deprecation** headers, **Sunset** dates, **Pact** or **contract** tests for top clients, and **canary** **SDK** publishes with **rollback** on **error budget** burn. Document **breaking** changes with **semver** and **migration** guides. **CQRS** means **separate models for reads and writes** when reads are heavy or very different from writes. DDD does **n… Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
+            }
+          ]
+        },
+        {
+          "question": "What is a **bounded context** in DDD, and why does it matter for microservices?",
+          "answer": "A bounded context is a **linguistic and model boundary** where terms have one consistent meaning. Aligning one service per context reduces ambiguous shared models. **Anti-pattern**: one giant “Customer” entity shared everywhere — contexts should exchange DTOs or events, not one shared table model.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
+            },
+            {
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
+            }
+          ]
+        },
+        {
+          "question": "When is **two services** worse than **one modular monolith**?",
+          "answer": "When teams, deployment cadence, and data ownership are not independent — distributed boundaries add **network, consistency, and ops** cost without autonomy benefits. Start modular inside one deployable unit; extract when **SLO, scale, or org** boundaries justify the split.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
+            },
+            {
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         }
@@ -319,12 +347,12 @@
           "answer": "// orders/domain module: only domain code\n// orders/infrastructure: JPA implements OrderRepository\n//\n// ArchUnit rule (idea):\n// no classes in ..orders.domain.. may depend on ..catalog.domain..\n//\n// CI fails if someone @Autowired a Catalog entity into Orders code.\n// This turns \"please do not couple\" into a build error.",
           "followUps": [
             {
-              "question": "What **production** failure mode does this **pattern** prevent or cause if misapplied?",
-              "answer": "Wrong **module** boundaries still compile but create **distributed** **monolith** symptoms: **shared** **DB** locks, **cascading** **failures**, or **duplicate** **events** without **idempotency**. Validate with **ArchUnit**, **integration** tests, and **on-call** **playbooks**. // orders/domain module: only domain code\n// orders/infrastructure: JPA implements OrderRepository\n//\n// ArchUnit rule (idea):\n// … Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **verify** this in **CI** without **flaky** **Kafka** / **DB**?",
-              "answer": "Use **Testcontainers** for **real** **drivers** where it matters, **@DataJpaTest** slices for **repositories**, **WireMock** for **REST** **adapters**, and **deterministic** **dedup** keys in **tests**. // orders/domain module: only domain code\n// orders/infrastructure: JPA implements OrderRepository\n//\n// ArchU… Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -333,12 +361,12 @@
           "answer": "// domain/InventoryPort.java\n// public interface InventoryPort {\n//     boolean reserve(String sku, int qty);\n// }\n//\n// infra/InventoryRestAdapter.java\n// @Component\n// class InventoryRestAdapter implements InventoryPort {\n//     private final WebClient client;\n//     public boolean reserve(String sku, int qty) {\n//         return client.post()\n//             .uri(\"/internal/inventory/reserve\")\n//             .bodyValue(new ReserveRequest(sku, qty))\n//             .retrieve()\n//             .bodyToMono(ReserveResponse.class)\n//             .block(Duration.ofMillis(200));\n//     }\n// }\n//\n// Put timeouts and circuit breakers here — not inside pure domain math.",
           "followUps": [
             {
-              "question": "What **production** failure mode does this **pattern** prevent or cause if misapplied?",
-              "answer": "Wrong **module** boundaries still compile but create **distributed** **monolith** symptoms: **shared** **DB** locks, **cascading** **failures**, or **duplicate** **events** without **idempotency**. Validate with **ArchUnit**, **integration** tests, and **on-call** **playbooks**. // domain/InventoryPort.java\n// public interface InventoryPort {\n//     boolean reserve(String sku, int qty);\n// }\n//\n// infra/Inv… Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **verify** this in **CI** without **flaky** **Kafka** / **DB**?",
-              "answer": "Use **Testcontainers** for **real** **drivers** where it matters, **@DataJpaTest** slices for **repositories**, **WireMock** for **REST** **adapters**, and **deterministic** **dedup** keys in **tests**. // domain/InventoryPort.java\n// public interface InventoryPort {\n//     boolean reserve(String sku, int qty);\n… Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -347,12 +375,12 @@
           "answer": "// @Transactional\n// public void placeOrder(PlaceOrderCommand cmd) {\n//     Order order = ... build and validate ...\n//     orderRepository.save(order);\n//     for (DomainEvent e : order.pullDomainEvents()) {\n//         outboxRepository.insert(new OutboxRecord(e.type(), e.payloadJson()));\n//     }\n// }\n// A small worker reads outbox and publishes to Kafka, then marks rows sent.\n// Same DB transaction => no \"saved order but no message\" gap.",
           "followUps": [
             {
-              "question": "What **production** failure mode does this **pattern** prevent or cause if misapplied?",
-              "answer": "Wrong **module** boundaries still compile but create **distributed** **monolith** symptoms: **shared** **DB** locks, **cascading** **failures**, or **duplicate** **events** without **idempotency**. Validate with **ArchUnit**, **integration** tests, and **on-call** **playbooks**. // @Transactional\n// public void placeOrder(PlaceOrderCommand cmd) {\n//     Order order = ... build and validate ...\n//     orderR… Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **verify** this in **CI** without **flaky** **Kafka** / **DB**?",
-              "answer": "Use **Testcontainers** for **real** **drivers** where it matters, **@DataJpaTest** slices for **repositories**, **WireMock** for **REST** **adapters**, and **deterministic** **dedup** keys in **tests**. // @Transactional\n// public void placeOrder(PlaceOrderCommand cmd) {\n//     Order order = ... build and valida… Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -361,12 +389,12 @@
           "answer": "// @KafkaListener(topics = \"payments\")\n// void onCaptured(@Payload PaymentCaptured evt) {\n//     String dedup = evt.orderId() + \":\" + evt.processorRef();\n//     if (processedRepository.existsById(dedup)) return;\n//     ledgerService.applyCapture(evt);\n//     processedRepository.save(new ProcessedKey(dedup));\n// }\n//\n// Add a unique DB constraint on dedup. Count how often duplicates arrive — should be normal.",
           "followUps": [
             {
-              "question": "What **production** failure mode does this **pattern** prevent or cause if misapplied?",
-              "answer": "Wrong **module** boundaries still compile but create **distributed** **monolith** symptoms: **shared** **DB** locks, **cascading** **failures**, or **duplicate** **events** without **idempotency**. Validate with **ArchUnit**, **integration** tests, and **on-call** **playbooks**. // @KafkaListener(topics = \"payments\")\n// void onCaptured(@Payload PaymentCaptured evt) {\n//     String dedup = evt.orderId() + \":… When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **verify** this in **CI** without **flaky** **Kafka** / **DB**?",
-              "answer": "Use **Testcontainers** for **real** **drivers** where it matters, **@DataJpaTest** slices for **repositories**, **WireMock** for **REST** **adapters**, and **deterministic** **dedup** keys in **tests**. // @KafkaListener(topics = \"payments\")\n// void onCaptured(@Payload PaymentCaptured evt) {\n//     String dedup … Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -375,12 +403,12 @@
           "answer": "// LegacyCrmCustomer dto = crmClient.fetch(id);\n// Customer customer = new Customer(\n//     new CustomerId(dto.getLegacyId()),\n//     mapTier(dto.getStatusCode()),\n//     new Email(dto.getContactEmail())\n// );\n// private static LoyaltyTier mapTier(String code) {\n//     return switch (code) {\n//         case \"GOLD\" -> LoyaltyTier.PREMIUM;\n//         case \"SILVER\" -> LoyaltyTier.STANDARD;\n//         default -> LoyaltyTier.BASIC;\n//     };\n// }\n//\n// Core Customer type never exposes raw CRM field names.",
           "followUps": [
             {
-              "question": "What **production** failure mode does this **pattern** prevent or cause if misapplied?",
-              "answer": "Wrong **module** boundaries still compile but create **distributed** **monolith** symptoms: **shared** **DB** locks, **cascading** **failures**, or **duplicate** **events** without **idempotency**. Validate with **ArchUnit**, **integration** tests, and **on-call** **playbooks**. // LegacyCrmCustomer dto = crmClient.fetch(id);\n// Customer customer = new Customer(\n//     new CustomerId(dto.getLegacyId()),\n// … Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **verify** this in **CI** without **flaky** **Kafka** / **DB**?",
-              "answer": "Use **Testcontainers** for **real** **drivers** where it matters, **@DataJpaTest** slices for **repositories**, **WireMock** for **REST** **adapters**, and **deterministic** **dedup** keys in **tests**. // LegacyCrmCustomer dto = crmClient.fetch(id);\n// Customer customer = new Customer(\n//     new CustomerId(dto… Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -389,12 +417,12 @@
           "answer": "// @PostMapping(\"/orders\")\n// ResponseEntity<Void> create(@Valid @RequestBody CreateOrderRequest req) {\n//     String id = orderApplicationService.openDraft(req.customerId());\n//     return ResponseEntity.created(URI.create(\"/orders/\" + id)).build();\n// }\n//\n// @PostMapping(\"/orders/{id}/submit\")\n// OrderResponse submit(@PathVariable String id) {\n//     return orderApplicationService.submit(id);\n// }\n//\n// URLs follow the order lifecycle — not dozens of tiny internal entity endpoints.",
           "followUps": [
             {
-              "question": "What **production** failure mode does this **pattern** prevent or cause if misapplied?",
-              "answer": "Wrong **module** boundaries still compile but create **distributed** **monolith** symptoms: **shared** **DB** locks, **cascading** **failures**, or **duplicate** **events** without **idempotency**. Validate with **ArchUnit**, **integration** tests, and **on-call** **playbooks**. // @PostMapping(\"/orders\")\n// ResponseEntity<Void> create(@Valid @RequestBody CreateOrderRequest req) {\n//     String id = orderAp… Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **verify** this in **CI** without **flaky** **Kafka** / **DB**?",
-              "answer": "Use **Testcontainers** for **real** **drivers** where it matters, **@DataJpaTest** slices for **repositories**, **WireMock** for **REST** **adapters**, and **deterministic** **dedup** keys in **tests**. // @PostMapping(\"/orders\")\n// ResponseEntity<Void> create(@Valid @RequestBody CreateOrderRequest req) {\n//    … Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -403,12 +431,12 @@
           "answer": "// public record OrderPlaced(String orderId, int totalMinor, Instant at) {}\n//\n// Inside OrderAggregate after a successful submit:\n// recordThat(new OrderPlaced(this.id, this.totalMinor, clock.instant()));\n//\n// Application service drains pending events to outbox or bus:\n// for (DomainEvent e : order.pullDomainEvents()) { outbox.save(e); }\n//\n// Records are immutable — good match for \"something happened\" facts.",
           "followUps": [
             {
-              "question": "What **production** failure mode does this **pattern** prevent or cause if misapplied?",
-              "answer": "Wrong **module** boundaries still compile but create **distributed** **monolith** symptoms: **shared** **DB** locks, **cascading** **failures**, or **duplicate** **events** without **idempotency**. Validate with **ArchUnit**, **integration** tests, and **on-call** **playbooks**. // public record OrderPlaced(String orderId, int totalMinor, Instant at) {}\n//\n// Inside OrderAggregate after a successful submit:… Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **verify** this in **CI** without **flaky** **Kafka** / **DB**?",
-              "answer": "Use **Testcontainers** for **real** **drivers** where it matters, **@DataJpaTest** slices for **repositories**, **WireMock** for **REST** **adapters**, and **deterministic** **dedup** keys in **tests**. // public record OrderPlaced(String orderId, int totalMinor, Instant at) {}\n//\n// Inside OrderAggregate after … Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -417,12 +445,12 @@
           "answer": "// @Component\n// class OrderSummaryProjector {\n//   @Transactional\n//   @KafkaListener(topics = \"orders\")\n//   void on(OrderPlaced e) {\n//     if (summaryDao.existsById(e.orderId())) return;\n//     summaryDao.insert(new OrderSummaryRow(e.orderId(), e.totalMinor(), e.at()));\n//   }\n// }\n//\n// Fast read table for the UI; canonical order still lives in Orders service.",
           "followUps": [
             {
-              "question": "What **production** failure mode does this **pattern** prevent or cause if misapplied?",
-              "answer": "Wrong **module** boundaries still compile but create **distributed** **monolith** symptoms: **shared** **DB** locks, **cascading** **failures**, or **duplicate** **events** without **idempotency**. Validate with **ArchUnit**, **integration** tests, and **on-call** **playbooks**. // @Component\n// class OrderSummaryProjector {\n//   @Transactional\n//   @KafkaListener(topics = \"orders\")\n//   void on(OrderPlaced… Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **verify** this in **CI** without **flaky** **Kafka** / **DB**?",
-              "answer": "Use **Testcontainers** for **real** **drivers** where it matters, **@DataJpaTest** slices for **repositories**, **WireMock** for **REST** **adapters**, and **deterministic** **dedup** keys in **tests**. // @Component\n// class OrderSummaryProjector {\n//   @Transactional\n//   @KafkaListener(topics = \"orders\")\n//  … Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -431,12 +459,12 @@
           "answer": "// @Valid on REST DTO: required fields, basic types (@NotNull, @Positive)\n//\n// Inside OrderAggregate.addLine:\n// if (catalogPolicy.isProhibited(sku)) throw new DomainRuleException(\"banned sku\");\n//\n// Edge checks shape; domain enforces real business rules.",
           "followUps": [
             {
-              "question": "What **production** failure mode does this **pattern** prevent or cause if misapplied?",
-              "answer": "Wrong **module** boundaries still compile but create **distributed** **monolith** symptoms: **shared** **DB** locks, **cascading** **failures**, or **duplicate** **events** without **idempotency**. Validate with **ArchUnit**, **integration** tests, and **on-call** **playbooks**. // @Valid on REST DTO: required fields, basic types (@NotNull, @Positive)\n//\n// Inside OrderAggregate.addLine:\n// if (catalogPolic… Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **verify** this in **CI** without **flaky** **Kafka** / **DB**?",
-              "answer": "Use **Testcontainers** for **real** **drivers** where it matters, **@DataJpaTest** slices for **repositories**, **WireMock** for **REST** **adapters**, and **deterministic** **dedup** keys in **tests**. // @Valid on REST DTO: required fields, basic types (@NotNull, @Positive)\n//\n// Inside OrderAggregate.addLine:… Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -445,12 +473,40 @@
           "answer": "// inventoryWebClient.post()\n//   .uri(...)\n//   .retrieve()\n//   .bodyToMono(Boolean.class)\n//   .timeout(Duration.ofMillis(150))\n//   .transformDeferred(CircuitBreakerOperator.of(inventoryCb));\n//\n// If inventory is sick, fail fast with a clear business error — do not block threads forever.",
           "followUps": [
             {
-              "question": "What **production** failure mode does this **pattern** prevent or cause if misapplied?",
-              "answer": "Wrong **module** boundaries still compile but create **distributed** **monolith** symptoms: **shared** **DB** locks, **cascading** **failures**, or **duplicate** **events** without **idempotency**. Validate with **ArchUnit**, **integration** tests, and **on-call** **playbooks**. // inventoryWebClient.post()\n//   .uri(...)\n//   .retrieve()\n//   .bodyToMono(Boolean.class)\n//   .timeout(Duration.ofMillis(150))… Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **verify** this in **CI** without **flaky** **Kafka** / **DB**?",
-              "answer": "Use **Testcontainers** for **real** **drivers** where it matters, **@DataJpaTest** slices for **repositories**, **WireMock** for **REST** **adapters**, and **deterministic** **dedup** keys in **tests**. // inventoryWebClient.post()\n//   .uri(...)\n//   .retrieve()\n//   .bodyToMono(Boolean.class)\n//   .timeout(Dur… Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
+            }
+          ]
+        },
+        {
+          "question": "How does **aggregate root** rule affect what you expose on a REST resource?",
+          "answer": "External updates should target the **aggregate root** URI; nested entities mutate **through** the root to enforce invariants. Exposing direct CRUD on every child table invites invariant violations. Document commands as sub-resources or domain actions when needed.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
+            },
+            {
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
+            }
+          ]
+        },
+        {
+          "question": "Name a **domain event** you might publish when an order is **paid**, and one consumer.",
+          "answer": "Event: `OrderPaid` with order id, amount, timestamp. Consumer: **shipping** service reserves courier, **analytics** updates funnel metrics, **search** projection updates status. Keep payload minimal and versioned; avoid leaking internal entity graphs.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
+            },
+            {
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         }
@@ -461,12 +517,12 @@
           "answer": "**(1) Immediate response:** Slow down changes that make coupling worse. Agree **one owner** for each table or start a **short freeze** on cross-team schema edits until there is a plan. **(2) Root cause:** Services are split on paper, but **one database** means **one big system** with network glue. Releases and rollbacks still touch the same tables. **(3) Fix:** Pick the **clearest business boundary** and move toward **separate data** step by step: stricter APIs, **read copies**, **events**, and an **anti-corruption** translator at the edge. Add **module rules** (ArchUnit) inside Java so illegal imports fail in CI. **(4) Prevention:** Write short **ADRs** per integration, add **contract tests**, and track metrics when two teams collide on migrations. The goal is **real ownership**, not more repos.",
           "followUps": [
             {
-              "question": "How do you **align** **product** and **finance** when **money** or **reports** disagree?",
-              "answer": "Share **reconciliation** **queries**, **single** **owner** for **pricing**/**tax** rules, **frozen** **line** amounts on **submit**, and **clear** **timelines** for **fix** vs **rollback**. **(1) Immediate response:** Slow down changes that make coupling worse. Agree **one owner** for each table or start a **short freeze** on cross-team schema edit… Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this scenario, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What **preventive** **architecture** **review** **gate** stops a **recurrence**?",
-              "answer": "Require **context** **map** updates for new **integrations**, **Pact** for **critical** **consumers**, **idempotency** **constraints** on **event** **handlers**, and **SLO** on **projection** **lag**. **(1) Immediate response:** Slow down changes that make coupling worse. Agree **one owner** for each table or start a **short freeze** on cr… Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -475,12 +531,12 @@
           "answer": "**(1) Immediate response:** Stop risky deploys, open a channel, and run a **reconciliation** between stored order amounts and invoice lines. **(2) Root cause:** Two areas both “own” **tax or rounding** with small differences. Each team tested alone, so the bug hid until real money moved. **(3) Fix:** Choose **one upstream owner** for pricing/tax rules, **version** the policy, and store **frozen line amounts** on submit. Add **consumer contract tests** on money fields. **(4) Prevention:** Keep a **glossary** for money words, dashboard **max daily drift**, and **feature flags** for policy changes. This is a **language and ownership** fix, not only “use BigDecimal.”",
           "followUps": [
             {
-              "question": "How do you **align** **product** and **finance** when **money** or **reports** disagree?",
-              "answer": "Share **reconciliation** **queries**, **single** **owner** for **pricing**/**tax** rules, **frozen** **line** amounts on **submit**, and **clear** **timelines** for **fix** vs **rollback**. **(1) Immediate response:** Stop risky deploys, open a channel, and run a **reconciliation** between stored order amounts and invoice lines. **(2) Root cause:**… Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this scenario, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What **preventive** **architecture** **review** **gate** stops a **recurrence**?",
-              "answer": "Require **context** **map** updates for new **integrations**, **Pact** for **critical** **consumers**, **idempotency** **constraints** on **event** **handlers**, and **SLO** on **projection** **lag**. **(1) Immediate response:** Stop risky deploys, open a channel, and run a **reconciliation** between stored order amounts and invoice lines.… When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -489,12 +545,12 @@
           "answer": "**(1) Immediate response:** If money is involved, **pause payouts** or use a flag, then fix dedup before large replays. **(2) Root cause:** Kafka may deliver **more than once**. Idempotency that lives **only in memory**, or **ack before the database commit**, means a retry can **run the business logic twice**. **(3) Fix:** Use a **stable business key** in a **database unique constraint**, update ledger and mark processed in **one transaction**, then ack. Prefer **outbox** from the writer service so publishing matches the DB commit. **(4) Prevention:** Chaos-style tests with **forced duplicates**, metrics counting **ignored duplicates**, and alerts on **dead-letter** growth. Model the rule **credit once per order** inside the domain, not only in logs.",
           "followUps": [
             {
-              "question": "How do you **align** **product** and **finance** when **money** or **reports** disagree?",
-              "answer": "Share **reconciliation** **queries**, **single** **owner** for **pricing**/**tax** rules, **frozen** **line** amounts on **submit**, and **clear** **timelines** for **fix** vs **rollback**. **(1) Immediate response:** If money is involved, **pause payouts** or use a flag, then fix dedup before large replays. **(2) Root cause:** Kafka may deliver **… Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this scenario, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What **preventive** **architecture** **review** **gate** stops a **recurrence**?",
-              "answer": "Require **context** **map** updates for new **integrations**, **Pact** for **critical** **consumers**, **idempotency** **constraints** on **event** **handlers**, and **SLO** on **projection** **lag**. **(1) Immediate response:** If money is involved, **pause payouts** or use a flag, then fix dedup before large replays. **(2) Root cause:** … Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -503,12 +559,12 @@
           "answer": "**(1) Immediate response:** Add **timeouts** and **resource limits** so one slow service cannot stall everything; cache stable pieces. **(2) Root cause:** The dashboard is really a **read problem**, but it was built as a **live chain of writes services**. Boundaries were ignored for speed of feature work. **(3) Fix:** Build a **read model** (materialized view or search index) updated by **events** or **CDC**, optionally behind a **BFF** for the UI. Accept **small staleness** and show it honestly. **(4) Prevention:** **SLO per hop**, design review for deep chains, and platform help for **standard projection** patterns. CQRS here is a **tool**, not a religion — use it where reads hurt.",
           "followUps": [
             {
-              "question": "How do you **align** **product** and **finance** when **money** or **reports** disagree?",
-              "answer": "Share **reconciliation** **queries**, **single** **owner** for **pricing**/**tax** rules, **frozen** **line** amounts on **submit**, and **clear** **timelines** for **fix** vs **rollback**. **(1) Immediate response:** Add **timeouts** and **resource limits** so one slow service cannot stall everything; cache stable pieces. **(2) Root cause:** The d… When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this scenario, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What **preventive** **architecture** **review** **gate** stops a **recurrence**?",
-              "answer": "Require **context** **map** updates for new **integrations**, **Pact** for **critical** **consumers**, **idempotency** **constraints** on **event** **handlers**, and **SLO** on **projection** **lag**. **(1) Immediate response:** Add **timeouts** and **resource limits** so one slow service cannot stall everything; cache stable pieces. **(2)… Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -517,12 +573,12 @@
           "answer": "**(1) Immediate response:** Agree on the **real goal** (speed, hiring, compliance) without assuming microservices are the only path. **(2) Root cause:** Microservices add **deploy pipelines, monitoring, and failure modes** early. A tiny team often pays that cost before they get product clarity. **(3) Fix:** Use **one app with clear modules** and **strict import rules**, measure traffic and pain, then extract **one** service when data proves it (scale, compliance, or release conflict). **(4) Prevention:** Simple **decision records** before new services, and **templates** for tracing and auth when services appear. Pragmatic DDD beats **resume-driven** splitting.",
           "followUps": [
             {
-              "question": "How do you **align** **product** and **finance** when **money** or **reports** disagree?",
-              "answer": "Share **reconciliation** **queries**, **single** **owner** for **pricing**/**tax** rules, **frozen** **line** amounts on **submit**, and **clear** **timelines** for **fix** vs **rollback**. **(1) Immediate response:** Agree on the **real goal** (speed, hiring, compliance) without assuming microservices are the only path. **(2) Root cause:** Microse… Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this scenario, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What **preventive** **architecture** **review** **gate** stops a **recurrence**?",
-              "answer": "Require **context** **map** updates for new **integrations**, **Pact** for **critical** **consumers**, **idempotency** **constraints** on **event** **handlers**, and **SLO** on **projection** **lag**. **(1) Immediate response:** Agree on the **real goal** (speed, hiring, compliance) without assuming microservices are the only path. **(2) R… Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -531,12 +587,12 @@
           "answer": "**(1) Immediate response:** Stop new **ERP field copy-paste** into core models; route changes through a **translator** layer. **(2) Root cause:** Shortcuts feel faster until every ERP upgrade **breaks production** because your core model is secretly their model. **(3) Fix:** A focused **integration module or service** maps ERP rows to **your types**, with tests and versioned mappings; use **flags** for risky mapping changes. **(4) Prevention:** Mark ERP as **upstream** on the context map, test adapters in CI, and never use ERP tables as your core **`@Entity`** graph. Keep **your words** inside, **their words** outside.",
           "followUps": [
             {
-              "question": "How do you **align** **product** and **finance** when **money** or **reports** disagree?",
-              "answer": "Share **reconciliation** **queries**, **single** **owner** for **pricing**/**tax** rules, **frozen** **line** amounts on **submit**, and **clear** **timelines** for **fix** vs **rollback**. **(1) Immediate response:** Stop new **ERP field copy-paste** into core models; route changes through a **translator** layer. **(2) Root cause:** Shortcuts feel… Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this scenario, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What **preventive** **architecture** **review** **gate** stops a **recurrence**?",
-              "answer": "Require **context** **map** updates for new **integrations**, **Pact** for **critical** **consumers**, **idempotency** **constraints** on **event** **handlers**, and **SLO** on **projection** **lag**. **(1) Immediate response:** Stop new **ERP field copy-paste** into core models; route changes through a **translator** layer. **(2) Root cau… Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         }
@@ -553,9 +609,436 @@
       ]
     },
     {
+      "type": "mcq",
+      "title": "MCQ Quiz — Microservices Principles & DDD",
+      "description": "Thirty questions from basic to advanced — Microservices Principles & DDD. Read every option; distractors are plausible but wrong for a precise reason.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "[Microservices & DDD] A **bounded context** defines:",
+          "options": {
+            "A": "A model boundary with one ubiquitous language",
+            "B": "A JVM package only",
+            "C": "A K8s namespace only",
+            "D": "A CSS file"
+          },
+          "answer": "A",
+          "explanation": "Terms mean one thing inside the context."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "[Microservices & DDD] An **aggregate root** enforces:",
+          "options": {
+            "A": "Invariants for a cluster of entities",
+            "B": "HTTP caching",
+            "C": "TLS handshakes",
+            "D": "DNS TTL"
+          },
+          "answer": "A",
+          "explanation": "External updates go through the root."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "scenario",
+          "question": "[Microservices & DDD] A **domain event** represents:",
+          "options": {
+            "A": "Something that happened in the domain",
+            "B": "A JVM GC event",
+            "C": "A log4j line",
+            "D": "A CSS transition"
+          },
+          "answer": "A",
+          "explanation": "Past tense facts for integration."
+        },
+        {
+          "id": 4,
+          "level": "basic",
+          "category": "theory",
+          "question": "[Microservices & DDD] **Ubiquitous language** should appear in:",
+          "options": {
+            "A": "Code, conversations, and docs consistently",
+            "B": "Only marketing",
+            "C": "Only DB column names without code",
+            "D": "Comments only"
+          },
+          "answer": "A",
+          "explanation": "Aligns business and engineering."
+        },
+        {
+          "id": 5,
+          "level": "basic",
+          "category": "code",
+          "question": "[Microservices & DDD] **Anti-Corruption Layer** protects:",
+          "options": {
+            "A": "Your domain from foreign models",
+            "B": "Only TLS certs",
+            "C": "Only Redis keys",
+            "D": "Only Maven repos"
+          },
+          "answer": "A",
+          "explanation": "Translate legacy/partner models inward."
+        },
+        {
+          "id": 6,
+          "level": "basic",
+          "category": "scenario",
+          "question": "[Microservices & DDD] **Context mapping** describes:",
+          "options": {
+            "A": "Relationships between bounded contexts",
+            "B": "TCP window size",
+            "C": "JWT expiry math",
+            "D": "CSS grid"
+          },
+          "answer": "A",
+          "explanation": "Partnership, customer/supplier, etc."
+        },
+        {
+          "id": 7,
+          "level": "basic",
+          "category": "theory",
+          "question": "[Microservices & DDD] **Entity** vs **value object**:",
+          "options": {
+            "A": "Entity has identity; VO is defined by attributes",
+            "B": "Same thing",
+            "C": "VO must be mutable",
+            "D": "Entity cannot change"
+          },
+          "answer": "A",
+          "explanation": "Classic DDD distinction."
+        },
+        {
+          "id": 8,
+          "level": "basic",
+          "category": "code",
+          "question": "[Microservices & DDD] **Repository** abstracts:",
+          "options": {
+            "A": "Aggregate persistence",
+            "B": "HTTP status codes",
+            "C": "Thread pools",
+            "D": "YAML indentation"
+          },
+          "answer": "A",
+          "explanation": "Domain speaks to persistence through repository."
+        },
+        {
+          "id": 9,
+          "level": "basic",
+          "category": "scenario",
+          "question": "[Microservices & DDD] **Domain service** fits when:",
+          "options": {
+            "A": "Logic spans multiple aggregates",
+            "B": "Simple CRUD on one table",
+            "C": "Rendering HTML",
+            "D": "Configuring logback"
+          },
+          "answer": "A",
+          "explanation": "Not naturally on one entity."
+        },
+        {
+          "id": 10,
+          "level": "basic",
+          "category": "theory",
+          "question": "[Microservices & DDD] **Application service** orchestrates:",
+          "options": {
+            "A": "Use cases and transactions",
+            "B": "CPU scheduling",
+            "C": "SSL stapling",
+            "D": "Git merges"
+          },
+          "answer": "A",
+          "explanation": "Thin layer over domain."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "code",
+          "question": "[Microservices & DDD] Splitting services by **team boundary** follows:",
+          "options": {
+            "A": "Conway alignment",
+            "B": "RFC 4180",
+            "C": "ACID only",
+            "D": "JPEG"
+          },
+          "answer": "A",
+          "explanation": "Autonomy should match org structure."
+        },
+        {
+          "id": 12,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "[Microservices & DDD] **Shared kernel** means:",
+          "options": {
+            "A": "Explicitly shared subset between contexts",
+            "B": "Copy-paste all code",
+            "C": "One giant DB for everyone",
+            "D": "No tests"
+          },
+          "answer": "A",
+          "explanation": "Tightly coordinated shared model slice."
+        },
+        {
+          "id": 13,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "[Microservices & DDD] **Customer/supplier** context relation:",
+          "options": {
+            "A": "Upstream prioritizes downstream needs",
+            "B": "No communication",
+            "C": "Random coupling",
+            "D": "Same database always"
+          },
+          "answer": "A",
+          "explanation": "Directed dependency with negotiation."
+        },
+        {
+          "id": 14,
+          "level": "intermediate",
+          "category": "code",
+          "question": "[Microservices & DDD] **Conformist** pattern accepts:",
+          "options": {
+            "A": "Upstream model as-is",
+            "B": "Infinite retry without DLQ",
+            "C": "HTTP/0.9",
+            "D": "Lossy UDP for money"
+          },
+          "answer": "A",
+          "explanation": "When influence is low; avoid fighting their model."
+        },
+        {
+          "id": 15,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "[Microservices & DDD] **ACL** translation belongs at:",
+          "options": {
+            "A": "Boundary of the integrating context",
+            "B": "Every controller",
+            "C": "Database trigger only",
+            "D": "CDN edge only"
+          },
+          "answer": "A",
+          "explanation": "Contain foreign concepts at the edge."
+        },
+        {
+          "id": 16,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "[Microservices & DDD] **Strategic design** focuses on:",
+          "options": {
+            "A": "Context boundaries and relationships",
+            "B": "Indentation style",
+            "C": "Logo colors",
+            "D": "CPU GHz"
+          },
+          "answer": "A",
+          "explanation": "Before tactical patterns."
+        },
+        {
+          "id": 17,
+          "level": "intermediate",
+          "category": "code",
+          "question": "[Microservices & DDD] **Tactical patterns** include:",
+          "options": {
+            "A": "Aggregates, entities, VOs, factories",
+            "B": "Only REST verbs",
+            "C": "Only Kafka",
+            "D": "Only GraphQL"
+          },
+          "answer": "A",
+          "explanation": "Building blocks inside a context."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "[Microservices & DDD] **Factory** in DDD helps when:",
+          "options": {
+            "A": "Aggregate creation is non-trivial",
+            "B": "You deploy to factory hardware",
+            "C": "You use Spring @Bean only",
+            "D": "You parse CSV"
+          },
+          "answer": "A",
+          "explanation": "Encapsulate complex construction."
+        },
+        {
+          "id": 19,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "[Microservices & DDD] **Invariant** is:",
+          "options": {
+            "A": "A rule that must always hold for the model",
+            "B": "A JVM flag",
+            "C": "A HTTP header",
+            "D": "A CSS variable"
+          },
+          "answer": "A",
+          "explanation": "Enforced inside aggregate boundaries."
+        },
+        {
+          "id": 20,
+          "level": "intermediate",
+          "category": "code",
+          "question": "[Microservices & DDD] **Event storming** is a workshop technique to:",
+          "options": {
+            "A": "Discover domains and events quickly",
+            "B": "Tune GC",
+            "C": "Design PCBs",
+            "D": "Write protobuf by hand"
+          },
+          "answer": "A",
+          "explanation": "Collaborative exploration."
+        },
+        {
+          "id": 21,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "[Microservices & DDD] **Read model** in CQRS-style split:",
+          "options": {
+            "A": "Optimized for queries",
+            "B": "Same as write always",
+            "C": "Forbidden",
+            "D": "Only for batch"
+          },
+          "answer": "A",
+          "explanation": "Can diverge from write schema."
+        },
+        {
+          "id": 22,
+          "level": "advanced",
+          "category": "theory",
+          "question": "[Microservices & DDD] **Domain experts** should:",
+          "options": {
+            "A": "Validate language and rules",
+            "B": "Never talk to engineers",
+            "C": "Write all code",
+            "D": "Skip reviews"
+          },
+          "answer": "A",
+          "explanation": "Partnership in modeling."
+        },
+        {
+          "id": 23,
+          "level": "advanced",
+          "category": "code",
+          "question": "[Microservices & DDD] **Anemic domain model** anti-pattern:",
+          "options": {
+            "A": "Entities are data bags; logic elsewhere",
+            "B": "Rich behavior everywhere",
+            "C": "Too many events",
+            "D": "Too many aggregates"
+          },
+          "answer": "A",
+          "explanation": "Behavior scattered in services."
+        },
+        {
+          "id": 24,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "[Microservices & DDD] **Published language** is:",
+          "options": {
+            "A": "A well-defined interchange between contexts",
+            "B": "Random JSON",
+            "C": "Private class fields",
+            "D": "TCP MSS"
+          },
+          "answer": "A",
+          "explanation": "Contract for integration."
+        },
+        {
+          "id": 25,
+          "level": "advanced",
+          "category": "theory",
+          "question": "[Microservices & DDD] **Open host service** exposes:",
+          "options": {
+            "A": "A generic API for many consumers",
+            "B": "Internal only RPC",
+            "C": "Raw SQL port",
+            "D": "Git protocol"
+          },
+          "answer": "A",
+          "explanation": "Optional integration point."
+        },
+        {
+          "id": 26,
+          "level": "advanced",
+          "category": "code",
+          "question": "[Microservices & DDD] **Big ball of mud** signals:",
+          "options": {
+            "A": "Unclear boundaries and coupling",
+            "B": "Clean architecture",
+            "C": "Perfect DDD",
+            "D": "No database"
+          },
+          "answer": "A",
+          "explanation": "Candidate for refactoring/strangulation."
+        },
+        {
+          "id": 27,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "[Microservices & DDD] **Core domain** deserves:",
+          "options": {
+            "A": "Best people and careful design",
+            "B": "Lowest attention",
+            "C": "No tests",
+            "D": "Copy from blog"
+          },
+          "answer": "A",
+          "explanation": "Competitive differentiator."
+        },
+        {
+          "id": 28,
+          "level": "advanced",
+          "category": "theory",
+          "question": "[Microservices & DDD] **Supporting subdomain** is:",
+          "options": {
+            "A": "Important but not differentiating",
+            "B": "Core always",
+            "C": "Generic always",
+            "D": "Ignored"
+          },
+          "answer": "A",
+          "explanation": "May buy vs build."
+        },
+        {
+          "id": 29,
+          "level": "advanced",
+          "category": "code",
+          "question": "[Microservices & DDD] **Generic subdomain** often:",
+          "options": {
+            "A": "Uses off-the-shelf solutions",
+            "B": "Is the secret sauce",
+            "C": "Needs event sourcing always",
+            "D": "Avoids APIs"
+          },
+          "answer": "A",
+          "explanation": "CRUD HR, auth vendor, etc."
+        },
+        {
+          "id": 30,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "[Microservices & DDD] **Context boundary** in microservices:",
+          "options": {
+            "A": "Prefer service per context when autonomy warrants",
+            "B": "Always 1 service globally",
+            "C": "Never split",
+            "D": "Same as JVM"
+          },
+          "answer": "A",
+          "explanation": "Match deployment to boundaries deliberately."
+        }
+      ]
+    },
+    {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Topic | Rule of thumb | Interview one-liner |\n|---|---|---|\n| Bounded context | One area, one meaning per word | Draw lines around language and data ownership |\n| Aggregate | One door for changes; one transaction focus | Keep commits small; use events across areas |\n| Ubiquitous language | Same words in code and meetings | Drift shows up as money and support bugs |\n| Context map | Who leads; who translates | Name relationships, not only HTTP routes |\n| Microservices | Split when independence is worth cost | Buy team speed; pay ops and network tax |\n| Modular monolith | Modules first, services later | Prove boundaries before splitting deploys |\n| Domain event | Past fact after a change | Outbox keeps DB and messages aligned |\n| ACL | Translator at the edge | Keep vendor shapes out of core entities |\n| CQRS | Split read and write when reads hurt | Accept small staleness; measure lag |\n| Saga | Multi-step flow with undo steps | Replace fantasy distributed transactions |\n"
+      "title": "Microservices Principles & DDD — cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n| --- | --- | --- |\n| Bounded context | One area, one meaning per word | Draw lines around language and data ownership |\n| Aggregate | One door for changes; one transaction focus | Keep commits small; use events across areas |\n| Ubiquitous language | Same words in code and meetings | Drift shows up as money and support bugs |\n| Context map | Who leads; who translates | Name relationships, not only HTTP routes |\n| Microservices | Split when independence is worth cost | Buy team speed; pay ops and network tax |\n| Modular monolith | Modules first, services later | Prove boundaries before splitting deploys |\n| Domain event | Past fact after a change | Outbox keeps DB and messages aligned |\n| ACL | Translator at the edge | Keep vendor shapes out of core entities |\n| CQRS | Split read and write when reads hurt | Accept small staleness; measure lag |\n| Saga | Multi-step flow with undo steps | Replace fantasy distributed transactions |\n| Trace id | Propagate on every hop | Debug 502/504 with correlation |\n| Timeouts | Client < gateway < server | Cancel work; avoid retry storms |\n| Payload size | Cap upload; stream large | Protect memory and threads |\n| Deprecation | Sunset header + docs | Give consumers a calendar |\n| Security | Authn at edge; authz in service | Do not trust gateway alone |"
     }
   ]
 }

@@ -17,540 +17,1028 @@
     "Day 20"
   ],
   "learningObjectives": [
-    "Explain Stacks and Queues with interview-grade clarity",
-    "Implement Stacks and Queues solutions in clean Java",
-    "Choose the right pattern and justify complexity",
-    "Handle boundary cases without brittle logic",
-    "Use this topic to solve coding-round problems confidently",
-    "Communicate trade-offs using concrete examples"
+    "Choose stack, queue, deque, or heap for a problem’s traversal order",
+    "Implement parentheses and monotonic stack patterns in Java",
+    "Explain Java API pitfalls (Stack, PriorityQueue, bounded queues)",
+    "Model backpressure with offer/poll and blocking queues",
+    "Use iterative DFS where recursion depth is risky",
+    "Relate queues to production metrics (depth, lag, age)"
   ],
   "sections": [
     {
       "type": "why",
-      "title": "Why Stacks and Queues matters",
-      "content": "Stacks and queues help model constrained processing order: LIFO for undo-style flow and FIFO for scheduling pipelines.\n\nThis day is central to DSA interviews because it combines coding speed with reasoning quality. Interviewers usually evaluate three things:\n1. Can you identify the right pattern quickly?\n2. Can you explain why the approach is correct?\n3. Can you reason about complexity and edge cases?\n\nMonotonic patterns, queue/stack emulation, and boundary handling.\n\nA high-quality answer should include:\n- concise approach summary,\n- small dry-run,\n- complexity analysis,\n- one alternative approach and trade-off.\n\nBy the end of Day 22, you should be able to solve representative problems and explain your decisions with confidence."
+      "title": "Why this topic shows up in real interviews",
+      "content": "Stacks and queues are the two disciplining orders behind half of interview patterns and half of service plumbing. When you see **DFS**, you are seeing a stack; when you see **BFS** or fair work distribution, you are seeing a queue. Interviewers care whether you pick the right **end** of the structure and whether you know Java’s **ArrayDeque** is the default hammer—not the legacy **Stack** class and not a **PriorityQueue** when you need FIFO.\n\nIn production, queues carry **backpressure**: bounded queues block, drop, or reject when producers outrun consumers. Misunderstanding `offer` versus `add` is how you get either silent data loss or surprise exceptions under spike traffic. Stacks show up in parsers, undo buffers, and explicit recursion flattening—anywhere you need **last-writer-wins** behavior with deterministic order.\n\nMonotonic stacks look exotic until you realize they are just **scheduling deferred work**: each element waits until a stronger signal arrives, then resolves in amortized constant time. That mental model maps to “daily temperatures,” histogram rectangles, and nested string decoding—not just trivia.\n\nOn call, “queue depth climbing” is a symptom language. Pair it with **consumer lag** and **oldest message age** to decide if you scale consumers, shard topics, or fix a poison message. The structures you memorize for interviews are the same ones you read in metrics dashboards.\n\nFinally, **thread-safe** choices matter: a plain `ArrayDeque` in a multi-threaded handler races; concurrent queues exist for a reason. Saying “I’ll synchronize later” is how incidents start."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Stacks and Queues",
-      "content": "### Why this topic matters now\nStacks and queues help model constrained processing order: LIFO for undo-style flow and FIFO for scheduling pipelines.\n\n### Core interview mental model\nFor Stacks and Queues, first identify the problem family, then map it to a known pattern. Pattern-first thinking reduces random trial-and-error.\n\n### Implementation guidance\n1. Write the simplest correct version first.\n2. Validate using one normal and one edge case.\n3. Improve complexity only after correctness is locked.\n4. Refactor to readable helper methods.\n\n### Complexity and trade-off lens\nDo not state complexity by memory. Derive it from operations performed. Mention time + space and where each cost comes from.\n\n### Common failure mode\nMost failures in Stacks and Queues are not syntax errors. They come from broken invariants, weak boundary checks, or unclear state tracking.\n\n### Interview speaking template\n- \"I considered X because...\"\n- \"The invariant is...\"\n- \"Per iteration we do..., so complexity is...\"\n- \"An alternative would be..., but I chose this due to...\"\n\n### Production relevance\nEven outside interviews, these patterns improve throughput, latency, and correctness in backend data processing tasks.\n\n### Satyverse — deeper path (theory → practice)\n**Stack = LIFO** — parentheses, DFS iterative, monotonic stack for next-greater-element.\n\n**Queue = FIFO** — BFS levels, task scheduling; `Deque` for both ends (`ArrayDeque` preferred over `Stack` class).\n\n**PriorityQueue** is heap-backed — O(log n) insert; not a stable queue for fairness unless you tie-break."
+      "title": "Stacks and Queues — theory that sticks",
+      "content": "### Plain-language overview\n\nA **stack** is LIFO: push/pop at one end. A **queue** is FIFO: enqueue at tail, dequeue from head. A **deque** generalizes both. Interviews use these for bracket matching, BFS layers, monotonic windows, and parsing. Production uses them in work queues, backpressure, and event loops.\n\n**Interview angle:** say whether you need **LIFO** (DFS, recursion unrolling) or **FIFO** (BFS, fair scheduling).\n\n### Stack — core operations\n\n| Op | Typical cost (array impl) |\n| --- | --- |\n| push | O(1) amortized |\n| pop | O(1) |\n| peek | O(1) |\n\n**Interview angle:** **ArrayDeque** is preferred over **Stack** class (legacy, synchronized).\n\n### Queue — core operations\n\n| Op | ArrayDeque | LinkedList |\n| --- | --- | --- |\n| offer/poll ends | O(1) | O(1) |\n| random access | no | slow walk |\n\n**Interview angle:** for pure queue, **ArrayDeque** avoids node allocation churn.\n\n### Deque use cases\n\nSliding window max (monotonic deque), palindrome checks, work-stealing schedulers. Both ends O(1).\n\n**Interview angle:** monotonic deque maintains candidates in increasing/decreasing order for next-greater-element problems.\n\n### Monotonic stack intuition\n\nFor **next greater element**, keep a stack of indices with decreasing values; popping resolves answers when a larger value arrives—amortized O(n).\n\n**Interview angle:** each element pushed/popped once.\n\n### Balanced parentheses pattern\n\nPush opens, on close pop must match top; end stack empty. Extends to tags and custom pairs.\n\n**Interview angle:** map close→open or switch on char.\n\n### Recursion unrolling\n\nCall stack **is** a stack; iterative DFS uses explicit **Deque** to control depth and avoid overflow.\n\n**Interview angle:** iterative can be safer for deep graphs.\n\n### Bounded queues and backpressure\n\nFixed-capacity queues block, drop, or signal when full—ties to reactive streams and rate limiting.\n\n**Interview angle:** mention **offer** vs **add** non-blocking behavior.\n\n### Java API pitfalls\n\n**Stack** legacy; **LinkedList** as queue allocates per node; **PriorityQueue** is **not** FIFO—it is a heap.\n\n**Interview angle:** never use **PriorityQueue** when you need fair FIFO.\n\n### Complexity summary\n\n| Structure | Peek ends | Notes |\n| --- | --- | --- |\n| Stack | one | LIFO |\n| Queue | head/tail | FIFO |\n| Heap PQ | min/max | ordered, not arrival order |\n\n### Production mapping\n\nThread pools, async event loops, breadcrumb stacks for undo, parser stacks for JSON/XML.\n\n**Interview angle:** bounded queues protect memory under spikes.\n\n### 60-second story\n\n“I pick stack vs queue by traversal order: DFS→stack, BFS→queue. I use **ArrayDeque** for both ends unless I need priorities—then heap. For parentheses I map closing symbols and guard empty pop. For monotonic problems I explain each element enters/leaves stack once—O(n).”\n\n### Stacks and queues — discipline layer 1\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 1 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 1, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 2\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 2 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 2, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 3\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 3 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 3, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 4\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 4 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 4, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 5\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 5 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 5, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 6\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 6 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 6, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 7\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 7 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 7, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 8\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 8 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 8, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 9\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 9 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 9, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 10\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 10 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 10, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 11\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 11 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 11, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 12\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 12 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 12, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 13\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 13 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 13, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 14\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 14 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 14, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 15\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 15 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 15, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 16\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 16 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 16, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 17\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 17 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 17, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 18\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 18 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 18, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 19\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 19 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 19, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 20\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 20 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 20, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 21\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 21 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 21, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 22\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 22 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 22, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 23\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 23 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 23, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 24\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 24 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 24, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Stacks and queues — discipline layer 25\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 25 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 25, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n"
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "Stacks and Queues — basic",
       "language": "java",
       "filename": "Day22Basic.java",
-      "code": "package arch.day22;\n\nimport java.util.*;\n\npublic class Day22Basic {\n    public static void main(String[] args) {\n        Deque<String> st = new ArrayDeque<>();\n        st.push(\"a\");\n        st.push(\"b\");\n        System.out.println(st.pop() + st.pop());\n    }\n}",
       "level": "basic",
-      "output": "ba\n",
-      "description": "Stack (Deque): LIFO push/pop for bracket matching."
+      "description": "Deterministic prints: reference shapes for dominant operations and common complexity classes.",
+      "code": "package arch.day22;\n\nimport java.util.*;\n\npublic class Day22Basic {\n\n    public static void main(String[] args) {\n        Deque<Integer> st = new ArrayDeque<>();\n        st.push(1);\n        st.push(2);\n        st.push(3);\n        System.out.println(\"=== Stack LIFO pop order ===\");\n        while (!st.isEmpty()) {\n            System.out.print(st.pop() + (st.isEmpty() ? \"\" : \" \"));\n        }\n        System.out.println();\n        Deque<Integer> q = new ArrayDeque<>();\n        q.offer(1);\n        q.offer(2);\n        q.offer(3);\n        System.out.println(\"=== Queue FIFO poll order ===\");\n        while (!q.isEmpty()) {\n            System.out.print(q.poll() + (q.isEmpty() ? \"\" : \" \"));\n        }\n        System.out.println();\n    }\n}\n",
+      "output": "=== Stack LIFO pop order ===\n3 2 1\n=== Queue FIFO poll order ===\n1 2 3\n"
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "Stacks and Queues — intermediate",
       "language": "java",
       "filename": "Day22Intermediate.java",
-      "code": "package arch.day22;\n\nimport java.util.*;\n\npublic class Day22Intermediate {\n    public static void main(String[] args) {\n        Queue<Integer> q = new ArrayDeque<>();\n        q.add(1); q.add(2); q.add(3);\n        System.out.println(q.poll());\n        System.out.println(q.peek());\n    }\n}",
       "level": "intermediate",
-      "output": "1\n2\n",
-      "description": "Queue: FIFO with ArrayDeque — task scheduling order."
+      "description": "Four labeled scenarios comparing approaches with different asymptotic costs.",
+      "code": "package arch.day22;\n\nimport java.util.*;\n\npublic class Day22Intermediate {\n\n    static boolean balanced(String s) {\n        Deque<Character> st = new ArrayDeque<>();\n        for (char c : s.toCharArray()) {\n            if (c == '(' || c == '[' || c == '{') {\n                st.push(c);\n            } else if (c == ')' || c == ']' || c == '}') {\n                if (st.isEmpty()) return false;\n                char o = st.pop();\n                if (!match(o, c)) return false;\n            }\n        }\n        return st.isEmpty();\n    }\n\n    static boolean match(char o, char cl) {\n        return (o == '(' && cl == ')') || (o == '[' && cl == ']') || (o == '{' && cl == '}');\n    }\n\n    public static void main(String[] args) {\n        // --- Scenario 1: balanced ---\n        System.out.println(\"--- Scenario 1: balanced ---\");\n        System.out.println(balanced(\"([]){}\"));\n        System.out.println();\n\n        // --- Scenario 2: unbalanced early ---\n        System.out.println(\"--- Scenario 2: extra close ---\");\n        System.out.println(balanced(\"())\"));\n        System.out.println();\n\n        // --- Scenario 3: unbalanced leftover open ---\n        System.out.println(\"--- Scenario 3: leftover open ---\");\n        System.out.println(balanced(\"(([]\"));\n        System.out.println();\n\n        // --- Scenario 4: deque both ends ---\n        System.out.println(\"--- Scenario 4: deque as stack+queue ---\");\n        Deque<Integer> d = new ArrayDeque<>();\n        d.offerLast(1);\n        d.offerLast(2);\n        d.offerFirst(0);\n        System.out.println(\"pollFirst=\" + d.pollFirst() + \" pollLast=\" + d.pollLast());\n    }\n}\n",
+      "output": "--- Scenario 1: balanced ---\ntrue\n\n--- Scenario 2: extra close ---\nfalse\n\n--- Scenario 3: leftover open ---\nfalse\n\n--- Scenario 4: deque as stack+queue ---\npollFirst=0 pollLast=2\n"
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "Stacks and Queues — advanced",
       "language": "java",
       "filename": "Day22Advanced.java",
-      "code": "package arch.day22;\n\nimport java.util.*;\n\npublic class Day22Advanced {\n    public static void main(String[] args) {\n        int[] a = {1, 3, -1, -3, 5, 3};\n        int k = 3;\n        Deque<Integer> dq = new ArrayDeque<>();\n        for (int i = 0; i < a.length; i++) {\n            while (!dq.isEmpty() && a[dq.peekLast()] <= a[i]) dq.pollLast();\n            dq.addLast(i);\n            while (dq.peekFirst() <= i - k) dq.pollFirst();\n            if (i >= k - 1) System.out.print(a[dq.peekFirst()] + \" \");\n        }\n        System.out.println();\n    }\n}",
       "level": "advanced",
-      "output": "3 3 5 5 3 \n",
-      "description": "Monotonic deque: sliding window maximum pattern (sketch)."
+      "description": "Separated blocks plus printed decision tables for recurrences and tradeoffs.",
+      "code": "package arch.day22;\n\nimport java.util.*;\n\npublic class Day22Advanced {\n\n    static int[] nextGreater(int[] a) {\n        int n = a.length;\n        int[] ans = new int[n];\n        Arrays.fill(ans, -1);\n        Deque<Integer> st = new ArrayDeque<>();\n        for (int i = 0; i < n; i++) {\n            while (!st.isEmpty() && a[i] > a[st.peek()]) {\n                ans[st.pop()] = a[i];\n            }\n            st.push(i);\n        }\n        return ans;\n    }\n\n    public static void main(String[] args) {\n        // === Block 1: monotonic stack demo ===\n        System.out.println(\"=== Block 1: next greater element ===\");\n        int[] a = { 2, 1, 3, 4 };\n        System.out.println(Arrays.toString(nextGreater(a)));\n        System.out.println();\n\n        // === Block 2: API choice table ===\n        System.out.println(\"=== Block 2: Java deques vs legacy ===\");\n        System.out.println(\"Need              | Prefer\");\n        System.out.println(\"------------------|------------------\");\n        System.out.println(\"LIFO stack        | ArrayDeque (not java.util.Stack)\");\n        System.out.println(\"FIFO queue        | ArrayDeque offer/poll\");\n        System.out.println(\"Priority order    | PriorityQueue (not FIFO)\");\n        System.out.println(\"Thread-safe queue | ArrayBlockingQueue / concurrent\");\n        System.out.println();\n\n        // === Block 3: complexity ===\n        System.out.println(\"=== Block 3: monotonic stack ===\");\n        System.out.println(\"Each index pushed/popped once -> O(n) time for next-greater sweep.\");\n    }\n}\n",
+      "output": "=== Block 1: next greater element ===\n[3, 3, 4, -1]\n\n=== Block 2: Java deques vs legacy ===\nNeed              | Prefer\n------------------|------------------\nLIFO stack        | ArrayDeque (not java.util.Stack)\nFIFO queue        | ArrayDeque offer/poll\nPriority order    | PriorityQueue (not FIFO)\nThread-safe queue | ArrayBlockingQueue / concurrent\n\n=== Block 3: monotonic stack ===\nEach index pushed/popped once -> O(n) time for next-greater sweep.\n"
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 22",
+      "title": "Balanced parentheses — stack protocol",
       "diagramType": "sequence",
-      "description": "Visual model for Stacks & Queues",
-      "plantuml": "@startuml\ntitle Day 22 - Stacks & Queues\nactor Learner\nrectangle \"Satyverse(Satyam Parmar) Lesson Engine\" {\n  component \"Theory\"\n  component \"Code\"\n  component \"Exercise\"\n  component \"Interview Drill\"\n}\nLearner --> \"Theory\" : Understand concept\nLearner --> \"Code\" : Implement\nLearner --> \"Exercise\" : Practice\nLearner --> \"Interview Drill\" : Explain\n@enduml"
+      "description": "Parser, char stream, stack store, matcher, and error reporter for bracket protocol.",
+      "plantuml": "@startuml\ntitle Parentheses validation with stack\n\nparticipant \"Parser\" as P\nparticipant \"char[]\\ninput\" as I\nparticipant \"ArrayDeque\\nstack\" as S\nparticipant \"match()\\nrules\" as M\nparticipant \"Result\" as R\nparticipant \"Caller\" as C\n\nC -> P : validate(s)\nloop each char c\n  P -> I : read c\n  alt c is opener\n    P -> S : push(c)\n  else c is closer\n    P -> S : pop() ? empty\n    S -> M : check pairs\n    alt mismatch / empty\n      M -> R : false\n    end\n  end\nend\nP -> S : must be empty\nS -> R : true/false\nR -> C : balanced?\n@enduml"
     },
     {
       "type": "pitfalls",
-      "title": "Common Pitfalls",
+      "title": "Common pitfalls",
       "items": [
-        "Using Stack class blindly instead of modern Deque.",
-        "Forgetting to pop stale elements in monotonic structures.",
-        "Confusing stack top with queue front/back semantics.",
-        "Missing empty-structure guards before peek/pop.",
-        "Not proving amortized complexity for repeated push/pop patterns."
+        "Using **`java.util.Stack`** for new code — legacy synchronized Vector stack; surprises in API; prefer **`ArrayDeque`**; detect in review checklists; fix by swapping type and method names (`push`/`pop`/`peek`).",
+        "Treating **`PriorityQueue` as FIFO** — orders by comparator, not arrival; subtle ordering bugs in schedulers; unit tests with ties; fix with explicit `LinkedList`/`ArrayDeque` when fairness required.",
+        "Calling **`add` on a bounded queue** under load — throws `IllegalStateException` instead of signaling backpressure; outages during spikes; fix with `offer`, metrics on false returns, and rejection policies.",
+        "Popping from an **empty** stack on malformed input — `EmptyStackException` or null handling bugs; fuzz inputs; fix by checking `isEmpty()` before pop and returning false for invalid parentheses.",
+        "**Recursive DFS** on deep graphs — `StackOverflowError`; looks fine in small tests; fix with explicit `Deque` stack simulation.",
+        "Using **`null` elements** in `ArrayDeque` — `NullPointerException`; accidental sentinel; fix by using Optional wrappers or separate boolean flags.",
+        "Monotonic stack **index vs value confusion** — wrong width calculations in histogram; off-by-one rectangles; fix by storing indices and reading heights from array on pop.",
+        "Ignoring **memory** of unbounded `LinkedList` work queues — GC churn under burst; heap pressure; fix with bounded `ArrayBlockingQueue` and consumer scaling."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - Stacks and Queues Problem Drill",
-      "problem": "Solve one medium-level Java problem for **Stacks and Queues**.\n\nRequirements:\n1. Provide brute-force and optimized approach.\n2. Explain why optimized approach is better.\n3. Include one edge-case test.\n4. Print expected output for sample input.\n5. State time/space complexity clearly.",
+      "title": "Practice exercise",
+      "difficulty": "Intermediate",
+      "problem": "**Day 22 — Stacks and queues (assignment alignment)**\n\n1. Implement a method `boolean balanced(String s)` supporting `()`, `[]`, and `{}`.\n2. Return `false` on **extra** closing bracket or **mismatched** type.\n3. Return `false` if any **open** bracket remains after scan.\n4. In `main`, print results for `([]){}`, `())`, and `(([]` each on its own line (`true`/`false`).",
       "hints": [
-        "State invariant before writing loops/recursion.",
-        "Dry-run on paper for one non-trivial case.",
-        "Only optimize after baseline correctness."
+        "Use `ArrayDeque<Character>` as stack; push opens.",
+        "On close, if stack empty or top mismatch, return false.",
+        "After loop, stack must be empty for true."
       ],
-      "solution": "package arch.day22;\nimport java.util.*;\n\npublic class Day22Advanced {\n    static record Review(String topic, int confidence, boolean needsRevision) {}\n\n    public static void main(String[] args) {\n        List<Review> reviews = List.of(\n            new Review(\"Stacks & Queues\", 72, true),\n            new Review(\"Coding Practice\", 81, false),\n            new Review(\"Interview Explanation\", 68, true)\n        );\n\n        long reviseCount = reviews.stream().filter(Review::needsRevision).count();\n        int avg = (int) reviews.stream().mapToInt(Review::confidence).average().orElse(0);\n\n        System.out.println(\"avgConfidence = \" + avg);\n        System.out.println(\"needsRevision = \" + reviseCount);\n    }\n}\n",
-      "difficulty": "Intermediate"
+      "solution": "package arch.day22;\n\nimport java.util.*;\n\npublic class Day22Exercise {\n\n    static boolean balanced(String s) {\n        Deque<Character> st = new ArrayDeque<>();\n        for (char c : s.toCharArray()) {\n            if (c == '(' || c == '[' || c == '{') {\n                st.push(c);\n            } else if (c == ')' || c == ']' || c == '}') {\n                if (st.isEmpty()) return false;\n                char o = st.pop();\n                if (!((o == '(' && c == ')') || (o == '[' && c == ']') || (o == '{' && c == '}'))) {\n                    return false;\n                }\n            }\n        }\n        return st.isEmpty();\n    }\n\n    public static void main(String[] args) {\n        System.out.println(balanced(\"([]){}\"));\n        System.out.println(balanced(\"())\"));\n        System.out.println(balanced(\"(([]\"));\n    }\n}\n"
     },
     {
       "type": "interview",
       "title": "Interview Drill",
       "conceptual": [
         {
-          "question": "What is a stack (LIFO)?",
-          "answer": "Push/pop at one end—call stacks, undo, DFS.",
+          "question": "Stack vs queue use?",
+          "answer": "Stack for LIFO (DFS, undo, parentheses); queue for FIFO (BFS, fair scheduling).",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Push/pop at one end—call stacks, undo, DFS. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Push/pop at one end—call stacks, undo, DFS. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is a queue (FIFO)?",
-          "answer": "Enqueue tail, dequeue head—BFS, scheduling.",
+          "question": "Why avoid java.util.Stack?",
+          "answer": "Legacy, extends Vector, synchronized overhead; prefer ArrayDeque.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Enqueue tail, dequeue head—BFS, scheduling. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Enqueue tail, dequeue head—BFS, scheduling. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Java Deque implementations?",
-          "answer": "ArrayDeque (resizable array) often preferred over LinkedList for stacks/queues.",
+          "question": "Monotonic stack idea?",
+          "answer": "Maintain increasing/decreasing values/indices to resolve next-greater/smaller in one pass.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. ArrayDeque (resizable array) often preferred over LinkedList for stacks/queues. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. ArrayDeque (resizable array) often preferred over LinkedList for stacks/queues. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is priority queue?",
-          "answer": "Heap-backed—poll returns highest (or lowest) priority element.",
+          "question": "PriorityQueue vs queue?",
+          "answer": "PQ orders by priority comparator—not arrival order.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Heap-backed—poll returns highest (or lowest) priority element. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Heap-backed—poll returns highest (or lowest) priority element. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Stack with min in O(1)?",
-          "answer": "Auxiliary stack tracking min so far or store pairs (value, currentMin).",
+          "question": "BlockingQueue purpose?",
+          "answer": "Coordinate producers/consumers with backpressure.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Auxiliary stack tracking min so far or store pairs (value, currentMin). When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Auxiliary stack tracking min so far or store pairs (value, currentMin). Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Monotonic stack use?",
-          "answer": "Next greater element, histogram problems—maintain increasing/decreasing property.",
+          "question": "Deque advantages?",
+          "answer": "O(1) both ends; sliding window max, palindrome deque checks.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Next greater element, histogram problems—maintain increasing/decreasing property. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Next greater element, histogram problems—maintain increasing/decreasing property. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "BFS with queue on graph?",
-          "answer": "Level-order tree traversal; shortest path in unweighted graph.",
+          "question": "Recursive DFS vs explicit stack?",
+          "answer": "Same order; explicit avoids deep recursion stack overflow.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Level-order tree traversal; shortest path in unweighted graph. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Level-order tree traversal; shortest path in unweighted graph. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Circular buffer / ring queue?",
-          "answer": "Fixed-size array with head/tail pointers—bounded queues.",
+          "question": "Balanced parentheses algorithm?",
+          "answer": "Push opens, on close pop and match; empty invalid early; end stack empty.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Fixed-size array with head/tail pointers—bounded queues. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Fixed-size array with head/tail pointers—bounded queues. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "BlockingQueue in Java?",
-          "answer": "put/take block for producer-consumer—ArrayBlockingQueue, LinkedBlockingQueue.",
+          "question": "Min stack design?",
+          "answer": "Parallel stack tracking current minimum at each depth.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. put/take block for producer-consumer—ArrayBlockingQueue, LinkedBlockingQueue. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. put/take block for producer-consumer—ArrayBlockingQueue, LinkedBlockingQueue. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Stack from queues (interview puzzle)?",
-          "answer": "Possible with two queues—simulate recursion depth.",
+          "question": "ArrayDeque limitations?",
+          "answer": "Not thread-safe; no null elements; resizable array ring.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Possible with two queues—simulate recursion depth. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Possible with two queues—simulate recursion depth. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is double-ended queue Deque?",
-          "answer": "addFirst/addLast—used in sliding window max.",
+          "question": "Histogram rectangle stack?",
+          "answer": "Pop when lower height seen; compute width with index stack.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. addFirst/addLast—used in sliding window max. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. addFirst/addLast—used in sliding window max. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Compare Stack class vs Deque?",
-          "answer": "Stack legacy; prefer Deque interface—Stack extends Vector oddly.",
+          "question": "When LinkedList queue?",
+          "answer": "Rarely hot paths; nodes allocate; ArrayDeque often better.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Stack legacy; prefer Deque interface—Stack extends Vector oddly. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Stack legacy; prefer Deque interface—Stack extends Vector oddly. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Amortized cost ArrayDeque push?",
-          "answer": "O(1) amortized resizing.",
+          "question": "offer vs add?",
+          "answer": "offer signals failure on full bounded queue; add throws.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. O(1) amortized resizing. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. O(1) amortized resizing. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is work-stealing deque?",
-          "answer": "ForkJoinPool parallel tasks—advanced concurrency structure.",
+          "question": "Concurrent queues?",
+          "answer": "java.util.concurrent for producer/consumer without external lock in many cases.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. ForkJoinPool parallel tasks—advanced concurrency structure. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. ForkJoinPool parallel tasks—advanced concurrency structure. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Priority queue with custom comparator?",
-          "answer": "Min vs max heap depending on comparator order.",
+          "question": "Stack in expression eval?",
+          "answer": "Operands and operators; RPN especially simple.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Stacks and Queues** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Min vs max heap depending on comparator order. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Stacks and Queues**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Min vs max heap depending on comparator order. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Memory of explicit stack?",
+          "answer": "Still O(depth) but controllable vs hidden recursion frames.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "60-second story?",
+          "answer": "Pick deque/stack/queue by traversal; ArrayDeque default; monotonic stack for next greater; parentheses with map; mention PQ not FIFO.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "codeBased": [
         {
-          "question": "Valid parentheses with stack.",
-          "answer": "Push opens, pop match closes; stack empty at end.",
+          "question": "Next greater O(n)?",
+          "answer": "Monotonic decreasing stack of indices.",
           "followUps": [
             {
-              "question": "What breaks if this **Stacks and Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Push opens, pop match closes; stack empty at end. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Push opens, pop match closes; stack empty at end. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Evaluate RPN with stack.",
-          "answer": "Push numbers, apply operator to two pops.",
+          "question": "Daily temperatures?",
+          "answer": "Stack stores indices awaiting warmer temp.",
           "followUps": [
             {
-              "question": "What breaks if this **Stacks and Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Push numbers, apply operator to two pops. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Push numbers, apply operator to two pops. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "BFS level-order binary tree using Queue.",
-          "answer": "Queue of nodes; poll, offer children.",
+          "question": "Largest rectangle histogram?",
+          "answer": "Stack bars increasing heights; compute area on pop.",
           "followUps": [
             {
-              "question": "What breaks if this **Stacks and Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Queue of nodes; poll, offer children. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Queue of nodes; poll, offer children. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Sliding window maximum with deque.",
-          "answer": "Remove smaller indices from back when new larger arrives; pop front if out of window.",
+          "question": "Reverse polish evaluation?",
+          "answer": "Stack numbers; on operator pop two apply push.",
           "followUps": [
             {
-              "question": "What breaks if this **Stacks and Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Remove smaller indices from back when new larger arrives; pop front if out of window. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Remove smaller indices from back when new larger arrives; pop front if out of window. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Min stack push/pop/getMin all O(1).",
-          "answer": "Auxiliary stack or store (val, min) pairs.",
+          "question": "Decode nested string k[...]?",
+          "answer": "Stack of repeat counts and built strings.",
           "followUps": [
             {
-              "question": "What breaks if this **Stacks and Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Auxiliary stack or store (val, min) pairs. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Auxiliary stack or store (val, min) pairs. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Implement queue using two stacks.",
-          "answer": "Transfer between stacks amortized O(1).",
+          "question": "Remove duplicate adjacent chars?",
+          "answer": "Stack push if top differs.",
           "followUps": [
             {
-              "question": "What breaks if this **Stacks and Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Transfer between stacks amortized O(1). Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Transfer between stacks amortized O(1). When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Next greater element array—monotonic stack.",
-          "answer": "Iterate, pop while smaller than current.",
+          "question": "Implement queue using stacks?",
+          "answer": "Two stacks amortized O(1) enqueue/dequeue.",
           "followUps": [
             {
-              "question": "What breaks if this **Stacks and Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Iterate, pop while smaller than current. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Iterate, pop while smaller than current. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "DFS iterative using stack.",
-          "answer": "Push nodes, pop explore—mimic recursion.",
+          "question": "Implement stack using queues?",
+          "answer": "Rotate queue on push—O(n) per push naive.",
           "followUps": [
             {
-              "question": "What breaks if this **Stacks and Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Push nodes, pop explore—mimic recursion. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Push nodes, pop explore—mimic recursion. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "PriorityQueue top K elements.",
-          "answer": "Maintain size-k max-heap for smallest K or min-heap for largest K—clarify.",
+          "question": "Binary tree inorder iterative?",
+          "answer": "Stack simulate recursion left spine.",
           "followUps": [
             {
-              "question": "What breaks if this **Stacks and Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Maintain size-k max-heap for smallest K or min-heap for largest K—clarify. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Maintain size-k max-heap for smallest K or min-heap for largest K—clarify. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "ArrayDeque as stack—methods?",
-          "answer": "push/pop/peek vs addLast/removeLast/peekLast—be consistent.",
+          "question": "Validate BST preorder serialization?",
+          "answer": "Stack lower/upper bounds per frame.",
           "followUps": [
             {
-              "question": "What breaks if this **Stacks and Queues** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. push/pop/peek vs addLast/removeLast/peekLast—be consistent. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. push/pop/peek vs addLast/removeLast/peekLast—be consistent. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Exclusive time of functions?",
+          "answer": "Stack active function with timeline parsing.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Asteroid collision?",
+          "answer": "Stack simulates signed masses collisions.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "seniorScenario": [
         {
-          "question": "Unbounded queue in messaging—risk?",
-          "answer": "Memory exhaustion; need back-pressure, bounded queues, drop policies.",
+          "question": "Service queue backlog grows—what structurally?",
+          "answer": "Check consumer rate, bounded queue policy, drop vs block, scale-out consumers.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Stacks and Queues** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Memory exhaustion; need back-pressure, bounded queues, drop policies. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Memory exhaustion; need back-pressure, bounded queues, drop policies. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Priority inversion with priority queue threads?",
-          "answer": "OS scheduling issue—mention when discussing real-time systems.",
+          "question": "Thread pool unbounded queue risk?",
+          "answer": "Memory exhaustion; use bounded queues + rejection policy.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Stacks and Queues** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: OS scheduling issue—mention when discussing real-time systems. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. OS scheduling issue—mention when discussing real-time systems. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Kafka partition as queue—ordering?",
-          "answer": "Per-partition order; parallel consumers across partitions.",
+          "question": "Event loop starvation?",
+          "answer": "Fair scheduling, prioritize queues, split hot tasks.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Stacks and Queues** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Per-partition order; parallel consumers across partitions. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Per-partition order; parallel consumers across partitions. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Web server request queue overload?",
-          "answer": "503, load shedding, circuit breakers—queue depth metrics.",
+          "question": "Parser stack depth attack?",
+          "answer": "Limit nesting depth, streaming parser, stack depth counters.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Stacks and Queues** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: 503, load shedding, circuit breakers—queue depth metrics. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. 503, load shedding, circuit breakers—queue depth metrics. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Thread pool queue full—policy?",
-          "answer": "CallerRuns, Abort, Discard—each has trade-offs.",
+          "question": "Metrics for queue health?",
+          "answer": "Depth, age of oldest item, consumer lag, drop counts.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Stacks and Queues** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: CallerRuns, Abort, Discard—each has trade-offs. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. CallerRuns, Abort, Discard—each has trade-offs. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Stack trace depth in production errors?",
-          "answer": "Deep recursion or framework bug—monitor stack size.",
+          "question": "Choosing concurrent deque?",
+          "answer": "Work-stealing for fork/join; lock-free for low contention producers.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Stacks and Queues** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Deep recursion or framework bug—monitor stack size. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Deep recursion or framework bug—monitor stack size. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "wrongAnswers": [
-        "Queue always means FIFO in every Java class named Queue.",
-        "PriorityQueue guarantees FIFO among equal priorities.",
-        "java.util.Stack is the preferred stack implementation today.",
-        "ArrayDeque cannot be used as a LIFO stack.",
-        "BFS always uses a stack data structure.",
-        "BlockingQueue never blocks the caller."
+        "PriorityQueue is a FIFO queue — false: it orders by priority.",
+        "Stack is always thread-safe in Java — false: ArrayDeque is not; old Stack synchronized but still discouraged.",
+        "BFS uses stack — false: uses queue.",
+        "Monotonic stack is O(n^2) always — false: amortized linear.",
+        "Deque cannot be used as stack — false: ArrayDeque supports push/pop at head.",
+        "Balanced parentheses only needs counting — false: must match type of bracket.",
+        "LinkedList is always faster than ArrayDeque for queues — false: allocation overhead often loses.",
+        "Unbounded queues are always safe — false: can exhaust memory under overload."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ Quiz — Stacks and Queues",
+      "description": "Thirty questions on LIFO/FIFO, ArrayDeque, monotonic stacks, heaps vs queues, and concurrency.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "Stack discipline is:",
+          "options": {
+            "A": "FIFO",
+            "B": "LIFO",
+            "C": "Random",
+            "D": "Priority"
+          },
+          "answer": "B",
+          "explanation": "Last in, first out."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "Queue discipline is:",
+          "options": {
+            "A": "LIFO",
+            "B": "FIFO",
+            "C": "Heap order",
+            "D": "Sorted"
+          },
+          "answer": "B",
+          "explanation": "First in, first out."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "code",
+          "question": "Preferred Java LIFO (non-sync):",
+          "options": {
+            "A": "java.util.Stack",
+            "B": "ArrayDeque",
+            "C": "Vector",
+            "D": "LinkedHashMap"
+          },
+          "answer": "B",
+          "explanation": "Stack class is legacy; ArrayDeque is efficient."
+        },
+        {
+          "id": 4,
+          "level": "basic",
+          "category": "code",
+          "question": "`PriorityQueue` order:",
+          "options": {
+            "A": "FIFO arrival",
+            "B": "Heap priority",
+            "C": "LIFO only",
+            "D": "Sorted by insertion index always"
+          },
+          "answer": "B",
+          "explanation": "Not fair queue—ordered by comparator."
+        },
+        {
+          "id": 5,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Monotonic stack amortized time for next-greater:",
+          "options": {
+            "A": "O(n^2)",
+            "B": "O(n)",
+            "C": "O(log n)",
+            "D": "O(1) always"
+          },
+          "answer": "B",
+          "explanation": "Each index pushed/popped once."
+        },
+        {
+          "id": 6,
+          "level": "intermediate",
+          "category": "code",
+          "question": "DFS iterative uses:",
+          "options": {
+            "A": "Queue",
+            "B": "Stack",
+            "C": "PriorityQueue",
+            "D": "TreeSet"
+          },
+          "answer": "B",
+          "explanation": "Explore last discovered first."
+        },
+        {
+          "id": 7,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "BFS level-order uses:",
+          "options": {
+            "A": "Stack",
+            "B": "Queue",
+            "C": "Heap",
+            "D": "Array only"
+          },
+          "answer": "B",
+          "explanation": "FIFO processes by distance layers."
+        },
+        {
+          "id": 8,
+          "level": "intermediate",
+          "category": "code",
+          "question": "`offer` vs `add` on bounded queue:",
+          "options": {
+            "A": "Same always",
+            "B": "offer false if full; add throws",
+            "C": "add never throws",
+            "D": "offer throws"
+          },
+          "answer": "B",
+          "explanation": "Queue interface contract difference."
+        },
+        {
+          "id": 9,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Min stack O(1) push/pop/min:",
+          "options": {
+            "A": "Impossible",
+            "B": "Auxiliary stack of mins",
+            "C": "Sort each op",
+            "D": "Binary tree only"
+          },
+          "answer": "B",
+          "explanation": "Track parallel min history."
+        },
+        {
+          "id": 10,
+          "level": "advanced",
+          "category": "code",
+          "question": "Largest rectangle in histogram uses:",
+          "options": {
+            "A": "Only BFS",
+            "B": "Monotonic stack of heights/indices",
+            "C": "Trie",
+            "D": "Union-find only"
+          },
+          "answer": "B",
+          "explanation": "Classic stack bar expansion."
+        },
+        {
+          "id": 11,
+          "level": "basic",
+          "category": "code",
+          "question": "Balanced parentheses empty stack end:",
+          "options": {
+            "A": "Always true",
+            "B": "Required for valid",
+            "C": "Ignore",
+            "D": "Optional"
+          },
+          "answer": "B",
+          "explanation": "No unmatched opens remain."
+        },
+        {
+          "id": 12,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Deque allows:",
+          "options": {
+            "A": "One end only",
+            "B": "Efficient both ends",
+            "C": "Middle delete O(1) always",
+            "D": "Random access O(1)"
+          },
+          "answer": "B",
+          "explanation": "Double-ended queue operations."
+        },
+        {
+          "id": 13,
+          "level": "advanced",
+          "category": "code",
+          "question": "Trapping rain water can use:",
+          "options": {
+            "A": "Two pointers on heights",
+            "B": "Only O(n^2)",
+            "C": "Cannot O(n)",
+            "D": "BFS on graph"
+          },
+          "answer": "A",
+          "explanation": "Stack or two-pointer variants O(n)."
+        },
+        {
+          "id": 14,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Reverse polish eval uses:",
+          "options": {
+            "A": "Stack of operands",
+            "B": "Queue",
+            "C": "Heap",
+            "D": "Sort"
+          },
+          "answer": "A",
+          "explanation": "Push numbers, apply ops on pop pair."
+        },
+        {
+          "id": 15,
+          "level": "basic",
+          "category": "theory",
+          "question": "Call stack depth limits:",
+          "options": {
+            "A": "Infinite",
+            "B": "Bounded—StackOverflowError",
+            "C": "1 frame max",
+            "D": "Heap sized"
+          },
+          "answer": "B",
+          "explanation": "Deep recursion risks overflow."
+        },
+        {
+          "id": 16,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Work-stealing deque purpose:",
+          "options": {
+            "A": "Single thread only",
+            "B": "Load balance parallel tasks",
+            "C": "Sort keys",
+            "D": "Persist to disk"
+          },
+          "answer": "B",
+          "explanation": "Thieves take from opposite end."
+        },
+        {
+          "id": 17,
+          "level": "advanced",
+          "category": "theory",
+          "question": "BlockingQueue `put` when full:",
+          "options": {
+            "A": "Always drops",
+            "B": "May block until space",
+            "C": "Throws NPE",
+            "D": "Sorts elements"
+          },
+          "answer": "B",
+          "explanation": "Backpressure mechanism."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Daily temperatures monotonic stack output:",
+          "options": {
+            "A": "Next warmer day distance",
+            "B": "Sort temperatures",
+            "C": "Median",
+            "D": "BST height"
+          },
+          "answer": "A",
+          "explanation": "Indices waiting for warmer future."
+        },
+        {
+          "id": 19,
+          "level": "basic",
+          "category": "code",
+          "question": "`peek` on empty stack:",
+          "options": {
+            "A": "null for ArrayDeque peek",
+            "B": "Always 0",
+            "C": "Throws always",
+            "D": "undefined in Java"
+          },
+          "answer": "A",
+          "explanation": "`peek` returns null; `element` throws."
+        },
+        {
+          "id": 20,
+          "level": "advanced",
+          "category": "code",
+          "question": "Serialize tree via preorder with null markers uses:",
+          "options": {
+            "A": "Stack for iterative traversal",
+            "B": "Only queue",
+            "C": "Impossible",
+            "D": "Heap sort"
+          },
+          "answer": "A",
+          "explanation": "DFS encoding patterns."
+        },
+        {
+          "id": 21,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "LinkedList as queue downside vs ArrayDeque:",
+          "options": {
+            "A": "Better always",
+            "B": "Node allocation overhead",
+            "C": "No difference",
+            "D": "Cannot poll"
+          },
+          "answer": "B",
+          "explanation": "Hot queues prefer array-backed."
+        },
+        {
+          "id": 22,
+          "level": "basic",
+          "category": "theory",
+          "question": "Stack for undo buffers:",
+          "options": {
+            "A": "FIFO",
+            "B": "LIFO matches undo order",
+            "C": "Random",
+            "D": "Heap"
+          },
+          "answer": "B",
+          "explanation": "Last action undone first."
+        },
+        {
+          "id": 23,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Remove adjacent duplicates string stack:",
+          "options": {
+            "A": "Push if not equal top",
+            "B": "Sort string",
+            "C": "Binary search",
+            "D": "O(n^3)"
+          },
+          "answer": "A",
+          "explanation": "Linear scan with stack collapse."
+        },
+        {
+          "id": 24,
+          "level": "advanced",
+          "category": "code",
+          "question": "Maximal rectangle in binary matrix:",
+          "options": {
+            "A": "Per-row histogram + stack",
+            "B": "Only brute force",
+            "C": "O(1)",
+            "D": "BFS each cell"
+          },
+          "answer": "A",
+          "explanation": "Histogram stack technique stacked rows."
+        },
+        {
+          "id": 25,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "`ConcurrentLinkedQueue` vs `ArrayBlockingQueue`:",
+          "options": {
+            "A": "Same",
+            "B": "Blocking vs unbounded behavior differs",
+            "C": "Both block always",
+            "D": "Neither thread-safe"
+          },
+          "answer": "B",
+          "explanation": "Choose by backpressure needs."
+        },
+        {
+          "id": 26,
+          "level": "basic",
+          "category": "code",
+          "question": "Valid stack sequence of push/pop 1..n:",
+          "options": {
+            "A": "Any permutation",
+            "B": "Catalan-countable pop orders",
+            "C": "Only sorted",
+            "D": "Impossible"
+          },
+          "answer": "B",
+          "explanation": "Classic combinatorics—interview trivia."
+        },
+        {
+          "id": 27,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Decode string `3[a2[c]]` pattern:",
+          "options": {
+            "A": "Stack of counts and partial strings",
+            "B": "Regex only",
+            "C": "Sort",
+            "D": "Heap"
+          },
+          "answer": "A",
+          "explanation": "Nested repetition with stacks."
+        },
+        {
+          "id": 28,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Amortized O(1) for multipop stack?",
+          "options": {
+            "A": "Impossible",
+            "B": "Aggregate analysis credits pops to pushes",
+            "C": "Always O(n) per pop",
+            "D": "Requires heap"
+          },
+          "answer": "B",
+          "explanation": "Each item popped once after one push."
+        },
+        {
+          "id": 29,
+          "level": "basic",
+          "category": "theory",
+          "question": "Queue for fair scheduling:",
+          "options": {
+            "A": "LIFO fair",
+            "B": "FIFO approximates FCFS",
+            "C": "Heap always fair",
+            "D": "Stack fair"
+          },
+          "answer": "B",
+          "explanation": "FIFO preserves arrival order."
+        },
+        {
+          "id": 30,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Sliding window max uses:",
+          "options": {
+            "A": "Deque storing useful candidates",
+            "B": "Stack only",
+            "C": "PQ O(n log n) always",
+            "D": "HashMap only"
+          },
+          "answer": "A",
+          "explanation": "Monotonic deque keeps max candidates."
+        }
       ]
     },
     {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Area | Day 22 Focus | Quick Reminder | Gotcha |\n|---|---|---|---|\n| Pattern | Stacks and Queues | Choose pattern before coding | Random brute-force wandering |\n| Correctness | Invariant + edge checks | Dry-run once | Off-by-one / null-state miss |\n| Complexity | Derive, do not guess | Mention time + space | Incomplete complexity answers |\n| Communication | Explain decisions | Use trade-off statement | Generic textbook responses |\n| Quality | Readable Java methods | Stable naming + small units | Clever but fragile logic |"
+      "title": "Stacks and Queues — cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n| --- | --- | --- |\n| Stack | LIFO end | DFS, undo, parens |\n| Queue | FIFO ends | BFS, fair work |\n| Deque | both ends O(1) | window max, steal |\n| ArrayDeque | array-backed | prefer over Stack |\n| PriorityQueue | heap order | not FIFO |\n| offer vs add | bounded failure | backpressure |\n| Monotonic stack | next greater | each idx once |\n| BlockingQueue | put blocks | producer/consumer |\n| Min stack | aux mins | O(1) min |\n| Iterative DFS | explicit stack | avoid SO |\n| Histogram | stack widths | largest rect |\n| RPN eval | operand stack | operators pop 2 |\n| Concurrent Q | j.u.c | thread-safe picks |\n| Work stealing | deque per worker | fork/join |\n| Parse nesting | stack depth | limit attacks |"
     }
   ]
 }

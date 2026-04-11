@@ -1,0 +1,3 @@
+export const theoryTitle = "Spring Boot internals";
+
+export const theoryBase = "### Overview\n**SpringApplication** bootstraps context. **Auto-configuration** via **@EnableAutoConfiguration** and **META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports** (Boot 3).\n\n**Interview angle:** conditions (@ConditionalOn*) gate beans.\n\n### Starters\nPOM deps pull transitive config.\n\n### Fat jar\n**Launcher** loads nested jars.\n\n### Actuator\nOperational endpoints separate from app.\n\n### 60-second story\n\"I explain auto-config conditions, starters, and how to exclude auto-config.\"\n";

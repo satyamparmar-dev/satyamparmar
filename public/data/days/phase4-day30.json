@@ -17,666 +17,1028 @@
     "Day 28"
   ],
   "learningObjectives": [
-    "Explain Streams API with advanced interview clarity",
-    "Implement Streams API in Java with clean design",
-    "Identify runtime and maintainability trade-offs",
-    "Avoid high-frequency failure patterns in Streams API",
-    "Apply this concept to production-oriented scenarios",
-    "Communicate decisions with concise technical reasoning"
+    "Build lazy stream pipelines with correct terminal operations",
+    "Use groupingBy and downstream collectors for aggregates",
+    "Choose primitive streams and short-circuiting where appropriate",
+    "Explain parallel stream risks and spliterator basics",
+    "Avoid common mutability and performance pitfalls",
+    "Relate stream design to observability and batch jobs"
   ],
   "sections": [
     {
       "type": "why",
-      "title": "Why Streams API matters",
-      "content": "Streams encourage declarative transformations and are powerful when state and side-effects are controlled.\n\nDay 30 is an inflection point between writing code that \"works\" and writing code that scales in maintainability and production reliability.\n\nInterviewers at this stage evaluate:\n1. Internal understanding (how it works, not only syntax)\n2. Trade-off reasoning (why this approach over alternatives)\n3. Runtime impact (performance, memory, contention, failure behavior)\n\nThis topic should be explained with one minimal example, one realistic failure mode, and one mitigation strategy.\n\nIf you can defend your design choices clearly, you will stand out from syntax-only answers."
+      "title": "Why this topic shows up in real interviews",
+      "content": "Streams changed how Java developers express data processing, but they did not change the hard parts: correctness under nulls, performance under large data, and thread safety under parallelism. Interviews reward candidates who can describe the pipeline model clearly and who know when a for-loop is still the better tool for readability or debugging.\n\nCollectors such as groupingBy with downstream averagingDouble show up constantly in service code that aggregates metrics, builds reports, or prepares DTO maps. Understanding downstream collectors separates someone who memorized stream syntax from someone who can design maintainable aggregation logic.\n\nParallel streams are a recurring footgun. Production incidents have come from mutating shared structures inside forEach or from assuming parallelStream is a free performance boost. You should articulate fork-join overhead, spliterator characteristics, and when to prefer explicit ExecutorService models instead.\n\nShort-circuiting operations and lazy fusion are not trivia. They explain why order of operations matters, why infinite streams need limits, and why some pipelines allocate less than a naive reading would suggest. That mental model helps when profiling unexpected allocations.\n\nTeams also wrestle with API evolution: collectors that return unmodifiable collections, changes in default immutability, and migration away from mutable shared lists. Being able to discuss backward compatibility shows maturity beyond tutorial examples.\n\nOn call, high CPU in stream-heavy batch jobs often points to accidental quadratic behavior, parallel misuse, or accidental boxing in hot loops. Your story should connect metrics to pipeline shape and to a concrete fix: different collector, primitive stream, or batching strategy."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Streams API",
-      "content": "### Day 30: Streams API\nStreams encourage declarative transformations and are powerful when state and side-effects are controlled.\n\n### Java 8+ stream vocabulary (practice each)\n- **Source:** `stream()`, `Stream.of`, `IntStream.range`, `Files.lines` (close with try-with-resources).\n- **Intermediate:** `filter`, `map`, `flatMap`, `distinct`, `sorted`, `peek` (debug only), `limit`, `skip`, `takeWhile`/`dropWhile` (Java 9+).\n- **Terminal:** `forEach`, `collect`, `reduce`, `min`/`max`, `count`, `anyMatch`/`allMatch`/`noneMatch`, `findFirst`/`findAny`.\n- **Collectors:** `toList()` (Java 16+) or `toCollection(ArrayList::new)`, `joining`, `groupingBy`, `partitioningBy`, `mapping`, `summarizingInt`, `averagingInt`, `toMap`, `collectingAndThen`.\n\n### Deep understanding goal\nYou should understand the mechanism, its boundaries, and when to avoid it.\n\n### Practical workflow\n1. Implement baseline.\n2. Add correctness checks and edge handling.\n3. Evaluate runtime cost.\n4. Refactor for readability and team adoption.\n\n### Interview quality bar\n- Explain what problem it solves.\n- Show concise Java example.\n- Name one pitfall and one mitigation.\n- State complexity/runtime implication.\n- Compare with one alternative.\n\n### Production angle\nIn backend systems, this concept influences throughput, reliability, and debugging speed. A good implementation must support operations, not just local correctness.\n\n### Quick self-check\n- Can I explain this in <60 seconds?\n- Can I code it from memory?\n- Can I describe a failure scenario and fix?\n\n### Satyverse — deeper path (theory → practice)\n**Lambda = functional interface instance** — target type inferred from context; effectively final variables captured.\n\n**Method references** shorten code when signature matches (`String::length`).\n\n**Streams are not always faster** — overhead for tiny collections; parallel streams need CPU-bound work and thread-safe operations.\n\n**Avoid side effects** in `map` — use `peek` only for debugging; collect with clear combiners for parallel."
+      "title": "Streams API — theory that sticks",
+      "content": "### Plain-language overview\n\nThe **Streams API** processes sequences with **declarative** pipelines: source, zero or more **intermediate** operations, one **terminal**. Interviews focus on **lazy evaluation**, **stateless vs stateful** ops, and correct **Collector** use.\n\n**Interview angle:** intermediate ops build pipeline; nothing runs until terminal.\n\n### Sources and characteristics\n\n| Source | Notes |\n| --- | --- |\n| collection.stream() | Ordered if collection ordered |\n| Stream.of / iterate / generate | Finite or infinite care |\n\n**Interview angle:** **parallelStream** only when safe and profiled.\n\n### Intermediate operations\n\nmap, filter, flatMap, distinct, sorted, peek—lazy and fused by spliterator.\n\n### Terminal operations\n\ncollect, reduce, forEach, count, min/max—trigger execution and often consume stream.\n\n### Collectors\n\n**groupingBy** partitions; **mapping** nested; **averagingDouble** for numeric mean; **joining** strings.\n\n### Optional in streams\n\n**findFirst** returns Optional; avoid get() without isPresent—use orElse.\n\n### Primitive streams\n\n**IntStream** avoids boxing; **mapToObj** when boxing needed.\n\n### Error handling\n\nChecked exceptions inside lambdas need wrapping—design helpers.\n\n### Production angle\n\nLarge datasets: mind memory with **toList** materialization; consider batching I/O.\n\n### 60-second story\n\n“I pick sequential streams for clarity. I know lazy fusion. I use groupingBy + downstream collectors for aggregates. I avoid parallel unless thread-safe and measured. I handle Optional from find* carefully.”\n\n### Streams API — engineering layer 1\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 1 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 1, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 2\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 2 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 2, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 3\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 3 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 3, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 4\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 4 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 4, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 5\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 5 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 5, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 6\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 6 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 6, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 7\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 7 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 7, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 8\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 8 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 8, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 9\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 9 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 9, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 10\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 10 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 10, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 11\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 11 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 11, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 12\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 12 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 12, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 13\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 13 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 13, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 14\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 14 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 14, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 15\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 15 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 15, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 16\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 16 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 16, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 17\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 17 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 17, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 18\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 18 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 18, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 19\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 19 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 19, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 20\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 20 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 20, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 21\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 21 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 21, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 22\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 22 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 22, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 23\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 23 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 23, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 24\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 24 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 24, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### Streams API — engineering layer 25\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 25 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 25, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n"
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "Streams API — basic",
       "language": "java",
       "filename": "Day30Basic.java",
-      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Basic {\n    public static void main(String[] args) {\n        List<Integer> xs = List.of(1, 2, 3, 4, 5);\n        int s = xs.stream().filter(x -> x % 2 == 0).mapToInt(x -> x).sum();\n        System.out.println(s);\n    }\n}",
       "level": "basic",
-      "output": "6\n",
-      "description": "Stream pipeline: filter + map + collect — declarative collection processing."
+      "description": "Deterministic reference: core syntax and one minimal end-to-end print.",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Basic {\n\n    public static void main(String[] args) {\n        int sum = IntStream.rangeClosed(1, 5).sum();\n        long cnt = Stream.of(\"a\", \"bb\", \"ccc\").filter(s -> s.length() > 1).count();\n        System.out.println(sum);\n        System.out.println(cnt);\n    }\n}\n",
+      "output": "15\n2\n"
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "Streams API — intermediate",
       "language": "java",
       "filename": "Day30Intermediate.java",
-      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Intermediate {\n    record Emp(String dept, String name) {}\n\n    public static void main(String[] args) {\n        List<Emp> es = List.of(new Emp(\"eng\", \"a\"), new Emp(\"eng\", \"b\"), new Emp(\"hr\", \"c\"));\n        Map<String, List<Emp>> g = es.stream().collect(Collectors.groupingBy(Emp::dept));\n        System.out.println(g.get(\"eng\").size());\n    }\n}",
       "level": "intermediate",
-      "output": "2\n",
-      "description": "groupingBy: partition employees by department string."
+      "description": "Four labeled scenarios contrasting APIs, safety, and readability.",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Intermediate {\n\n    record Employee(String name, String dept, double salary) {}\n\n    public static void main(String[] args) {\n        List<Employee> staff =\n                List.of(\n                        new Employee(\"A\", \"eng\", 100),\n                        new Employee(\"B\", \"eng\", 200),\n                        new Employee(\"C\", \"sales\", 150),\n                        new Employee(\"D\", \"sales\", 250));\n\n        // --- Scenario 1: filter eng ---\n        System.out.println(\"--- Scenario 1: eng count ---\");\n        System.out.println(staff.stream().filter(e -> e.dept().equals(\"eng\")).count());\n        System.out.println();\n\n        // --- Scenario 2: map names ---\n        System.out.println(\"--- Scenario 2: names ---\");\n        staff.stream().map(Employee::name).sorted().forEach(s -> System.out.print(s));\n        System.out.println();\n        System.out.println();\n\n        // --- Scenario 3: avg salary by dept ---\n        System.out.println(\"--- Scenario 3: avg by dept ---\");\n        Map<String, Double> avg =\n                staff.stream()\n                        .collect(\n                                Collectors.groupingBy(\n                                        Employee::dept, Collectors.averagingDouble(Employee::salary)));\n        avg.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(e -> System.out.println(e.getKey() + \"=\" + e.getValue()));\n        System.out.println();\n\n        // --- Scenario 4: max salary ---\n        System.out.println(\"--- Scenario 4: max ---\");\n        System.out.println(staff.stream().mapToDouble(Employee::salary).max().orElse(0));\n    }\n}\n",
+      "output": "--- Scenario 1: eng count ---\n2\n\n--- Scenario 2: names ---\nABCD\n\n--- Scenario 3: avg by dept ---\neng=150.0\nsales=200.0\n\n--- Scenario 4: max ---\n250.0\n"
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "Streams API — advanced",
       "language": "java",
       "filename": "Day30Advanced.java",
-      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Advanced {\n    public static void main(String[] args) {\n        List<String> lines = List.of(\"a b\", \"c\");\n        List<String> words = lines.stream()\n            .flatMap(line -> Arrays.stream(line.split(\"\\\\s+\")))\n            .toList();\n        System.out.println(words);\n    }\n}",
       "level": "advanced",
-      "output": "[a, b, c]\n",
-      "description": "flatMap: one-to-many transform — lines to words."
+      "description": "Three blocks plus printed decision or reference table for tradeoffs.",
+      "code": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Advanced {\n\n    public static void main(String[] args) {\n        // === Block 1: flatMap words ===\n        System.out.println(\"=== Block 1: flatMap ===\");\n        List<List<String>> nested = List.of(List.of(\"a\", \"b\"), List.of(\"c\"));\n        System.out.println(nested.stream().flatMap(Collection::stream).count());\n        System.out.println();\n\n        // === Block 2: reduce ===\n        System.out.println(\"=== Block 2: reduce ===\");\n        System.out.println(Stream.of(1, 2, 3).reduce(0, Integer::sum));\n        System.out.println();\n\n        // === Block 3: collector cheat ===\n        System.out.println(\"=== Block 3: collectors ===\");\n        System.out.println(\"groupingBy + averagingDouble for means\");\n        System.out.println(\"partitioningBy for boolean split\");\n        System.out.println(\"teeing for two aggregates\");\n    }\n}\n",
+      "output": "=== Block 1: flatMap ===\n3\n\n=== Block 2: reduce ===\n6\n\n=== Block 3: collectors ===\ngroupingBy + averagingDouble for means\npartitioningBy for boolean split\nteeing for two aggregates\n"
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 30",
+      "title": "Stream pipeline execution",
       "diagramType": "sequence",
-      "description": "Visual model for Streams API",
-      "plantuml": "@startuml\ntitle Day 30 - Streams API\nactor Learner\nrectangle \"Satyverse(Satyam Parmar) Lesson Engine\" {\n  component \"Theory\"\n  component \"Code\"\n  component \"Exercise\"\n  component \"Interview Drill\"\n}\nLearner --> \"Theory\" : Understand concept\nLearner --> \"Code\" : Implement\nLearner --> \"Exercise\" : Practice\nLearner --> \"Interview Drill\" : Explain\n@enduml"
+      "description": "Spliterator splits; ops fused; terminal pulls or short-circuits.",
+      "plantuml": "@startuml\ntitle Day 30 — stream terminal triggers work\n\nparticipant App as A\nparticipant \"Stream\\npipeline\" as P\nparticipant Spliterator as S\nparticipant Op as O\nparticipant Collector as C\n\nA -> P : build intermediate chain\nA -> P : terminal collect\nloop pull while not done\n  P -> S : tryAdvance\n  S -> O : accept element\n  O -> O : map/filter fuse\nend\nP -> C : supplier/accumulator/combiner/finisher\nC -> A : result Map/List\nalt short-circuit\n  P -> S : stop early\\nfindFirst\nend\n@enduml"
     },
     {
       "type": "pitfalls",
-      "title": "Common Pitfalls",
+      "title": "Common pitfalls",
       "items": [
-        "Using streams with side effects that break declarative style.",
-        "Forgetting terminal operation and expecting execution.",
-        "Overusing parallel streams without profiling.",
-        "Collecting inefficiently for large datasets.",
-        "Using stream chains where simple loops are clearer."
+        "**Modifying source during stream** — ConcurrentModificationException; collect first or use concurrent structures.",
+        "**parallelStream on non-thread-safe collections** — silent corruption; use concurrent sources or sequential.",
+        "**Infinite stream without limit** — hung thread; add limit/short-circuit.",
+        "**Heavy work in peek** — hidden side effects; extract explicit loop.",
+        "**Boxed streams in hot paths** — GC pressure; mapToInt/Double/Long.",
+        "**Wrong collector merge for toMap** — IllegalStateException; supply merge function.",
+        "**Assuming encounter order in parallel findFirst** — nondeterminism; use findAny or sequential.",
+        "**Logging PII inside map** — compliance risk; redact outside pipeline."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - Streams API Applied Drill",
-      "problem": "Implement a Java solution demonstrating **Streams API** in a realistic scenario.\n\nRequirements:\n1. Include one baseline approach and one improvement.\n2. Handle one edge/failure case.\n3. Add short explanation of trade-off.\n4. Keep code readable and testable.\n5. Show sample output.",
+      "title": "Practice exercise",
+      "difficulty": "Intermediate",
+      "problem": "**Day 30 — Streams API (assignment alignment)**\n\n1. Define **record Employee(String name, String department, double salary)** (or equivalent fields).\n2. Build a **List<Employee>** with at least **4** rows spanning **two departments** with different salaries.\n3. Use **Collectors.groupingBy** on department with **Collectors.averagingDouble(Employee::salary)**.\n4. Print each **department** and **average salary** on its own line, **sorted by department name**.",
       "hints": [
-        "Start with correctness before optimization.",
-        "Use explicit naming for intent clarity.",
-        "Write one failure-case test and expected result."
+        "entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(...)",
+        "Use String.format or println with key + '=' + value for clarity.",
+        "Package arch.day30, class Day30Exercise."
       ],
-      "solution": "package arch.day30;\nimport java.util.*;\n\npublic class Day30Advanced {\n    static record Review(String topic, int confidence, boolean needsRevision) {}\n\n    public static void main(String[] args) {\n        List<Review> reviews = List.of(\n            new Review(\"Streams API\", 72, true),\n            new Review(\"Coding Practice\", 81, false),\n            new Review(\"Interview Explanation\", 68, true)\n        );\n\n        long reviseCount = reviews.stream().filter(Review::needsRevision).count();\n        int avg = (int) reviews.stream().mapToInt(Review::confidence).average().orElse(0);\n\n        System.out.println(\"avgConfidence = \" + avg);\n        System.out.println(\"needsRevision = \" + reviseCount);\n    }\n}\n",
-      "difficulty": "Intermediate"
+      "solution": "package arch.day30;\n\nimport java.util.*;\nimport java.util.stream.*;\n\npublic class Day30Exercise {\n\n    record Employee(String name, String department, double salary) {}\n\n    public static void main(String[] args) {\n        List<Employee> staff =\n                List.of(\n                        new Employee(\"A\", \"eng\", 100),\n                        new Employee(\"B\", \"eng\", 200),\n                        new Employee(\"C\", \"sales\", 150),\n                        new Employee(\"D\", \"sales\", 250));\n        Map<String, Double> avg =\n                staff.stream()\n                        .collect(\n                                Collectors.groupingBy(\n                                        Employee::department, Collectors.averagingDouble(Employee::salary)));\n        avg.entrySet().stream()\n                .sorted(Map.Entry.comparingByKey())\n                .forEach(e -> System.out.println(e.getKey() + \"=\" + e.getValue()));\n    }\n}\n"
     },
     {
       "type": "interview",
       "title": "Interview Drill",
       "conceptual": [
         {
-          "question": "What is the Streams API?",
-          "answer": "Declarative pipeline on data: source, intermediate ops (lazy), terminal op (eager).",
+          "question": "Lazy streams?",
+          "answer": "Intermediate ops build pipeline; terminal executes.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Declarative pipeline on data: source, intermediate ops (lazy), terminal op (eager). When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Declarative pipeline on data: source, intermediate ops (lazy), terminal op (eager). Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Lazy vs eager?",
-          "answer": "Intermediate ops build pipeline; nothing runs until terminal like collect/count/forEach.",
+          "question": "Stateful intermediate?",
+          "answer": "distinct/sorted may buffer; memory cost.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Intermediate ops build pipeline; nothing runs until terminal like collect/count/forEach. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Intermediate ops build pipeline; nothing runs until terminal like collect/count/forEach. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "What is spliterator?",
-          "answer": "Splitting iterator backing parallel streams—correct splitting affects speedup.",
+          "question": "groupingBy?",
+          "answer": "Collector partitioning to map of lists.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Splitting iterator backing parallel streams—correct splitting affects speedup. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Splitting iterator backing parallel streams—correct splitting affects speedup. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Parallel stream pitfalls?",
-          "answer": "Side effects, order, wrong data structures (LinkedList), fork/join overhead small data.",
+          "question": "Downstream collector?",
+          "answer": "Nested collector inside groupingBy.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Side effects, order, wrong data structures (LinkedList), fork/join overhead small data. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Side effects, order, wrong data structures (LinkedList), fork/join overhead small data. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "map vs flatMap?",
-          "answer": "map 1:1; flatMap one-to-many flattening streams.",
+          "question": "averagingDouble?",
+          "answer": "Computes mean per group.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. map 1:1; flatMap one-to-many flattening streams. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. map 1:1; flatMap one-to-many flattening streams. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "collect Collectors.groupingBy?",
-          "answer": "Downstream collectors for aggregation—powerful but verbose.",
+          "question": "Why avoid parallelStream default?",
+          "answer": "ForkJoin overhead; thread safety.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Downstream collectors for aggregation—powerful but verbose. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Downstream collectors for aggregation—powerful but verbose. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Optional from findFirst?",
-          "answer": "Represents absence safely—avoid get without isPresent or orElse.",
+          "question": "Short-circuit ops?",
+          "answer": "findFirst anyMatch limit stop early.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Represents absence safely—avoid get without isPresent or orElse. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Represents absence safely—avoid get without isPresent or orElse. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Primitive streams IntStream?",
-          "answer": "Avoid boxing in numeric pipelines—mapToInt etc.",
+          "question": "Spliterator?",
+          "answer": "Splitable iterator backing streams.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Avoid boxing in numeric pipelines—mapToInt etc. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Avoid boxing in numeric pipelines—mapToInt etc. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "What is Stream builder?",
-          "answer": "When source not standard collection—Stream.builder().",
+          "question": "Immutable collectors?",
+          "answer": "toList unmodifiable vs collectingAndThen.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. When source not standard collection—Stream.builder(). Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. When source not standard collection—Stream.builder(). Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Short-circuit operations?",
-          "answer": "anyMatch, findFirst may not process entire stream—lazy benefit.",
+          "question": "flatMap vs map?",
+          "answer": "flatMap flattens one level of streams.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. anyMatch, findFirst may not process entire stream—lazy benefit. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. anyMatch, findFirst may not process entire stream—lazy benefit. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Stateful intermediate operations distinct/sorted?",
-          "answer": "May buffer entire stream—memory cost.",
+          "question": "reduce requirements?",
+          "answer": "Associative for parallel correctness.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. May buffer entire stream—memory cost. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. May buffer entire stream—memory cost. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "peek for debugging?",
-          "answer": "Side-effect only debugging—not guaranteed to execute if optimized away—don’t rely for logic.",
+          "question": "peek misuse?",
+          "answer": "Side effects in peek hurt clarity.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Side-effect only debugging—not guaranteed to execute if optimized away—don’t rely for logic. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Side-effect only debugging—not guaranteed to execute if optimized away—don’t rely for logic. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Iterator vs Stream?",
-          "answer": "Stream not reusable; Iterator imperative—choose per style and performance.",
+          "question": "Stream reuse?",
+          "answer": "Create new stream from source.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Stream not reusable; Iterator imperative—choose per style and performance. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Stream not reusable; Iterator imperative—choose per style and performance. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "try-with-resources on streams?",
-          "answer": "Files.lines must be closed—use try-with-resources.",
+          "question": "Primitive streams?",
+          "answer": "IntStream avoids boxing.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Files.lines must be closed—use try-with-resources. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Files.lines must be closed—use try-with-resources. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Custom collector?",
-          "answer": "Collector.of supplier/accumulator/combiner/finisher for domain aggregation.",
+          "question": "Collectors.joining?",
+          "answer": "Delimiter prefix suffix string build.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Streams API** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Collector.of supplier/accumulator/combiner/finisher for domain aggregation. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Streams API**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Collector.of supplier/accumulator/combiner/finisher for domain aggregation. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
+            }
+          ]
+        },
+        {
+          "question": "Comparator.comparing chain?",
+          "answer": "thenComparing tie-break.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
+            },
+            {
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
+            }
+          ]
+        },
+        {
+          "question": "60-second streams story?",
+          "answer": "Lazy, terminal, collectors, groupingBy, parallel caution.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
+            },
+            {
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         }
       ],
       "codeBased": [
         {
-          "question": "Filter map collect to list.",
-          "answer": "list.stream().filter(...).map(...).toList() (Java 16+).",
+          "question": "Avg salary by department?",
+          "answer": "groupingBy(dept, averagingDouble(salary)).",
           "followUps": [
             {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. list.stream().filter(...).map(...).toList() (Java 16+). Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. list.stream().filter(...).map(...).toList() (Java 16+). Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "groupingBy count frequency.",
-          "answer": "Collectors.groupingBy(Function.identity(), Collectors.counting())",
+          "question": "Top N by field?",
+          "answer": "sorted comparator limit collect.",
           "followUps": [
             {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Collectors.groupingBy(Function.identity(), Collectors.counting()) Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Collectors.groupingBy(Function.identity(), Collectors.counting()) Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "partitioningBy predicate.",
-          "answer": "Map<Boolean, List<T>> split.",
+          "question": "Partition adults?",
+          "answer": "partitioningBy(age>=18).",
           "followUps": [
             {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Map<Boolean, List<T>> split. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Map<Boolean, List<T>> split. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "reduce sum ints.",
-          "answer": "IntStream.of(1,2,3).sum()",
+          "question": "Map names length?",
+          "answer": "map(String::length).",
           "followUps": [
             {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. IntStream.of(1,2,3).sum() Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. IntStream.of(1,2,3).sum() Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "flatMap lines to words.",
-          "answer": "lines.stream().flatMap(line -> Arrays.stream(line.split(\"\\\\s+\")))",
+          "question": "Count distinct?",
+          "answer": "map distinct count.",
           "followUps": [
             {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. lines.stream().flatMap(line -> Arrays.stream(line.split(\"\\\\s+\"))) Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. lines.stream().flatMap(line -> Arrays.stream(line.split(\"\\\\s+\"))) Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "distinct sort limit pipeline.",
-          "answer": "Know order of ops matters.",
+          "question": "Sum salaries double?",
+          "answer": "mapToDouble sum.",
           "followUps": [
             {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Know order of ops matters. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Know order of ops matters. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "findFirst Optional handling.",
-          "answer": "ifPresent or orElseThrow.",
+          "question": "Group then count?",
+          "answer": "groupingBy(fn, counting()).",
           "followUps": [
             {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. ifPresent or orElseThrow. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. ifPresent or orElseThrow. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "parallel stream wrong for LinkedList why?",
-          "answer": "Poor splitting—use ArrayList.",
+          "question": "String join?",
+          "answer": "Collectors.joining(\",\").",
           "followUps": [
             {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Poor splitting—use ArrayList. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Poor splitting—use ArrayList. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Collect joining delimiter.",
-          "answer": "Collectors.joining(\",\")",
+          "question": "First matching?",
+          "answer": "filter findFirst Optional.",
           "followUps": [
             {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Collectors.joining(\",\") When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Collectors.joining(\",\") Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "mapToObj boxed to List<String>.",
-          "answer": "IntStream.range(0,n).mapToObj(i -> ...)",
+          "question": "toMap duplicate key?",
+          "answer": "merge function or throwing supplier.",
           "followUps": [
             {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. IntStream.range(0,n).mapToObj(i -> ...) Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. IntStream.range(0,n).mapToObj(i -> ...) When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "groupingBy classifier + downstream averagingInt?",
-          "answer": "Collectors.groupingBy(Emp::dept, Collectors.averagingInt(Emp::getSalary))",
+          "question": "Generate sequence?",
+          "answer": "Stream.iterate seed op limit.",
           "followUps": [
             {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Collectors.groupingBy(Emp::dept, Collectors.averagingInt(Emp::getSalary)) Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Collectors.groupingBy(Emp::dept, Collectors.averagingInt(Emp::getSalary)) When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "partitioningBy vs groupingBy(Boolean)?",
-          "answer": "partitioningBy is for Predicate → Map<Boolean,List>; clearer for two buckets.",
+          "question": "Read lines file?",
+          "answer": "Files.lines path stream.",
           "followUps": [
             {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. partitioningBy is for Predicate → Map<Boolean,List>; clearer for two buckets. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. partitioningBy is for Predicate → Map<Boolean,List>; clearer for two buckets. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
-            }
-          ]
-        },
-        {
-          "question": "Collectors.mapping in nested grouping?",
-          "answer": "groupingBy(key, mapping(field, toSet())) for sets per group.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. groupingBy(key, mapping(field, toSet())) for sets per group. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. groupingBy(key, mapping(field, toSet())) for sets per group. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
-            }
-          ]
-        },
-        {
-          "question": "Stream.iterate seed UnaryOperator?",
-          "answer": "Stream.iterate(0, n -> n+1) infinite until limit — Java 9+ iterate with hasNext.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Stream.iterate(0, n -> n+1) infinite until limit — Java 9+ iterate with hasNext. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Stream.iterate(0, n -> n+1) infinite until limit — Java 9+ iterate with hasNext. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
-            }
-          ]
-        },
-        {
-          "question": "reduce identity vs Optional?",
-          "answer": "Two-arg reduce never empty Optional; one-arg empty stream → Optional.empty().",
-          "followUps": [
-            {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Two-arg reduce never empty Optional; one-arg empty stream → Optional.empty(). When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Two-arg reduce never empty Optional; one-arg empty stream → Optional.empty(). Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
-            }
-          ]
-        },
-        {
-          "question": "Why not collect(Collectors.toMap) without merge on dup keys?",
-          "answer": "IllegalStateException — supply merge function or use groupingBy.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. IllegalStateException — supply merge function or use groupingBy. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. IllegalStateException — supply merge function or use groupingBy. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
-            }
-          ]
-        },
-        {
-          "question": "IntStream.boxed() when?",
-          "answer": "Need Stream<Integer> for collect toList with generic collectors.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Need Stream<Integer> for collect toList with generic collectors. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Need Stream<Integer> for collect toList with generic collectors. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
-            }
-          ]
-        },
-        {
-          "question": "Files.lines Stream close?",
-          "answer": "try (Stream<String> s = Files.lines(path)) { ... } — terminal op closes in try-with-resources pattern.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. try (Stream<String> s = Files.lines(path)) { ... } — terminal op closes in try-with-resources pattern. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. try (Stream<String> s = Files.lines(path)) { ... } — terminal op closes in try-with-resources pattern. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
-            }
-          ]
-        },
-        {
-          "question": "sorted(Comparator) stable?",
-          "answer": "TimSort stable for reference types — equal elements keep relative order.",
-          "followUps": [
-            {
-              "question": "What breaks if this **Streams API** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. TimSort stable for reference types — equal elements keep relative order. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
-            },
-            {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. TimSort stable for reference types — equal elements keep relative order. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         }
       ],
       "seniorScenario": [
         {
-          "question": "Production OOM on giant Stream distinct?",
-          "answer": "Buffered uniqueness or external sort—don’t hold all keys in memory.",
+          "question": "OOM large toList?",
+          "answer": "Stream chunk or DB pagination.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Streams API** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Buffered uniqueness or external sort—don’t hold all keys in memory. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this scenario, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Buffered uniqueness or external sort—don’t hold all keys in memory. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Parallel stream in web request—risk?",
-          "answer": "Steals common ForkJoinPool—may starve other work; use custom pool.",
+          "question": "Logging in stream?",
+          "answer": "peek debug only; structured logging outside.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Streams API** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Steals common ForkJoinPool—may starve other work; use custom pool. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this scenario, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Steals common ForkJoinPool—may starve other work; use custom pool. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Database pagination vs Stream of all rows?",
-          "answer": "Don’t load entire table into Stream without chunking.",
+          "question": "Custom collector?",
+          "answer": "Collector.of supplier accumulator combiner finisher.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Streams API** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Don’t load entire table into Stream without chunking. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this scenario, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Don’t load entire table into Stream without chunking. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Logging inside stream peek in prod?",
-          "answer": "Noise and ordering issues—use proper tracing.",
+          "question": "Reactive vs streams?",
+          "answer": "Push async vs pull; choose per workload.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Streams API** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Noise and ordering issues—use proper tracing. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this scenario, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Noise and ordering issues—use proper tracing. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Migration from loops to streams readability?",
-          "answer": "Not always clearer—team style guide.",
+          "question": "JDK upgrade stream change?",
+          "answer": "Read release notes toList immutability.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Streams API** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Not always clearer—team style guide. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this scenario, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Not always clearer—team style guide. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Stream closed twice exception?",
-          "answer": "IllegalStateException—streams single-use.",
+          "question": "Profiling parallel?",
+          "answer": "JFR shows fork join; often not worth it.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Streams API** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: IllegalStateException—streams single-use. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this scenario, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. IllegalStateException—streams single-use. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         }
       ],
       "wrongAnswers": [
-        "Intermediate stream operations execute immediately when called.",
-        "Parallel streams always make code faster.",
-        "You can reuse a Stream after terminal operation.",
-        "peek is intended for business logic side effects.",
-        "map and flatMap are identical for collections of collections.",
-        "findAny always returns the first element in encounter order."
+        "Intermediate ops run immediately — false terminal triggers.",
+        "Stream can be iterated twice by default — false consumed.",
+        "parallelStream always faster — false.",
+        "peek should implement business rules — false.",
+        "groupingBy returns List always — false type param.",
+        "distinct needs Comparable — false uses equals/hash.",
+        "findFirst on parallel always deterministic — false unordered case.",
+        "collect can be intermediate — false terminal."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ Quiz — Streams API",
+      "description": "Thirty questions on pipelines, collectors, grouping, parallelism, and pitfalls.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "Intermediate stream ops are:",
+          "options": {
+            "A": "Lazy",
+            "B": "Eager always",
+            "C": "GC only",
+            "D": "Static"
+          },
+          "answer": "A",
+          "explanation": "Until terminal."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "Terminal example:",
+          "options": {
+            "A": "collect",
+            "B": "map",
+            "C": "filter",
+            "D": "peek"
+          },
+          "answer": "A",
+          "explanation": "Runs pipeline."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "theory",
+          "question": "Stream can be consumed:",
+          "options": {
+            "A": "Once",
+            "B": "Unlimited",
+            "C": "Twice default",
+            "D": "Only parallel"
+          },
+          "answer": "A",
+          "explanation": "Reuse source."
+        },
+        {
+          "id": 4,
+          "level": "intermediate",
+          "category": "code",
+          "question": "groupingBy returns:",
+          "options": {
+            "A": "Map of lists",
+            "B": "int",
+            "C": "Optional",
+            "D": "Thread"
+          },
+          "answer": "A",
+          "explanation": "Collector."
+        },
+        {
+          "id": 5,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "averagingDouble needs:",
+          "options": {
+            "A": "ToDoubleFunction",
+            "B": "Predicate",
+            "C": "Runnable",
+            "D": "Supplier"
+          },
+          "answer": "A",
+          "explanation": "Downstream collector."
+        },
+        {
+          "id": 6,
+          "level": "intermediate",
+          "category": "code",
+          "question": "flatMap purpose:",
+          "options": {
+            "A": "Flatten nested streams",
+            "B": "Sort only",
+            "C": "Parallel hint",
+            "D": "Lock"
+          },
+          "answer": "A",
+          "explanation": "One level stream."
+        },
+        {
+          "id": 7,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Stateful intermediate op example:",
+          "options": {
+            "A": "distinct sorted large",
+            "B": "map always stateful",
+            "C": "filter stateful always",
+            "D": "peek stateful"
+          },
+          "answer": "A",
+          "explanation": "May buffer."
+        },
+        {
+          "id": 8,
+          "level": "intermediate",
+          "category": "code",
+          "question": "partitioningBy splits on:",
+          "options": {
+            "A": "boolean predicate",
+            "B": "int key",
+            "C": "Comparator",
+            "D": "Time"
+          },
+          "answer": "A",
+          "explanation": "true/false map."
+        },
+        {
+          "id": 9,
+          "level": "basic",
+          "category": "theory",
+          "question": "parallelStream risk:",
+          "options": {
+            "A": "Thread safety of source",
+            "B": "None",
+            "C": "Faster always",
+            "D": "No fork join"
+          },
+          "answer": "A",
+          "explanation": "Shared mutation."
+        },
+        {
+          "id": 10,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Collectors.joining delimiter:",
+          "options": {
+            "A": "Concat strings",
+            "B": "Sum ints",
+            "C": "Average",
+            "D": "Group"
+          },
+          "answer": "A",
+          "explanation": "Terminal string."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "findFirst short-circuits:",
+          "options": {
+            "A": "Stops when found",
+            "B": "Always full scan",
+            "C": "Only parallel",
+            "D": "Never"
+          },
+          "answer": "A",
+          "explanation": "Short-circuit op."
+        },
+        {
+          "id": 12,
+          "level": "advanced",
+          "category": "code",
+          "question": "teeing collector:",
+          "options": {
+            "A": "Two collectors at once",
+            "B": "Deletes stream",
+            "C": "Sorts twice",
+            "D": "IO only"
+          },
+          "answer": "A",
+          "explanation": "Java 12+."
+        },
+        {
+          "id": 13,
+          "level": "intermediate",
+          "category": "code",
+          "question": "mapToInt avoids:",
+          "options": {
+            "A": "Boxing Integer",
+            "B": "Nulls",
+            "C": "Duplicates",
+            "D": "Sort"
+          },
+          "answer": "A",
+          "explanation": "Primitive stream."
+        },
+        {
+          "id": 14,
+          "level": "basic",
+          "category": "theory",
+          "question": "peek is for:",
+          "options": {
+            "A": "Side-effect debug",
+            "B": "Transform",
+            "C": "Aggregate",
+            "D": "Group"
+          },
+          "answer": "A",
+          "explanation": "Not core logic."
+        },
+        {
+          "id": 15,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Stream.empty terminal count:",
+          "options": {
+            "A": "0",
+            "B": "1",
+            "C": "Exception",
+            "D": "-1"
+          },
+          "answer": "A",
+          "explanation": "No elements."
+        },
+        {
+          "id": 16,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Spliterator characteristics ORDERED:",
+          "options": {
+            "A": "Encounter order defined",
+            "B": "Sorted always",
+            "C": "Parallel forbidden",
+            "D": "Mutable"
+          },
+          "answer": "A",
+          "explanation": "Characteristics."
+        },
+        {
+          "id": 17,
+          "level": "intermediate",
+          "category": "code",
+          "question": "reduce identity combiner parallel needs:",
+          "options": {
+            "A": "Associative op",
+            "B": "Any op",
+            "C": "subtract only",
+            "D": "String concat ok always"
+          },
+          "answer": "A",
+          "explanation": "Correct combine."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "toList Java 16+:",
+          "options": {
+            "A": "Unmodifiable list collector shortcut",
+            "B": "Mutable ArrayList always",
+            "C": "Set",
+            "D": "Map"
+          },
+          "answer": "A",
+          "explanation": "API note."
+        },
+        {
+          "id": 19,
+          "level": "basic",
+          "category": "code",
+          "question": "filter keeps:",
+          "options": {
+            "A": "Predicate true",
+            "B": "false",
+            "C": "all",
+            "D": "null only"
+          },
+          "answer": "A",
+          "explanation": "Boolean test."
+        },
+        {
+          "id": 20,
+          "level": "advanced",
+          "category": "code",
+          "question": "groupingBy concurrent collector:",
+          "options": {
+            "A": "groupingByConcurrent for concurrent map",
+            "B": "Same as serial always",
+            "C": "No such",
+            "D": "Sorts input"
+          },
+          "answer": "A",
+          "explanation": "Parallel reduction."
+        },
+        {
+          "id": 21,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Stream from Optional.stream:",
+          "options": {
+            "A": "0 or 1 element",
+            "B": "Always 1",
+            "C": "Infinite",
+            "D": "Error"
+          },
+          "answer": "A",
+          "explanation": "Java 9+."
+        },
+        {
+          "id": 22,
+          "level": "intermediate",
+          "category": "code",
+          "question": "max Comparator naturalOrder:",
+          "options": {
+            "A": "Optional max element",
+            "B": "Always int",
+            "C": "void",
+            "D": "List"
+          },
+          "answer": "A",
+          "explanation": "Terminal."
+        },
+        {
+          "id": 23,
+          "level": "basic",
+          "category": "theory",
+          "question": "map transforms:",
+          "options": {
+            "A": "Each element type/value",
+            "B": "Groups",
+            "C": "Sorts only",
+            "D": "Joins strings only"
+          },
+          "answer": "A",
+          "explanation": "Function."
+        },
+        {
+          "id": 24,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Infinite stream caution:",
+          "options": {
+            "A": "Need limit or short-circuit",
+            "B": "Safe always",
+            "C": "GC auto truncates",
+            "D": "JIT auto truncates"
+          },
+          "answer": "A",
+          "explanation": "iterate/generate."
+        },
+        {
+          "id": 25,
+          "level": "intermediate",
+          "category": "code",
+          "question": "sorted() without Comparator uses:",
+          "options": {
+            "A": "Natural order of Comparable",
+            "B": "Random",
+            "C": "Hash order",
+            "D": "Insertion only"
+          },
+          "answer": "A",
+          "explanation": "Elements Comparable."
+        },
+        {
+          "id": 26,
+          "level": "basic",
+          "category": "theory",
+          "question": "distinct() relies on:",
+          "options": {
+            "A": "equals/hashCode for objects",
+            "B": "== only",
+            "C": "Identity always",
+            "D": "Comparator"
+          },
+          "answer": "A",
+          "explanation": "State may buffer."
+        },
+        {
+          "id": 27,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Collectors.counting downstream:",
+          "options": {
+            "A": "Long count per group",
+            "B": "Double average",
+            "C": "List join",
+            "D": "Set union"
+          },
+          "answer": "A",
+          "explanation": "groupingBy combo."
+        },
+        {
+          "id": 28,
+          "level": "advanced",
+          "category": "code",
+          "question": "mutable collector finisher CH_IDENTITY:",
+          "options": {
+            "A": "Finisher may be identity",
+            "B": "Always new object",
+            "C": "Illegal",
+            "D": "Only serial"
+          },
+          "answer": "A",
+          "explanation": "Characteristics."
+        },
+        {
+          "id": 29,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Stream pipeline thread-safety:",
+          "options": {
+            "A": "Source must be safe if shared",
+            "B": "Stream is always locked",
+            "C": "Parallel is always safe",
+            "D": "Collector thread-unsafe ok always"
+          },
+          "answer": "A",
+          "explanation": "Operational caution."
+        },
+        {
+          "id": 30,
+          "level": "basic",
+          "category": "code",
+          "question": "IntStream.range(1,4) yields:",
+          "options": {
+            "A": "1,2,3",
+            "B": "1,2,3,4",
+            "C": "0,1,2,3",
+            "D": "Empty"
+          },
+          "answer": "A",
+          "explanation": "End exclusive."
+        }
       ]
     },
     {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Area | Phase 4 Focus | Quick Rule | Gotcha |\n|---|---|---|---|\n| Concept | Streams API | Explain mechanism + boundary | Syntax-only answers |\n| Runtime | Performance/memory/concurrency | Mention impact explicitly | Hidden runtime costs |\n| Code | Clean composable units | Prefer readability first | Over-chained complexity |\n| Failure | Known pitfall + mitigation | Name one concrete case | Hand-wavy debugging |\n| Interview | Decision reasoning | Compare alternatives | No trade-off discussion |"
+      "title": "Streams API — cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n| --- | --- | --- |\n| Intermediate | lazy | no work until terminal |\n| Terminal | collect reduce | executes |\n| map | transform | Function |\n| filter | Predicate | subset |\n| flatMap | flatten | nested |\n| groupingBy | Map<K,List<T>> | partition |\n| averagingDouble | mean | downstream |\n| joining | delimiter | String |\n| partitioningBy | boolean key | two buckets |\n| reduce | associative | parallel safe |\n| findFirst | Optional | short-circuit |\n| parallelStream | ForkJoin | careful |\n| mapToInt | unboxed | performance |\n| distinct | equals/hash | stateful |\n| peek | debug | not logic |"
     }
   ]
 }

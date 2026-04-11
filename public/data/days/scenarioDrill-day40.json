@@ -3,53 +3,173 @@
   "title": "Spring AOP",
   "phaseId": "phase5",
   "tags": [
+    "Spring AOP",
     "proxy",
-    "aspect",
+    "pointcut",
+    "advice",
+    "CGLIB",
+    "JDK dynamic proxy",
+    "join point",
     "self-invocation"
   ],
   "scenarios": [
     {
       "id": "d40-s1",
-      "question": "`@Transactional` not working when calling method from same class—why?",
-      "signals": [
-        "self-invocation",
-        "proxy"
-      ],
-      "answer": "Spring **proxy** intercepts **external** calls—**internal `this.method()`** bypasses proxy.\n\nFix: **split bean**, **`ApplicationContext` self-inject** (careful), or **AspectJ weaving**.",
+      "question": "You are reviewing `OrderService`. A teammate added `@Timed` (Micrometer) as a **custom aspect** with an `@Around` on `execution(* com.acme..*Service.*(..))`. They say it is cleaner than touching every method. The pointcut matches **every** service method including getters called inside tight loops. What is wrong?",
+      "signals": ["pointcut", "@Around", "join point", "hot path"],
+      "answer": "The **`pointcut`** is far too broad. **`@Around` advice** runs on **every matched join point**, so you turned cheap internal calls into **proxy hops** plus **timer** bookkeeping. In a **hot path** loop that calls a **getter** on another **service** a million times per batch job, you add **massive CPU** and **allocation** overhead and distort **latency histograms** — **Micrometer** timers are not free.\n\n**Mechanism:** Spring wraps matching beans in a **proxy**. Each **join point** matched by **`execution(..)`** triggers your **aspect**'s **`MethodInvocation.proceed()`** wrapper. Narrow **pointcuts** only fire where observability matters — typically **public** **API** **entry** methods or **`@Timed`** on **specific** methods via **`@annotation`** style matching.\n\n**Fix example — annotation-driven narrow cut:**\n\n```java\n@Around(\"@annotation(com.acme.observability.TimedOp)\")\npublic Object timed(ProceedingJoinPoint pjp) throws Throwable { ... }\n```\n\n**Verify:** run a **JFR** or **`jcmd PID JFR.start`** profile before/after, or compare **`http_server_requests_seconds`** and **process CPU** on the same load test. If you skip narrowing, **on-call** sees **CPU** climb after a harmless \"logging improvement\" PR.\n\nProduction cost is not \"cleaner code\" — it is **thousands** of extra **proxy** **invocations** per request.",
       "followUps": [
         {
-          "question": "JDK dynamic proxy vs CGLIB?",
-          "answer": "**JDK** needs **interface**; **CGLIB** subclasses class—**final** methods/classes cannot be proxied with subclassing."
+          "question": "Why is `@annotation` often safer than `execution(* ..*Service.*(..))` for metrics?",
+          "answer": "**`@annotation`** makes **opt-in** explicit: only methods the team marked pay the **advice** cost. **`execution`** on a package pattern is **opt-out** — every new method in that package automatically gets wrapped, including **private** helpers if the pattern is sloppy (and **Spring AOP** will not even see **private** methods, but **public** helpers still match). **Code review** cannot scale when behavior is implicit. **Annotation**-driven **aspects** also document intent for the next engineer. The trade-off is **annotation clutter** on **surface** APIs — teams sometimes use **meta-annotations** (`@TimedOp`) to reduce noise. **Interview** bonus: mention **compile-time** **AspectJ** if you truly need **advice** on **private** calls — **Spring AOP** **proxy** model cannot do that."
+        },
+        {
+          "question": "Could `bean()` or `within()` in the pointcut expression fix the hot-loop problem without annotations?",
+          "answer": "Sometimes. **`within(com.acme.api..*)`** combined with **`execution`** can limit matching to **facade** packages, excluding **`..internal..`** packages where **hot** **loops** live. That still risks **future** misclassification when someone moves a class. **`bean(orderFacade)`** scopes to one **Spring** **bean** name — very precise but high maintenance. The sustainable pattern is **layered architecture**: **controllers** get **aspects**; **internal** **components** stay **plain** **Java** with **explicit** **timing** where needed. **Pointcut** **maintenance** becomes a **merge** **conflict** magnet if every performance fix requires **AspectJ** **expression** surgery."
         }
       ]
     },
     {
       "id": "d40-s2",
-      "question": "Order of multiple aspects on same method?",
-      "signals": [
-        "@Order",
-        "precedence"
-      ],
-      "answer": "Use **`@Order`** on aspect or implement **`Ordered`**—**lower** precedence runs **outer**? Know **before/after** semantics—**document** team convention.",
+      "question": "You are on-call. After a release, payment capture **timeouts** doubled. Logs show `Transaction rolled back` on paths that used to commit. No DB outage. Git shows a new `@Order(5)` **security aspect** added alongside the existing `@Order(10)` **transaction** aspect on `PaymentService.capture()`. Walk through how you diagnose and fix this as an **AOP ordering** / **aspect precedence** problem.",
+      "signals": ["@Order", "aspect precedence", "@Transactional", "rollback"],
+      "answer": "**Stabilize:** enable **feature flag** to route a percentage of traffic to the previous version, or **rollback** the deploy if money movement is at risk — **AOP** ordering bugs are **silent** until **data** proves wrong.\n\n**Step 1 — Reproduce under load** in **staging** with the same **two** **aspects** active. Capture **DEBUG** for **`org.springframework.transaction`** and verify whether **`@Transactional`** **advice** wraps the **method** body as expected.\n\n**Step 2 — Inspect aspect precedence.** Lower **`@Order`** values run **earlier** in the **advice chain** for **`@Around`** semantics relative to other aspects — the exact **stack** can surprise people. If the **security** **aspect** **throws** or **marks** **rollback-only** before business logic completes, you see **rollback** **symptoms**.\n\n**Step 3 — Confirm with runtime.** `kubectl logs DEPLOYMENT -f --tail=200` for **exception** patterns, then **`curl -s localhost:8080/actuator/beans | jq`** (from an **exec** into the pod) to ensure the **proxy** **bean** names you expect are registered — not definitive for order but confirms **aspects** exist.\n\n**Step 4 — Fix.** Align **`@Order`** so **transaction** **boundaries** wrap **business** **advice** correctly, or merge **concerns** into one **ordered** **aspect** with explicit **`try/finally`**. Document team rule: **infrastructure** **aspects** (**transaction**, **security**) have fixed **precedence** numbers.\n\n**Step 5 — Verify.** Run **payment** **integration** tests plus **canary** metrics: **`spring_transaction_rollbacks_total`** (if exposed) and **business** **success** rate.\n\nWrong **aspect** **precedence** turns **green** **unit** tests into **red** **ledger** **reconciliations**.",
       "followUps": [
         {
-          "question": "Pointcut performance?",
-          "answer": "Advice on **hot** methods adds cost—keep **narrow** pointcuts; **measure**."
+          "question": "Does `@Order` on the aspect class always control ordering relative to Spring's built-in transaction interceptor?",
+          "answer": "Mostly, but the full picture includes **`Advisor`** **ordering** and whether **advice** is **`@Before`**, **`@Around`**, or **`@After`**. Spring sorts **advisors** by **`@Order`** / **`Ordered`**. Built-in **transaction** **infrastructure** registers **advisors** with their own **order** values — if your **custom** **aspect** uses the same numeric band, you can still get **surprises** after an upgrade. **Defense:** keep **custom** **orders** in a **documented** **range** (for example **100+**) away from **framework** defaults, or use **`@EnableTransactionManagement(order=...)`** where applicable. **Interview** depth: know that **multiple** **`@Transactional`** layers and **REQUIRES_NEW** interact with **proxy** **stack** depth too."
+        },
+        {
+          "question": "How would you prove ordering in a test without relying on production traffic?",
+          "answer": "Write an **integration test** with **two** **test** **aspects** that append to a **`ThreadLocal` List<String>** in **`@Before`** / **`@After`** and assert the **sequence** for a **bean** under test. Alternatively, use **Spring's** **`ListOrderedAdvisor`** debugging patterns or temporarily **log** **`joinPoint.getStaticPart()`** and **aspect** **class** names in **DEBUG**. The key is **not** asserting **business** outcomes alone — **order** bugs often pass **happy-path** tests. **Slice** tests with **`@Import`** of only the **aspects** involved reduce **noise**."
         }
       ]
     },
     {
       "id": "d40-s3",
-      "question": "When is AOP wrong tool?",
-      "signals": [
-        "explicit",
-        "debugging"
-      ],
-      "answer": "When logic is **core** domain flow—**explicit** calls easier to trace; AOP for **cross-cutting** (metrics, security, transactions).",
+      "question": "Your team argues: should cross-cutting **audit logging** for regulated data access be implemented with **Spring AOP** (`@Around` on repository layer) or with **explicit** calls from each service method? What are the trade-offs and what do you recommend?",
+      "signals": ["cross-cutting concern", "explicit logging", "Spring AOP", "compliance"],
+      "answer": "**Spring AOP** wins when the **audit** rule is uniform: \"log every call to **`CustomerRepository`** methods with **user id** and **arguments** hash.\" One **`@Aspect`** guarantees you cannot forget a call site when new methods appear — **compliance** **auditors** like **central** enforcement of this **cross-cutting concern**.\n\n**Explicit logging** in each **service** wins when **audit** needs **business** **context** only the **service** knows: **field**-level **redaction**, **correlation** with **workflow** **step**, or **conditional** **logging** based on **feature** **flags**. **AOP** on **repositories** logs **persistence** details but may miss **higher-level** intent.\n\n**Production trade-offs:** **AOP** adds **proxy** **cost** and makes **stack** **traces** longer — harder **on-call** **debugging** for juniors. **Explicit** code is verbose and **drifts** when teams rush features.\n\n**Recommendation:** **AOP** at **repository** or **facade** boundary **plus** a **small** **explicit** **API** for **exceptions** that need **rich** **audit** **payloads**. Use **`@Around`** with **narrow** **`within(com.acme.repo..*)`** and **structured** **JSON** logging.\n\n**Flip to explicit-only** if **legal** requires **human** **readable** **audit** **trail** in **code** **reviews** line-by-line, or if **performance** **SLO** cannot tolerate **advice** on **hot** **queries**.\n\nChoosing purely on taste strands **compliance** when a new **repository** method ships without **logging**.",
       "followUps": [
         {
-          "question": "`@within` vs `@annotation`?",
-          "answer": "Class-level vs method-level marker matching—precision for **layer** annotations."
+          "question": "How does AOP-based auditing interact with **self-invocation** inside the same repository implementation class?",
+          "answer": "It does **not** **help**. If `CustomerRepositoryImpl.findById` calls **`this`**.`loadCache`** internally, **Spring AOP** **proxy** is **bypassed** and **advice** on **`loadCache`** never runs. **Compliance** **gaps** appear exactly where developers **refactor** **helpers**. Fix by **splitting** **beans** or **applying** **advice** only at **public** **API** **methods** you know are always called **externally**. **Tests** must include **integration** **calls** through the **Spring** **proxy**, not **direct** **new** **repository** **instances**."
+        },
+        {
+          "question": "Would **AspectJ compile-time weaving** be a better compliance story than Spring proxy AOP?",
+          "answer": "**AspectJ** **weaving** can advise **private** calls and **construction** points — stronger **guarantees** for **strict** **regimes**. Cost: **build** **complexity**, longer **compile** times, and harder **IDE** **step-through**. **Spring AOP** **proxy** is simpler and fits most **Spring Boot** shops. Choose **AspectJ** when **legal** or **architecture** **review** demands **bytecode**-level proof that **no** call path **escapes** **audit**."
+        }
+      ]
+    },
+    {
+      "id": "d40-s4",
+      "question": "Walk me through what happens at runtime when a **singleton** `PaymentService` bean has `@Transactional` on `pay()` and an **`@Around`** **aspect** on the same method — from the client call to the real target method.",
+      "signals": ["proxy", "AnnotationAwareAspectJAutoProxyCreator", "MethodInterceptor", "target"],
+      "answer": "The **client** holds a reference to a **proxy** object, not the raw **`PaymentService`** **instance**.\n\n**Step 1 — Bean creation.** **`AbstractAutowireCapableBeanFactory`** finishes **initialization**, then **`BeanPostProcessor`** **`postProcessAfterInitialization`** runs. **`AnnotationAwareAspectJAutoProxyCreator`** (an **`AbstractAutoProxyCreator`**) evaluates **advisors** built from your **`@Aspect`** beans and **infrastructure** like **`BeanFactoryTransactionAttributeSourceAdvisor`**. If **matching** **advice** exists, it wraps the **bean** in a **proxy** — **JDK** **dynamic** **proxy** if **interfaces** exist, otherwise **CGLIB** **subclass** **proxy**.\n\n**Step 2 — Call enters proxy.** The **proxy** dispatches through a **chain** of **`MethodInterceptor`**-style **advisors** (via **`ReflectiveMethodInvocation`**). **`@Around`** **advice** typically runs **outermost** or according to **`@Order`** relative to **transaction** **interceptor**.\n\n**Step 3 — Transaction interceptor.** Opens **transaction** (if needed) around **`proceed()`**, which delegates deeper.\n\n**Step 4 — Final invocation.** The chain reaches **AopUtils.invokeJoinpointUsingReflection** against the **target** **object** — the **real** **`pay()`** body.\n\n**Observable:** **`TransactionSynchronizationManager.isActualTransactionActive()`** returns **true** inside **`pay()`** when **transaction** **advice** applied. If you **`this.pay()`** internally, you **skip** the **proxy** — **transaction** **and** **custom** **aspects** **disappear**.\n\nThat internal ordering is why **debugging** **AOP** starts with **printing** **proxy** **class** names at **runtime**.",
+      "followUps": [
+        {
+          "question": "Why can `paymentService.getClass().getName()` show something like `PaymentService$$SpringCGLIB$$0`?",
+          "answer": "Because the **injected** reference is a **CGLIB**-generated **subclass** **proxy** of **`PaymentService`**. The **proxy** overrides **non-final** **public**/**protected** methods to **delegate** to the **interceptor** **chain**. **`getClass()`** on the **proxy** is not the **original** **user** **class** — use **`AopUtils.getTargetClass(bean)`** or **`Advised`** **interfaces** for **introspection**. **Serialization**, **equals/hashCode**, and some **frameworks** break if they assume **concrete** **type** **identity** matches **source** **code**."
+        },
+        {
+          "question": "Where do JDK dynamic proxies fit if the service implements an interface?",
+          "answer": "If **`PaymentService`** is an **interface** and the **bean** is **`class DefaultPaymentService implements PaymentService`**, Spring may create a **JDK** **proxy** implementing **`PaymentService`** composed of **`InvocationHandler`** **logic**. **CGLIB** is used when **proxying** **classes** without **sufficient** **interfaces** or when **forced** via **`proxyTargetClass=true`**. **`@EnableAsync`**, **`@Transactional`**, and **`@Configuration`** **proxy** choices interact with **`spring.aop.proxy-target-class`** defaults in **Boot** — **interview**ers expect you to know **class-based** **injection** can fail if a **JDK** **proxy** is not **assignable** to a **concrete** **type** **field**."
+        }
+      ]
+    },
+    {
+      "id": "d40-s5",
+      "question": "Pros and cons of using **Spring AOP** for **authorization** (`@PreAuthorize` / method security) and **business** **metrics** at 50k RPS — when does the approach break down?",
+      "signals": ["proxy overhead", "method security", "throughput", "tail latency"],
+      "answer": "**Pros:** (1) **Central policy** — **method security** **annotations** stay **declarative** and **reviewable**. (2) **Consistency** — every **service** **method** gets the same **metrics** **wrapper** without **copy-paste**. (3) **Evolution** — change **aspect** **implementation** once for **logging**/**metrics**/**tracing**.\n\n**Cons:** (1) **Proxy overhead** per call — usually **microseconds** but measurable on **tight** **loops**. (2) **Stack** **depth** grows — **tail latency** (**p99**) suffers when **many** **aspects** chain. (3) **Debugging** cost — juniors **step** into **proxies** and get lost. (4) **Self-invocation** **bypass** creates **security** **holes** if **developers** **trust** **annotations** **blindly**.\n\n**Scale flip:** past **~50k** **RPS** on **small** **pods**, **CPU** **spent** in **reflection**-heavy **advice** and **allocation** from **ProceedingJoinPoint** **metadata** can dominate unless **pointcuts** are **tight**. **Mitigation:** **gateway**-level **authz** for **coarse** rules, **AOP** only on **service** **facade** **methods**, or **native** **image**/**AOT** with **precomputed** **hints** where applicable.\n\n**Throughput** without **measurement** is guessing — **JFR** tells you if **AOP** is **hot**.\n\nIf you skip **profiling**, you **optimize** **SQL** while **30%** **CPU** sits in **advice**.",
+      "followUps": [
+        {
+          "question": "Is `@PreAuthorize` implemented with the same proxy mechanism as `@Transactional`?",
+          "answer": "Both are typically applied via **Spring Security**'s **method** **security** **interceptors** and **Spring**'s **AOP** **infrastructure** — often the **same** **proxy** carries **multiple** **advisors**. The **exact** **stack** depends on **configuration** (**`@EnableMethodSecurity`** vs legacy **`@EnableGlobalMethodSecurity`**). **Interview** **depth:** know **`AuthorizationManager`** **API** in newer **Spring Security** and that **method** **security** still suffers **self-invocation** **issues** like **transactions**."
+        },
+        {
+          "question": "When would you move authorization out of AOP entirely?",
+          "answer": "When **policies** are **data-dependent** and **complex** (**row-level** **security**), **explicit** **service** **checks** with a **PolicyEngine** are clearer and **testable**. Also when **latency** **budget** is **sub-millisecond** and **gateway** **JWT** **scopes** already **proved** **identity**. **AOP** remains useful for **deny-by-default** **guards** on **service** **entry** **points**."
+        }
+      ]
+    },
+    {
+      "id": "d40-s6",
+      "question": "`PaymentServiceTest` uses `@ExtendWith(SpringExtension.class)` and `@SpringBootTest` and asserts `service.pay()` rolls back on failure — green. In staging, the same method **commits** bad rows when `pay()` calls **`this.validate()`** which throws after partial DB writes. Why did tests miss it, and what fixes the gap?",
+      "signals": ["self-invocation", "@Transactional", "integration test", "proxy"],
+      "answer": "The **production** code path uses **`this.validate()`** inside the same **class** as **`pay()`**. That **bypasses** the **Spring** **proxy**, so **`validate()`** runs **without** the **transaction** **interceptor** that **`@Transactional`** on **`validate()`** might declare — or more commonly, **`pay()`** is **transactional** but **internal** **calls** **skip** **nested** **advice** entirely. **Partial** **writes** inside **`pay()`** before **`validate()`** can **commit** if **transaction** **boundaries** are wrong.\n\n**Test gap:** **`@SpringBootTest`** calls **`pay()`** through the **injected** **proxy**, which **does** wrap **`pay()`**. If the **buggy** **ordering** only appears when **certain** **branches** call **`this`**, your **test** might not hit that **branch**, or the **test** **database** **does** not show **partial** **commits** clearly.\n\n**Fix code:** **extract** **`validate`** to another **bean** **`PaymentValidator`** **injected** into **`PaymentService`** so **calls** go through **proxy**. Or inject **`PaymentService`** **self** **proxy** **carefully**.\n\n**Fix test:** add an **integration test** **case** that **forces** the **internal** **call** path and assert **DB** **state** with **`@Transactional`** **NOT** **default** **rollback** on the **test** itself confusing results — use **`TestEntityManager.flush()`** / **clear** and **query** **raw** **JDBC** if needed.\n\n**Self-invocation** turns **green** **tests** into **finance** **incidents** because **proxy** **semantics** differ from **`this`**.",
+      "followUps": [
+        {
+          "question": "Would `@Transactional` on the class fix the partial commit if `validate` is private?",
+          "answer": "**No.** **Spring AOP** does not **advise** **private** **methods** in **proxy** mode — **`@Transactional`** on **class** applies to **public** **methods** the **proxy** can **override**. **Private** **`validate`** is **invisible** to **proxy** **AOP**. **Fix** by **making** **validation** a **public** **method** on another **bean** or **use** **AspectJ** **compile-time** **weaving** if you **must** **advise** **private** code — rare in **app** **layers**."
+        },
+        {
+          "question": "Is `TransactionTemplate` a reasonable alternative to AOP here?",
+          "answer": "**Yes** for **fine-grained** **control** inside **complex** **methods**: **explicit** **`transactionTemplate.execute`** **blocks** make **boundaries** obvious in **code** **review** and **avoid** **self-invocation** **surprises**. Cost: **boilerplate** and **error-prone** **nesting**. Many teams **combine** **declarative** **`@Transactional`** on **service** **facade** **methods** with **small** **`TransactionTemplate`** **utilities** only where **imperative** **flow** is clearer."
+        }
+      ]
+    },
+    {
+      "id": "d40-s7",
+      "question": "Design a **multi-module** monolith where **every** **REST** **controller** method automatically emits **structured audit events** to Kafka with **tenant id**, **user id**, **correlation id**, and **latency**, without annotating 400 controllers by hand. Core constraint: **no PII** in topic payloads. How do you use **Spring AOP** and what changes at 10x traffic?",
+      "signals": ["@Aspect", "HandlerInterceptor", "MDC", "KafkaTemplate"],
+      "answer": "**Components:** (1) **`OncePerRequestFilter`** or **`HandlerInterceptor`** captures **tenant**/**user**/**correlation** into **SLF4J** **MDC** from **security** **context** — **AOP** on **controllers** is awkward because **arguments** differ. (2) Alternatively, a **`@Aspect`** with **`@Around`** plus a **`within(@RestController)`**-style **pointcut** matching **public** **handler** **methods** — risky **broad** cut; better **`@annotation`** meta **`@AuditedApi`** on **package** **info** or **base** **class**.\n\n**Better hybrid:** **`@ControllerAdvice`** + **`RequestBodyAdvice`/`ResponseBodyAdvice`** is not **AOP** but fits **HTTP** **layer**. For **AOP** purist: **aspect** **`@Around`** combined with **`@within`-style** **pointcuts** **plus** **method-level** **`@Pointcut`** exclusions for **`/actuator/**`**.\n\n**Payload:** map **event** to **hashed** **identifiers** only; **redact** **fields** using a **shared** **`AuditEventMapper`** **bean** **called** from **advice**, then publish with **`KafkaTemplate`** (or **reactive** **Kafka** **sender**) **off** the **request** **thread**.\n\n**10x traffic:** **Kafka** **producer** **batching** and **async** **`ListenableFuture`**; move **advice** work to **bounded** **queue** **executor** so **request** **threads** do not block on **broker** **latency**. **10x** **change:** **dedicated** **`audit`** **topic** **per** **region** and **partition** by **tenant** **hash**.\n\n**Monitoring:** **`kafka_producer_record_error_total`** and **`http_server_requests`** **timeouts** — **advice** must never **stall** **responses**.\n\nIf **AOP** **blocks** on **Kafka**, **p99** **explodes** even when **business** **logic** is **fast**.",
+      "followUps": [
+        {
+          "question": "Why not put the Kafka send inside a `@TransactionalEventListener` instead of AOP?",
+          "answer": "**`@TransactionalEventListener`** ties **emission** to **transaction** **commit** — great when **audit** must **mirror** **committed** **state** only. It does **not** cover **read-only** **endpoints** that still need **access** **audit**. Many systems **combine** **AOP** for **HTTP** **ingress** **logging** and **transactional** **events** for **DB** **changes**. **Interview** answer: match **mechanism** to **consistency** **guarantee** you need."
+        },
+        {
+          "question": "How do you stop actuator endpoints from generating audit floods?",
+          "answer": "Add **`!execution(* org.springframework.boot.actuate..*(..))`** or **`within(!@org.springframework.boot.actuate..*)`** style **exclusions** in the **pointcut**, or **separate** **`DispatcherServlet`** **path** patterns. **Test** with **`curl localhost:8080/actuator/health`** and confirm **no** **audit** **message**. **Failure** **mode** is **Kafka** **topic** **hot** **partitions** and **runaway** **costs**."
+        }
+      ]
+    },
+    {
+      "id": "d40-s8",
+      "question": "A library on your classpath registers a **`BeanPostProcessor`** that wraps certain beans with a **dynamic proxy** logging **method** **arguments** to a **remote** endpoint. Your team did not configure this — it is a **transitive** dependency. What **security** problem does this class of **AOP-like** behavior create, and how do you harden the app?",
+      "signals": ["supply chain", "data exfiltration", "BeanPostProcessor", "least privilege"],
+      "answer": "This is **supply chain** **risk** dressed as **observability**. A **malicious** or **compromised** **library** can use **`BeanPostProcessor.postProcessAfterInitialization`** to wrap **beans** and enable **data exfiltration** of **PII** from **method** **arguments** — **passwords**, **tokens**, **account** **numbers** — bypassing normal **application** **logging** **filters** because it hooks **below** **business** **code**.\n\n**Attack** **vector:** **dependency** **confusion**, **typosquatting**, or **compromised** **maintainer** **credentials**. Not a specific **CVE** **number** here — the **class** matches **software** **supply** **chain** **incidents** (**event-stream**-style).\n\n**Hardening:** **pin** **dependencies** with **`mvn dependency:tree`** / **`gradle dependencies`**, **verify** **checksums**, use **`dependabot`** with **review**. **Runtime:** **network** **policies** so **pods** cannot **call** **unknown** **hosts** except **API** **gateway**. **Disable** **foreign** **`spring.factories`** **auto-config** via **`exclude`** when possible.\n\n**Code-level:** **scan** for unexpected **`BeanPostProcessor`** **beans** at startup (`curl .../actuator/beans` in **staging** **only**, **secured** in **prod**).\n\n**Least** **privilege** on **outbound** **traffic** stops **silent** **exfiltration** even if a **bad** **JAR** lands on the **classpath**.\n\nSkip **supply-chain** **discipline** and **AOP** **hooks** become **spyware**.",
+      "followUps": [
+        {
+          "question": "Would Spring Boot's `spring.main.lazy-initialization` affect when the malicious processor runs?",
+          "answer": "**`BeanPostProcessor`** **beans** are **special** — they **initialize** **early** regardless of **global** **lazy** **settings** for **application** **beans**. **Malicious** **wrapping** still happens during **context** **refresh** **unless** the **processor** **itself** is **not** **registered**. **Lazy** **does** **not** **mitigate** **supply-chain** **attacks**; it only shifts **other** **beans**."
+        },
+        {
+          "question": "How does this relate to `@Aspect` beans defined in your own codebase?",
+          "answer": "First-party **`@Aspect`** **beans** are **trusted** but still **dangerous** if **junior** **developers** **log** **secrets**. **Code** **review** **standards** should **ban** **raw** **argument** **logging** in **aspects**. **Supply-chain** **processors** are **worse** because **teams** do **not** **read** that **code** **daily**. **Defense** **in** **depth** applies to **both**."
+        }
+      ]
+    },
+    {
+      "id": "d40-s9",
+      "question": "At **50k RPS**, **CPU** **profiles** show **6%** in **`CglibAopProxy$DynamicAdvisedInterceptor.intercept`** and **`ReflectiveMethodInvocation.proceed`** on a **tight** **pricing** **hot** path. Business refuses to remove **metrics**. What optimizations do you apply and what do you monitor?",
+      "signals": ["CGLIB", "ProceedingJoinPoint", "inlining", "micrometer"],
+      "answer": "**Quantify:** segment **CPU** with **async-profiler** or **`jcmd PID JFR.start`** to confirm **AOP** **chain** **depth** — sometimes **multiple** **`@Around`** **aspects** **stack** and each **`ProceedingJoinPoint.proceed()`** adds cost.\n\n**Optimization 1 — Narrow the **pointcut** so **pricing** **internals** are **not** **advised** — keep **`@Timed`** only on **`PricingFacade.calculate`**.\n\n**Optimization 2 — Replace heavy **`@Around`** with **`@Before`/`@AfterReturning`** **advice** that does **cheaper** work, or use **Micrometer** **`@Timed`** on **specific** **methods** via **annotation** matching **without** **custom** **reflection**.\n\n**Optimization 3 — **JVM** **compiler:** ensure **C2** **inlining** is not **blocked** by **oversized** **methods** — sometimes **splitting** **aspects** helps (counterintuitive but reduces **bytecode** **size** **per** **method**).\n\n**Optimization 4 — **Move** **metrics** to **gateway** or **sidecar** **Envoy** **stats** for **per-request** **basics**, keep **domain** **timers** **sparse**.\n\n**Monitor:** **`process_cpu_usage`**, **`http_server_requests_seconds`**, **`executor_active_threads`**, and **custom** **`pricing.calculation`** **timer** **count** — **throughput** per **CPU** **core** should **rise** after **fix**.\n\nIf you only **scale** **pods**, **AWS** **bill** scales **linearly** while **root** **cause** remains.\n\n**CGLIB** **intercept** **hot** **paths** **punish** **margin**.",
+      "followUps": [
+        {
+          "question": "Would switching `spring.aop.proxy-target-class=false` fix CGLIB overhead?",
+          "answer": "Only if **beans** **expose** **suitable** **interfaces** and **injection** **sites** use **interface** **types**. **Concrete** **injection** **`PricingServiceImpl`** **fields** **break** with **JDK** **proxies**. **Spring Boot 2+** defaults **toward** **class-based** **proxies** for **reasons** including **`@Transactional`** on **classes**. **Blindly** **toggling** **flags** **without** **compile-time** **checks** **causes** **`ClassCastException`** at **runtime**."
+        },
+        {
+          "question": "Can native image (GraalVM) eliminate AOP proxy overhead?",
+          "answer": "Partially — **Spring** **AOT** **ahead-of-time** processing **materializes** **proxy** **classes** at **build** time, **reducing** **startup** **reflection**, but **method** **interception** **still** **exists**. Some **patterns** require **extra** **reachability** **metadata**. **Measure** **native** vs **JVM** with **realistic** **load**; do **not** **assume** **zero** **cost**."
+        }
+      ]
+    },
+    {
+      "id": "d40-s10",
+      "question": "A developer says: '**Spring AOP** uses **reflection** on **every** call, so **`final`** **methods** are **automatically** **advised** because the **JVM** **inlines** them.' How do you correct this, and what **bug** does the **wrong** **model** cause?",
+      "signals": ["final method", "CGLIB", "proxy", "cannot be advised"],
+      "answer": "**Spring AOP** **proxy** mode does **not** **magically** **advise** **`final`** **methods**. **CGLIB** **proxies** **subclass** your **bean** and **override** **non-final** **methods** to **route** through **interceptors**. **`final`** **methods** **cannot** be **overridden**, so they **bypass** **subclass** **proxy** **logic** — those calls **cannot be advised** by the **proxy** — **advice** **does** **not** **run**. **JDK** **dynamic** **proxies** only **see** **interface** **methods** anyway.\n\n**Reflection** happens when building **join point** **metadata** and **dispatching**, but the **dominant** **story** is **proxy** **subclassing** / **interface** **delegation**, not **`Method.invoke`** on **every** **call** **in** **the** **hot** **path** **alone**.\n\n**Wrong** **mental** **model** leads teams to **`final`** **service** **methods** for **style**, then **wonder** why **`@Transactional`**, **`@Cacheable`**, or **custom** **`@Around`** **silently** **fail** — **production** **symptom** **dual** **writes** **without** **transaction** **or** **stale** **cache** **reads**.\n\n**Teach** with a **tiny** **repro**: **`final`** **`pay()`** **commits** **outside** **transaction** **when** **proxy** **expects** **override**.\n\n**Correct** **rule:** **non-final** **public**/**protected** **methods** on **proxied** **classes**; or **interface**-based **JDK** **proxies** with **methods** **declared** on **interface**.\n\n**Final** **methods** **trade** **micro-optimization** for **broken** **cross-cutting** **concerns**.",
+      "followUps": [
+        {
+          "question": "Does Kotlin `open` requirement relate to this?",
+          "answer": "**Yes.** **Kotlin** **classes** and **methods** are **final** by **default**. **Spring** **needs** **`open`** **methods** (or **`allopen`** **compiler** **plugin**) so **CGLIB** **can** **subclass** **and** **override**. Without it, **Boot** may **fail** at **startup** or **skip** **advice** depending on **configuration**. **Teams** **new** to **Kotlin** hit **this** **immediately** with **`@Transactional`**."
+        },
+        {
+          "question": "Are `private` methods advised if you mark them `@Transactional`?",
+          "answer": "**No** in **proxy**-based **Spring AOP** — **`private`** **methods** are **not** **visible** to **subclass** **overrides** and **JDK** **proxies** **ignore** them. **Spring** may **log** a **warning** or **silently** **skip** depending on **version** and **settings**. **Fix** by **moving** **transaction** **boundary** to **public** **API** **methods** or **use** **AspectJ** **weaving** for **rare** **cases**."
         }
       ]
     }

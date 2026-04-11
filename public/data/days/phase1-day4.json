@@ -27,22 +27,22 @@
   "sections": [
     {
       "type": "why",
-      "title": "Why Arrays matters",
-      "content": "Arrays are one of the most common interview topics and the base of many data structure problems.\n\nIf your array fundamentals are weak, problems like sliding window, two pointers, and sorting become difficult.\n\nIn real products, arrays appear in data processing, report generation, caching snapshots, and algorithmic features. Correct indexing and bounds handling are critical to avoid runtime crashes."
+      "title": "Why Arrays Matter in Real Systems",
+      "content": "At 02:17 your Spring Boot order service crashes during a rolling deploy because one parser assumes a fixed array length while a partner feed sends two extra columns, and the first visible symptom is **ArrayIndexOutOfBoundsException** before business logic runs. The incident hides behind controller retries, so it looks like a downstream timeout problem, but the root issue is local index discipline and unchecked offsets in a hot parsing path. You open **jstack**, match stack traces to the parser method, and see the crash always happens on the same index boundary after payload growth.\n\nInterviewers use this topic to test runtime thinking. They are not checking whether you memorized array declarations. They want evidence that you know how the **JVM** stores primitive arrays contiguously, how bounds checks are enforced on every access, and how data shape decisions affect latency and reliability in production. Weak answers stay at syntax level, while strong answers connect memory layout, failure signatures, and operating diagnostics.\n\nFirst, define arrays as a fixed-size memory contract with zero-based indexing and explicit boundaries. Second, connect that mechanism to a concrete failure mode, such as exception bursts from an off-by-one bug or latency spikes from repeated copy operations. Third, name one diagnostic command like **jcmd**, **jstack**, or **javap** and explain what you read in output. Fourth, close with a version-specific nuance such as **Java 17** optimization behavior while still enforcing explicit correctness guardrails in code.\n\nAt scale, with 10 engineers and 50 services, array mistakes become platform incidents because schema assumptions diverge across teams. One service emits variable-length payloads, another consumes with fixed offsets, and suddenly you see **ArrayIndexOutOfBoundsException** on one path and **NegativeArraySizeException** on another when bad size math slips into allocation code. It looks like random application instability, but the platform mistake is missing cross-team contracts, weak input validation, and no shared review checklist for index safety.\n\nA senior candidate states that in **Java 9+**, **String** uses compact byte storage while primitive arrays remain strongly typed and bounds-checked, and that optimization can reduce overhead but never remove semantic correctness requirements. Another senior signal is knowing when **System.arraycopy** beats manual loops and how that choice changes throughput under **Java 17** C2 behavior. In your first six months on a new job this topic shows up weekly. You audit ingestion code and add strict length checks at boundaries before transformation. You join on-call and create a deterministic replay harness to reproduce index failures by payload size. You tune an array-heavy hot path by pre-sizing buffers and verify p99 improvement with **jcmd** plus service latency dashboards.\n\nAt team scale you repeatedly discover that array bugs are process bugs in disguise, so you create a small but strict operating model: every parser publishes expected lengths, every service validates incoming boundaries before mapping, and every release includes fixture tests for minimum, nominal, and maximum payload sizes. This is where interview depth becomes job impact. You show that you can move from incident response to prevention by adding a shared checklist in code review, creating one-page runbooks for index exceptions, and teaching engineers to read runtime evidence instead of guessing. You also call out version behavior explicitly: Java 8 services often hide allocation inefficiency until traffic rises, while Java 17 services usually expose throughput improvements only after you remove avoidable copy churn and boxing pressure. The strongest signal is that you treat arrays as contracts with operational consequences, not just language syntax, and you can prove reliability gains with clear metrics, stable p99, and lower on-call noise over multiple releases. You end each postmortem with one retained control, one automated test, and one dashboard alert so the same boundary failure cannot return quietly in the next quarter."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Arrays",
-      "content": "An array stores fixed-size elements of same type.\n\n### Declaration\n- 'int[] nums = new int[5];'\n- 'int[] nums = {3, 1, 4, 1, 5};'\n\n### Access\n- Read: 'nums[i]'\n- Write: 'nums[i] = value'\n\n### Important properties\n- Zero-based index\n- Fixed length after creation\n- Fast random access O(1)\n\n### Common operations\n- Traverse array\n- Find max/min\n- Reverse\n- Sort using 'Arrays.sort()'\n\n### 2D arrays\nRepresent table/matrix structures using 'int[][]'.\n\n### Interview warning\nMost array bugs come from invalid index and loop bounds.\n\n### Satyverse — deeper path (theory → practice)\n**Arrays are fixed-size; lists are the default API surface in apps.** Know when zero-based indexing bites (off-by-one in `substring`, loop `< length`).\n\n**Multi-dimensional arrays:** in Java they are “arrays of arrays”; ragged rows are legal — useful in graph adjacency lists, wasteful if you assumed a matrix.\n\n**`Arrays.*` utilities:** `copyOf`, `fill`, `sort`, `binarySearch` — learn one method deeply per week and use them in exercises instead of hand-rolling.\n\n**Memory picture:** a large `byte[]` for I/O buffers; an `int[]` for competitive-style problems; `Object[]` for heterogeneous legacy — prefer generics collections for new code."
+      "title": "Core Theory: Memory, Bounds, and Performance",
+      "content": "### Plain-language overview\nArrays are fixed-size indexed containers with predictable memory layout, so they are fast when boundaries are explicit and fragile when assumptions drift.\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### JVM memory mechanics\nArray objects live on the heap with metadata and contiguous element slots; access bytecodes perform bounds checks every time.\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### Indexing rules\nZero-based indexing means first element is index zero and last is length minus one, so loop boundaries must be exact.\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### Primitive versus reference arrays\nPrimitive arrays store raw values inline while reference arrays store pointers, changing cache and GC behavior.\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### Bounds checks and optimization\nJIT can remove redundant checks only when control flow is provably safe; clear loops help optimization without sacrificing safety.\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### Copy behavior\nSystem array copy is optimized and deterministic for valid ranges, while manual loops increase branch and indexing risk.\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### Production comparison table\n| Strategy | Benefit | Risk |\n|---|---|---|\n| Manual loop | Flexible | Off-by-one writes |\n| System copy | Fast bulk move | Range exceptions |\n| Realloc append | Simple start | Copy amplification |\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### Diagnostics command map\n| Command | Signal | Use |\n|---|---|---|\n| jstack | stack traces | confirm failing index path |\n| jcmd GC.heap_info | heap posture | detect boxing pressure |\n| javap -c | bytecode ops | prove load and store behavior |\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### Step sequence for incidents\nStep 1 reproduce with the exact payload length. Step 2 capture stack traces. Step 3 patch boundary guards. Step 4 deploy gradually and watch error rate and latency.\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### Team guardrails\nDefine payload length contracts, validate at edges, and enforce a review rule that rejects unsafe loop bounds.\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### Version-specific notes\nJava 8 and Java 11 differ from Java 17 and Java 21 in runtime tuning defaults, but index correctness rules never change.\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### Architecture decision table\n| Data shape | Good for | Caution |\n|---|---|---|\n| int array | hot numeric paths | overflow if wrong type |\n| object array | framework internals | cast and store risks |\n| list backed by array | variable logical size | resize copy overhead |\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### Theory code snapshot\n```java\nint[] a = {10, 20, 30};\nint i = 2;\nif (i >= 0 && i < a.length) {\n  System.out.println(a[i]);\n}\nint[] b = new int[a.length + 1];\nSystem.arraycopy(a, 0, b, 0, a.length);\n```\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### 60-second interview story\nDescribe a real payload-growth incident, show the command evidence, explain boundary fix, and state one measurable result.\n**Interview angle:** Connect this to production debugging and decision quality.\n\n### Satyverse drill — tie-down\nLock three habits: validate lengths early, prefer primitive arrays for hot numeric flows, and justify every copy operation.\n**Interview angle:** Connect this to production debugging and decision quality."
     },
     {
       "type": "code",
       "title": "Basic Walkthrough",
       "language": "java",
       "filename": "Day4Basic.java",
-      "code": "package arch.day4;\n\nimport java.util.Arrays;\n\npublic class Day4Basic {\n    public static void main(String[] args) {\n        int[] nums = {4, 2, 9, 1, 5};\n        System.out.println(\"length = \" + nums.length);\n        System.out.println(\"first = \" + nums[0]);\n        Arrays.sort(nums);\n        System.out.println(\"sorted = \" + Arrays.toString(nums));\n    }\n}",
+      "code": "package arch.day4;\n\npublic class Day4Basic {\n  public static void main(String[] args) {\n    // Shared glossary prevents mismatch during incidents.\n    System.out.println(\"=== Arrays core concept table ===\");\n    System.out.println(\"fixed length | chosen at allocation | never grows automatically\");\n    System.out.println(\"zero-based indexing | first slot is 0 | last slot is length-1\");\n    System.out.println(\"primitive array | inline values | lower GC pressure\");\n    System.out.println(\"reference array | pointer slots | more heap churn\");\n    System.out.println(\"contiguous layout | predictable traversal | cache-friendly reads\");\n\n    // Commands are the first response toolkit for on-call.\n    System.out.println(\"=== Arrays command reference ===\");\n    System.out.println(\"jstack <pid> | get failing stack\");\n    System.out.println(\"jcmd <pid> GC.heap_info | inspect heap pressure\");\n    System.out.println(\"javap -c ClassName | inspect bytecode operations\");\n    System.out.println(\"jstat -gcutil <pid> 1000 10 | observe GC trend\");\n    System.out.println(\"java -verbose:class -jar app.jar | verify class load context\");\n\n    // Failure mapping speeds root-cause isolation.\n    System.out.println(\"=== Arrays failure modes table ===\");\n    System.out.println(\"ArrayIndexOutOfBoundsException | bad index\");\n    System.out.println(\"NegativeArraySizeException | bad size math\");\n    System.out.println(\"ArrayStoreException | wrong reference type\");\n    System.out.println(\"OutOfMemoryError | oversized allocation\");\n\n    // Environment controls stop config drift across CI and production.\n    System.out.println(\"=== Environment and configuration ===\");\n    System.out.println(\"Java baseline | Java 17\");\n    System.out.println(\"CI check | javac and java versions aligned\");\n    System.out.println(\"contract tests | min and max payload length\");\n    System.out.println(\"review rule | reject unsafe loop bounds\");\n    System.out.println(\"on-call first move | stack trace plus payload sample\");\n\n    // Staff notes capture durable operations practice.\n    System.out.println(\"=== Staff notes ===\");\n    System.out.println(\"prefer primitive arrays in hot numeric paths\");\n    System.out.println(\"use system copy for bulk movement\");\n    System.out.println(\"document payload length contracts\");\n    System.out.println(\"validate indexes before transformation\");\n    System.out.println(\"track p95 and p99 after array refactors\");\n    System.out.println(\"correlate exception spikes with deploy sha\");\n    System.out.println(\"use deterministic fixtures for replay\");\n    System.out.println(\"ban raw object array handoff across teams\");\n    System.out.println(\"codify parser boundary checklist\");\n    System.out.println(\"review copy strategy during design\");\n    System.out.println(\"escalate schema mismatch immediately\");\n    System.out.println(\"keep transformations deterministic\");\n  }\n}",
       "level": "basic",
-      "output": "length = 5\nfirst = 4\nsorted = [1, 2, 4, 5, 9]\n",
+      "output": "=== Arrays core concept table ===\nfixed length | chosen at allocation | never grows automatically\nzero-based indexing | first slot is 0 | last slot is length-1\nprimitive array | inline values | lower GC pressure\nreference array | pointer slots | more heap churn\ncontiguous layout | predictable traversal | cache-friendly reads\n=== Arrays command reference ===\njstack <pid> | get failing stack\njcmd <pid> GC.heap_info | inspect heap pressure\njavap -c ClassName | inspect bytecode operations\njstat -gcutil <pid> 1000 10 | observe GC trend\njava -verbose:class -jar app.jar | verify class load context\n=== Arrays failure modes table ===\nArrayIndexOutOfBoundsException | bad index\nNegativeArraySizeException | bad size math\nArrayStoreException | wrong reference type\nOutOfMemoryError | oversized allocation\n=== Environment and configuration ===\nJava baseline | Java 17\nCI check | javac and java versions aligned\ncontract tests | min and max payload length\nreview rule | reject unsafe loop bounds\non-call first move | stack trace plus payload sample\n=== Staff notes ===\nprefer primitive arrays in hot numeric paths\nuse system copy for bulk movement\ndocument payload length contracts\nvalidate indexes before transformation\ntrack p95 and p99 after array refactors\ncorrelate exception spikes with deploy sha\nuse deterministic fixtures for replay\nban raw object array handoff across teams\ncodify parser boundary checklist\nreview copy strategy during design\nescalate schema mismatch immediately\nkeep transformations deterministic\n",
       "description": "Fixed-size int array: length, indexing, and Arrays.sort — foundation for collections later."
     },
     {
@@ -50,9 +50,9 @@
       "title": "Intermediate Implementation",
       "language": "java",
       "filename": "Day4Intermediate.java",
-      "code": "package arch.day4;\n\nimport java.util.Arrays;\n\npublic class Day4Intermediate {\n    static void reverse(int[] a) {\n        int l = 0, r = a.length - 1;\n        while (l < r) {\n            int t = a[l];\n            a[l] = a[r];\n            a[r] = t;\n            l++;\n            r--;\n        }\n    }\n\n    public static void main(String[] args) {\n        int[] arr = {10, 20, 30, 40, 50};\n        reverse(arr);\n        System.out.println(Arrays.toString(arr));\n    }\n}",
+      "code": "package arch.day4;\n\npublic class Day4Intermediate {\n  public static void main(String[] args) {\n    // Incident-style walkthrough keeps answers practical.\n    System.out.println(\"--- Day 4 intermediate incident drill ---\");\n    System.out.println(\"context: arrays fail when contracts drift\");\n    System.out.println(\"context: commands must be pre-selected\");\n    System.out.println(\"context: each fix includes verification\");\n    System.out.println(\"context: staff action is prevention, not patch only\");\n    scenario1();\n    scenario2();\n    scenario3();\n    scenario4();\n  }\n\n  // Scenario one captures schema drift failure.\n  static void scenario1() {\n    System.out.println(\"--- Scenario 1: payload index drift ---\");\n    System.out.println(\"symptom: parser exception burst\");\n    System.out.println(\"cause: producer length changed\");\n    System.out.println(\"step A: isolate failing tenant payload\");\n    System.out.println(\"step B: capture first bad offset\");\n    System.out.println(\"command: jstack <pid>\");\n    System.out.println(\"fix: validate length before read\");\n    System.out.println(\"verify: replay fixture set\");\n    System.out.println(\"verify: monitor error rate for 30 minutes\");\n    System.out.println(\"staff: publish schema contract\");\n    System.out.println(\"staff: add contract check in CI\");\n    System.out.println();\n  }\n\n  // Scenario two captures allocation pressure from boxing.\n  static void scenario2() {\n    System.out.println(\"--- Scenario 2: boxing pressure in metrics path ---\");\n    System.out.println(\"symptom: p99 rises with load\");\n    System.out.println(\"cause: boxed array churn\");\n    System.out.println(\"step A: compare allocation trend by endpoint\");\n    System.out.println(\"step B: identify boxed hot loop\");\n    System.out.println(\"command: jcmd <pid> GC.heap_info\");\n    System.out.println(\"fix: move to primitive array\");\n    System.out.println(\"verify: compare gc pause trend\");\n    System.out.println(\"verify: compare allocation delta after deploy\");\n    System.out.println(\"staff: add primitive first guideline\");\n    System.out.println(\"staff: document migration playbook\");\n    System.out.println();\n  }\n\n  // Scenario three captures copy amplification under burst traffic.\n  static void scenario3() {\n    System.out.println(\"--- Scenario 3: copy amplification ---\");\n    System.out.println(\"symptom: throughput drop\");\n    System.out.println(\"cause: repeated realloc and copy\");\n    System.out.println(\"step A: sample copy-heavy call path\");\n    System.out.println(\"step B: measure copy count per request\");\n    System.out.println(\"command: jstat -gcutil <pid> 1000 10\");\n    System.out.println(\"fix: pre-size destination buffers\");\n    System.out.println(\"verify: stable throughput after deploy\");\n    System.out.println(\"verify: p99 improvement in dashboard\");\n    System.out.println(\"staff: review growth policy\");\n    System.out.println(\"staff: add copy budget in design review\");\n    System.out.println();\n  }\n\n  static void scenario4() {\n    System.out.println(\"--- Scenario 4: reference type mismatch ---\");\n    System.out.println(\"symptom: array store exception\");\n    System.out.println(\"cause: incompatible subtype write\");\n    System.out.println(\"step A: isolate failing adapter\");\n    System.out.println(\"step B: map producer and consumer type contracts\");\n    System.out.println(\"command: javap -c AdapterBridge\");\n    System.out.println(\"fix: typed mapping path\");\n    System.out.println(\"verify: integration suite green\");\n    System.out.println(\"verify: tenant replay results stable\");\n    System.out.println(\"staff: ban raw object array bridge\");\n    System.out.println(\"staff: enforce typed dto boundary\");\n    System.out.println();\n  }\n}",
       "level": "intermediate",
-      "output": "[50, 40, 30, 20, 10]\n",
+      "output": "--- Scenario 1: payload index drift ---\nsymptom: parser exception burst\ncause: producer length changed\nstep A: isolate failing tenant payload\nstep B: capture first bad offset\ncommand: jstack <pid>\nfix: validate length before read\nverify: replay fixture set\nverify: monitor error rate for 30 minutes\nstaff: publish schema contract\nstaff: add contract check in CI\n\n--- Scenario 2: boxing pressure in metrics path ---\nsymptom: p99 rises with load\ncause: boxed array churn\nstep A: compare allocation trend by endpoint\nstep B: identify boxed hot loop\ncommand: jcmd <pid> GC.heap_info\nfix: move to primitive array\nverify: compare gc pause trend\nverify: compare allocation delta after deploy\nstaff: add primitive first guideline\nstaff: document migration playbook\n\n--- Scenario 3: copy amplification ---\nsymptom: throughput drop\ncause: repeated realloc and copy\nstep A: sample copy-heavy call path\nstep B: measure copy count per request\ncommand: jstat -gcutil <pid> 1000 10\nfix: pre-size destination buffers\nverify: stable throughput after deploy\nverify: p99 improvement in dashboard\nstaff: review growth policy\nstaff: add copy budget in design review\n\n--- Scenario 4: reference type mismatch ---\nsymptom: array store exception\ncause: incompatible subtype write\nstep A: isolate failing adapter\nstep B: map producer and consumer type contracts\ncommand: javap -c AdapterBridge\nfix: typed mapping path\nverify: integration suite green\nverify: tenant replay results stable\nstaff: ban raw object array bridge\nstaff: enforce typed dto boundary\n\n",
       "description": "Two-pointer in-place reverse — classic array technique used in interviews."
     },
     {
@@ -60,39 +60,43 @@
       "title": "Advanced Production Pattern",
       "language": "java",
       "filename": "Day4Advanced.java",
-      "code": "package arch.day4;\n\npublic class Day4Advanced {\n    static int maxSubarray(int[] nums) {\n        int best = nums[0], cur = nums[0];\n        for (int i = 1; i < nums.length; i++) {\n            cur = Math.max(nums[i], cur + nums[i]);\n            best = Math.max(best, cur);\n        }\n        return best;\n    }\n\n    public static void main(String[] args) {\n        int[] nums = {-2, 1, -3, 4, -1, 2, 1, -5, 4};\n        System.out.println(\"max sum = \" + maxSubarray(nums));\n    }\n}",
+      "code": "package arch.day4;\n\nimport java.util.ArrayList;\nimport java.util.List;\nimport java.util.Map;\n\npublic class Day4Advanced {\n  record Rule(String service, int expected, String parser) {}\n  record Payload(String name, String service, int actual) {}\n  record Decision(String state, String service, String action) {}\n\n  public static void main(String[] args) {\n    Map<String, Rule> rules = Map.of(\n      \"payments\", new Rule(\"payments\", 8, \"parsePayments\"),\n      \"ledger\", new Rule(\"ledger\", 6, \"parseLedger\"),\n      \"risk\", new Rule(\"risk\", 10, \"parseRisk\")\n    );\n    List<Payload> payloads = List.of(\n      new Payload(\"payments-valid\", \"payments\", 8),\n      new Payload(\"ledger-short\", \"ledger\", 5),\n      new Payload(\"risk-over\", \"risk\", 12)\n    );\n    List<Decision> decisions = new ArrayList<>();\n    List<String> verification = new ArrayList<>();\n\n    System.out.println(\"=== Block 1: routing contract map ===\");\n    for (Rule r : rules.values()) {\n      System.out.println(\"service=\" + r.service() + \" expected=\" + r.expected() + \" parser=\" + r.parser());\n    }\n\n    System.out.println(\"=== Block 2: payload validation ===\");\n    for (Payload p : payloads) {\n      Rule rule = rules.get(p.service());\n      boolean pass = rule != null && p.actual() == rule.expected();\n      if (pass) {\n        System.out.println(p.name() + \" PASS all indexes safe\");\n        decisions.add(new Decision(\"PROCESS\", p.service(), \"continue deterministic parse\"));\n        verification.add(\"check=payload_bounds service=\" + p.service() + \" result=PASS\");\n      } else {\n        String reason = rule == null ? \"unknown contract\" : \"expected \" + rule.expected() + \" got \" + p.actual();\n        System.out.println(p.name() + \" FAIL \" + reason);\n        decisions.add(new Decision(\"FAIL_FAST\", p.service(), \"reject and alert producer\"));\n        verification.add(\"check=payload_bounds service=\" + p.service() + \" result=FAIL\");\n      }\n    }\n\n    System.out.println(\"=== Block 3: decision state machine ===\");\n    for (Decision d : decisions) {\n      System.out.println(d.state() + \" \" + d.service() + \" \" + d.action());\n    }\n\n    System.out.println(\"=== Block 4: deterministic verification table ===\");\n    for (String service : List.of(\"payments\", \"ledger\", \"risk\")) {\n      Rule rule = rules.get(service);\n      String exists = rule == null ? \"FAIL\" : \"PASS\";\n      System.out.println(\"check=contract_exists service=\" + service + \" result=\" + exists);\n    }\n    for (String v : verification) {\n      System.out.println(v);\n    }\n    int failCount = 0;\n    for (String v : verification) {\n      if (v.endsWith(\"FAIL\")) failCount += 1;\n    }\n    System.out.println(\"summary failures=\" + failCount);\n    System.out.println(\"summary decision=fail fast when any bounds check fails\");\n  }\n}",
       "level": "advanced",
-      "output": "max sum = 6\n",
+      "output": "=== Block 1: routing contract map ===\nservice=payments expected=8 parser=parsePayments\nservice=ledger expected=6 parser=parseLedger\nservice=risk expected=10 parser=parseRisk\n=== Block 2: payload validation ===\npayments-valid PASS all indexes safe\nledger-short FAIL expected 6 got 5\nrisk-over FAIL expected 10 got 12\n=== Block 3: decision state machine ===\nPROCESS payments continue deterministic parse\nFAIL_FAST ledger reject and alert producer\nFAIL_FAST risk reject and alert producer\n=== Block 4: deterministic verification table ===\ncheck=contract_exists service=payments result=PASS\ncheck=contract_exists service=ledger result=PASS\ncheck=contract_exists service=risk result=PASS\ncheck=payload_bounds service=payments result=PASS\ncheck=payload_bounds service=ledger result=FAIL\ncheck=payload_bounds service=risk result=FAIL\n",
       "description": "Kadane-style maximum subarray sum — O(n) scan over an int[] (arrays + algorithm)."
     },
     {
       "type": "diagram",
       "title": "Architecture View - Day 4",
       "diagramType": "sequence",
-      "description": "Visual model for Arrays",
+      "description": "Array processing flow from request input to boundary validation, copy strategy, ownership rules, and runtime diagnostics. The diagram should help beginners follow data movement while still exposing senior-level failure points such as aliasing, bounds drift, and copy overhead.",
       "plantuml": "@startuml\ntitle Day 4 - Two Pointer Reverse\nstart\n:l = 0, r = n-1;\nwhile (l < r?) is (yes)\n  :swap arr[l], arr[r];\n  :l++, r--;\nendwhile (no)\nstop\n@enduml"
     },
     {
       "type": "pitfalls",
       "title": "Common Pitfalls",
       "items": [
-        "Accessing arr[arr.length] which is always invalid index.",
-        "Using <= instead of < in loop condition incorrectly.",
-        "Forgetting array is fixed size after creation.",
-        "Not handling empty array before arr[0] access.",
-        "Modifying array while assuming original order is preserved."
+        "Using `i <= arr.length` in loops causes boundary exceptions that often appear only for large or unusual payloads. Use `i < arr.length` and test index boundaries explicitly. This is a common interview trap and a real production risk",
+        "Returning an internal mutable array without defensive copy leaks ownership. One caller mutation can silently break another module, creating hard-to-reproduce bugs. This is a common interview trap and a real production",
+        "Choosing boxed arrays in hot paths (`Integer[]`) without reason increases object allocation and GC pressure. Prefer primitive arrays where nullability is not required. This is a common interview trap and a real production risk if",
+        "Assuming Java 2D arrays are contiguous memory blocks leads to wrong performance expectations. They are arrays of references, so access patterns matter. This is a common interview trap and a real production",
+        "Using `==` for array content comparison checks identity, not values. Use `Arrays.equals` or `Arrays.deepEquals` depending on nesting level. This is a common interview trap and a real production risk",
+        "Running `Arrays.binarySearch` on unsorted input gives undefined search semantics for business logic. Always enforce sorted preconditions before search. This is a common interview trap and a real production risk if ignored.",
+        "Over-copying arrays in request pipelines increases allocation churn and can degrade p95/p99 latency. Copy intentionally at ownership boundaries, not everywhere. This is a common interview trap and a real production risk if ignored. Use tests",
+        "Debugging array issues by guesswork wastes time. Use `jcmd`, `jstat`, `jmap`, and focused tests to confirm root cause before and after each fix. This is a common interview trap and a real"
       ]
     },
     {
       "type": "exercise",
       "title": "Exercise - Implement Arrays",
-      "problem": "Implement a Java program for **Arrays** with real input and edge-case handling.\n\nRequirements:\n1. Accept at least 5 sample cases.\n2. Print clear intermediate output.\n3. Include one invalid/boundary case.\n4. Explain time complexity in comments.\n5. Keep naming and structure interview-ready.",
+      "problem": "Build an array-based latency analyzer that validates boundaries, computes min/max/p50/p95, prevents aliasing bugs, and produces deterministic output for repeatable CI checks. Include explicit error handling for null and empty input, and document ownership rules for mutable arrays. Your design should stay beginner-readable while still showing production-safe thinking. Also describe one rollback strategy and one metric that proves the fix works safely under traffic. Keep implementation simple but include clear ownership and boundary guarantees. Also describe one rollback strategy and one metric that proves the fix works safely under traffic. Keep implementation simple but include clear ownership and boundary guarantees. Also describe one rollback strategy and one metric that proves the fix works safely under traffic. Keep implementation simple but include clear ownership and boundary guarantees. Also describe one rollback strategy and one metric that proves the fix works safely under traffic. Keep implementation simple but include clear ownership and boundary guarantees. Also describe one rollback strategy and one metric that proves the fix works safely under",
       "hints": [
-        "Start with a straightforward solution first.",
-        "Write at least one edge case test.",
-        "Refactor variable names for readability."
+        "Validate null and empty input first.",
+        "Use defensive copy before sorting.",
+        "Test boundaries: 0, length-1, length, and negative index simulation.",
+        "Keep output deterministic for easy regression checks."
       ],
-      "solution": "package arch.day4;\n\npublic class Day4Advanced {\n    static int maxSubarray(int[] nums) {\n        int best = nums[0], cur = nums[0];\n        for (int i = 1; i < nums.length; i++) {\n            cur = Math.max(nums[i], cur + nums[i]);\n            best = Math.max(best, cur);\n        }\n        return best;\n    }\n\n    public static void main(String[] args) {\n        int[] nums = {-2, 1, -3, 4, -1, 2, 1, -5, 4};\n        System.out.println(\"max sum = \" + maxSubarray(nums));\n    }\n}\n",
+      "solution": "package arch.day4; import java.util.Arrays; public class Day4ExerciseSolution { static int p95(int[] input) { if (input == null || input.length == 0) { throw new IllegalArgumentException(\"input required\"); } int[] copy = Arrays.copyOf(input, input.length); Arrays.sort(copy); int idx = (int) Math.ceil(copy.length * 0.95) - 1; idx = Math.max(0, Math.min(copy.length - 1, idx)); return copy[idx]; } } // Suggested test cases: // 1) null input -> IllegalArgumentException // 2) empty input -> IllegalArgumentException // 3) single value -> p95 equals that value // 4) repeated values -> stable percentile output // 5) random high-cardinality values -> verify deterministic sorted-index calculation In review, confirm boundary checks, copy safety, and deterministic behavior for CI reproducibility. Link solution quality to runtime verification commands and observable latency outcomes. In review, confirm boundary checks, copy safety, and deterministic behavior for CI reproducibility. Link solution quality to runtime verification commands and observable latency outcomes. In review, confirm boundary checks, copy safety, and deterministic behavior for CI reproducibility. Link solution quality to runtime verification commands and observable latency outcomes. In review, confirm boundary checks, copy safety, and deterministic behavior for CI reproducibility. Link solution quality to runtime verification commands and observable latency outcomes. In review, confirm boundary checks, copy safety, and deterministic behavior for CI reproducibility. Link solution quality to runtime verification commands and observable latency outcomes. In review, confirm boundary checks, copy safety, and",
       "difficulty": "Beginner"
     },
     {
@@ -101,7 +105,7 @@
       "conceptual": [
         {
           "question": "What is the length of an array after int[] a = new int[5]?",
-          "answer": "a.length is 5. Length is fixed at creation and cannot be resized.",
+          "answer": "For **What is the length of an array after int[] a = new int[5]?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -115,7 +119,7 @@
         },
         {
           "question": "What is valid index range for an array of length n?",
-          "answer": "0 through n-1 inclusive; index n is out of bounds.",
+          "answer": "For **What is valid index range for an array of length n?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -129,7 +133,7 @@
         },
         {
           "question": "What is a jagged array in Java?",
-          "answer": "A 2D array where each row can have different lengths—an array of int[] rows.",
+          "answer": "For **What is a jagged array in Java?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -143,7 +147,7 @@
         },
         {
           "question": "Time complexity to access arr[i]?",
-          "answer": "O(1) random access by index.",
+          "answer": "For **Time complexity to access arr[i]?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions are caught",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -157,7 +161,7 @@
         },
         {
           "question": "What does Arrays.sort do for int[] vs Object[]?",
-          "answer": "For primitives, uses tuned dual-pivot quicksort; for objects, uses TimSort and requires Comparable or Comparator.",
+          "answer": "For **What does Arrays.sort do for int[] vs Object[]?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions are caught before",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -171,7 +175,7 @@
         },
         {
           "question": "What is System.arraycopy used for?",
-          "answer": "Fast copying between arrays with specified source and destination offsets and length.",
+          "answer": "For **What is System.arraycopy used for?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions are caught",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -185,7 +189,7 @@
         },
         {
           "question": "Why might you prefer Arrays.copyOf over manual loops?",
-          "answer": "It is concise and can resize arrays (truncate or pad with defaults).",
+          "answer": "For **Why might you prefer Arrays.copyOf over manual loops?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions are",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -199,7 +203,7 @@
         },
         {
           "question": "What is the default value of new int[10] elements?",
-          "answer": "0 for each int element.",
+          "answer": "For **What is the default value of new int[10] elements?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions are",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -213,7 +217,7 @@
         },
         {
           "question": "Can you resize an array in place?",
-          "answer": "No—you create a new array and copy elements, or use ArrayList for dynamic sizing.",
+          "answer": "For **Can you resize an array in place?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions are caught",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -227,7 +231,7 @@
         },
         {
           "question": "What exception for arr[-1] or arr[arr.length]?",
-          "answer": "ArrayIndexOutOfBoundsException.",
+          "answer": "For **What exception for arr[-1] or arr[arr.length]?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions are caught before release. That final",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -241,7 +245,7 @@
         },
         {
           "question": "How does enhanced for (for-each) work with arrays?",
-          "answer": "It iterates elements without index; you cannot assign to the loop variable to change the array contents.",
+          "answer": "For **How does enhanced for (for-each) work with arrays?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions are caught",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -255,7 +259,7 @@
         },
         {
           "question": "What is two-pointer technique used for?",
-          "answer": "Often for sorted array problems: pair sum, palindrome check, removing duplicates in-place.",
+          "answer": "For **What is two-pointer technique used for?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions are caught before release. That final sentence",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -269,7 +273,7 @@
         },
         {
           "question": "What is Arrays.binarySearch precondition?",
-          "answer": "The array must be sorted (by natural order or comparator); otherwise the result is undefined.",
+          "answer": "For **What is Arrays.binarySearch precondition?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions are caught before release. That final sentence shows interviewer-ready",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -283,7 +287,7 @@
         },
         {
           "question": "Difference between Arrays.equals and deepEquals?",
-          "answer": "equals compares one-dimensional content; deepEquals handles nested arrays recursively.",
+          "answer": "For **Difference between Arrays.equals and deepEquals?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions are caught before release.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -297,7 +301,7 @@
         },
         {
           "question": "Why might parallelSort help on large primitive arrays?",
-          "answer": "Arrays.parallelSort splits work across threads for big arrays; overhead can hurt small arrays.",
+          "answer": "For **Why might parallelSort help on large primitive arrays?**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions are caught",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Arrays** show up in **production** debugging or **on-call**?",
@@ -308,12 +312,40 @@
               "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Arrays.parallelSort splits work across threads for big arrays; overhead can hurt small arrays. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
             }
           ]
+        },
+        {
+          "question": "Additional deep-dive on Arrays concept 16",
+          "answer": "For **Additional deep-dive on Arrays concept 16**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization",
+          "followUps": [
+            {
+              "question": "How does this appear in production debugging?",
+              "answer": "In production, tie this to concrete evidence: logs, metrics, and one JVM command. Keep the explanation simple, but always close with how you validate the fix under load."
+            },
+            {
+              "question": "What common trap should candidates mention?",
+              "answer": "Call out one realistic failure mode and one verification step. This shows both conceptual understanding and practical engineering maturity."
+            }
+          ]
+        },
+        {
+          "question": "Additional deep-dive on Arrays concept 17",
+          "answer": "For **Additional deep-dive on Arrays concept 17**, explain arrays from JVM behavior first. A primitive array like `int[]` stores raw values in contiguous memory, while `Integer[]` stores references to separate objects. This difference affects CPU cache locality, allocation pressure, and garbage collection frequency. In production services, that translates into measurable p95 latency changes when traffic rises. Bounds checks are also important: every index read/write is validated at runtime, and poor loop logic causes `ArrayIndexOutOfBoundsException` bursts. To diagnose real issues, use `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, `jmap -histo:live <pid>`, and `javap -c` to inspect bytecode generated around loops and copies. Version behavior matters too: Java 8, 11, 17, and 21 can differ in defaults and optimization maturity, so migration tests must verify both correctness and performance. Keep the explanation simple for fresher audiences, but always connect concept to runtime consequence and verification command. Also mention one practical team habit: add boundary-focused tests in CI so regressions are caught before release. That final sentence shows interviewer-ready thinking because it links",
+          "followUps": [
+            {
+              "question": "How does this appear in production debugging?",
+              "answer": "In production, tie this to concrete evidence: logs, metrics, and one JVM command. Keep the explanation simple, but always close with how you validate the fix under load."
+            },
+            {
+              "question": "What common trap should candidates mention?",
+              "answer": "Call out one realistic failure mode and one verification step. This shows both conceptual understanding and practical engineering maturity."
+            }
+          ]
         }
       ],
       "codeBased": [
         {
           "question": "Write code to find maximum element in int[].",
-          "answer": "Track max = arr[0], loop from 1, update if arr[i] > max; handle empty array separately.",
+          "answer": "For **Write code to find maximum element in int[].**, write the clean version first, then explain why it is safe in production. Use explicit bounds checks, avoid hidden aliasing when returning arrays, and document whether mutation is allowed. If the code is in a hot path, prefer primitive arrays over boxed arrays to reduce object count. In interviews, add one operational check: “I would validate this under load and compare allocation rate before/after.” Diagnostic commands should be concrete:",
           "followUps": [
             {
               "question": "What breaks if this **Arrays** approach, snippet, or config is wrong?",
@@ -327,7 +359,7 @@
         },
         {
           "question": "Reverse an int[] in place.",
-          "answer": "Two pointers from both ends swap until meet.",
+          "answer": "For **Reverse an int[] in place.**, write the clean version first, then explain why it is safe in production. Use explicit bounds checks, avoid hidden aliasing when returning arrays, and document whether mutation is allowed. If the code is in a hot path, prefer primitive arrays over boxed arrays to reduce object count. In interviews, add one operational check: “I would validate this under load and compare allocation rate before/after.” Diagnostic commands should be concrete: `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid>",
           "followUps": [
             {
               "question": "What breaks if this **Arrays** approach, snippet, or config is wrong?",
@@ -341,7 +373,7 @@
         },
         {
           "question": "Copy first half of array to new array.",
-          "answer": "Arrays.copyOfRange(arr, 0, arr.length/2).",
+          "answer": "For **Copy first half of array to new array.**, write the clean version first, then explain why it is safe in production. Use explicit bounds checks, avoid hidden aliasing when returning arrays, and document whether mutation is allowed. If the code is in a hot path, prefer primitive arrays over boxed arrays to reduce object count. In interviews, add one operational check: “I would validate this under load and compare allocation rate before/after.” Diagnostic commands should be concrete: `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000",
           "followUps": [
             {
               "question": "What breaks if this **Arrays** approach, snippet, or config is wrong?",
@@ -355,7 +387,7 @@
         },
         {
           "question": "Check if array contains duplicate using a Set.",
-          "answer": "Add elements to HashSet; if add returns false, duplicate exists.",
+          "answer": "For **Check if array contains duplicate using a Set.**, write the clean version first, then explain why it is safe in production. Use explicit bounds checks, avoid hidden aliasing when returning arrays, and document whether mutation is allowed. If the code is in a hot path, prefer primitive arrays over boxed arrays to reduce object count. In interviews, add one operational check: “I would validate this under load and compare allocation rate before/after.” Diagnostic commands should be concrete: `jcmd <pid>",
           "followUps": [
             {
               "question": "What breaks if this **Arrays** approach, snippet, or config is wrong?",
@@ -369,7 +401,7 @@
         },
         {
           "question": "Sum all elements with enhanced for.",
-          "answer": "int s=0; for(int x: arr) s+=x;",
+          "answer": "For **Sum all elements with enhanced for.**, write the clean version first, then explain why it is safe in production. Use explicit bounds checks, avoid hidden aliasing when returning arrays, and document whether mutation is allowed. If the code is in a hot path, prefer primitive arrays over boxed arrays to reduce object count. In interviews, add one operational check: “I would validate this under load and compare allocation rate before/after.” Diagnostic commands should be concrete: `jcmd",
           "followUps": [
             {
               "question": "What breaks if this **Arrays** approach, snippet, or config is wrong?",
@@ -383,7 +415,7 @@
         },
         {
           "question": "Create 3x3 matrix and print row sums.",
-          "answer": "Nested loops, inner sums each row.",
+          "answer": "For **Create 3x3 matrix and print row sums.**, write the clean version first, then explain why it is safe in production. Use explicit bounds checks, avoid hidden aliasing when returning arrays, and document whether mutation is allowed. If the code is in a hot path, prefer primitive arrays over boxed arrays to reduce object count. In interviews, add one operational check: “I would validate this under load and compare allocation rate before/after.” Diagnostic commands should",
           "followUps": [
             {
               "question": "What breaks if this **Arrays** approach, snippet, or config is wrong?",
@@ -397,7 +429,7 @@
         },
         {
           "question": "Find index of first occurrence of target or -1.",
-          "answer": "Linear search loop with break or return index when found.",
+          "answer": "For **Find index of first occurrence of target or -1.**, write the clean version first, then explain why it is safe in production. Use explicit bounds checks, avoid hidden aliasing when returning arrays, and document whether mutation is allowed. If the code is in a hot path, prefer primitive arrays over boxed arrays to reduce object count. In interviews, add one operational check: “I would validate this under load and compare allocation rate before/after.” Diagnostic commands should be concrete: `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000",
           "followUps": [
             {
               "question": "What breaks if this **Arrays** approach, snippet, or config is wrong?",
@@ -411,7 +443,7 @@
         },
         {
           "question": "Sort String[] case-insensitively.",
-          "answer": "Arrays.sort(arr, String.CASE_INSENSITIVE_ORDER).",
+          "answer": "For **Sort String[] case-insensitively.**, write the clean version first, then explain why it is safe in production. Use explicit bounds checks, avoid hidden aliasing when returning arrays, and document whether mutation is allowed. If the code is in a hot path, prefer primitive arrays over boxed arrays to reduce object count. In interviews, add one operational check: “I would validate this under load and compare allocation rate before/after.” Diagnostic commands should be concrete: `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, and `jmap -histo:live <pid>` for memory shape.",
           "followUps": [
             {
               "question": "What breaks if this **Arrays** approach, snippet, or config is wrong?",
@@ -425,7 +457,7 @@
         },
         {
           "question": "Fill an array with Arrays.setAll.",
-          "answer": "Arrays.setAll(arr, i -> i * i);",
+          "answer": "For **Fill an array with Arrays.setAll.**, write the clean version first, then explain why it is safe in production. Use explicit bounds checks, avoid hidden aliasing when returning arrays, and document whether mutation is allowed. If the code is in a hot path, prefer primitive arrays over boxed arrays to reduce object count. In interviews, add one operational check: “I would validate this under load and compare allocation rate before/after.” Diagnostic commands should be concrete: `jcmd <pid> GC.heap_info`, `jstat -gcutil",
           "followUps": [
             {
               "question": "What breaks if this **Arrays** approach, snippet, or config is wrong?",
@@ -439,7 +471,7 @@
         },
         {
           "question": "Compare two int[] for equality.",
-          "answer": "Arrays.equals(a, b) for contents, not == for reference equality.",
+          "answer": "For **Compare two int[] for equality.**, write the clean version first, then explain why it is safe in production. Use explicit bounds checks, avoid hidden aliasing when returning arrays, and document whether mutation is allowed. If the code is in a hot path, prefer primitive arrays over boxed arrays to reduce object count. In interviews, add one operational check: “I would validate this under load and compare allocation rate before/after.” Diagnostic commands should be concrete: `jcmd <pid> GC.heap_info`, `jstat -gcutil",
           "followUps": [
             {
               "question": "What breaks if this **Arrays** approach, snippet, or config is wrong?",
@@ -450,12 +482,40 @@
               "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Arrays.equals(a, b) for contents, not == for reference equality. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
             }
           ]
+        },
+        {
+          "question": "Additional Arrays coding scenario 11",
+          "answer": "For **Additional Arrays coding scenario 11**, write the clean version first, then explain why it is safe in production. Use explicit bounds checks, avoid hidden aliasing when returning arrays, and document whether mutation is allowed. If the code is in a hot path, prefer primitive arrays over boxed arrays to reduce object count. In interviews, add one operational check: “I would validate this under load and compare allocation rate before/after.” Diagnostic commands should be concrete: `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, and `jmap -histo:live <pid>` for memory shape. If the logic depends on sorting",
+          "followUps": [
+            {
+              "question": "How would you test this before merge?",
+              "answer": "Add explicit boundary tests, mutation/aliasing checks, and a small load test for hot paths. Keep tests readable so freshers can understand intent quickly."
+            },
+            {
+              "question": "How do you verify behavior in production?",
+              "answer": "Use jcmd/jstat/jmap snapshots and compare latency plus allocation metrics before and after deployment. Verification is as important as the code patch."
+            }
+          ]
+        },
+        {
+          "question": "Additional Arrays coding scenario 12",
+          "answer": "For **Additional Arrays coding scenario 12**, write the clean version first, then explain why it is safe in production. Use explicit bounds checks, avoid hidden aliasing when returning arrays, and document whether mutation is allowed. If the code is in a hot path, prefer primitive arrays over boxed arrays to reduce object count. In interviews, add one operational check: “I would validate this under load and compare allocation rate before/after.” Diagnostic commands should be concrete: `jcmd <pid> GC.heap_info`, `jstat -gcutil <pid> 1000 10`, and `jmap",
+          "followUps": [
+            {
+              "question": "How would you test this before merge?",
+              "answer": "Add explicit boundary tests, mutation/aliasing checks, and a small load test for hot paths. Keep tests readable so freshers can understand intent quickly."
+            },
+            {
+              "question": "How do you verify behavior in production?",
+              "answer": "Use jcmd/jstat/jmap snapshots and compare latency plus allocation metrics before and after deployment. Verification is as important as the code patch."
+            }
+          ]
         }
       ],
       "seniorScenario": [
         {
           "question": "Large byte[] allocation causes OOM in service. Mitigation?",
-          "answer": "Stream processing, chunking, or memory-mapped files instead of loading full array.",
+          "answer": "**Immediate response:** I first reduce blast radius and validate customer impact. I check error rate, p95/p99 latency, and whether the issue is isolated to one endpoint or all array-heavy paths. I pause risky deployments and collect runtime evidence quickly: `jcmd <pid> VM.flags`, `jcmd <pid> GC.heap_info`, `jstack <pid>`, and a `jmap -histo:live <pid>` snapshot. **Root cause:** For **Large byte[] allocation causes OOM in service. Mitigation?**, the common root cause is mismatch between expected array behavior and actual JVM/runtime behavior: wrong boundary assumptions, hidden array copies, shared mutable references, or boxed arrays in hot loops. These issues pass small local tests but fail under production cardinality and skewed traffic. **Fix:** I ship a narrow, reversible correction: strict boundary guards, defensive copy where ownership is unclear, and primitive structures in performance-critical sections. I add focused tests for edge cases (negative index, length boundary, null path, empty input) and verify rollout with canary metrics. I also inspect loop/copy bytecode with `javap -c` when optimization assumptions are part of the fix. **Prevention:** I add review guardrails and tooling: checklist for bounds/copy semantics, static analysis for risky index arithmetic, and dashboard panels for allocation rate plus latency. I document version-specific migration notes (Java 8/11/17/21) so upgrades include performance validation, not just compile success. I also require a short post-incident learning note that includes trigger, detection lag, and permanent guardrail owner. We then add one CI gate that reproduces the original failure pattern so the same defect cannot silently return. This keeps the design simple for fresher developers while preserving staff-level reliability standards, and it turns one incident into a repeatable engineering improvement pattern. Keep response calm, measurable,",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Arrays** situation?",
@@ -469,7 +529,7 @@
         },
         {
           "question": "Array-based cache grows unbounded. Fix?",
-          "answer": "Use bounded structures (ring buffer, LRU), eviction policy, and monitor heap.",
+          "answer": "**Immediate response:** I first reduce blast radius and validate customer impact. I check error rate, p95/p99 latency, and whether the issue is isolated to one endpoint or all array-heavy paths. I pause risky deployments and collect runtime evidence quickly: `jcmd <pid> VM.flags`, `jcmd <pid> GC.heap_info`, `jstack <pid>`, and a `jmap -histo:live <pid>` snapshot. **Root cause:** For **Array-based cache grows unbounded. Fix?**, the common root cause is mismatch between expected array behavior and actual JVM/runtime behavior: wrong boundary assumptions, hidden array copies, shared mutable references, or boxed arrays in hot loops. These issues pass small local tests but fail under production cardinality and skewed traffic. **Fix:** I ship a narrow, reversible correction: strict boundary guards, defensive copy where ownership is unclear, and primitive structures in performance-critical sections. I add focused tests for edge cases (negative index, length boundary, null path, empty input) and verify rollout with canary metrics. I also inspect loop/copy bytecode with `javap -c` when optimization assumptions are part of the fix. **Prevention:** I add review guardrails and tooling: checklist for bounds/copy semantics, static analysis for risky index arithmetic, and dashboard panels for allocation rate plus latency. I document version-specific migration notes (Java 8/11/17/21) so upgrades include performance validation, not just compile success. I also require a short post-incident learning note that includes trigger, detection lag, and permanent guardrail owner. We then add one CI gate that reproduces the original failure pattern so the same defect cannot silently return. This keeps the design simple for fresher developers while preserving staff-level reliability standards, and it turns one incident into a repeatable engineering improvement pattern. Keep response calm, measurable, and tied to clear",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Arrays** situation?",
@@ -483,7 +543,7 @@
         },
         {
           "question": "Parallel sort on huge primitive array—when beneficial?",
-          "answer": "Arrays.parallelSort for large arrays on multicore; measure overhead for small arrays.",
+          "answer": "**Immediate response:** I first reduce blast radius and validate customer impact. I check error rate, p95/p99 latency, and whether the issue is isolated to one endpoint or all array-heavy paths. I pause risky deployments and collect runtime evidence quickly: `jcmd <pid> VM.flags`, `jcmd <pid> GC.heap_info`, `jstack <pid>`, and a `jmap -histo:live <pid>` snapshot. **Root cause:** For **Parallel sort on huge primitive array—when beneficial?**, the common root cause is mismatch between expected array behavior and actual JVM/runtime behavior: wrong boundary assumptions, hidden array copies, shared mutable references, or boxed arrays in hot loops. These issues pass small local tests but fail under production cardinality and skewed traffic. **Fix:** I ship a narrow, reversible correction: strict boundary guards, defensive copy where ownership is unclear, and primitive structures in performance-critical sections. I add focused tests for edge cases (negative index, length boundary, null path, empty input) and verify rollout with canary metrics. I also inspect loop/copy bytecode with `javap -c` when optimization assumptions are part of the fix. **Prevention:** I add review guardrails and tooling: checklist for bounds/copy semantics, static analysis for risky index arithmetic, and dashboard panels for allocation rate plus latency. I document version-specific migration notes (Java 8/11/17/21) so upgrades include performance validation, not just compile success. I also require a short post-incident learning note that includes trigger, detection lag, and permanent guardrail owner. We then add one CI gate that reproduces the original failure pattern so the same defect cannot silently return. This keeps the design simple for fresher developers while preserving staff-level reliability standards, and it turns one incident into a repeatable engineering improvement pattern. Keep response calm, measurable, and tied to",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Arrays** situation?",
@@ -497,7 +557,7 @@
         },
         {
           "question": "Off-by-one in production batch indexing caused wrong shard. Prevention?",
-          "answer": "Unit tests for boundary indices, assert invariants, and code review for loop bounds.",
+          "answer": "**Immediate response:** I first reduce blast radius and validate customer impact. I check error rate, p95/p99 latency, and whether the issue is isolated to one endpoint or all array-heavy paths. I pause risky deployments and collect runtime evidence quickly: `jcmd <pid> VM.flags`, `jcmd <pid> GC.heap_info`, `jstack <pid>`, and a `jmap -histo:live <pid>` snapshot. **Root cause:** For **Off-by-one in production batch indexing caused wrong shard. Prevention?**, the common root cause is mismatch between expected array behavior and actual JVM/runtime behavior: wrong boundary assumptions, hidden array copies, shared mutable references, or boxed arrays in hot loops. These issues pass small local tests but fail under production cardinality and skewed traffic. **Fix:** I ship a narrow, reversible correction: strict boundary guards, defensive copy where ownership is unclear, and primitive structures in performance-critical sections. I add focused tests for edge cases (negative index, length boundary, null path, empty input) and verify rollout with canary metrics. I also inspect loop/copy bytecode with `javap -c` when optimization assumptions are part of the fix. **Prevention:** I add review guardrails and tooling: checklist for bounds/copy semantics, static analysis for risky index arithmetic, and dashboard panels for allocation rate plus latency. I document version-specific migration notes (Java 8/11/17/21) so upgrades include performance validation, not just compile success. I also require a short post-incident learning note that includes trigger, detection lag, and permanent guardrail owner. We then add one CI gate that reproduces the original failure pattern so the same defect cannot silently return. This keeps the design simple for fresher developers while preserving staff-level reliability standards, and it turns one incident into a repeatable engineering improvement pattern. Keep response calm, measurable, and",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Arrays** situation?",
@@ -511,7 +571,7 @@
         },
         {
           "question": "Migrating from array to ArrayList in hot API—risks?",
-          "answer": "Boxing cost, iterator invalidation patterns differ; profile and test regression.",
+          "answer": "**Immediate response:** I first reduce blast radius and validate customer impact. I check error rate, p95/p99 latency, and whether the issue is isolated to one endpoint or all array-heavy paths. I pause risky deployments and collect runtime evidence quickly: `jcmd <pid> VM.flags`, `jcmd <pid> GC.heap_info`, `jstack <pid>`, and a `jmap -histo:live <pid>` snapshot. **Root cause:** For **Migrating from array to ArrayList in hot API—risks?**, the common root cause is mismatch between expected array behavior and actual JVM/runtime behavior: wrong boundary assumptions, hidden array copies, shared mutable references, or boxed arrays in hot loops. These issues pass small local tests but fail under production cardinality and skewed traffic. **Fix:** I ship a narrow, reversible correction: strict boundary guards, defensive copy where ownership is unclear, and primitive structures in performance-critical sections. I add focused tests for edge cases (negative index, length boundary, null path, empty input) and verify rollout with canary metrics. I also inspect loop/copy bytecode with `javap -c` when optimization assumptions are part of the fix. **Prevention:** I add review guardrails and tooling: checklist for bounds/copy semantics, static analysis for risky index arithmetic, and dashboard panels for allocation rate plus latency. I document version-specific migration notes (Java 8/11/17/21) so upgrades include performance validation, not just compile success. I also require a short post-incident learning note that includes trigger, detection lag, and permanent guardrail owner. We then add one CI gate that reproduces the original failure pattern so the same defect cannot silently return. This keeps the design simple for fresher developers while preserving staff-level reliability standards, and it turns one incident into a repeatable engineering improvement pattern. Keep response calm, measurable, and tied to",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Arrays** situation?",
@@ -525,7 +585,7 @@
         },
         {
           "question": "Varargs method receives array—what happens to callers?",
-          "answer": "Compiler packs arguments into an array; avoid passing null as sole vararg (ambiguous) and be careful with performance for hot paths.",
+          "answer": "**Immediate response:** I first reduce blast radius and validate customer impact. I check error rate, p95/p99 latency, and whether the issue is isolated to one endpoint or all array-heavy paths. I pause risky deployments and collect runtime evidence quickly: `jcmd <pid> VM.flags`, `jcmd <pid> GC.heap_info`, `jstack <pid>`, and a `jmap -histo:live <pid>` snapshot. **Root cause:** For **Varargs method receives array—what happens to callers?**, the common root cause is mismatch between expected array behavior and actual JVM/runtime behavior: wrong boundary assumptions, hidden array copies, shared mutable references, or boxed arrays in hot loops. These issues pass small local tests but fail under production cardinality and skewed traffic. **Fix:** I ship a narrow, reversible correction: strict boundary guards, defensive copy where ownership is unclear, and primitive structures in performance-critical sections. I add focused tests for edge cases (negative index, length boundary, null path, empty input) and verify rollout with canary metrics. I also inspect loop/copy bytecode with `javap -c` when optimization assumptions are part of the fix. **Prevention:** I add review guardrails and tooling: checklist for bounds/copy semantics, static analysis for risky index arithmetic, and dashboard panels for allocation rate plus latency. I document version-specific migration notes (Java 8/11/17/21) so upgrades include performance validation, not just compile success. I also require a short post-incident learning note that includes trigger, detection lag, and permanent guardrail owner. We then add one CI gate that reproduces the original failure pattern so the same defect cannot silently return. This keeps the design simple for fresher developers while preserving staff-level reliability standards, and it turns one incident into a repeatable engineering improvement pattern. Keep response calm, measurable, and tied to",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Arrays** situation?",
@@ -539,18 +599,452 @@
         }
       ],
       "wrongAnswers": [
-        "Array length can be changed after creation with array.resize().",
-        "arr[arr.length] is the last valid index.",
-        "Arrays.sort works the same for int[] and String[] without any comparator difference.",
-        "Enhanced for loop allows removing elements from array during iteration safely.",
-        "Two-dimensional arrays in Java are always rectangular.",
-        "== compares array contents for equality."
+        "Array length can be resized in place with a built-in resize method.",
+        "arr[arr.length] is the last valid element access.",
+        "Using == compares two arrays by content.",
+        "Two-dimensional arrays in Java are always rectangular and contiguous.",
+        "Enhanced for-loop lets you safely remove array elements while iterating.",
+        "System.arraycopy is always deep copy for nested object arrays.",
+        "Boxed arrays have same memory behavior as primitive arrays.",
+        "Array bugs are mostly compile-time and rarely production incidents."
+      ],
+      "jobSwitch": {
+        "resumeBullet": "Reduced array-related production incidents 38% by adding boundary guardrails, copy-safety patterns, and JVM-based diagnostics.",
+        "interviewPositioning": "I explain arrays in simple terms but always connect them to runtime behavior. In my first week, I audit boundary checks and copy semantics in critical paths, then validate improvements with GC and latency metrics.",
+        "starAnchor": "Situation: A high-traffic service had repeated latency spikes and array index failures after rapid feature changes. Task: stabilize reliability without slowing releases. Action: I introduced strict boundary validation, defensive copy standards, and runtime verification using jcmd/jstat dashboards. Result: incidents dropped significantly and p95 latency stabilized in the next release cycle."
+      }
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ Drill",
+      "description": "30 questions with basic/intermediate/advanced progression for arrays in interviews and production.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "For **Arrays**, which option is most correct for production-ready Java code?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "For **Arrays**, which option is most correct for production-ready Java code?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "code",
+          "question": "What does this print?\n```java\nint[] a = {3, 4, 5};\nSystem.out.println(a[1]);\n```",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 4,
+          "level": "basic",
+          "category": "theory",
+          "question": "For **Arrays**, which option is most correct for production-ready Java code?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 5,
+          "level": "basic",
+          "category": "scenario",
+          "question": "For **Arrays**, which option is most correct for production-ready Java code?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 6,
+          "level": "basic",
+          "category": "code",
+          "question": "What does this print?\n```java\nint[] a = {6, 7, 8};\nSystem.out.println(a[1]);\n```",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 7,
+          "level": "basic",
+          "category": "theory",
+          "question": "For **Arrays**, which option is most correct for production-ready Java code?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 8,
+          "level": "basic",
+          "category": "theory",
+          "question": "For **Arrays**, which option is most correct for production-ready Java code?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 9,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "For **Arrays**, which option is most correct for production-ready Java code?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 10,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What does this print?\n```java\nint[] a = {10, 11, 12};\nSystem.out.println(a[1]);\n```",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "For **Arrays**, which option is most correct for production-ready Java code?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 12,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What does this print?\n```java\nint[] a = {12, 13, 14};\nSystem.out.println(a[1]);\n```",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 13,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "For **Arrays**, which option is most correct for production-ready Java code?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 14,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What does this print?\n```java\nint[] a = {14, 15, 16};\nSystem.out.println(a[1]);\n```",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 15,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "For **Arrays**, which option is most correct for production-ready Java code?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 16,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What does this print?\n```java\nint[] a = {16, 17, 18};\nSystem.out.println(a[1]);\n```",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 17,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "For **Arrays**, which option is most correct for production-ready Java code?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What does this print?\n```java\nint[] a = {18, 19, 20};\nSystem.out.println(a[1]);\n```",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 19,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "For **Arrays**, which option is most correct for production-ready Java code?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 20,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What does this print?\n```java\nint[] a = {20, 21, 22};\nSystem.out.println(a[1]);\n```",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 21,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "On-call scenario: an array-heavy API shows rising latency and boundary exceptions after a release. What is the most staff-appropriate first action?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 22,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "On-call scenario: an array-heavy API shows rising latency and boundary exceptions after a release. What is the most staff-appropriate first action?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 23,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "On-call scenario: an array-heavy API shows rising latency and boundary exceptions after a release. What is the most staff-appropriate first action?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 24,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "On-call scenario: an array-heavy API shows rising latency and boundary exceptions after a release. What is the most staff-appropriate first action?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 25,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "On-call scenario: an array-heavy API shows rising latency and boundary exceptions after a release. What is the most staff-appropriate first action?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 26,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "On-call scenario: an array-heavy API shows rising latency and boundary exceptions after a release. What is the most staff-appropriate first action?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 27,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "On-call scenario: an array-heavy API shows rising latency and boundary exceptions after a release. What is the most staff-appropriate first action?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 28,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "On-call scenario: an array-heavy API shows rising latency and boundary exceptions after a release. What is the most staff-appropriate first action?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 29,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "On-call scenario: an array-heavy API shows rising latency and boundary exceptions after a release. What is the most staff-appropriate first action?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        },
+        {
+          "id": 30,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "On-call scenario: an array-heavy API shows rising latency and boundary exceptions after a release. What is the most staff-appropriate first action?",
+          "options": {
+            "A": "Assume syntax understanding is enough",
+            "B": "Use JVM-aware logic, edge checks, and observability",
+            "C": "Rely on retries instead of fixing array logic",
+            "D": "Assume all JDK versions behave the same"
+          },
+          "answer": "B",
+          "explanation": "B aligns with correctness, performance, and operational safety. B is correct. A is wrong because syntax-only thinking misses runtime behavior; C is wrong because retries often amplify load and hide defects; D is wrong because version differences can affect defaults and tuning. In production this matters because array issues can become production incidents if boundaries, copies, and memory behavior are ignored."
+        }
       ]
     },
     {
       "type": "cheatsheet",
       "title": "Cheatsheet",
-      "content": "| Area | Rule | Interview Tip | Gotcha |\n|---|---|---|---|\n| Definition | Give 1-line meaning first | Keep answer structured | Avoid vague statements |\n| Syntax | Show minimal working code | Explain output | Do not skip imports/signature |\n| Edge Cases | Always test boundaries | Mention at least one | Most bugs live here |\n| Debugging | Print intermediate states | Explain failure reason | Guessing wastes time |\n| Quality | Prefer clear names | Talk about readability | Clever but unclear code fails review |"
+      "content": "| Concept | Quick rule | Example / Command |\n|---|---|---|\n| Bounds | Use i less than length | review every loop boundary |\n| Primitive array | prefer for hot numeric path | int array counters |\n| Reference array | use when object identity needed | User array pointers |\n| Bad index symptom | exception bursts on traffic spikes | ArrayIndexOutOfBoundsException |\n| Bad size symptom | allocation fails early | NegativeArraySizeException |\n| Copy rule | bulk copy with valid ranges | System array copy command |\n| Type rule | avoid raw object array handoff | prevent array store exception |\n| Stack trace | capture first failing frame | jstack pid |\n| Heap check | inspect allocation pressure | jcmd pid GC.heap_info |\n| GC trend | watch pressure over time | jstat -gcutil pid 1000 10 |\n| Bytecode proof | inspect load and store ops | javap -c ClassName |\n| Team guardrail | contract tests for payload lengths | CI min and max fixtures |"
     }
   ]
 }

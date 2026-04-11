@@ -17,540 +17,1028 @@
     "Day 19"
   ],
   "learningObjectives": [
-    "Explain Linked Lists with interview-grade clarity",
-    "Implement Linked Lists solutions in clean Java",
-    "Choose the right pattern and justify complexity",
-    "Handle boundary cases without brittle logic",
-    "Use this topic to solve coding-round problems confidently",
-    "Communicate trade-offs using concrete examples"
+    "Manipulate singly linked lists with correct pointer order",
+    "Use dummy nodes and merge patterns fluently",
+    "Detect cycles and explain Floyd’s phases",
+    "Compare iterative vs recursive reversal tradeoffs",
+    "Implement remove-nth, intersection, and middle patterns",
+    "Connect lists to LRU and production cache structures"
   ],
   "sections": [
     {
       "type": "why",
-      "title": "Why Linked Lists matters",
-      "content": "Linked-list questions test pointer reasoning more than syntax; one wrong pointer update can corrupt the entire structure.\n\nThis day is central to DSA interviews because it combines coding speed with reasoning quality. Interviewers usually evaluate three things:\n1. Can you identify the right pattern quickly?\n2. Can you explain why the approach is correct?\n3. Can you reason about complexity and edge cases?\n\nPointer safety, traversal patterns, and in-place operations.\n\nA high-quality answer should include:\n- concise approach summary,\n- small dry-run,\n- complexity analysis,\n- one alternative approach and trade-off.\n\nBy the end of Day 21, you should be able to solve representative problems and explain your decisions with confidence."
+      "title": "Why this topic shows up in real interviews",
+      "content": "Linked lists are the structure interviewers use when they want to see **pointer discipline**: one wrong `next` assignment and you lose the rest of the list in your head and in memory. They also map to real systems—task queues, symbol tables paired with doubly linked nodes for LRU caches, and lock-free structures at the edge of JVM concurrency. The topic is less about “lists are cool” and more about whether you can keep **invariants** under mutation.\n\nIn production, raw singly linked lists are rarer than `ArrayList`, but the **patterns** dominate: reversing segments, detecting cycles in iterator graphs, merging ordered streams, and implementing eviction policies. When latency spikes in a cache layer, understanding how splice and map work together is how you read the code path without panicking.\n\nInterviewers listen for **dummy nodes**, **Floyd’s tortoise and hare**, and the **three-pointer reverse**. They also listen for honesty about **recursion depth** and **cache locality**. Saying “I’ll recurse because it’s shorter” without mentioning stack risk is a yellow flag for teams that ship large payloads.\n\nLinked lists also train you to test **tiny universes**: null head, singleton, two-node swap, cycle present vs absent. Most on-call bugs from pointer code are repro’d in those sizes within seconds once you know to try them.\n\nFinally, this day connects to **Day 23** maps-plus-list combos (LRU) and **Day 22** stack behaviors used in recursive list algorithms. Seeing the graph of topics—not isolated tricks—is what moves you from solving LeetCode to sounding like an engineer.\n\nOn call, “mystery memory growth” sometimes traces to accidental **cycles** in hand-rolled structures or forgotten `next` clears. The cycle detection you practice here is the same mental model you use when a profiler shows a tiny set of objects retaining megabytes."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Linked Lists",
-      "content": "### Why this topic matters now\nLinked-list questions test pointer reasoning more than syntax; one wrong pointer update can corrupt the entire structure.\n\n### Core interview mental model\nFor Linked Lists, first identify the problem family, then map it to a known pattern. Pattern-first thinking reduces random trial-and-error.\n\n### Implementation guidance\n1. Write the simplest correct version first.\n2. Validate using one normal and one edge case.\n3. Improve complexity only after correctness is locked.\n4. Refactor to readable helper methods.\n\n### Complexity and trade-off lens\nDo not state complexity by memory. Derive it from operations performed. Mention time + space and where each cost comes from.\n\n### Common failure mode\nMost failures in Linked Lists are not syntax errors. They come from broken invariants, weak boundary checks, or unclear state tracking.\n\n### Interview speaking template\n- \"I considered X because...\"\n- \"The invariant is...\"\n- \"Per iteration we do..., so complexity is...\"\n- \"An alternative would be..., but I chose this due to...\"\n\n### Production relevance\nEven outside interviews, these patterns improve throughput, latency, and correctness in backend data processing tasks.\n\n### Satyverse — deeper path (theory → practice)\n**Singly vs doubly linked:** deletion with only head pointer is O(n) singly; doubly with tail enables LRU designs.\n\n**Dummy head** simplifies insertion at front — fewer null checks.\n\n**Fast/slow pointers** detect cycles (Floyd) — know invariants: when they meet, resetting one to head finds cycle start.\n\n**Memory:** each node is overhead vs array — cache locality worse; choose lists when frequent inserts in middle."
+      "title": "Linked Lists — theory that sticks",
+      "content": "### Plain-language overview\n\nA **linked list** is a chain of nodes where each node holds a value and a reference to the **next** (and optionally **prev**). Unlike arrays, there is no O(1) random access by index; you **walk** pointers. Interviews use lists to test pointer manipulation, **cycle** reasoning, and careful **edge** handling (empty list, single node).\n\n**Interview angle:** state whether the list is **singly** or **doubly** linked before you code.\n\n### Singly vs doubly linked\n\n| Type | Pros | Cons |\n| --- | --- | --- |\n| Singly | Less memory, simpler | No O(1) predecessor |\n| Doubly | O(1) delete with node ref | Extra prev pointer, more invariants |\n\n**Interview angle:** Java’s **LinkedList** is doubly linked; many whiteboard problems assume singly unless specified.\n\n### Complexity of core operations\n\n| Operation | Singly (known head) | Notes |\n| --- | --- | --- |\n| Prepend | O(1) | New head |\n| Append at tail w/o tail ptr | O(n) | Must walk |\n| Append with tail ptr | O(1) | Keep tail reference |\n| Index access | O(n) | Walk |\n| Delete given node (no prev) | O(n) or copy-next trick | Classic interview twist |\n\n**Interview angle:** mention you need **previous** for arbitrary delete in singly lists.\n\n### Dummy (sentinel) node pattern\n\nA **dummy** head simplifies insertion/deletion at the **front** by eliminating null special cases. Return **dummy.next** as the new head. This pattern reduces bugs in merge and remove-nth-from-end.\n\n**Interview angle:** “I use dummy to unify empty and non-empty cases.”\n\n### Cycle detection — Floyd’s algorithm\n\n**Tortoise** moves one step, **hare** two. If a cycle exists, they meet inside the loop; if hare reaches null, no cycle. Phase two resets one pointer to head and moves both one step to find cycle start (classic follow-up).\n\n**Interview angle:** prove why meeting implies cycle; know **O(n) time, O(1) space** vs HashSet O(n) space.\n\n### Reverse — iterative vs recursive\n\n**Iterative:** three pointers **prev**, **curr**, **next** relink in O(n) time, O(1) space. **Recursive:** implicit stack O(n) space—state tradeoff in interviews.\n\n**Interview angle:** recursive blows stack on deep lists in production-sized stress—prefer iterative for robustness.\n\n### Merge two sorted lists\n\nLike merge in mergesort: compare heads, advance smaller, attach with a dummy tail pointer—O(n+m) time, O(1) extra.\n\n**Interview angle:** keep a **tail** pointer to avoid scanning to end each step.\n\n### Middle of linked list\n\nSlow/fast pointers: when fast reaches end, slow is middle (careful with even length definitions). Used in palindrome list problems after reversing second half.\n\n**Interview angle:** clarify if “middle” means lower or upper median for even n.\n\n### Intersection of two lists\n\nAlign lengths by advancing longer list’s pointer, then walk both together—first equal reference is intersection (by **reference** identity, not value).\n\n**Interview angle:** distinguish value equality vs same node object.\n\n### Memory and JVM reality\n\nLists have **pointer overhead** and poor cache locality vs arrays. In services, prefer array-backed structures unless you need frequent head inserts with stable iterators.\n\n**Interview angle:** connect asymptotics to **allocation churn** and GC.\n\n### Common bugs\n\nNull dereference on **curr.next**, losing rest of list when reversing, off-by-one in fast/slow termination, confusing **copy** vs **mutation**.\n\n**Interview angle:** dry-run on 0,1,2 nodes.\n\n### Production mapping\n\nEvent chains, LRU internals (doubly linked + map), lock-free structures—lists appear where **O(1) splice** matters.\n\n**Interview angle:** LRU combines **HashMap** for lookup + **DLL** for order.\n\n### 60-second story\n\n“I confirm singly vs doubly. I use dummy head when inserting at head or merging. For reverse I use three-pointer iterative. For cycles I explain Floyd’s two-pointer meeting argument. I state O(n) time for walks and O(1) extra unless recursion. I test empty, single, two-node, and cycle cases.”\n\n### Linked lists — discipline layer 1\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 1 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 1, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 2\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 2 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 2, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 3\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 3 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 3, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 4\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 4 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 4, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 5\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 5 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 5, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 6\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 6 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 6, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 7\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 7 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 7, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 8\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 8 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 8, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 9\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 9 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 9, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 10\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 10 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 10, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 11\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 11 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 11, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 12\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 12 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 12, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 13\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 13 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 13, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 14\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 14 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 14, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 15\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 15 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 15, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 16\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 16 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 16, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 17\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 17 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 17, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 18\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 18 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 18, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 19\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 19 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 19, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 20\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 20 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 20, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 21\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 21 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 21, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 22\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 22 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 22, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 23\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 23 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 23, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 24\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 24 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 24, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Linked lists — discipline layer 25\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 25 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 25, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n"
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "Linked Lists — basic",
       "language": "java",
       "filename": "Day21Basic.java",
-      "code": "package arch.day21;\n\npublic class Day21Basic {\n    static class Node {\n        int v;\n        Node next;\n        Node(int v, Node next) { this.v = v; this.next = next; }\n    }\n\n    public static void main(String[] args) {\n        Node head = new Node(1, new Node(2, new Node(3, null)));\n        Node c = head;\n        while (c != null) {\n            System.out.print(c.v + \" \");\n            c = c.next;\n        }\n        System.out.println();\n    }\n}",
       "level": "basic",
-      "output": "1 2 3 \n",
-      "description": "Singly linked list: Node with next; traverse with a while loop."
+      "description": "Deterministic prints: reference shapes for dominant operations and common complexity classes.",
+      "code": "package arch.day21;\n\npublic class Day21Basic {\n\n    static class Node {\n        int v;\n        Node next;\n        Node(int v, Node next) {\n            this.v = v;\n            this.next = next;\n        }\n    }\n\n    static String fmt(Node h) {\n        StringBuilder sb = new StringBuilder();\n        for (Node c = h; c != null; c = c.next) {\n            if (sb.length() > 0) sb.append(\"->\");\n            sb.append(c.v);\n        }\n        return sb.length() == 0 ? \"EMPTY\" : sb.toString();\n    }\n\n    public static void main(String[] args) {\n        Node h = new Node(1, new Node(2, new Node(3, null)));\n        System.out.println(\"=== Walk list ===\");\n        System.out.println(fmt(h));\n    }\n}\n",
+      "output": "=== Walk list ===\n1->2->3\n"
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "Linked Lists — intermediate",
       "language": "java",
       "filename": "Day21Intermediate.java",
-      "code": "package arch.day21;\n\npublic class Day21Intermediate {\n    static class Node {\n        int v;\n        Node next;\n        Node(int v) { this.v = v; }\n    }\n\n    static Node reverse(Node head) {\n        Node prev = null, cur = head;\n        while (cur != null) {\n            Node n = cur.next;\n            cur.next = prev;\n            prev = cur;\n            cur = n;\n        }\n        return prev;\n    }\n\n    public static void main(String[] args) {\n        Node a = new Node(1), b = new Node(2), c = new Node(3);\n        a.next = b; b.next = c;\n        Node h = reverse(a);\n        System.out.println(h.v + \"->\" + h.next.v + \"->\" + h.next.next.v);\n    }\n}",
       "level": "intermediate",
-      "output": "3->2->1\n",
-      "description": "Reverse linked list iteratively: three-pointer rewiring."
+      "description": "Four labeled scenarios comparing approaches with different asymptotic costs.",
+      "code": "package arch.day21;\n\npublic class Day21Intermediate {\n\n    static class Node {\n        int v;\n        Node next;\n        Node(int v, Node next) {\n            this.v = v;\n            this.next = next;\n        }\n    }\n\n    static Node mergeSorted(Node a, Node b) {\n        Node d = new Node(0, null);\n        Node t = d;\n        while (a != null && b != null) {\n            if (a.v <= b.v) {\n                t.next = a;\n                a = a.next;\n            } else {\n                t.next = b;\n                b = b.next;\n            }\n            t = t.next;\n        }\n        t.next = a != null ? a : b;\n        return d.next;\n    }\n\n    static boolean hasCycle(Node head) {\n        Node s = head, f = head;\n        while (f != null && f.next != null) {\n            s = s.next;\n            f = f.next.next;\n            if (s == f) return true;\n        }\n        return false;\n    }\n\n    public static void main(String[] args) {\n        // --- Scenario 1: merge sorted lists ---\n        System.out.println(\"--- Scenario 1: merge sorted ---\");\n        Node a = new Node(1, new Node(4, null));\n        Node b = new Node(2, new Node(3, null));\n        Node m = mergeSorted(a, b);\n        for (Node c = m; c != null; c = c.next) {\n            System.out.print(c.v + (c.next != null ? \" \" : \"\"));\n        }\n        System.out.println();\n        System.out.println();\n\n        // --- Scenario 2: no cycle ---\n        System.out.println(\"--- Scenario 2: cycle check (linear) ---\");\n        Node lin = new Node(1, new Node(2, null));\n        System.out.println(\"hasCycle=\" + hasCycle(lin));\n        System.out.println();\n\n        // --- Scenario 3: cycle present ---\n        System.out.println(\"--- Scenario 3: cycle check (cyclic) ---\");\n        Node c1 = new Node(1, null);\n        Node c2 = new Node(2, null);\n        Node c3 = new Node(3, null);\n        c1.next = c2;\n        c2.next = c3;\n        c3.next = c2;\n        System.out.println(\"hasCycle=\" + hasCycle(c1));\n        System.out.println();\n\n        // --- Scenario 4: dummy head insert front ---\n        System.out.println(\"--- Scenario 4: prepend with dummy ---\");\n        Node d = new Node(0, null);\n        d.next = new Node(5, null);\n        Node n = new Node(9, d.next);\n        d.next = n;\n        for (Node x = d.next; x != null; x = x.next) {\n            System.out.print(x.v + (x.next != null ? \" \" : \"\"));\n        }\n        System.out.println();\n    }\n}\n",
+      "output": "--- Scenario 1: merge sorted ---\n1 2 3 4\n\n--- Scenario 2: cycle check (linear) ---\nhasCycle=false\n\n--- Scenario 3: cycle check (cyclic) ---\nhasCycle=true\n\n--- Scenario 4: prepend with dummy ---\n9 5\n"
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "Linked Lists — advanced",
       "language": "java",
       "filename": "Day21Advanced.java",
-      "code": "package arch.day21;\n\npublic class Day21Advanced {\n    static class Node {\n        int v;\n        Node next;\n        Node(int v) { this.v = v; }\n    }\n\n    static boolean hasCycle(Node head) {\n        Node s = head, f = head;\n        while (f != null && f.next != null) {\n            s = s.next;\n            f = f.next.next;\n            if (s == f) return true;\n        }\n        return false;\n    }\n\n    public static void main(String[] args) {\n        Node a = new Node(1), b = new Node(2);\n        a.next = b; b.next = a;\n        System.out.println(hasCycle(a));\n    }\n}",
       "level": "advanced",
-      "output": "true\n",
-      "description": "Floyd cycle detection: slow/fast pointers to detect a loop."
+      "description": "Separated blocks plus printed decision tables for recurrences and tradeoffs.",
+      "code": "package arch.day21;\n\npublic class Day21Advanced {\n\n    static class Node {\n        int v;\n        Node next;\n        Node(int v, Node next) {\n            this.v = v;\n            this.next = next;\n        }\n    }\n\n    static Node reverseIterative(Node head) {\n        Node prev = null;\n        Node curr = head;\n        while (curr != null) {\n            Node nxt = curr.next;\n            curr.next = prev;\n            prev = curr;\n            curr = nxt;\n        }\n        return prev;\n    }\n\n    static String fmt(Node h) {\n        StringBuilder sb = new StringBuilder();\n        for (Node c = h; c != null; c = c.next) {\n            if (sb.length() > 0) sb.append(\"->\");\n            sb.append(c.v);\n        }\n        return sb.toString();\n    }\n\n    public static void main(String[] args) {\n        // === Block 1: reverse iterative ===\n        System.out.println(\"=== Block 1: reverse iterative ===\");\n        Node h = new Node(1, new Node(2, new Node(3, null)));\n        System.out.println(\"before=\" + fmt(h));\n        Node r = reverseIterative(h);\n        System.out.println(\"after=\" + fmt(r));\n        System.out.println();\n\n        // === Block 2: operation cost table ===\n        System.out.println(\"=== Block 2: singly linked costs ===\");\n        System.out.println(\"Op          | Time | Notes\");\n        System.out.println(\"------------|------|------------------\");\n        System.out.println(\"prepend     | O(1) | new head\");\n        System.out.println(\"index i     | O(n) | walk i steps\");\n        System.out.println(\"append tail*| O(n) | *no tail pointer\");\n        System.out.println(\"reverse     | O(n) | three pointers\");\n        System.out.println();\n\n        // === Block 3: when to prefer array ===\n        System.out.println(\"=== Block 3: array vs list ===\");\n        System.out.println(\"Random access heavy -> array/ArrayList.\");\n        System.out.println(\"Frequent head insert + stable node refs -> linked list.\");\n    }\n}\n",
+      "output": "=== Block 1: reverse iterative ===\nbefore=1->2->3\nafter=3->2->1\n\n=== Block 2: singly linked costs ===\nOp          | Time | Notes\n------------|------|------------------\nprepend     | O(1) | new head\nindex i     | O(n) | walk i steps\nappend tail*| O(n) | *no tail pointer\nreverse     | O(n) | three pointers\n\n=== Block 3: array vs list ===\nRandom access heavy -> array/ArrayList.\nFrequent head insert + stable node refs -> linked list.\n"
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 21",
-      "diagramType": "component",
-      "description": "Visual model for Linked Lists",
-      "plantuml": "@startuml\ntitle Day 21 - Linked Lists\nactor Learner\nrectangle \"Satyverse(Satyam Parmar) Lesson Engine\" {\n  component \"Theory\"\n  component \"Code\"\n  component \"Exercise\"\n  component \"Interview Drill\"\n}\nLearner --> \"Theory\" : Understand concept\nLearner --> \"Code\" : Implement\nLearner --> \"Exercise\" : Practice\nLearner --> \"Interview Drill\" : Explain\n@enduml"
+      "title": "Reverse linked list — pointer rewiring",
+      "diagramType": "sequence",
+      "description": "Engineer, curr node, prev, next, and heap illustrate three-pointer iterative reverse.",
+      "plantuml": "@startuml\ntitle Iterative reverse — pointer discipline\n\nparticipant \"Engineer\" as E\nparticipant \"curr\" as C\nparticipant \"prev\" as P\nparticipant \"next\" as N\nparticipant \"heap\\n(Node objects)\" as H\nparticipant \"Interviewer\" as I\n\nE -> C : start at head\nE -> P : prev = null\n\nloop while curr != null\n  E -> N : nxt = curr.next\n  E -> C : curr.next = prev\n  E -> P : prev = curr\n  E -> C : curr = nxt\n  H -> H : no new nodes; relink only\nend\n\nE -> I : return prev as new head\nI -> E : follow-up: recursion stack cost?\n@enduml"
     },
     {
       "type": "pitfalls",
-      "title": "Common Pitfalls",
+      "title": "Common pitfalls",
       "items": [
-        "Losing node references while reversing or deleting.",
-        "Forgetting null checks before accessing next pointers.",
-        "Mixing node identity and node value comparisons.",
-        "Incorrectly handling head/tail updates in edge cases.",
-        "Not drawing pointer state before coding complex operations."
+        "Forgetting to save **`next` before rewiring** `curr.next` — you orphan the tail and corrupt the list; dry-run two nodes; fix by `Node nxt = curr.next` before any mutation.",
+        "Using **recursion** on deep lists — `StackOverflowError` under load tests; detect with depth counters; fix with iterative three-pointer reverse.",
+        "**Off-by-one** in fast/slow middle detection — wrong half reversed for palindrome check; trace even/odd length; fix by standard `while (fast!=null && fast.next!=null)` pattern and clarify definition.",
+        "Treating **intersection** as equal values — wrong answer merges distinct nodes sharing value; use **reference** identity; fix by aligning lengths then walking pointers.",
+        "Deleting a **tail** via copy-next trick — no successor to copy; silent wrong state; check tail case; fix with predecessor scan or doubly linked structure.",
+        "**Null dereference** in empty or single-node operations — NPE in CI only on edge tests; guard head null early; fix with explicit branches.",
+        "Merge sorted lists **without tail pointer** — accidental O(n²) rescanning; keep `tail` moving; fix dummy + tail pattern.",
+        "Confusing **cycle start** proof — meeting point is not generally the start; reset pointer to head for phase two; fix by memorizing correct second phase or deriving on board."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - Linked Lists Problem Drill",
-      "problem": "Solve one medium-level Java problem for **Linked Lists**.\n\nRequirements:\n1. Provide brute-force and optimized approach.\n2. Explain why optimized approach is better.\n3. Include one edge-case test.\n4. Print expected output for sample input.\n5. State time/space complexity clearly.",
+      "title": "Practice exercise",
+      "difficulty": "Intermediate",
+      "problem": "**Day 21 — Linked lists (assignment alignment)**\n\n1. Implement **iterative** reversal of a singly linked list of integers built in code (use a simple static `Node` class).\n2. Print the list **before** and **after** reversal as `v1->v2->...` (print `EMPTY` if null).\n3. Handle **empty** list without throwing.\n4. Use values `1->2->3->4` in `main` for deterministic output.",
       "hints": [
-        "State invariant before writing loops/recursion.",
-        "Dry-run on paper for one non-trivial case.",
-        "Only optimize after baseline correctness."
+        "Use `Node nxt = curr.next` before changing `curr.next`.",
+        "Initialize `prev = null`, `curr = head`; stop when `curr == null`; new head is `prev`.",
+        "String building: walk from head and append `->` between values."
       ],
-      "solution": "package arch.day21;\nimport java.util.*;\n\npublic class Day21Advanced {\n    static record Review(String topic, int confidence, boolean needsRevision) {}\n\n    public static void main(String[] args) {\n        List<Review> reviews = List.of(\n            new Review(\"Linked Lists\", 72, true),\n            new Review(\"Coding Practice\", 81, false),\n            new Review(\"Interview Explanation\", 68, true)\n        );\n\n        long reviseCount = reviews.stream().filter(Review::needsRevision).count();\n        int avg = (int) reviews.stream().mapToInt(Review::confidence).average().orElse(0);\n\n        System.out.println(\"avgConfidence = \" + avg);\n        System.out.println(\"needsRevision = \" + reviseCount);\n    }\n}\n",
-      "difficulty": "Intermediate"
+      "solution": "package arch.day21;\n\npublic class Day21Exercise {\n\n    static class Node {\n        int v;\n        Node next;\n        Node(int v, Node next) {\n            this.v = v;\n            this.next = next;\n        }\n    }\n\n    static String fmt(Node h) {\n        if (h == null) return \"EMPTY\";\n        StringBuilder sb = new StringBuilder();\n        for (Node c = h; c != null; c = c.next) {\n            if (sb.length() > 0) sb.append(\"->\");\n            sb.append(c.v);\n        }\n        return sb.toString();\n    }\n\n    static Node reverse(Node head) {\n        Node prev = null;\n        Node curr = head;\n        while (curr != null) {\n            Node nxt = curr.next;\n            curr.next = prev;\n            prev = curr;\n            curr = nxt;\n        }\n        return prev;\n    }\n\n    public static void main(String[] args) {\n        Node head = new Node(1, new Node(2, new Node(3, new Node(4, null))));\n        System.out.println(\"before=\" + fmt(head));\n        Node rev = reverse(head);\n        System.out.println(\"after=\" + fmt(rev));\n    }\n}\n"
     },
     {
       "type": "interview",
       "title": "Interview Drill",
       "conceptual": [
         {
-          "question": "What is a singly linked list node?",
-          "answer": "Object with value and reference to next—no random access by index.",
+          "question": "Why no O(1) index access in linked lists?",
+          "answer": "Nodes are scattered; you must traverse from head through next references—i steps for index i.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Object with value and reference to next—no random access by index. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Object with value and reference to next—no random access by index. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Why O(n) to access element i?",
-          "answer": "Must walk from head i steps—unlike array O(1).",
+          "question": "What is a dummy head?",
+          "answer": "A sentinel node before the real head so inserts/deletes at front use the same logic as middle cases.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Must walk from head i steps—unlike array O(1). When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Must walk from head i steps—unlike array O(1). Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is dummy head sentinel?",
-          "answer": "Fake node before head simplifies insertion/deletion at head without special cases.",
+          "question": "Explain Floyd cycle detection.",
+          "answer": "Slow moves 1, fast moves 2; if cycle exists they meet inside; if fast hits null, no cycle—O(n) time, O(1) space.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Fake node before head simplifies insertion/deletion at head without special cases. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Fake node before head simplifies insertion/deletion at head without special cases. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "How detect cycle?",
-          "answer": "Floyd’s tortoise/hare—fast moves 2 steps, slow 1; meeting implies cycle.",
+          "question": "How find cycle start?",
+          "answer": "After meet, reset one pointer to head, advance both one step until they meet at start.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Floyd’s tortoise/hare—fast moves 2 steps, slow 1; meeting implies cycle. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Floyd’s tortoise/hare—fast moves 2 steps, slow 1; meeting implies cycle. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "How reverse linked list iteratively?",
-          "answer": "prev/cur/next pointers rewiring—O(n) time, O(1) space.",
+          "question": "Iterative reverse steps?",
+          "answer": "Keep prev, curr, next; point curr.next to prev; advance prev and curr.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. prev/cur/next pointers rewiring—O(n) time, O(1) space. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. prev/cur/next pointers rewiring—O(n) time, O(1) space. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Recursive reverse—complexity?",
-          "answer": "O(n) time, O(n) stack space—risk overflow on long lists.",
+          "question": "Recursive reverse complexity?",
+          "answer": "O(n) time, O(n) stack space—risk StackOverflow on deep lists.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. O(n) time, O(n) stack space—risk overflow on long lists. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. O(n) time, O(n) stack space—risk overflow on long lists. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Merge two sorted lists?",
-          "answer": "Compare heads, attach smaller, advance—like merge sort merge.",
+          "question": "Merge two sorted lists approach?",
+          "answer": "Dummy tail, repeatedly attach smaller head, advance that list—O(n+m).",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Compare heads, attach smaller, advance—like merge sort merge. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Compare heads, attach smaller, advance—like merge sort merge. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Find middle element?",
-          "answer": "Slow/fast—when fast reaches end, slow at middle (careful even count).",
+          "question": "Delete node given only that node (singly)?",
+          "answer": "Copy next value into node, delete next node; fails if node is tail.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Slow/fast—when fast reaches end, slow at middle (careful even count). Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Slow/fast—when fast reaches end, slow at middle (careful even count). When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is doubly linked list benefit?",
-          "answer": "O(1) delete given node with prev pointer—used in LRU caches.",
+          "question": "Intersection of lists meaning?",
+          "answer": "Same node object by reference on two chains—align lengths then walk together.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. O(1) delete given node with prev pointer—used in LRU caches. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. O(1) delete given node with prev pointer—used in LRU caches. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Intersection of two lists?",
-          "answer": "Align lengths then walk together—or use hash set of nodes identity.",
+          "question": "Middle element with slow/fast?",
+          "answer": "Advance fast two steps, slow one; when fast ends, slow at middle—clarify even-length policy.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Align lengths then walk together—or use hash set of nodes identity. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Align lengths then walk together—or use hash set of nodes identity. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Clone graph/list with random pointer?",
-          "answer": "Map old→new nodes—two-pass linking.",
+          "question": "Doubly linked advantages?",
+          "answer": "O(1) delete with node reference, backward traversal—more memory.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Map old→new nodes—two-pass linking. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Map old→new nodes—two-pass linking. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Why avoid stack overflow on deep recursion?",
-          "answer": "Prefer iterative for production-sized lists.",
+          "question": "When prefer ArrayList?",
+          "answer": "Random access, cache-friendly scans, fewer pointer overheads.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Prefer iterative for production-sized lists. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Prefer iterative for production-sized lists. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is null-terminated list end?",
-          "answer": "next==null marks tail—always check NPE.",
+          "question": "LRU structure?",
+          "answer": "HashMap for key→node plus doubly linked list for recency order.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. next==null marks tail—always check NPE. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. next==null marks tail—always check NPE. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Compare ArrayList vs LinkedList in Java?",
-          "answer": "ArrayList cache-friendly; LinkedList node overhead—most apps prefer ArrayList unless proven need.",
+          "question": "Common reverse bug?",
+          "answer": "Losing access to rest of list—must store next before rewiring.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. ArrayList cache-friendly; LinkedList node overhead—most apps prefer ArrayList unless proven need. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. ArrayList cache-friendly; LinkedList node overhead—most apps prefer ArrayList unless proven need. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is skip list (mention)?",
-          "answer": "Probabilistic structure for O(log n) search—alternative to balanced trees.",
+          "question": "Why test 0,1,2 nodes?",
+          "answer": "Null head, single node reverse, two-node swap expose most pointer errors.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Linked Lists** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Probabilistic structure for O(log n) search—alternative to balanced trees. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Linked Lists**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Probabilistic structure for O(log n) search—alternative to balanced trees. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Time to append without tail pointer?",
+          "answer": "O(n) to walk to end each time.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "60-second linked list story?",
+          "answer": "Clarify singly/doubly; dummy for merges; Floyd for cycles; three-pointer reverse; state complexities; mention stack risk for recursion.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "codeBased": [
         {
-          "question": "Write iterative reverse of singly linked list.",
-          "answer": "Classic three-pointer while loop.",
+          "question": "Reverse list iterative time?",
+          "answer": "O(n) single pass.",
           "followUps": [
             {
-              "question": "What breaks if this **Linked Lists** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Classic three-pointer while loop. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Classic three-pointer while loop. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Detect cycle return node or boolean?",
-          "answer": "Know Floyd variant to find start of cycle.",
+          "question": "Cycle detection HashSet time/space?",
+          "answer": "O(n) time, O(n) space.",
           "followUps": [
             {
-              "question": "What breaks if this **Linked Lists** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Know Floyd variant to find start of cycle. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Know Floyd variant to find start of cycle. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Merge two sorted linked lists recursively.",
-          "answer": "Compare head1.data vs head2.data, recurse.",
+          "question": "Remove nth from end one pass?",
+          "answer": "Two pointers with gap n.",
           "followUps": [
             {
-              "question": "What breaks if this **Linked Lists** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Compare head1.data vs head2.data, recurse. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Compare head1.data vs head2.data, recurse. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Remove nth node from end one pass.",
-          "answer": "Two pointers n apart or length minus n.",
+          "question": "Add numbers as lists?",
+          "answer": "Walk with carry O(max(n,m)).",
           "followUps": [
             {
-              "question": "What breaks if this **Linked Lists** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Two pointers n apart or length minus n. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Two pointers n apart or length minus n. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Add two numbers represented as reversed digit lists.",
-          "answer": "Carry digit, create new list.",
+          "question": "Palindrome list O(1) space?",
+          "answer": "Split, reverse half, compare, restore optional.",
           "followUps": [
             {
-              "question": "What breaks if this **Linked Lists** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Carry digit, create new list. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Carry digit, create new list. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Palindrome linked list O(1) space?",
-          "answer": "Reverse second half, compare halves.",
+          "question": "Merge k lists with heap?",
+          "answer": "O(N log k) where N total nodes.",
           "followUps": [
             {
-              "question": "What breaks if this **Linked Lists** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Reverse second half, compare halves. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Reverse second half, compare halves. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Delete node with only pointer to that node (not head).",
-          "answer": "Copy next value into node and delete next—classic trick.",
+          "question": "Rotate list by k right?",
+          "answer": "Length, k mod len, connect tail to head, find new tail.",
           "followUps": [
             {
-              "question": "What breaks if this **Linked Lists** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Copy next value into node and delete next—classic trick. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Copy next value into node and delete next—classic trick. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Deep copy list with random pointer—sketch.",
-          "answer": "HashMap original→copy; second pass assign random.",
+          "question": "Odd-even reorder?",
+          "answer": "Two chains for odd/even indices then connect.",
           "followUps": [
             {
-              "question": "What breaks if this **Linked Lists** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. HashMap original→copy; second pass assign random. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. HashMap original→copy; second pass assign random. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Rotate list by k places.",
-          "answer": "Connect tail to head, find new break point.",
+          "question": "Copy list with random pointer?",
+          "answer": "Map original to clone in two passes.",
           "followUps": [
             {
-              "question": "What breaks if this **Linked Lists** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Connect tail to head, find new break point. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Connect tail to head, find new break point. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Middle of linked list—even length pick second?",
-          "answer": "Clarify in interview which middle definition.",
+          "question": "Split list to parts?",
+          "answer": "Greedy chunks of k nodes.",
           "followUps": [
             {
-              "question": "What breaks if this **Linked Lists** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Clarify in interview which middle definition. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Clarify in interview which middle definition. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Check sublist?",
+          "answer": "Match pattern with failure restart or KMP on values.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Swap nodes in pairs?",
+          "answer": "Rewire prev, pair heads carefully with dummy.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "seniorScenario": [
         {
-          "question": "Concurrent modification of LinkedList—fail-fast?",
-          "answer": "Iterator throws CME; use concurrent structures or synchronize.",
+          "question": "Huge list reverse in service—risk?",
+          "answer": "Recursion depth; choose iterative; consider chunked processing if external store.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Linked Lists** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Iterator throws CME; use concurrent structures or synchronize. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Iterator throws CME; use concurrent structures or synchronize. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Memory overhead of LinkedList in JVM?",
-          "answer": "Node objects + references—GC pressure vs ArrayList for large sequences.",
+          "question": "Memory pressure with many small nodes?",
+          "answer": "Pointer overhead + GC; consider array-backed ring buffer for hot paths.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Linked Lists** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Node objects + references—GC pressure vs ArrayList for large sequences. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Node objects + references—GC pressure vs ArrayList for large sequences. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "LRU cache implementation choice?",
-          "answer": "HashMap + doubly linked list for O(1) get/put eviction.",
+          "question": "Concurrent linked structure updates?",
+          "answer": "Locks or lock-free CAS tricky; often use concurrent deque from java.util.concurrent.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Linked Lists** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: HashMap + doubly linked list for O(1) get/put eviction. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. HashMap + doubly linked list for O(1) get/put eviction. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Distributed linked structures?",
-          "answer": "Usually not—use IDs and DB relations; pointer swizzling in ORMs.",
+          "question": "Detect cycle in streaming graph?",
+          "answer": "May map to list cycle or use tortoise/hare on iterator if model allows.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Linked Lists** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Usually not—use IDs and DB relations; pointer swizzling in ORMs. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Usually not—use IDs and DB relations; pointer swizzling in ORMs. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Stack overflow in recursive list walk on huge list?",
-          "answer": "Switch to iterative or increase stack (last resort).",
+          "question": "Immutable lists in functional style?",
+          "answer": "Persistent data structures share tails; different complexity tradeoffs.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Linked Lists** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Switch to iterative or increase stack (last resort). Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Switch to iterative or increase stack (last resort). Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Serialization of cyclic list?",
-          "answer": "Need protocol—by design acyclic or break cycle with sentinel IDs.",
+          "question": "Testing pointer algorithms?",
+          "answer": "Property-based small n vs brute force array model; stress deep lists for stack safety.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Linked Lists** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Need protocol—by design acyclic or break cycle with sentinel IDs. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Need protocol—by design acyclic or break cycle with sentinel IDs. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "wrongAnswers": [
-        "Linked list supports O(1) random access by index.",
-        "Floyd cycle detection always finds cycle length in first pass.",
-        "Java LinkedList is always faster than ArrayList for all workloads.",
-        "Reversing a list requires O(n) extra space always.",
-        "Dummy head changes asymptotic complexity.",
-        "Merge sorted lists cannot be done recursively."
+        "Linked lists always beat arrays — false: poor locality and no random access often lose.",
+        "Floyd algorithm uses O(n) memory — false: O(1) extra besides pointers.",
+        "You can binary search a linked list in O(log n) — false: no random access to mid in O(1).",
+        "Dummy head changes asymptotic class — false: constant overhead only.",
+        "Recursive reverse is always best — false: stack depth risk.",
+        "Intersection means equal values — false: must be same node reference usually.",
+        "Deleting tail with copy-next trick works — false: no next to copy if tail.",
+        "Merge sorted lists needs extra O(n) array — false: can relink in place O(1) space."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ Quiz — Linked Lists",
+      "description": "Thirty questions on singly/doubly lists, cycles, merge, reversal, LRU, and complexity.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "Access element at index i in singly linked list:",
+          "options": {
+            "A": "O(1)",
+            "B": "O(log n)",
+            "C": "O(n)",
+            "D": "O(1) amortized"
+          },
+          "answer": "C",
+          "explanation": "Must walk pointers from head."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "Prepend to singly linked list at head:",
+          "options": {
+            "A": "O(n)",
+            "B": "O(1)",
+            "C": "O(log n)",
+            "D": "O(n^2)"
+          },
+          "answer": "B",
+          "explanation": "Allocate node and repoint head."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "theory",
+          "question": "Floyd cycle detection uses:",
+          "options": {
+            "A": "BFS",
+            "B": "Two pointers different speeds",
+            "C": "Sorting",
+            "D": "Binary search"
+          },
+          "answer": "B",
+          "explanation": "Tortoise and hare meet iff cycle."
+        },
+        {
+          "id": 4,
+          "level": "basic",
+          "category": "theory",
+          "question": "Dummy head mainly helps:",
+          "options": {
+            "A": "Faster random access",
+            "B": "Uniform insert/delete at front",
+            "C": "O(1) tail append always",
+            "D": "Avoid generics"
+          },
+          "answer": "B",
+          "explanation": "Removes null-head special cases."
+        },
+        {
+          "id": 5,
+          "level": "basic",
+          "category": "code",
+          "question": "Reverse singly linked list iterative space:",
+          "options": {
+            "A": "O(n)",
+            "B": "O(1) extra",
+            "C": "O(log n)",
+            "D": "O(n^2)"
+          },
+          "answer": "B",
+          "explanation": "Three pointers, no auxiliary list."
+        },
+        {
+          "id": 6,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Merge two sorted linked lists total time n+m:",
+          "options": {
+            "A": "O(n^2)",
+            "B": "O(n+m)",
+            "C": "O(log(n+m))",
+            "D": "O(1)"
+          },
+          "answer": "B",
+          "explanation": "Each node attached once with tail pointer."
+        },
+        {
+          "id": 7,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Remove nth node from end one pass:",
+          "options": {
+            "A": "Two pointers gap n",
+            "B": "Sort list",
+            "C": "Convert to array only",
+            "D": "Impossible O(n)"
+          },
+          "answer": "A",
+          "explanation": "Lead pointer starts n ahead; when hits null, lag is before target."
+        },
+        {
+          "id": 8,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Intersection of two lists by reference:",
+          "options": {
+            "A": "Compare values only",
+            "B": "Align lengths then walk together",
+            "C": "Always O(n^2)",
+            "D": "Use only stack"
+          },
+          "answer": "B",
+          "explanation": "Skip extra prefix on longer list."
+        },
+        {
+          "id": 9,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Recursive reverse space:",
+          "options": {
+            "A": "O(1)",
+            "B": "O(n) stack",
+            "C": "O(log n)",
+            "D": "O(1) amortized"
+          },
+          "answer": "B",
+          "explanation": "Each frame holds local state until unwind."
+        },
+        {
+          "id": 10,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Doubly linked list delete given node ref:",
+          "options": {
+            "A": "O(n)",
+            "B": "O(1)",
+            "C": "O(log n)",
+            "D": "O(n^2)"
+          },
+          "answer": "B",
+          "explanation": "Rewire prev/next directly."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Middle node slow/fast termination even length:",
+          "options": {
+            "A": "Always lower middle",
+            "B": "Depends on fast advance rule",
+            "C": "Undefined",
+            "D": "Requires sort"
+          },
+          "answer": "B",
+          "explanation": "While fast!=null && fast.next!=null picks lower middle commonly."
+        },
+        {
+          "id": 12,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why linked lists worse cache than arrays:",
+          "options": {
+            "A": "Same locality",
+            "B": "Pointer chasing scattered memory",
+            "C": "Cannot store ints",
+            "D": "Always smaller"
+          },
+          "answer": "B",
+          "explanation": "Sequential scan of array hits cache lines better."
+        },
+        {
+          "id": 13,
+          "level": "advanced",
+          "category": "code",
+          "question": "Copy list with random pointer typical approach:",
+          "options": {
+            "A": "O(1) impossible",
+            "B": "Hash map old→new then second pass",
+            "C": "Only recursion",
+            "D": "BFS on grid"
+          },
+          "answer": "B",
+          "explanation": "Map clones nodes then wire random links."
+        },
+        {
+          "id": 14,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Detect cycle start after meeting point:",
+          "options": {
+            "A": "Reset one ptr to head, move both 1-step",
+            "B": "Sort list",
+            "C": "Impossible O(n)",
+            "D": "Double hashing only"
+          },
+          "answer": "A",
+          "explanation": "Classic Floyd phase 2."
+        },
+        {
+          "id": 15,
+          "level": "advanced",
+          "category": "code",
+          "question": "Palindrome linked list O(n) time O(1) space idea:",
+          "options": {
+            "A": "Copy to array always O(n) space",
+            "B": "Find middle, reverse second half, compare",
+            "C": "Brute force O(n^3)",
+            "D": "DFS on tree"
+          },
+          "answer": "B",
+          "explanation": "Split + reverse + two-pointer compare."
+        },
+        {
+          "id": 16,
+          "level": "basic",
+          "category": "code",
+          "question": "Null-safe traverse condition:",
+          "options": {
+            "A": "while(curr.next)",
+            "B": "while(curr != null)",
+            "C": "for(;;) only",
+            "D": "do-while without check"
+          },
+          "answer": "B",
+          "explanation": "Avoid NPE on last null."
+        },
+        {
+          "id": 17,
+          "level": "basic",
+          "category": "theory",
+          "question": "Singly delete node with only ref to that node (value not tail):",
+          "options": {
+            "A": "Always O(1)",
+            "B": "Copy next value then delete next",
+            "C": "Impossible",
+            "D": "O(log n)"
+          },
+          "answer": "B",
+          "explanation": "Classic trick except tail case."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Add two numbers represented as reversed digit lists:",
+          "options": {
+            "A": "Convert to BigInteger only",
+            "B": "Single pass carry like manual add",
+            "C": "O(2^n)",
+            "D": "Requires sort"
+          },
+          "answer": "B",
+          "explanation": "Walk both lists with carry."
+        },
+        {
+          "id": 19,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "LRU cache structure combo:",
+          "options": {
+            "A": "Array only",
+            "B": "HashMap + doubly linked list",
+            "C": "Stack only",
+            "D": "Queue only"
+          },
+          "answer": "B",
+          "explanation": "Map for O(1) lookup, DLL for O(1) eviction order."
+        },
+        {
+          "id": 20,
+          "level": "advanced",
+          "category": "code",
+          "question": "Rotate list right by k:",
+          "options": {
+            "A": "Compute len, connect tail to head, find break point",
+            "B": "Always O(n^2)",
+            "C": "Impossible",
+            "D": "Binary search"
+          },
+          "answer": "A",
+          "explanation": "Make circular temporarily then cut."
+        },
+        {
+          "id": 21,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Merge k sorted lists naive:",
+          "options": {
+            "A": "O(k n) repeated merge",
+            "B": "O(1)",
+            "C": "O(log k)",
+            "D": "O(k)"
+          },
+          "answer": "A",
+          "explanation": "Better: heap O(N log k) — know tradeoff."
+        },
+        {
+          "id": 22,
+          "level": "basic",
+          "category": "theory",
+          "question": "Java `LinkedList` underlying:",
+          "options": {
+            "A": "Singly",
+            "B": "Doubly linked",
+            "C": "Array only",
+            "D": "BST"
+          },
+          "answer": "B",
+          "explanation": "JDK doubly linked list implementation."
+        },
+        {
+          "id": 23,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Why recursion depth matters on long lists:",
+          "options": {
+            "A": "No issue",
+            "B": "StackOverflowError risk",
+            "C": "GC only",
+            "D": "Compilation fails"
+          },
+          "answer": "B",
+          "explanation": "Each recursive call consumes a frame."
+        },
+        {
+          "id": 24,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Split list into parts of size k:",
+          "options": {
+            "A": "Greedy walk cutting segments",
+            "B": "O(1) only",
+            "C": "Sort required",
+            "D": "Impossible"
+          },
+          "answer": "A",
+          "explanation": "Pointer chop after k nodes repeatedly."
+        },
+        {
+          "id": 25,
+          "level": "basic",
+          "category": "code",
+          "question": "Compare two lists equality by values:",
+          "options": {
+            "A": "Walk both in lockstep",
+            "B": "Sort only",
+            "C": "Hash codes of nodes",
+            "D": "Single pointer"
+          },
+          "answer": "A",
+          "explanation": "O(n) parallel walk."
+        },
+        {
+          "id": 26,
+          "level": "advanced",
+          "category": "code",
+          "question": "Flatten multilevel doubly linked list:",
+          "options": {
+            "A": "DFS stack simulation",
+            "B": "Impossible O(n)",
+            "C": "BFS on binary tree only",
+            "D": "Sort each level"
+          },
+          "answer": "A",
+          "explanation": "Depth-first wiring child lists into main thread."
+        },
+        {
+          "id": 27,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Sentinel tail in merge:",
+          "options": {
+            "A": "Avoids scanning to append",
+            "B": "Required for GC",
+            "C": "Slows to O(n^2)",
+            "D": "Illegal in Java"
+          },
+          "answer": "A",
+          "explanation": "Tail pointer constant-time append."
+        },
+        {
+          "id": 28,
+          "level": "basic",
+          "category": "theory",
+          "question": "Cycle with HashSet detection space:",
+          "options": {
+            "A": "O(1)",
+            "B": "O(n)",
+            "C": "O(log n)",
+            "D": "O(n^2)"
+          },
+          "answer": "B",
+          "explanation": "Store visited nodes."
+        },
+        {
+          "id": 29,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Odd-even linked list grouping:",
+          "options": {
+            "A": "Two sublists reconnect",
+            "B": "Sort O(n log n) required",
+            "C": "Impossible O(n)",
+            "D": "Stack of size n^2"
+          },
+          "answer": "A",
+          "explanation": "Partition while preserving relative order within parity."
+        },
+        {
+          "id": 30,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Lock-free lists in interviews:",
+          "options": {
+            "A": "Usually out of scope unless systems role",
+            "B": "Always required",
+            "C": "Same as synchronized ArrayList",
+            "D": "O(1) always"
+          },
+          "answer": "A",
+          "explanation": "Mention memory ordering briefly if senior systems."
+        }
       ]
     },
     {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Area | Day 21 Focus | Quick Reminder | Gotcha |\n|---|---|---|---|\n| Pattern | Linked Lists | Choose pattern before coding | Random brute-force wandering |\n| Correctness | Invariant + edge checks | Dry-run once | Off-by-one / null-state miss |\n| Complexity | Derive, do not guess | Mention time + space | Incomplete complexity answers |\n| Communication | Explain decisions | Use trade-off statement | Generic textbook responses |\n| Quality | Readable Java methods | Stable naming + small units | Clever but fragile logic |"
+      "title": "Linked Lists — cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n| --- | --- | --- |\n| Walk list | O(n) to reach index | No random access |\n| Prepend | O(1) | New head pointer |\n| Dummy head | Sentinel before real head | Unifies edge inserts |\n| Reverse iter | prev/curr/nxt | O(n) time O(1) space |\n| Reverse recur | Implicit stack | O(n) space risk |\n| Floyd cycle | slow 1x fast 2x | O(n) time O(1) space |\n| Cycle start | meet then head+1-step | Phase 2 proof |\n| Merge sorted | dummy + tail | O(n+m) |\n| Intersection | length align + walk | Reference identity |\n| Middle | slow/fast | Clarify even length |\n| Delete given node | copy next val | Not tail |\n| DLL delete | O(1) with node ref | Rewire prev/next |\n| LRU combo | HashMap + DLL | O(1) get/put |\n| Array vs list | cache + index | Pick by access pattern |\n| Deep list | avoid recursion | StackOverflow guard |"
     }
   ]
 }

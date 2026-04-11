@@ -27,43 +27,43 @@
   "sections": [
     {
       "type": "why",
-      "title": "Why Service Discovery & API Gateway matters",
+      "title": "Why this topic shows up in real interviews",
       "content": "When discovery and gateways are mishandled, production looks like random **502 Bad Gateway** waves right after a **rolling deploy**, even though **`kubectl get pods`** shows green. The real failure is often **empty or stale Endpoints**, **readiness** that does not match real dependencies, or a **gateway** still pointing at **draining IPs** while DNS and caches lag. Customers see timeouts; on-call chases ghosts because each layer thinks someone else owns routing truth.\n\nInterviewers are not testing whether you memorized **Eureka** class names. They want to hear **where the truth lives** for **which backends are safe to call**, how **health** gates membership in the pool, and how **edge policy** differs from **domain logic**. Strong answers name **symptoms** (spiky 502, regional-only failures) and **signals** (**Endpoints** YAML, **upstream_rq_5xx**, **CoreDNS** QPS).\n\nA crisp four-step answer usually covers: (1) **stable edge** DNS or VIP versus **volatile** instance sets, (2) **discovery mechanism** (registry, **kube-proxy**, mesh **EDS**), (3) **gateway responsibilities** (**TLS**, **JWT**, **rate limit**, **routing**), (4) **failure handling** (**timeouts**, **retries** on safe reads, **circuit breaking**) with **one command** you would run first (`kubectl get endpoints`).\n\nAt scale, this topic is how **fifty teams** share a **platform contract**. Bad defaults multiply: one service bypasses the **gateway** and invents **mTLS** rules another team cannot audit; another publishes **pod IPs** to mobile clients and turns every deploy into a **cache TTL** incident. Good platforms make **golden paths** obvious and measure **SLO** per route.\n\nSenior answers sound **operational**: you discuss **watch churn** on huge **EndpointSlices**, **connection pool** reuse across **pod churn**, **JWKS** cache TTL at the gateway, and **canary** promotion tied to **error budget** — not only class diagrams."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Service Discovery & API Gateway",
-      "content": "### Day 52 — Service discovery and API gateway in production systems\n\nThis day connects **how callers find backends** with **how organizations enforce policy** at the edge of a microservice fleet.\n\n---\n\n### 1. Plain definition\n**Service discovery** answers: *what addresses are valid right now for service S?* Implementations include **client-side registries** (Eureka, Consul), **DNS** (Kubernetes **Service** names resolved by **CoreDNS**), and **mesh control planes** that program **Envoy** with **endpoint sets**. An **API gateway** is an **L7 reverse proxy** that terminates **TLS**, authenticates **clients**, applies **rate limits**, and **routes** paths to internal **Services** or **clusters**.\n\n---\n\n### 2. Mechanism — Kubernetes Service to pod IP\n**CoreDNS** returns the **ClusterIP** (or **pod A records** for **headless** Services). **kube-proxy** or the **CNI** dataplane programs rules so traffic to the **VIP** fans out to **Endpoint** IPs that passed **readiness**. **Java** code using `http://payments:8080` relies on that chain. **Interview angle:** if **readiness** is wrong, **Endpoints** lie while pods look **Running**.\n\n---\n\n### 3. Client-side vs server-side discovery\n| Style | Who picks the instance? | Pros | Cons |\n|-------|-------------------------|------|------|\n| Client-side | Service + library (**LoadBalancer**) | Flexible algorithms, fewer hops | Library sprawl, harder audits |\n| Server-side | **LB** / **gateway** | Simple clients, central policy | Extra latency, must scale the middle |\n\n**Interview angle:** on **Kubernetes**, **server-side** via **Service** is default; **client-side** appears with **Spring Cloud** or **mesh** sidecars.\n\n---\n\n### 4. API gateway responsibilities (and what does not belong)\nGateways should own **edge concerns**: **TLS**, **OAuth2/JWT** validation, **WAF** hooks, **per-client quotas**, **path routing**, **request size limits**, and **trace header** injection. They should **not** become a **business rules** monolith joining ten domains per request.\n\n---\n\n### 5. Most-probed interview angles\n1. **502 after deploy** → **Endpoints**, **readiness**, **gateway upstream pool**, **stale connection** reuse.\n2. **Eureka self-preservation** vs **Kubernetes** partition behavior — **stale registrations** trade-offs.\n3. **mTLS** between gateway and services vs **JWT** for **end-user** identity — both may be required.\n4. **Global vs regional** discovery — **latency**, **failover**, **data residency**.\n\n**Interview angle:** always mention **timeouts** when you mention **retries** — blind retries amplify incidents.\n\n---\n\n### 6. Java / Spring mapping\n- **`spring.cloud.gateway`** routes with **predicates** (`Path=/api/payments/**`) and **filters** (`AddRequestHeader`, **rate limit**).\n- **`@LoadBalanced WebClient`** resolves **`http://payments`** via **Spring Cloud LoadBalancer** + **DiscoveryClient**.\n- **`spring.cloud.kubernetes`** discovers **Endpoints** without Eureka when running **in-cluster**.\n- **Actuator** **`/actuator/health/readiness`** should drive **Kubernetes** **readinessProbe**.\n\n---\n\n### 7. Comparison — Eureka vs pure Kubernetes\n| Topic | Eureka (historical Java) | Kubernetes native |\n|-------|--------------------------|---------------------|\n| Source of truth | Eureka server | **API server** **Endpoints** |\n| Best fit | **Hybrid** VM + container | **Cluster-only** workloads |\n| Ops cost | Extra cluster to run | **Platform-managed** |\n\nTeams still on **Spring Cloud Netflix** should know **replacement** paths (**Kubernetes**, **Consul**, **mesh**).\n\n---\n\n### 8. Sixty-second story\n**Symptom:** checkout **502** only from **mobile** after **payments** rollout. **Root cause:** **readiness** returned **UP** before **DB migration** finished; **Endpoints** advertised pods that returned **500**; **gateway** retried and amplified load. **Fix:** **readiness** checks **DB version** gate; **maxUnavailable** tuning; **retry** only on **idempotent** GET with **budget**. **Verify:** `kubectl get endpoints payments -o yaml` and **gateway** **upstream** metrics during canary.\n\n---\n\n### 9. Observability hooks\nWatch **gateway** **5xx by route**, **upstream connect errors**, **DNS** latency from **CoreDNS** metrics, and **JVM** **pool** metrics on **gateway** pods during **large** **scaling** events."
+      "title": "Service Discovery & API Gateway — theory that sticks",
+      "content": "### Day 52 — Service discovery and API gateway in production systems\n\nThis day connects **how callers find backends** with **how organizations enforce policy** at the edge of a microservice fleet.\n\n---\n\n### 1. Plain definition\n**Service discovery** answers: *what addresses are valid right now for service S?* Implementations include **client-side registries** (Eureka, Consul), **DNS** (Kubernetes **Service** names resolved by **CoreDNS**), and **mesh control planes** that program **Envoy** with **endpoint sets**. An **API gateway** is an **L7 reverse proxy** that terminates **TLS**, authenticates **clients**, applies **rate limits**, and **routes** paths to internal **Services** or **clusters**.\n\n---\n\n### 2. Mechanism — Kubernetes Service to pod IP\n**CoreDNS** returns the **ClusterIP** (or **pod A records** for **headless** Services). **kube-proxy** or the **CNI** dataplane programs rules so traffic to the **VIP** fans out to **Endpoint** IPs that passed **readiness**. **Java** code using `http://payments:8080` relies on that chain. **Interview angle:** if **readiness** is wrong, **Endpoints** lie while pods look **Running**.\n\n---\n\n### 3. Client-side vs server-side discovery\n| Style | Who picks the instance? | Pros | Cons |\n|-------|-------------------------|------|------|\n| Client-side | Service + library (**LoadBalancer**) | Flexible algorithms, fewer hops | Library sprawl, harder audits |\n| Server-side | **LB** / **gateway** | Simple clients, central policy | Extra latency, must scale the middle |\n\n**Interview angle:** on **Kubernetes**, **server-side** via **Service** is default; **client-side** appears with **Spring Cloud** or **mesh** sidecars.\n\n---\n\n### 4. API gateway responsibilities (and what does not belong)\nGateways should own **edge concerns**: **TLS**, **OAuth2/JWT** validation, **WAF** hooks, **per-client quotas**, **path routing**, **request size limits**, and **trace header** injection. They should **not** become a **business rules** monolith joining ten domains per request.\n\n---\n\n### 5. Most-probed interview angles\n1. **502 after deploy** → **Endpoints**, **readiness**, **gateway upstream pool**, **stale connection** reuse.\n2. **Eureka self-preservation** vs **Kubernetes** partition behavior — **stale registrations** trade-offs.\n3. **mTLS** between gateway and services vs **JWT** for **end-user** identity — both may be required.\n4. **Global vs regional** discovery — **latency**, **failover**, **data residency**.\n\n**Interview angle:** always mention **timeouts** when you mention **retries** — blind retries amplify incidents.\n\n---\n\n### 6. Java / Spring mapping\n- **`spring.cloud.gateway`** routes with **predicates** (`Path=/api/payments/**`) and **filters** (`AddRequestHeader`, **rate limit**).\n- **`@LoadBalanced WebClient`** resolves **`http://payments`** via **Spring Cloud LoadBalancer** + **DiscoveryClient**.\n- **`spring.cloud.kubernetes`** discovers **Endpoints** without Eureka when running **in-cluster**.\n- **Actuator** **`/actuator/health/readiness`** should drive **Kubernetes** **readinessProbe**.\n\n---\n\n### 7. Comparison — Eureka vs pure Kubernetes\n| Topic | Eureka (historical Java) | Kubernetes native |\n|-------|--------------------------|---------------------|\n| Source of truth | Eureka server | **API server** **Endpoints** |\n| Best fit | **Hybrid** VM + container | **Cluster-only** workloads |\n| Ops cost | Extra cluster to run | **Platform-managed** |\n\nTeams still on **Spring Cloud Netflix** should know **replacement** paths (**Kubernetes**, **Consul**, **mesh**).\n\n---\n\n### 8. Sixty-second story\n**Symptom:** checkout **502** only from **mobile** after **payments** rollout. **Root cause:** **readiness** returned **UP** before **DB migration** finished; **Endpoints** advertised pods that returned **500**; **gateway** retried and amplified load. **Fix:** **readiness** checks **DB version** gate; **maxUnavailable** tuning; **retry** only on **idempotent** GET with **budget**. **Verify:** `kubectl get endpoints payments -o yaml` and **gateway** **upstream** metrics during canary.\n\n---\n\n### 9. Observability hooks\nWatch **gateway** **5xx by route**, **upstream connect errors**, **DNS** latency from **CoreDNS** metrics, and **JVM** **pool** metrics on **gateway** pods during **large** **scaling** events.\n"
     },
     {
       "type": "code",
-      "title": "Basic — Discovery styles & gateway duties (reference tables)",
+      "title": "Service Discovery & API Gateway — basic",
       "language": "java",
       "filename": "Day52Basic.java",
-      "code": "package arch.day52;\n\n/**\n * Static reference tables for interviews.\n * Spring: // spring.cloud.gateway + // spring.cloud.loadbalancer + // kubernetes discovery client\n */\npublic class Day52Basic {\n\n    /*\n     * Plain reference tables for whiteboard interviews.\n     * Pair with: kubectl get endpoints, gateway route actuator, CoreDNS metrics.\n     */\n\n    public static void main(String[] args) {\n        System.out.println(\"=== How callers learn addresses ===\");\n        System.out.println(\"Mechanism              | Plain idea\");\n        System.out.println(\"DNS (kube Service)     | CoreDNS -> ClusterIP -> kube-proxy rules\");\n        System.out.println(\"Client registry        | App asks Eureka/Consul for instances\");\n        System.out.println(\"Mesh EDS               | Control plane pushes endpoints to Envoy sidecar\");\n        System.out.println(\"Static config file     | Breaks elastic scale; only bootstrap/dev\");\n        System.out.println();\n\n        System.out.println(\"=== API gateway vs plain load balancer ===\");\n        System.out.println(\"Layer | Typical box        | Understands HTTP path / JWT?\");\n        System.out.println(\"L4    | NLB / TCP LB       | No — TCP streams only\");\n        System.out.println(\"L7    | API gateway        | Yes — routes, filters, auth at edge\");\n        System.out.println();\n\n        System.out.println(\"=== Gateway duties (good vs bad) ===\");\n        System.out.println(\"Good at edge           | TLS, OAuth2/JWT check, rate limits, routing\");\n        System.out.println(\"Bad inside gateway     | Business pricing rules for every SKU\");\n        System.out.println();\n\n        System.out.println(\"=== kubectl checks when routes fail ===\");\n        System.out.println(\"1. kubectl get endpoints <svc> -n <ns> -o wide\");\n        System.out.println(\"2. kubectl describe pod <pod> | find readiness\");\n        System.out.println(\"3. kubectl logs deploy/<gateway> --tail=200\");\n        System.out.println();\n\n        System.out.println(\"=== Health probe meaning ===\");\n        System.out.println(\"readiness | Remove pod from Service when not safe for traffic\");\n        System.out.println(\"liveness  | Restart pod when process wedged — keep dependency checks here minimal\");\n    }\n}\n",
       "level": "basic",
-      "output": "=== How callers learn addresses ===\nMechanism              | Plain idea\nDNS (kube Service)     | CoreDNS -> ClusterIP -> kube-proxy rules\nClient registry        | App asks Eureka/Consul for instances\nMesh EDS               | Control plane pushes endpoints to Envoy sidecar\nStatic config file     | Breaks elastic scale; only bootstrap/dev\n\n=== API gateway vs plain load balancer ===\nLayer | Typical box        | Understands HTTP path / JWT?\nL4    | NLB / TCP LB       | No — TCP streams only\nL7    | API gateway        | Yes — routes, filters, auth at edge\n\n=== Gateway duties (good vs bad) ===\nGood at edge           | TLS, OAuth2/JWT check, rate limits, routing\nBad inside gateway     | Business pricing rules for every SKU\n\n=== kubectl checks when routes fail ===\n1. kubectl get endpoints <svc> -n <ns> -o wide\n2. kubectl describe pod <pod> | find readiness\n3. kubectl logs deploy/<gateway> --tail=200\n\n=== Health probe meaning ===\nreadiness | Remove pod from Service when not safe for traffic\nliveness  | Restart pod when process wedged — keep dependency checks here minimal\n",
-      "description": "Prints static interview tables: discovery mechanisms, L4 vs L7, gateway responsibilities, kubectl checks, readiness vs liveness."
+      "description": "Plain Java reference output aligned with REST/API concepts for this day.",
+      "code": "package arch.day52;\n\n/**\n * Static reference tables for interviews.\n * Spring: // spring.cloud.gateway + // spring.cloud.loadbalancer + // kubernetes discovery client\n */\npublic class Day52Basic {\n\n    /*\n     * Plain reference tables for whiteboard interviews.\n     * Pair with: kubectl get endpoints, gateway route actuator, CoreDNS metrics.\n     */\n\n    public static void main(String[] args) {\n        System.out.println(\"=== How callers learn addresses ===\");\n        System.out.println(\"Mechanism              | Plain idea\");\n        System.out.println(\"DNS (kube Service)     | CoreDNS -> ClusterIP -> kube-proxy rules\");\n        System.out.println(\"Client registry        | App asks Eureka/Consul for instances\");\n        System.out.println(\"Mesh EDS               | Control plane pushes endpoints to Envoy sidecar\");\n        System.out.println(\"Static config file     | Breaks elastic scale; only bootstrap/dev\");\n        System.out.println();\n\n        System.out.println(\"=== API gateway vs plain load balancer ===\");\n        System.out.println(\"Layer | Typical box        | Understands HTTP path / JWT?\");\n        System.out.println(\"L4    | NLB / TCP LB       | No — TCP streams only\");\n        System.out.println(\"L7    | API gateway        | Yes — routes, filters, auth at edge\");\n        System.out.println();\n\n        System.out.println(\"=== Gateway duties (good vs bad) ===\");\n        System.out.println(\"Good at edge           | TLS, OAuth2/JWT check, rate limits, routing\");\n        System.out.println(\"Bad inside gateway     | Business pricing rules for every SKU\");\n        System.out.println();\n\n        System.out.println(\"=== kubectl checks when routes fail ===\");\n        System.out.println(\"1. kubectl get endpoints <svc> -n <ns> -o wide\");\n        System.out.println(\"2. kubectl describe pod <pod> | find readiness\");\n        System.out.println(\"3. kubectl logs deploy/<gateway> --tail=200\");\n        System.out.println();\n\n        System.out.println(\"=== Health probe meaning ===\");\n        System.out.println(\"readiness | Remove pod from Service when not safe for traffic\");\n        System.out.println(\"liveness  | Restart pod when process wedged — keep dependency checks here minimal\");\n    }\n}\n",
+      "output": "=== How callers learn addresses ===\nMechanism              | Plain idea\nDNS (kube Service)     | CoreDNS -> ClusterIP -> kube-proxy rules\nClient registry        | App asks Eureka/Consul for instances\nMesh EDS               | Control plane pushes endpoints to Envoy sidecar\nStatic config file     | Breaks elastic scale; only bootstrap/dev\n\n=== API gateway vs plain load balancer ===\nLayer | Typical box        | Understands HTTP path / JWT?\nL4    | NLB / TCP LB       | No — TCP streams only\nL7    | API gateway        | Yes — routes, filters, auth at edge\n\n=== Gateway duties (good vs bad) ===\nGood at edge           | TLS, OAuth2/JWT check, rate limits, routing\nBad inside gateway     | Business pricing rules for every SKU\n\n=== kubectl checks when routes fail ===\n1. kubectl get endpoints <svc> -n <ns> -o wide\n2. kubectl describe pod <pod> | find readiness\n3. kubectl logs deploy/<gateway> --tail=200\n\n=== Health probe meaning ===\nreadiness | Remove pod from Service when not safe for traffic\nliveness  | Restart pod when process wedged — keep dependency checks here minimal\n"
     },
     {
       "type": "code",
-      "title": "Intermediate — Round-robin pool, gateway policy gate, empty upstream",
+      "title": "Service Discovery & API Gateway — intermediate",
       "language": "java",
       "filename": "Day52Intermediate.java",
-      "code": "package arch.day52;\n\nimport java.util.List;\n\n/**\n * Simulates: instance pick, gateway policy, empty discovery pool.\n * Spring mapping:\n * // Spring Cloud LoadBalancer round-robin over DiscoveryClient instances\n * // Gateway filter chain for auth before RoutePredicate\n */\npublic class Day52Intermediate {\n\n    /*\n     * Interview alignment (Spring / K8s):\n     * // @LoadBalanced RestTemplate or WebClient resolves logical host via Spring Cloud LoadBalancer.\n     * // spring.cloud.gateway routes match Path predicates then run GatewayFilter beans (auth, rate limit).\n     * // In Kubernetes, kube-proxy (or CNI) programs dataplane rules from Endpoints built from readiness.\n     *\n     * This class deliberately stays in-memory: same ordering ideas as RR / policy / empty pool.\n     *\n     * Scenario map:\n     * 1) Round-robin across a fixed pool (client-side pick pattern).\n     * 2) Gateway rejects anonymous calls before any routing (centralized policy).\n     * 3) Empty healthy list models bad readiness or full drain (502 upstream).\n     * 4) Rules recap for verbal interviews.\n     *\n     * Deterministic only: no random, no clocks, no UUIDs.\n     */\n\n    static int rr;\n    static final String[] ORDERS_POOL = {\"10.1.1.1:8080\", \"10.1.1.2:8080\", \"10.1.1.3:8080\"};\n\n    static String nextOrdersInstance() {\n        int idx = Math.floorMod(rr++, ORDERS_POOL.length);\n        return ORDERS_POOL[idx];\n    }\n\n    static String gatewayPolicyAllow(String credential, String path) {\n        if (credential == null || credential.isBlank()) {\n            return \"403 DENY missing credential (gateway policy)\";\n        }\n        return \"ALLOW \" + path;\n    }\n\n    static String pickPaymentsUpstream(List<String> healthyHosts) {\n        if (healthyHosts == null || healthyHosts.isEmpty()) {\n            return \"502 no healthy upstream for payments\";\n        }\n        return healthyHosts.get(0);\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Discovery + gateway simulation ===\\n\");\n\n        // --- Scenario 1: happy path — round-robin ---\n        System.out.println(\"--- Scenario 1: happy path — round-robin across orders pool ---\");\n        rr = 0;\n        for (int i = 0; i < 3; i++) {\n            System.out.println(\"Route /api/orders -> \" + nextOrdersInstance());\n        }\n        System.out.println();\n\n        // --- Scenario 2: centralized policy ---\n        System.out.println(\"--- Scenario 2: centralized policy at gateway ---\");\n        System.out.println(gatewayPolicyAllow(\"\", \"/api/orders\"));\n        System.out.println(gatewayPolicyAllow(\"Bearer demo-token\", \"/api/orders\"));\n        System.out.println();\n\n        // --- Scenario 3: discovery / health returns nobody ---\n        System.out.println(\"--- Scenario 3: discovery returns empty healthy set ---\");\n        System.out.println(pickPaymentsUpstream(List.of()));\n        System.out.println();\n\n        // --- Scenario 4: rules ---\n        System.out.println(\"--- Scenario 4: summary rules ---\");\n        System.out.println(\"Rule 1: Gateways enforce edge auth, TLS, coarse rate limits.\");\n        System.out.println(\"Rule 2: Discovery lists must respect readiness—only healthy instances.\");\n        System.out.println(\"Rule 3: Clients need timeouts; discovery alone does not fix slow upstreams.\");\n        System.out.println(\"Rule 4: Prefer stable DNS at the edge; do not expose raw pod IPs to apps.\");\n    }\n}\n",
       "level": "intermediate",
-      "output": "=== Discovery + gateway simulation ===\n\n--- Scenario 1: happy path — round-robin across orders pool ---\nRoute /api/orders -> 10.1.1.1:8080\nRoute /api/orders -> 10.1.1.2:8080\nRoute /api/orders -> 10.1.1.3:8080\n\n--- Scenario 2: centralized policy at gateway ---\n403 DENY missing credential (gateway policy)\nALLOW /api/orders\n\n--- Scenario 3: discovery returns empty healthy set ---\n502 no healthy upstream for payments\n\n--- Scenario 4: summary rules ---\nRule 1: Gateways enforce edge auth, TLS, coarse rate limits.\nRule 2: Discovery lists must respect readiness—only healthy instances.\nRule 3: Clients need timeouts; discovery alone does not fix slow upstreams.\nRule 4: Prefer stable DNS at the edge; do not expose raw pod IPs to apps.\n",
-      "description": "Four labelled flows: client-side style round-robin, gateway auth gate, empty healthy pool, and four operational rules."
+      "description": "Scenarios and simulations mirroring production API behavior.",
+      "code": "package arch.day52;\n\nimport java.util.List;\n\n/**\n * Simulates: instance pick, gateway policy, empty discovery pool.\n * Spring mapping:\n * // Spring Cloud LoadBalancer round-robin over DiscoveryClient instances\n * // Gateway filter chain for auth before RoutePredicate\n */\npublic class Day52Intermediate {\n\n    /*\n     * Interview alignment (Spring / K8s):\n     * // @LoadBalanced RestTemplate or WebClient resolves logical host via Spring Cloud LoadBalancer.\n     * // spring.cloud.gateway routes match Path predicates then run GatewayFilter beans (auth, rate limit).\n     * // In Kubernetes, kube-proxy (or CNI) programs dataplane rules from Endpoints built from readiness.\n     *\n     * This class deliberately stays in-memory: same ordering ideas as RR / policy / empty pool.\n     *\n     * Scenario map:\n     * 1) Round-robin across a fixed pool (client-side pick pattern).\n     * 2) Gateway rejects anonymous calls before any routing (centralized policy).\n     * 3) Empty healthy list models bad readiness or full drain (502 upstream).\n     * 4) Rules recap for verbal interviews.\n     *\n     * Deterministic only: no random, no clocks, no UUIDs.\n     */\n\n    static int rr;\n    static final String[] ORDERS_POOL = {\"10.1.1.1:8080\", \"10.1.1.2:8080\", \"10.1.1.3:8080\"};\n\n    static String nextOrdersInstance() {\n        int idx = Math.floorMod(rr++, ORDERS_POOL.length);\n        return ORDERS_POOL[idx];\n    }\n\n    static String gatewayPolicyAllow(String credential, String path) {\n        if (credential == null || credential.isBlank()) {\n            return \"403 DENY missing credential (gateway policy)\";\n        }\n        return \"ALLOW \" + path;\n    }\n\n    static String pickPaymentsUpstream(List<String> healthyHosts) {\n        if (healthyHosts == null || healthyHosts.isEmpty()) {\n            return \"502 no healthy upstream for payments\";\n        }\n        return healthyHosts.get(0);\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Discovery + gateway simulation ===\\n\");\n\n        // --- Scenario 1: happy path — round-robin ---\n        System.out.println(\"--- Scenario 1: happy path — round-robin across orders pool ---\");\n        rr = 0;\n        for (int i = 0; i < 3; i++) {\n            System.out.println(\"Route /api/orders -> \" + nextOrdersInstance());\n        }\n        System.out.println();\n\n        // --- Scenario 2: centralized policy ---\n        System.out.println(\"--- Scenario 2: centralized policy at gateway ---\");\n        System.out.println(gatewayPolicyAllow(\"\", \"/api/orders\"));\n        System.out.println(gatewayPolicyAllow(\"Bearer demo-token\", \"/api/orders\"));\n        System.out.println();\n\n        // --- Scenario 3: discovery / health returns nobody ---\n        System.out.println(\"--- Scenario 3: discovery returns empty healthy set ---\");\n        System.out.println(pickPaymentsUpstream(List.of()));\n        System.out.println();\n\n        // --- Scenario 4: rules ---\n        System.out.println(\"--- Scenario 4: summary rules ---\");\n        System.out.println(\"Rule 1: Gateways enforce edge auth, TLS, coarse rate limits.\");\n        System.out.println(\"Rule 2: Discovery lists must respect readiness—only healthy instances.\");\n        System.out.println(\"Rule 3: Clients need timeouts; discovery alone does not fix slow upstreams.\");\n        System.out.println(\"Rule 4: Prefer stable DNS at the edge; do not expose raw pod IPs to apps.\");\n    }\n}\n",
+      "output": "=== Discovery + gateway simulation ===\n\n--- Scenario 1: happy path — round-robin across orders pool ---\nRoute /api/orders -> 10.1.1.1:8080\nRoute /api/orders -> 10.1.1.2:8080\nRoute /api/orders -> 10.1.1.3:8080\n\n--- Scenario 2: centralized policy at gateway ---\n403 DENY missing credential (gateway policy)\nALLOW /api/orders\n\n--- Scenario 3: discovery returns empty healthy set ---\n502 no healthy upstream for payments\n\n--- Scenario 4: summary rules ---\nRule 1: Gateways enforce edge auth, TLS, coarse rate limits.\nRule 2: Discovery lists must respect readiness—only healthy instances.\nRule 3: Clients need timeouts; discovery alone does not fix slow upstreams.\nRule 4: Prefer stable DNS at the edge; do not expose raw pod IPs to apps.\n"
     },
     {
       "type": "code",
-      "title": "Advanced — Route risk scoring + deployment pattern picks + decision table",
+      "title": "Service Discovery & API Gateway — advanced",
       "language": "java",
       "filename": "Day52Advanced.java",
-      "code": "package arch.day52;\n\nimport java.util.*;\n\n/**\n * Records + priority scoring + three stdout blocks.\n * Spring note:\n * // Order Gateway routes by predicate order — put highest-risk paths behind extra filters\n */\npublic class Day52Advanced {\n\n    /*\n     * Priority score ranks routes for gateway hardening: OAuth surfaces, fan-out blast radius.\n     * Block 2 lists where teams usually anchor discovery (K8s DNS, mesh, hybrid registry).\n     * Block 3 is an on-call cheat sheet: symptom -> first command or dashboard.\n     *\n     * Spring Cloud Gateway note:\n     * // RouteLocatorBuilder routes order matters — place auth / TLS termination filters early.\n     * // spring.cloud.kubernetes.discovery.enabled=true replaces Eureka for in-cluster apps.\n     *\n     * Kubernetes ops hooks:\n     * // kubectl get endpoints <svc> -n <ns> -o wide\n     * // kubectl get endpointslices -n <ns> --field-selector kubernetes.io/service.name=<svc>\n     * // kubectl logs deploy/<gateway> -c <container> --tail=200\n     *\n     * Observability:\n     * // Watch upstream_rq_5xx (Envoy) or Spring Cloud Gateway metrics per routeId.\n     * // Correlate deploy timestamps with EndpointSlice change events.\n     *\n     * No randomness: scoring uses only constants in main().\n     */\n\n    record RouteRisk(String path, int downstreamFanout, boolean requiresUserOAuth) {\n    }\n\n    /*\n     * Scoring is a teaching stand-in for gateway risk review:\n     * - Higher downstream fan-out => more brittle timeouts and retry storms.\n     * - User OAuth routes => token validation, JWKS cache, and key rotation work.\n     *\n     * Production checklist (voice in interviews):\n     * 1) Confirm per-route timeouts and retry budgets in gateway config.\n     * 2) Ensure idempotency keys for any retried non-GET from edge.\n     * 3) Keep filters non-blocking; offload heavy IO to dedicated auth services.\n     * 4) Canary high-priority routes first; watch error budget per routeId.\n     * 5) Document partner-facing paths separately from internal ClusterIP callers.\n     * 6) For multi-cluster, decide whether DNS or mesh federation owns global names.\n     * 7) Validate TLS between gateway and mesh ingress when terminating at edge.\n     * 8) Log structured routeId + upstream_cluster for every 5xx at gateway.\n     * 9) Alert on EndpointSlice age stuck while pods churn (watch bug).\n     * 10) Run game-days that drain an AZ and verify discovery convergence time.\n     */\n\n    static int routePriority(RouteRisk r) {\n        int p = r.downstreamFanout() * 3;\n        if (r.requiresUserOAuth()) {\n            p += 12;\n        }\n        return p;\n    }\n\n    static void printRankedRoutes(List<RouteRisk> routes) {\n        List<RouteRisk> copy = new ArrayList<>(routes);\n        copy.sort(Comparator.comparingInt(Day52Advanced::routePriority).reversed());\n        for (RouteRisk r : copy) {\n            System.out.println(r.path() + \" priority=\" + routePriority(r));\n        }\n    }\n\n    public static void main(String[] args) {\n\n        System.out.println(\"=== Block 1: route complexity score ===\");\n        System.out.println(\"Higher priority => review gateway filters, timeouts, and canary first.\");\n        System.out.println();\n        printRankedRoutes(List.of(\n                new RouteRisk(\"/api/checkout\", 5, true),\n                new RouteRisk(\"/api/catalog\", 2, false),\n                new RouteRisk(\"/api/admin\", 1, true)\n        ));\n        System.out.println();\n\n        System.out.println(\"=== Block 2: discovery pattern cheat sheet ===\");\n        System.out.println(\"Pure Kubernetes microservices: Service DNS + Ingress or Gateway API.\");\n        System.out.println(\"Spring Cloud on VMs + K8s mix: Consul or Eureka until full migration.\");\n        System.out.println(\"Strict mTLS everywhere: mesh data plane + gateway at trust boundary.\");\n        System.out.println(\"Partner HTTP APIs: public gateway + JWT + WAF, never raw ClusterIP DNS.\");\n        System.out.println();\n\n        System.out.println(\"=== Block 3: gateway / discovery decision reference ===\");\n        System.out.println(\"Symptom                               | First move\");\n        System.out.println(\"502 spike after rollout               | kubectl get endpoints + readiness\");\n        System.out.println(\"Clients hit stale pods                | shorten LB cache or recycle pools\");\n        System.out.println(\"Gateway CPU low but p99 high          | TLS/JWT filter or upstream latency\");\n        System.out.println(\"DNS storms                            | raise TTL carefully or cache in client\");\n        System.out.println(\"Cross-cluster routing                 | multi-cluster gateway or mesh federation\");\n        System.out.println(\"Unknown caller abuse                  | OAuth2 client credentials + per-key quota\");\n        System.out.println(\"Need path-based canary                | weighted route or Flagger + metrics\");\n        System.out.println(\"Spring upgrade breaks discovery       | align Spring Cloud BOM with Boot\");\n        System.out.println(\"Huge Service cardinality              | endpoint subsetting / split services\");\n        System.out.println(\"Debugging misses trace                | inject traceparent at gateway filter\");\n    }\n}\n",
       "level": "advanced",
-      "output": "=== Block 1: route complexity score ===\nHigher priority => review gateway filters, timeouts, and canary first.\n\n/api/checkout priority=27\n/api/admin priority=15\n/api/catalog priority=6\n\n=== Block 2: discovery pattern cheat sheet ===\nPure Kubernetes microservices: Service DNS + Ingress or Gateway API.\nSpring Cloud on VMs + K8s mix: Consul or Eureka until full migration.\nStrict mTLS everywhere: mesh data plane + gateway at trust boundary.\nPartner HTTP APIs: public gateway + JWT + WAF, never raw ClusterIP DNS.\n\n=== Block 3: gateway / discovery decision reference ===\nSymptom                               | First move\n502 spike after rollout               | kubectl get endpoints + readiness\nClients hit stale pods                | shorten LB cache or recycle pools\nGateway CPU low but p99 high          | TLS/JWT filter or upstream latency\nDNS storms                            | raise TTL carefully or cache in client\nCross-cluster routing                 | multi-cluster gateway or mesh federation\nUnknown caller abuse                  | OAuth2 client credentials + per-key quota\nNeed path-based canary                | weighted route or Flagger + metrics\nSpring upgrade breaks discovery       | align Spring Cloud BOM with Boot\nHuge Service cardinality              | endpoint subsetting / split services\nDebugging misses trace                | inject traceparent at gateway filter\n",
-      "description": "Ranks routes by a simple priority function, prints deployment-pattern guidance, then a symptom-to-action reference table in three blocks."
+      "description": "Combined patterns: errors, pagination, contracts, or trade-off tables.",
+      "code": "package arch.day52;\n\nimport java.util.*;\n\n/**\n * Records + priority scoring + three stdout blocks.\n * Spring note:\n * // Order Gateway routes by predicate order — put highest-risk paths behind extra filters\n */\npublic class Day52Advanced {\n\n    /*\n     * Priority score ranks routes for gateway hardening: OAuth surfaces, fan-out blast radius.\n     * Block 2 lists where teams usually anchor discovery (K8s DNS, mesh, hybrid registry).\n     * Block 3 is an on-call cheat sheet: symptom -> first command or dashboard.\n     *\n     * Spring Cloud Gateway note:\n     * // RouteLocatorBuilder routes order matters — place auth / TLS termination filters early.\n     * // spring.cloud.kubernetes.discovery.enabled=true replaces Eureka for in-cluster apps.\n     *\n     * Kubernetes ops hooks:\n     * // kubectl get endpoints <svc> -n <ns> -o wide\n     * // kubectl get endpointslices -n <ns> --field-selector kubernetes.io/service.name=<svc>\n     * // kubectl logs deploy/<gateway> -c <container> --tail=200\n     *\n     * Observability:\n     * // Watch upstream_rq_5xx (Envoy) or Spring Cloud Gateway metrics per routeId.\n     * // Correlate deploy timestamps with EndpointSlice change events.\n     *\n     * No randomness: scoring uses only constants in main().\n     */\n\n    record RouteRisk(String path, int downstreamFanout, boolean requiresUserOAuth) {\n    }\n\n    /*\n     * Scoring is a teaching stand-in for gateway risk review:\n     * - Higher downstream fan-out => more brittle timeouts and retry storms.\n     * - User OAuth routes => token validation, JWKS cache, and key rotation work.\n     *\n     * Production checklist (voice in interviews):\n     * 1) Confirm per-route timeouts and retry budgets in gateway config.\n     * 2) Ensure idempotency keys for any retried non-GET from edge.\n     * 3) Keep filters non-blocking; offload heavy IO to dedicated auth services.\n     * 4) Canary high-priority routes first; watch error budget per routeId.\n     * 5) Document partner-facing paths separately from internal ClusterIP callers.\n     * 6) For multi-cluster, decide whether DNS or mesh federation owns global names.\n     * 7) Validate TLS between gateway and mesh ingress when terminating at edge.\n     * 8) Log structured routeId + upstream_cluster for every 5xx at gateway.\n     * 9) Alert on EndpointSlice age stuck while pods churn (watch bug).\n     * 10) Run game-days that drain an AZ and verify discovery convergence time.\n     */\n\n    static int routePriority(RouteRisk r) {\n        int p = r.downstreamFanout() * 3;\n        if (r.requiresUserOAuth()) {\n            p += 12;\n        }\n        return p;\n    }\n\n    static void printRankedRoutes(List<RouteRisk> routes) {\n        List<RouteRisk> copy = new ArrayList<>(routes);\n        copy.sort(Comparator.comparingInt(Day52Advanced::routePriority).reversed());\n        for (RouteRisk r : copy) {\n            System.out.println(r.path() + \" priority=\" + routePriority(r));\n        }\n    }\n\n    public static void main(String[] args) {\n\n        System.out.println(\"=== Block 1: route complexity score ===\");\n        System.out.println(\"Higher priority => review gateway filters, timeouts, and canary first.\");\n        System.out.println();\n        printRankedRoutes(List.of(\n                new RouteRisk(\"/api/checkout\", 5, true),\n                new RouteRisk(\"/api/catalog\", 2, false),\n                new RouteRisk(\"/api/admin\", 1, true)\n        ));\n        System.out.println();\n\n        System.out.println(\"=== Block 2: discovery pattern cheat sheet ===\");\n        System.out.println(\"Pure Kubernetes microservices: Service DNS + Ingress or Gateway API.\");\n        System.out.println(\"Spring Cloud on VMs + K8s mix: Consul or Eureka until full migration.\");\n        System.out.println(\"Strict mTLS everywhere: mesh data plane + gateway at trust boundary.\");\n        System.out.println(\"Partner HTTP APIs: public gateway + JWT + WAF, never raw ClusterIP DNS.\");\n        System.out.println();\n\n        System.out.println(\"=== Block 3: gateway / discovery decision reference ===\");\n        System.out.println(\"Symptom                               | First move\");\n        System.out.println(\"502 spike after rollout               | kubectl get endpoints + readiness\");\n        System.out.println(\"Clients hit stale pods                | shorten LB cache or recycle pools\");\n        System.out.println(\"Gateway CPU low but p99 high          | TLS/JWT filter or upstream latency\");\n        System.out.println(\"DNS storms                            | raise TTL carefully or cache in client\");\n        System.out.println(\"Cross-cluster routing                 | multi-cluster gateway or mesh federation\");\n        System.out.println(\"Unknown caller abuse                  | OAuth2 client credentials + per-key quota\");\n        System.out.println(\"Need path-based canary                | weighted route or Flagger + metrics\");\n        System.out.println(\"Spring upgrade breaks discovery       | align Spring Cloud BOM with Boot\");\n        System.out.println(\"Huge Service cardinality              | endpoint subsetting / split services\");\n        System.out.println(\"Debugging misses trace                | inject traceparent at gateway filter\");\n    }\n}\n",
+      "output": "=== Block 1: route complexity score ===\nHigher priority => review gateway filters, timeouts, and canary first.\n\n/api/checkout priority=27\n/api/admin priority=15\n/api/catalog priority=6\n\n=== Block 2: discovery pattern cheat sheet ===\nPure Kubernetes microservices: Service DNS + Ingress or Gateway API.\nSpring Cloud on VMs + K8s mix: Consul or Eureka until full migration.\nStrict mTLS everywhere: mesh data plane + gateway at trust boundary.\nPartner HTTP APIs: public gateway + JWT + WAF, never raw ClusterIP DNS.\n\n=== Block 3: gateway / discovery decision reference ===\nSymptom                               | First move\n502 spike after rollout               | kubectl get endpoints + readiness\nClients hit stale pods                | shorten LB cache or recycle pools\nGateway CPU low but p99 high          | TLS/JWT filter or upstream latency\nDNS storms                            | raise TTL carefully or cache in client\nCross-cluster routing                 | multi-cluster gateway or mesh federation\nUnknown caller abuse                  | OAuth2 client credentials + per-key quota\nNeed path-based canary                | weighted route or Flagger + metrics\nSpring upgrade breaks discovery       | align Spring Cloud BOM with Boot\nHuge Service cardinality              | endpoint subsetting / split services\nDebugging misses trace                | inject traceparent at gateway filter\n"
     },
     {
       "type": "diagram",
@@ -74,7 +74,7 @@
     },
     {
       "type": "pitfalls",
-      "title": "Common Pitfalls",
+      "title": "Common pitfalls",
       "items": [
         "Using **liveness** probes for dependency checks so slow databases restart every pod in a loop while **readiness** should have removed them from traffic.",
         "Publishing **pod IPs** or internal **ClusterIP DNS** to external partners, bypassing **auth**, **audit**, and **WAF** you would have enforced at a **gateway**.",
@@ -89,14 +89,14 @@
     {
       "type": "exercise",
       "title": "Exercise — Routing, discovery, and centralized policies (Day 52 assignment)",
+      "difficulty": "Advanced",
       "problem": "Align this exercise with **Day 52 Assignment**: **Routing, discovery, and centralized policies**.\n\n1. Build an in-memory **registry** that maps **logical service id** (`payments`, `orders`) to **instances** (`host:port` + **healthy** flag).\n2. Build a **path routing table**: `/api/payments` → `payments`, `/api/orders` → `orders` (prefix match).\n3. Implement a **gateway policy**: requests without a non-blank **API key** string must be rejected before routing (print a clear `403` style message).\n4. For a matching route, print `ROUTE <path> -> <service> -> <chosen host:port>` choosing the **first healthy** instance, or a clear error if none.\n5. Demonstrate in `main()` at least: **happy payment route**, **policy rejection**, **orders before registration** (error), then **register healthy orders** and show success.\n\nUse only deterministic strings; no randomness.",
       "hints": [
         "Keep route matching as simple prefix checks in a `LinkedHashMap` iteration order.",
         "Separate **policy** from **discovery** so you can test each gate independently.",
         "Register two **payments** instances with one unhealthy to prove **first healthy** selection."
       ],
-      "solution": "package arch.day52;\n\nimport java.util.*;\n\n/**\n * Day 52 assignment: routing table + service registry + gateway API-key policy.\n * Mirrors \"Routing, discovery, and centralized policies\" from assignments_phase6.json.\n */\npublic class Day52Exercise {\n\n    static final class Instance {\n        final String hostPort;\n        final boolean healthy;\n\n        Instance(String hostPort, boolean healthy) {\n            this.hostPort = hostPort;\n            this.healthy = healthy;\n        }\n    }\n\n    static final class Registry {\n        private final Map<String, List<Instance>> byService = new LinkedHashMap<>();\n\n        void register(String serviceId, Instance instance) {\n            byService.computeIfAbsent(serviceId, k -> new ArrayList<>()).add(instance);\n        }\n\n        String pickFirstHealthy(String serviceId) {\n            List<Instance> list = byService.get(serviceId);\n            if (list == null || list.isEmpty()) {\n                return \"NO_INSTANCES_REGISTERED\";\n            }\n            for (Instance i : list) {\n                if (i.healthy) {\n                    return i.hostPort;\n                }\n            }\n            return \"NO_HEALTHY_INSTANCE\";\n        }\n    }\n\n    static String handleRequest(Registry reg,\n                                LinkedHashMap<String, String> routes,\n                                String apiKey,\n                                String path) {\n        if (apiKey == null || apiKey.isBlank()) {\n            return \"403 policy: missing X-Api-Key\";\n        }\n        for (Map.Entry<String, String> e : routes.entrySet()) {\n            if (path.startsWith(e.getKey())) {\n                String svc = e.getValue();\n                String upstream = reg.pickFirstHealthy(svc);\n                return \"ROUTE \" + path + \" -> \" + svc + \" -> \" + upstream;\n            }\n        }\n        return \"404 no route\";\n    }\n\n    public static void main(String[] args) {\n        Registry reg = new Registry();\n        reg.register(\"payments\", new Instance(\"10.2.0.1:8081\", true));\n        reg.register(\"payments\", new Instance(\"10.2.0.2:8081\", false));\n\n        LinkedHashMap<String, String> routes = new LinkedHashMap<>();\n        routes.put(\"/api/payments\", \"payments\");\n        routes.put(\"/api/orders\", \"orders\");\n\n        System.out.println(\"=== Assignment: routing + discovery + gateway policy ===\\n\");\n        System.out.println(handleRequest(reg, routes, \"key-001\", \"/api/payments/42\"));\n        System.out.println(handleRequest(reg, routes, \"\", \"/api/payments/42\"));\n        System.out.println(handleRequest(reg, routes, \"key-001\", \"/api/orders/1\"));\n        reg.register(\"orders\", new Instance(\"10.3.0.1:8090\", true));\n        System.out.println(handleRequest(reg, routes, \"key-001\", \"/api/orders/1\"));\n    }\n}\n",
-      "difficulty": "Advanced"
+      "solution": "package arch.day52;\n\nimport java.util.*;\n\n/**\n * Day 52 assignment: routing table + service registry + gateway API-key policy.\n * Mirrors \"Routing, discovery, and centralized policies\" from assignments_phase6.json.\n */\npublic class Day52Exercise {\n\n    static final class Instance {\n        final String hostPort;\n        final boolean healthy;\n\n        Instance(String hostPort, boolean healthy) {\n            this.hostPort = hostPort;\n            this.healthy = healthy;\n        }\n    }\n\n    static final class Registry {\n        private final Map<String, List<Instance>> byService = new LinkedHashMap<>();\n\n        void register(String serviceId, Instance instance) {\n            byService.computeIfAbsent(serviceId, k -> new ArrayList<>()).add(instance);\n        }\n\n        String pickFirstHealthy(String serviceId) {\n            List<Instance> list = byService.get(serviceId);\n            if (list == null || list.isEmpty()) {\n                return \"NO_INSTANCES_REGISTERED\";\n            }\n            for (Instance i : list) {\n                if (i.healthy) {\n                    return i.hostPort;\n                }\n            }\n            return \"NO_HEALTHY_INSTANCE\";\n        }\n    }\n\n    static String handleRequest(Registry reg,\n                                LinkedHashMap<String, String> routes,\n                                String apiKey,\n                                String path) {\n        if (apiKey == null || apiKey.isBlank()) {\n            return \"403 policy: missing X-Api-Key\";\n        }\n        for (Map.Entry<String, String> e : routes.entrySet()) {\n            if (path.startsWith(e.getKey())) {\n                String svc = e.getValue();\n                String upstream = reg.pickFirstHealthy(svc);\n                return \"ROUTE \" + path + \" -> \" + svc + \" -> \" + upstream;\n            }\n        }\n        return \"404 no route\";\n    }\n\n    public static void main(String[] args) {\n        Registry reg = new Registry();\n        reg.register(\"payments\", new Instance(\"10.2.0.1:8081\", true));\n        reg.register(\"payments\", new Instance(\"10.2.0.2:8081\", false));\n\n        LinkedHashMap<String, String> routes = new LinkedHashMap<>();\n        routes.put(\"/api/payments\", \"payments\");\n        routes.put(\"/api/orders\", \"orders\");\n\n        System.out.println(\"=== Assignment: routing + discovery + gateway policy ===\\n\");\n        System.out.println(handleRequest(reg, routes, \"key-001\", \"/api/payments/42\"));\n        System.out.println(handleRequest(reg, routes, \"\", \"/api/payments/42\"));\n        System.out.println(handleRequest(reg, routes, \"key-001\", \"/api/orders/1\"));\n        reg.register(\"orders\", new Instance(\"10.3.0.1:8090\", true));\n        System.out.println(handleRequest(reg, routes, \"key-001\", \"/api/orders/1\"));\n    }\n}\n"
     },
     {
       "type": "interview",
@@ -107,12 +107,12 @@
           "answer": "**Service discovery** answers *which backend addresses are valid right now* for a logical service name. **Kubernetes** implements this with **Service** objects, **CoreDNS** names, and **Endpoints** built only from **Ready** pods. When discovery is **stale** or **empty**, gateways and clients still open connections to **drained** or **broken** instances, so you see **502** spikes that line up with **rollouts** instead of steady load.",
           "followUps": [
             {
-              "question": "Name the first **kubectl** commands you run when checkout returns **502** only after a deploy.",
-              "answer": "Start with **Endpoints truth**, not pod cosmetics: `kubectl get endpoints payments -n prod -o yaml` shows whether any **subsets** carry **ready** addresses. Pair with `kubectl get pods -l app=payments -o wide` and `kubectl describe pod` on failing pods to read **readiness** events. If you use **EndpointSlices**, run `kubectl get endpointslices -n prod --field-selector kubernetes.io/service.name=payments` to catch **controller** lag. Only after the cluster view is sane do you trust **gateway upstream** dashboards; otherwise you chase **ghost IPs** cached at the edge."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How does **Eureka self-preservation** differ from **Kubernetes** when the control plane is partitioned?",
-              "answer": "**Eureka** may refuse to evict instances when it thinks too many heartbeats disappeared at once, which keeps **stale registrations** visible to avoid a thundering **empty registry** during partial outages. **Kubernetes** still drives **Endpoints** from **API server** state and **kubelet** readiness, so behavior depends on **node** and **apiserver** availability rather than client renewals. In interviews, explain the **trade-off**: Eureka protects against mass eviction noise but can prolong **bad routes**; Kubernetes is authoritative but can leave you with **no backends** if nodes are **NotReady**. Mention you would watch **SLO** and **error budget** before tuning eviction aggressiveness."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -121,12 +121,12 @@
           "answer": "A pod resolves `payments.prod.svc.cluster.local` via **CoreDNS**, receiving the **ClusterIP** for the **payments** **Service**. **kube-proxy** or the **CNI** dataplane maps that **VIP** to **pod IPs** listed in **Endpoints** that passed **readiness**. Your **Java** process then opens a TCP connection to that **ClusterIP:port**, and the dataplane picks a **healthy** backend. If **readiness** is wrong, **DNS** still resolves but traffic lands on **bad** pods.",
           "followUps": [
             {
-              "question": "When would you choose a **headless** `clusterIP: None` Service instead of a normal **ClusterIP**?",
-              "answer": "**Headless** Services return **pod A records** directly so clients or **StatefulSets** can target **specific** instances or run **peer discovery** without a shared **VIP**. They are common for **databases**, **Kafka** brokers, or gRPC clients that maintain their own **load balancing**. Trade-off: you expose **pod churn** to callers unless clients refresh DNS aggressively, so pair with **short TTL** patterns or **client-side** watchers. For ordinary **stateless** HTTP microservices behind a **gateway**, a normal **ClusterIP** is usually simpler because **kube-proxy** keeps fan-out opaque."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What **CoreDNS** metric or cluster signal hints **DNS is hot** during an incident?",
-              "answer": "Watch **CoreDNS** request rates and latency histograms such as **`coredns_dns_requests_total`** and **`coredns_dns_request_duration_seconds`** in **Prometheus**. Spikes often track **client retry storms** or **misconfigured ultra-low TTL** that forces constant lookups. Also check **NodeLocal DNSCache** saturation if enabled, because **conntrack** or **CPU** on cache daemons can bottleneck before **CoreDNS** itself. In interviews, tie DNS heat back to **retry without backoff** or **N+1** service meshes of tiny calls that each resolve names independently."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -135,12 +135,12 @@
           "answer": "**Client-side** means the caller library (**Spring Cloud LoadBalancer**, **Ribbon** successors, mesh **sidecar**) chooses an instance from a **registry** or **Endpoint** list. **Server-side** means a **load balancer** or **API gateway** picks upstreams while clients only know a **stable** edge name. **Client-side** adds flexibility and can save a hop, but spreads **policy** and **TLS** concerns across many binaries. **Server-side** centralizes **auth** and **quotas** but adds **capacity planning** for the middle tier.",
           "followUps": [
             {
-              "question": "Where does **`@LoadBalanced WebClient`** fit in this split?",
-              "answer": "`@LoadBalanced` tells **Spring Cloud** to intercept `http://payments` style URIs and resolve them through **LoadBalancerClient** backed by **DiscoveryClient** data. That is classic **client-side** selection from the JVM’s point of view, even if the data ultimately mirrors **Kubernetes Endpoints**. Interviewers often probe failure modes: **stale cache**, **wrong service id**, missing **`spring.cloud.loadbalancer`** on the classpath after upgrades, or **blocking** calls on the reactive chain. Mention **`ReactorLoadBalancerExchangeFilterFunction`** for **WebClient** in WebFlux stacks."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "Why might a platform team **forbid** bypassing the **gateway** for public mobile traffic?",
-              "answer": "Mobile clients are untrusted and long-lived; exposing **internal Service DNS** or **pod IPs** skips **WAF**, **JWT** validation, **per-app rate limits**, and **central audit** of **API keys**. A **gateway** gives a **single place** to enforce **TLS versions**, **mTLS** to mesh ingress, and **bot** protections. The trade-off is you must **scale** the gateway tier and keep its **filters** non-blocking. Senior answers mention **PCI** scope reduction and **DDoS** absorption at the edge."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -149,12 +149,12 @@
           "answer": "Gateways should terminate **TLS**, validate **OAuth2/JWT**, apply **coarse rate limits**, **route** paths, inject **trace** headers, and sometimes **terminate** **mTLS** to the mesh. **Domain services** own **business invariants**, **transactions**, and **data ownership**. When gateways start encoding **pricing rules** or **multi-service sagas**, deploys become **coupled** and **blast radius** grows because every team shares one **release train** for the edge.",
           "followUps": [
             {
-              "question": "How do you keep **Spring Cloud Gateway** filters from blocking the event loop?",
-              "answer": "Prefer **non-blocking** filter implementations and offload blocking **JDBC** or **LDAP** to dedicated **auth** services or **reactive** clients. If you must block, isolate those routes on a **separate gateway deployment** with a **thread pool** or use **Spring MVC** gateway variants—never mix heavy blocking filters into a **high-QPS** reactive gateway without isolation. Watch **reactor** **event-loop** stalled threads and **Netty** pending tasks metrics. Interview answer: measure **p99** under load after each new filter and cap **CPU** per instance with **HPA** backed by **custom metrics**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "Give an example of a **gateway policy** that should stay centralized.",
-              "answer": "**Per-client API key quotas** and **OAuth2 scopes** checks belong at the edge so every service does not reimplement **throttling** differently. Example: reject anonymous calls with **403**, map **client_id** to **tenant**, and stamp **X-Tenant-Id** for downstream **Row-Level Security**. Centralization avoids **policy drift** but requires a **versioned** contract for headers and **integration tests** that fail if a team bypasses the gateway in **staging**. Senior answers name **ownership**: platform **SRE** for **mesh** and **certs**, **application** teams for **readiness** semantics, and **security** for **WAF** rules—then explain how those teams coordinate during **sev-1** calls without blame loops."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -163,12 +163,12 @@
           "answer": "**Readiness** decides whether a pod receives **Service** traffic. Failing readiness removes the pod from **Endpoints**, which is what **kube-proxy** uses for routing. **Liveness** decides whether **kubelet** should **restart** the container. Putting **expensive dependency checks** on **liveness** causes **restart flapping**, while putting **no dependency checks** on **readiness** advertises pods that **500** real requests.",
           "followUps": [
             {
-              "question": "What does a **readiness** probe that only hits `/actuator/health` miss?",
-              "answer": "The default **liveness** group may report **UP** while **readiness** groups for **database** or **Kafka** are still **DOWN**—if you accidentally probe the wrong group, you admit traffic too early. Also, a static **200** from a servlet that does not touch **DataSource** can hide **connection pool** exhaustion until user traffic arrives. Fix by using **`/actuator/health/readiness`** with **readiness groups** configured, and add **synthetic checks** that prove **migrations** applied when schema versions gate **traffic**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do **startup probes** change discovery during slow **JVM** warm-up?",
-              "answer": "**Startup probes** give long **initialDelay** windows without killing the container, while **readiness** stays **failed** so **Endpoints** exclude the pod until warm-up completes. This prevents **Kubernetes** from routing to half-started **Spring** contexts. Mention pairing **startup** with **minReadySeconds** on the **Deployment** so **old** pods are not torn down until **new** pods pass **readiness** consistently across the **rolling** strategy. In real incidents you anchor the story with **time-aligned** graphs: **deploy** markers, **Endpoint** subset size, **gateway** **5xx** by **routeId**, and **client** **retry** rates so leadership sees causality instead of opinions."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -177,12 +177,12 @@
           "answer": "Common pattern: **new** pods are **Running** but not yet **Ready**, while **old** pods were already **terminated**, yielding **empty** or **undersized** **Endpoints** for a window. Another pattern: **gateways** or **Envoy** clusters cache **prior** upstream IPs until **health checks** fail. Less obvious: **maxUnavailable** set too aggressively drains **all** backends simultaneously.",
           "followUps": [
             {
-              "question": "Which **gateway metrics** differentiate **upstream reset** from **TLS handshake** failures?",
-              "answer": "On **Envoy**, compare **`upstream_cx_connect_fail`** and **`upstream_rq_xx`** with **`tls_inspector`** stats; **Spring Cloud Gateway** exposes **Netty** channel metrics via **Micrometer** tags on **`spring.cloud.gateway.requests`** with **outcome** and **status**. **TLS** issues often spike during **certificate rotation** while **connect failures** track **Endpoint** churn. Mention capturing **downstream** **502** with **routeId** labels to know which **predicate** misbehaved. Senior answers name **ownership**: platform **SRE** for **mesh** and **certs**, **application** teams for **readiness** semantics, and **security** for **WAF** rules—then explain how those teams coordinate during **sev-1** calls without blame loops."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "Name a **Deployment** field you tune to reduce **capacity gaps** during rollouts.",
-              "answer": "**maxUnavailable** and **maxSurge** control how many **old** pods may disappear before **new** ones are **Ready**. Setting **maxUnavailable: 0** with **maxSurge: 1** is a classic pattern to avoid **zero** backends. Combine with **`minReadySeconds`** to catch **flapping readiness**. Interviewers like hearing you validate with **`kubectl rollout status`** and **HPA** headroom so **new** pods actually become **Ready** under load. Mention **verification** steps you would run in **staging** before promoting the same change to **prod**: **synthetic** **canaries**, **chaos** **drills** on **pod** **kill**, and **contract** tests that fail if a team bypasses the **gateway** accidentally."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -191,12 +191,12 @@
           "answer": "**RouteLocator** builds **Route** objects with ordered **GatewayFilter** chains and **AsyncPredicate** tests such as **Path**, **Host**, or **Header**. Incoming requests evaluate **predicates**; the first matching **route** wins unless you configure **ordered** routes explicitly. **Filters** can run **pre** and **post** logic—**AddRequestHeader**, **StripPrefix**, **RequestRateLimiter**, **OAuth2** resource server integration—and the **URI** may be `lb://payments` to integrate with **LoadBalancerClient**.",
           "followUps": [
             {
-              "question": "What breaks if **StripPrefix** is misconfigured with downstream services?",
-              "answer": "Downstream **Spring MVC** controllers may expect `/api/payments` but receive `/payments` or vice versa, yielding **404** that look like **discovery** failures. Fix by aligning **`server.servlet.context-path`**, **gateway** **`filters: StripPrefix`**, and **OpenAPI** **servers** blocks. In interviews mention verifying with **`curl -v`** through the gateway in **staging** and **contract tests** that assert **paths** after rewrite. For **gateway** work, emphasize **non-blocking** **filters**, **connection** **pool** sizing to **upstream**, **TLS** session **resumption**, and **JWKS** **cache** **TTL** trade-offs that bite during **rotation** windows and **traffic** spikes."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **rate limit** per **API key** at the gateway?",
-              "answer": "Use **`RequestRateLimiter`** with a **Redis**-backed **`KeyResolver`** that reads a header such as **`X-Api-Key`** or a **JWT** claim. Configure **replenish rate** and **burst capacity** per tenant. Discuss **fail-open** versus **fail-closed** when **Redis** is down—product decision—and how to **alert** when limiter rejections spike. Mention **429** responses with **`Retry-After`** for friendly clients. Explain how you communicate to **non-engineers**: **customer** impact windows, **mitigation** in flight, **ETA** ranges, and **post-incident** **themes** that map to **roadmap** investments like **better** **readiness** or **multi-cluster** **failover**."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -205,12 +205,12 @@
           "answer": "**Ingress** (Kubernetes) is a **north-south** HTTP/S routing resource implemented by controllers like **nginx** or **ALB**. **Gateway API** is the successor CRD model with richer **role-oriented** APIs. **Spring Cloud Gateway** is an **application-level** gateway you operate as **pods** with **Java** filters—often sitting **behind** cloud **L4/L7** load balancers. Teams combine **cloud LB** + **Ingress/Gateway API** + **Spring** gateway when they need **Java** ecosystem filters.",
           "followUps": [
             {
-              "question": "Where would you terminate **TLS** in that layered stack?",
-              "answer": "Many clouds terminate **TLS** at the **managed LB**, re-encrypt to the **cluster** with **mTLS** or plain HTTP depending on threat model. **Spring Cloud Gateway** can terminate **TLS** again for **JWT** inspection or forward **mutual** certs. Interview answer balances **compliance** (**end-to-end** encryption) with **CPU** cost—**session resumption** and **hardware** acceleration matter at **high QPS**. Contrast **happy path** docs with **partition** behavior: **split brain**, **stale** **lists**, **degraded** **read-only** modes, and how **idempotency** keys prevent **duplicate** **writes** when **clients** **retry** during **routing** flaps."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "When is **Gateway API** preferable to classic **Ingress** annotations?",
-              "answer": "**Gateway API** offers **typed** routes, **reference grants**, and **multi-team** ownership with **GatewayClass** separation, reducing **annotation spaghetti** on **Ingress**. It helps when many **listeners** and **weighted** backends are required. Trade-off: controller maturity and **cluster** version requirements; some teams stay on **Ingress** until **platform** upgrades land. Mention **verification** steps you would run in **staging** before promoting the same change to **prod**: **synthetic** **canaries**, **chaos** **drills** on **pod** **kill**, and **contract** tests that fail if a team bypasses the **gateway** accidentally."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -219,12 +219,12 @@
           "answer": "Clients and gateways **reuse** TCP connections to upstream IPs for efficiency. When **Kubernetes** replaces pods, old **IPs** disappear while pools may still hand out **stale** sockets until **errors** trigger **eviction**. Without **timeouts** and **max idle** tuning, you observe **502** or **connection reset** bursts that clear when processes restart.",
           "followUps": [
             {
-              "question": "Which **WebClient** or **HttpClient** knobs reduce **stale pool** pain?",
-              "answer": "Configure **max idle time**, **max life** per connection, and **evict in background** for **Apache HttpClient** or **Netty** channel pools. **WebClient** inherits **Netty** settings via **`reactor.netty`** properties such as **`maxIdleTime`**. Pair with **reasonable** **`connectTimeout`** and **`responseTimeout`**. Interviewers want to hear you validate with **chaos** tests that kill pods and measure **recovery time** without **manual** client restart. Mention **verification** steps you would run in **staging** before promoting the same change to **prod**: **synthetic** **canaries**, **chaos** **drills** on **pod** **kill**, and **contract** tests that fail if a team bypasses the **gateway** accidentally."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "Why might **keep-alive** from gateway to upstream amplify an incident?",
-              "answer": "If **half-open** connections stick to **draining** pods, **retry** logic on the gateway may **duplicate** requests unless operations are **idempotent**. **Keep-alive** also hides **TLS** renegotiation issues until **rotation** events. Mention **max requests per connection** on **Envoy** clusters to force periodic **refresh** of upstream **membership**. In real incidents you anchor the story with **time-aligned** graphs: **deploy** markers, **Endpoint** subset size, **gateway** **5xx** by **routeId**, and **client** **retry** rates so leadership sees causality instead of opinions."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -233,12 +233,12 @@
           "answer": "**Consul** offers a **multi-datacenter** service catalog with **health checks** that can span **VMs** and **containers**, useful when **not everything** runs on **Kubernetes**. **Kubernetes** discovery is **authoritative** inside a cluster but awkward for **legacy** subnets. Teams sometimes run **Consul** sidecars or **sync** **Kubernetes** services into **Consul** for a **unified** graph.",
           "followUps": [
             {
-              "question": "What is painful about **dual registration** during migration?",
-              "answer": "Services may appear **healthy** in **Consul** but **not** in **Kubernetes Endpoints**, causing **split-brain** routing where some clients use **stale** **Consul** nodes. You need **automation** to **deregister** on shutdown and **consistent** **health** definitions. Interview answer includes **runbooks** that compare **Consul** **catalog** API with **`kubectl get endpoints`** during **cutover** weekends. Tie answers to **Java** **ecosystem** reality: **Spring Cloud** **BOM** alignment, **Boot** **Actuator** **groups**, **Reactor** **backpressure**, and **Micrometer** **tags** that make **on-call** searches fast instead of grep across **INFO** noise."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How would you **observe** Consul **raft** health in production?",
-              "answer": "Track **leader** elections, **raft** commit latency, and **serf** member flaps via **Consul** telemetry. Sudden **leadership** churn precedes **catalog** inconsistency. Tie alerts to **on-call** because **discovery** outages are **company-wide** incidents, not single-team noise. In real incidents you anchor the story with **time-aligned** graphs: **deploy** markers, **Endpoint** subset size, **gateway** **5xx** by **routeId**, and **client** **retry** rates so leadership sees causality instead of opinions."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -247,12 +247,12 @@
           "answer": "**Gateway-to-service mTLS** proves the **edge** component’s identity to **backends**, often using **platform-issued** certificates. **Mesh mTLS** encrypts **east-west** traffic between **many** services via **sidecar** proxies with **SPIFFE**-style identities. They solve different **trust boundaries**: **north-south** versus **east-west**. **JWT** for **end users** is orthogonal—**mTLS** is about **service** identity.",
           "followUps": [
             {
-              "question": "Who rotates certificates when **Istio** fronts **Spring Boot** services?",
-              "answer": "The **mesh control plane** (for example **Istiod**) drives **sidecar** certs via **SDS**, while **Spring** apps may still use **Java** keystores if they terminate TLS natively. Mixed mode requires clarity: sometimes **Spring** listens on **plaintext** inside the mesh while **Envoy** handles **mTLS**. Interview answer emphasizes **ownership**: **platform** SREs own **CA** hierarchy and **rotation** playbooks, **app** teams own **SAN** coverage for **hostnames**. Senior answers name **ownership**: platform **SRE** for **mesh** and **certs**, **application** teams for **readiness** semantics, and **security** for **WAF** rules—then explain how those teams coordinate during **sev-1** calls without blame loops."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What breaks if you only enforce **mTLS** but skip **authorization**?",
-              "answer": "Any **compromised** service inside the mesh can call any other **mTLS**-protected endpoint unless **RBAC** or **policy** layers exist. **mTLS** is **not** a substitute for **scoped** **OAuth2** tokens or **OPA** policies. Mention **zero trust** narratives: authenticate **and** authorize every call. Senior answers name **ownership**: platform **SRE** for **mesh** and **certs**, **application** teams for **readiness** semantics, and **security** for **WAF** rules—then explain how those teams coordinate during **sev-1** calls without blame loops."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -261,12 +261,12 @@
           "answer": "Mobile OSes and **HTTP** stacks **cache** DNS answers according to **TTL**. If you point **public DNS** directly at **ephemeral** pod IPs with **short** TTL, resolvers **hammer** DNS; if TTL is **long**, users **stick** to **dead** IPs after incidents. Stable **edge** names should target **load balancers** or **gateways**, not raw **pod** addresses.",
           "followUps": [
             {
-              "question": "What pattern replaces **DNS-only** discovery for volatile backends?",
-              "answer": "Use a **stable VIP** or **anycast** address at the edge, backed by **autoscaling** gateway pools, while **in-cluster** discovery tracks **pod** churn. Clients keep one **base URL**; operators **scale** middle tiers. For **internal** mobile **VPN** cases, **HTTP** proxies with **PAC** files sometimes help but add **operational** burden. Contrast **happy path** docs with **partition** behavior: **split brain**, **stale** **lists**, **degraded** **read-only** modes, and how **idempotency** keys prevent **duplicate** **writes** when **clients** **retry** during **routing** flaps."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do **CDNs** interact with **API gateway** routing for read-heavy APIs?",
-              "answer": "**CDNs** cache **GET** responses at the edge using **Cache-Control** headers issued by **gateway** or **origin**. Misconfigured caching of **personalized** JSON leaks **PII** across users. Gateways often **strip** sensitive **query** parameters from **cache keys** or **disable** caching for **authenticated** routes. Interview answer ties **RFC 7234** semantics to **security** reviews. Call out **second-order** effects: **retry** storms after **timeouts**, **thundering herds** when **caches** expire together, **cost** of **extra** **hops**, and **SLO** **risk** when **edge** **dependencies** (**Redis** for **rate limits**) become **single points** of failure."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -275,12 +275,12 @@
           "answer": "It tells the gateway to resolve **`serviceId`** through **Spring Cloud LoadBalancer** rather than using a **static** host. The effective **HTTP** client targets instances from **DiscoveryClient** or **Kubernetes** discovery modules. Misconfigured **serviceId** strings that do not match **registration** names yield **503** with **no healthy upstream** messages in logs.",
           "followUps": [
             {
-              "question": "How do you debug **`503` from `lb://` routes** in **staging**?",
-              "answer": "Enable **DEBUG** for **`org.springframework.cloud.gateway`** and **`org.springframework.cloud.loadbalancer`**, list **`DiscoveryClient.getInstances`** in a **scratch** `@Component`, and verify **registration** metadata matches **port** and **health**. Cross-check **`kubectl get endpoints`** if using **spring-cloud-kubernetes**. Often the issue is **wrong namespace** **metadata** or **Actuator** **management port** accidentally registered as **service** port. When **Kubernetes** is involved, cite **EndpointSlices**, **kube-proxy** mode (**iptables** vs **IPVS** vs **eBPF**), and how **CNI** choice changes **datapath** debugging—without pretending every cluster is identical."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "When would you avoid **`lb://` inside the cluster**?",
-              "answer": "If you already have a **mesh** that provides **client-side** load balancing via **sidecar**, duplicating **Spring** client-side selection can confuse **telemetry** and **retry** semantics. Some teams prefer **`http://payments.prod.svc.cluster.local`** with **mesh** routing for **uniform** policy. Trade-off is **Spring**-native ergonomics versus **platform**-standard **Envoy** features. For **gateway** work, emphasize **non-blocking** **filters**, **connection** **pool** sizing to **upstream**, **TLS** session **resumption**, and **JWKS** **cache** **TTL** trade-offs that bite during **rotation** windows and **traffic** spikes."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -289,12 +289,12 @@
           "answer": "Options include **geo-DNS** with **health-checked** endpoints, **multi-cluster gateways** that **federate** routes, or **mesh** multi-cluster **secrets** sharing **trust**. **Data residency** rules may forbid **automatic** cross-region failover for certain **tenants**. Discovery must respect **latency** and **compliance** simultaneously.",
           "followUps": [
             {
-              "question": "What is the downside of **active-active** databases paired with **global routing**?",
-              "answer": "**Write conflicts** and **replication lag** cause **split-brain** reads unless you adopt **CRDTs**, **per-tenant pinning**, or **single-writer** regions. Discovery can route users to **nearby** clusters, but **business** invariants still need **global** **ordering** strategy. Interview answer mentions **RPO/RTO** and **read-your-writes** guarantees. Interviewers listen for **runbook** habits: which **dashboard** you open first, which **kubectl** **invocation** proves membership, and when you choose **rollback** versus **forward fix** based on **error budget** burn."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How would you **test** regional failover without customer impact?",
-              "answer": "Run **synthetic canaries** from **multiple** regions hitting **gateway** **health** routes, orchestrate **DNS** or **traffic manager** **weighted** shifts in **staging**, and execute **game days** that **deny** cross-region **VPC** peering to validate **degradation** banners. Capture **SLO** burn during drills to know whether **error budgets** tolerate real failover. Explain how you communicate to **non-engineers**: **customer** impact windows, **mitigation** in flight, **ETA** ranges, and **post-incident** **themes** that map to **roadmap** investments like **better** **readiness** or **multi-cluster** **failover**."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -303,12 +303,40 @@
           "answer": "Gateways and **Envoy** may **retry** **5xx** or **connect** failures automatically. **POST** without **idempotency keys** can **duplicate** side effects—double **charges**, duplicate **orders**. **Safe** retries require **bounded** budgets, **retryable** methods, and **deduplication** at **domain** services.",
           "followUps": [
             {
-              "question": "Which HTTP methods are **usually** safe to retry automatically?",
-              "answer": "**GET**, **HEAD**, **OPTIONS**, and **DELETE** (after the resource is gone) are commonly treated as **retry-safe** when **timeouts** occur, though **DELETE** semantics should be documented. **PUT** can be safe when **full replacement** semantics hold. **POST** needs **`Idempotency-Key`** headers or **natural keys** in the body. Mention **Spring Cloud Gateway** **`Retry`** filter configuration with **methods** allowlists. Contrast **happy path** docs with **partition** behavior: **split brain**, **stale** **lists**, **degraded** **read-only** modes, and how **idempotency** keys prevent **duplicate** **writes** when **clients** **retry** during **routing** flaps."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do **payment processors** influence **gateway retry** policy?",
-              "answer": "Processors often **forbid** blind retries on **POST /charges** because **network timeouts** may still have **succeeded** server-side. Gateways should map **processor-specific** **idempotency** tokens and **surface** **409** conflicts to clients. Interview answer shows awareness of **PCI** logging constraints and **partner** SLAs on **retry** storms. Explain how you communicate to **non-engineers**: **customer** impact windows, **mitigation** in flight, **ETA** ranges, and **post-incident** **themes** that map to **roadmap** investments like **better** **readiness** or **multi-cluster** **failover**."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
+            }
+          ]
+        },
+        {
+          "question": "What problem does **service discovery** solve in Kubernetes vs a static config file?",
+          "answer": "Pods are ephemeral — IPs change on reschedule. Discovery (DNS, K8s Services, Consul) maps **logical names** to current instances. Static files cause stale routes and failed calls after rollouts. Health-aware discovery avoids routing to not-ready pods.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
+            },
+            {
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
+            }
+          ]
+        },
+        {
+          "question": "What belongs in an **API gateway** vs inside each microservice?",
+          "answer": "**Gateway**: TLS termination, authn at edge, rate limits, WAF, request routing, some A/B and canary splits. **Service**: business rules, authz on resources, domain validation. Avoid putting domain logic in the gateway — it becomes a distributed monolith.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this topic, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
+            },
+            {
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         }
@@ -319,12 +347,12 @@
           "answer": "// @Configuration\n// @Bean\n// @LoadBalanced\n// WebClient.Builder webClientBuilder() { return WebClient.builder(); }\n// // Usage: webClientBuilder.build().get().uri(\"http://payments/api/health\").retrieve().toBodilessEntity();\n// Resolves \"payments\" via LoadBalancer + DiscoveryClient (Kubernetes or Eureka).\n// Misconfiguration shows 503 when no instances registered or wrong serviceId.",
           "followUps": [
             {
-              "question": "How do you add **timeouts** to this **WebClient** safely?",
-              "answer": "`HttpClient` **responseTimeout** and **connectTimeout** should be set on the **builder** or via **`spring.codec`** and **`reactor.netty`** properties. Without timeouts, **hung** upstreams exhaust **connections** during discovery incidents. Add **`doOnError`** metrics and **retry** only for **safe** methods with **jitter**. In real incidents you anchor the story with **time-aligned** graphs: **deploy** markers, **Endpoint** subset size, **gateway** **5xx** by **routeId**, and **client** **retry** rates so leadership sees causality instead of opinions."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What breaks if you forget **`@LoadBalanced`** on the **builder** bean?",
-              "answer": "The **URI** `http://payments` is passed to **Reactor Netty** as a literal hostname, so DNS lookup fails unless a real **DNS** entry exists. The app appears **wired** but fails at runtime with **UnknownHostException**. Fix by annotating the **builder** or using **`ReactorLoadBalancerExchangeFilterFunction`**. Reference **security** **baselines**: **mTLS** for **service** identity, **JWT** for **people**, **least privilege** **scopes**, **audit** logs at the **edge**, and why **PII** must never land in **URL** paths that **CDNs** or **access** logs retain."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -333,12 +361,12 @@
           "answer": "// spring.cloud.gateway.routes[0].id=payments\n// spring.cloud.gateway.routes[0].uri=lb://payments-service\n// spring.cloud.gateway.routes[0].predicates[0]=Path=/api/payments/**\n// spring.cloud.gateway.routes[0].filters[0]=StripPrefix=2\n// // StripPrefix removes /api/payments leaving downstream path\n// // Add filters for OAuth2 Resource Server or RequestRateLimiter as needed",
           "followUps": [
             {
-              "question": "How do you **integration test** this route in **JUnit**?",
-              "answer": "Use **`@SpringBootTest`** with **`WebTestClient`** bound to **`spring.cloud.gateway`** **test** slice or **`@AutoConfigureWebTestClient`**. Send requests through **`localhost`** with **`Host`** header if using **Host** predicates. Assert **downstream** stub via **WireMock** registered as **static** **serviceInstanceList** for **LoadBalancer** **tests** support. For **gateway** work, emphasize **non-blocking** **filters**, **connection** **pool** sizing to **upstream**, **TLS** session **resumption**, and **JWKS** **cache** **TTL** trade-offs that bite during **rotation** windows and **traffic** spikes."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What happens if **`StripPrefix` count** mismatches controller **@RequestMapping**?",
-              "answer": "Downstream receives **unexpected** paths and returns **404**, which often masquerades as **routing** bugs. Log **`originalRequestUrl`** gateway headers and compare to **controller** mappings. Fix by aligning **OpenAPI** **servers** and **Spring** **`context-path`**. For **gateway** work, emphasize **non-blocking** **filters**, **connection** **pool** sizing to **upstream**, **TLS** session **resumption**, and **JWKS** **cache** **TTL** trade-offs that bite during **rotation** windows and **traffic** spikes. Explain how you communicate to **non-engineers**: **customer** impact windows, **mitigation** in flight, **ETA** ranges, and **post-incident** **themes** that map to **roadmap** investments like **better** **readiness** or **multi-cluster** **failover**."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -347,12 +375,12 @@
           "answer": "// readinessProbe:\n//   httpGet: { path: /actuator/health/readiness, port: 8080 }\n//   initialDelaySeconds: 20\n//   periodSeconds: 5\n// livenessProbe:\n//   httpGet: { path: /actuator/health/liveness, port: 8080 }\n//   initialDelaySeconds: 60\n//   periodSeconds: 10\n// // Readiness gates Endpoints; liveness restarts on wedge",
           "followUps": [
             {
-              "question": "Why separate **liveness** from **readiness** paths in **Actuator**?",
-              "answer": "**Liveness** should stay **cheap** to avoid **restart loops** when **dependencies** blip. **Readiness** can include **database** checks that temporarily fail during **failover**. **Spring Boot 3** exposes distinct **groups** so you do not **restart** the JVM for **transient** **DB** issues. For **gateway** work, emphasize **non-blocking** **filters**, **connection** **pool** sizing to **upstream**, **TLS** session **resumption**, and **JWKS** **cache** **TTL** trade-offs that bite during **rotation** windows and **traffic** spikes."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What if **management** runs on **port 8081** but **service** targets **8080**?",
-              "answer": "Probes hit the **wrong** port and always fail, keeping **Endpoints** empty. Align **Service** **targetPort** with **management** if you probe **8081**, or expose **readiness** on **main** port via **application properties**. Verify with **`kubectl describe pod`** **probe** events. Call out **second-order** effects: **retry** storms after **timeouts**, **thundering herds** when **caches** expire together, **cost** of **extra** **hops**, and **SLO** **risk** when **edge** **dependencies** (**Redis** for **rate limits**) become **single points** of failure."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -361,12 +389,12 @@
           "answer": "// spring.application.name=orders\n// eureka.client.service-url.defaultZone=http://eureka:8761/eureka/\n// eureka.instance.prefer-ip-address=true\n// server.port=8080\n// // prefer-ip-address affects how peers call this instance on LAN/K8s",
           "followUps": [
             {
-              "question": "When is **`prefer-ip-address=true`** dangerous behind **Kubernetes**?",
-              "answer": "It can advertise **pod IPs** that are **not routable** from **Eureka** peers outside the **cluster** or confuse **security groups**. Many teams prefer **hostname** style with **service** DNS when **dual-stack** networking matters. Tie answers to **Java** **ecosystem** reality: **Spring Cloud** **BOM** alignment, **Boot** **Actuator** **groups**, **Reactor** **backpressure**, and **Micrometer** **tags** that make **on-call** searches fast instead of grep across **INFO** noise. Contrast **happy path** docs with **partition** behavior: **split brain**, **stale** **lists**, **degraded** **read-only** modes, and how **idempotency** keys prevent **duplicate** **writes** when **clients** **retry** during **routing** flaps."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **migrate** from **Eureka** to **Kubernetes** discovery?",
-              "answer": "Adopt **`spring-cloud-starter-kubernetes-client`** or **`fabric8`** discovery, run **parallel** registration during **cutover**, and compare **instance** lists in **staging** with **`DiscoveryClient.getInstances`**. Remove **Eureka** **dependencies** only after **traffic** shifts and **dashboards** prove **parity**. Contrast **happy path** docs with **partition** behavior: **split brain**, **stale** **lists**, **degraded** **read-only** modes, and how **idempotency** keys prevent **duplicate** **writes** when **clients** **retry** during **routing** flaps. Close with **prevention** that is measurable: **SLO** alerts on **empty** **Endpoints**, **synthetic** **auth** checks after **issuer** maintenance, **lint** rules blocking **internal** **DNS** in **mobile** repos, and **quarterly** **game days** with **written** outcomes."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -375,12 +403,12 @@
           "answer": "// @Bean\n// public RouteLocator customRoutes(RouteLocatorBuilder builder) {\n//   return builder.routes()\n//     .route(\"trace\", r -> r.path(\"/api/**\")\n//       .filters(f -> f.addRequestHeader(\"X-Trace-Id\", UUID_PLACEHOLDER))\n//       .uri(\"lb://backend\"))\n//     .build();\n// }\n// // Replace UUID_PLACEHOLDER with Tracer.currentSpan().context().traceId() in real code",
           "followUps": [
             {
-              "question": "Why should **trace ids** avoid **`UUID.randomUUID()`** in examples for tests?",
-              "answer": "Non-deterministic outputs break **snapshot** tests and **documentation** `output` fields. Prefer **OpenTelemetry** **SpanContext** or **propagated** **traceparent** headers. In **docs**, show **placeholder** substitution clearly. Contrast **happy path** docs with **partition** behavior: **split brain**, **stale** **lists**, **degraded** **read-only** modes, and how **idempotency** keys prevent **duplicate** **writes** when **clients** **retry** during **routing** flaps. Close with **prevention** that is measurable: **SLO** alerts on **empty** **Endpoints**, **synthetic** **auth** checks after **issuer** maintenance, **lint** rules blocking **internal** **DNS** in **mobile** repos, and **quarterly** **game days** with **written** outcomes."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How does **W3C traceparent** interact with **gateway** filters?",
-              "answer": "Gateways should **preserve** incoming **`traceparent`** or **create** root spans for **edge** requests. Downstream **Spring** apps continue the **span** if **Micrometer Tracing** is configured. Broken propagation yields **disconnected** **traces** during **on-call** investigations. Close with **prevention** that is measurable: **SLO** alerts on **empty** **Endpoints**, **synthetic** **auth** checks after **issuer** maintenance, **lint** rules blocking **internal** **DNS** in **mobile** repos, and **quarterly** **game days** with **written** outcomes."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -389,12 +417,12 @@
           "answer": "// curl -v https://api.example.com/api/payments/42 \\\n//   -H \"Authorization: Bearer eyJhbGciOi...\" \\\n//   -H \"X-Api-Key: partner-live-key\" \\\n//   -H \"Accept: application/json\"\n// // Gateway validates JWT + maps API key to tenant before routing",
           "followUps": [
             {
-              "question": "Why include **`-v`** in the **runbook** command?",
-              "answer": "Verbose mode shows **TLS** handshake version, **certificate** chain issues, and **redirect** loops that cause **502** misdiagnosed as **upstream** failures. It is the fastest **first** step before **tcpdump**. Tie answers to **Java** **ecosystem** reality: **Spring Cloud** **BOM** alignment, **Boot** **Actuator** **groups**, **Reactor** **backpressure**, and **Micrometer** **tags** that make **on-call** searches fast instead of grep across **INFO** noise. Contrast **happy path** docs with **partition** behavior: **split brain**, **stale** **lists**, **degraded** **read-only** modes, and how **idempotency** keys prevent **duplicate** **writes** when **clients** **retry** during **routing** flaps."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What risk exists if **gateways log** full **Authorization** headers?",
-              "answer": "**Bearer** tokens are **secrets**; logging them leaks **session** capability to **log aggregators**. Strip **sensitive** headers at **ingress** logging middleware and rely on **opaque** **trace** ids instead. Explain how you communicate to **non-engineers**: **customer** impact windows, **mitigation** in flight, **ETA** ranges, and **post-incident** **themes** that map to **roadmap** investments like **better** **readiness** or **multi-cluster** **failover**. Reference **security** **baselines**: **mTLS** for **service** identity, **JWT** for **people**, **least privilege** **scopes**, **audit** logs at the **edge**, and why **PII** must never land in **URL** paths that **CDNs** or **access** logs retain."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -403,12 +431,12 @@
           "answer": "// spring.cloud.kubernetes.discovery.enabled=true\n// spring.cloud.kubernetes.discovery.all-namespaces=false\n// spring.main.cloud-platform=KUBERNETES\n// // Requires RBAC Role to watch Endpoints/EndpointSlices in the pod namespace",
           "followUps": [
             {
-              "question": "Which **RBAC** verbs does the **service account** need?",
-              "answer": "Typically **get**, **list**, **watch** on **endpoints**, **endpointslices**, **services**, and **pods** depending on module version. Missing **watch** causes **stale** caches until **full** refresh intervals. Senior answers name **ownership**: platform **SRE** for **mesh** and **certs**, **application** teams for **readiness** semantics, and **security** for **WAF** rules—then explain how those teams coordinate during **sev-1** calls without blame loops. Mention **verification** steps you would run in **staging** before promoting the same change to **prod**: **synthetic** **canaries**, **chaos** **drills** on **pod** **kill**, and **contract** tests that fail if a team bypasses the **gateway** accidentally."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What breaks if **`all-namespaces=true`** accidentally ships?",
-              "answer": "The app may **discover** **unrelated** **Services** across **tenants**, risking **data leaks** if **serviceId** collisions occur. Keep **namespace** **scoped** discovery unless **platform** **enforces** strict **naming** conventions. Tie answers to **Java** **ecosystem** reality: **Spring Cloud** **BOM** alignment, **Boot** **Actuator** **groups**, **Reactor** **backpressure**, and **Micrometer** **tags** that make **on-call** searches fast instead of grep across **INFO** noise. Contrast **happy path** docs with **partition** behavior: **split brain**, **stale** **lists**, **degraded** **read-only** modes, and how **idempotency** keys prevent **duplicate** **writes** when **clients** **retry** during **routing** flaps."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -417,12 +445,12 @@
           "answer": "// resilience4j.circuitbreaker.instances.payments.failureRateThreshold=50\n// resilience4j.circuitbreaker.instances.payments.waitDurationInOpenState=30s\n// resilience4j.circuitbreaker.instances.payments.slidingWindowSize=20\n// // Combine with TimeLimiter for end-to-end timeouts on reactive chains",
           "followUps": [
             {
-              "question": "Why pair **circuit breaking** with **bulkheading** at the gateway?",
-              "answer": "One **noisy** upstream can exhaust **threads** or **connections** shared across routes. **Bulkheads** isolate **pools** per route or **tenant** so **cascading** failure stops at **boundaries**. Reference **security** **baselines**: **mTLS** for **service** identity, **JWT** for **people**, **least privilege** **scopes**, **audit** logs at the **edge**, and why **PII** must never land in **URL** paths that **CDNs** or **access** logs retain. In real incidents you anchor the story with **time-aligned** graphs: **deploy** markers, **Endpoint** subset size, **gateway** **5xx** by **routeId**, and **client** **retry** rates so leadership sees causality instead of opinions."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **test** half-open transitions in **CI**?",
-              "answer": "Use **WireMock** to **fail** N requests then **recover**, assert **metrics** **`state`** transitions, and verify **fallback** responses. **Deterministic** tests require **fixed** thresholds, not **random** latency. In real incidents you anchor the story with **time-aligned** graphs: **deploy** markers, **Endpoint** subset size, **gateway** **5xx** by **routeId**, and **client** **retry** rates so leadership sees causality instead of opinions. Interviewers listen for **runbook** habits: which **dashboard** you open first, which **kubectl** **invocation** proves membership, and when you choose **rollback** versus **forward fix** based on **error budget** burn."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -431,12 +459,12 @@
           "answer": "// @Bean\n// ReactiveJwtDecoder jwtDecoder() {\n//   return NimbusReactiveJwtDecoder.withJwkSetUri(\"https://issuer/.well-known/jwks.json\")\n//       .build();\n// }\n// // Cache JWKS keys with TTL; handle rotation by refreshing on unknown kid",
           "followUps": [
             {
-              "question": "What happens during **issuer** **JWKS rotation** if cache **TTL** is too long?",
-              "answer": "Valid tokens signed with **new** keys fail validation until **cache** refreshes, causing **false 401** incidents. Use **`cacheDuration`** tuning and **kid** mismatch triggers to **refresh** eagerly. Senior answers name **ownership**: platform **SRE** for **mesh** and **certs**, **application** teams for **readiness** semantics, and **security** for **WAF** rules—then explain how those teams coordinate during **sev-1** calls without blame loops. Mention **verification** steps you would run in **staging** before promoting the same change to **prod**: **synthetic** **canaries**, **chaos** **drills** on **pod** **kill**, and **contract** tests that fail if a team bypasses the **gateway** accidentally."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do you **differentiate** **401** versus **403** at the gateway?",
-              "answer": "**401** when **signature** fails or **token** missing; **403** when **scopes** or **roles** missing for **route** **policies**. Consistent **RFC 7807** bodies help **mobile** clients show the right UX. Mention **verification** steps you would run in **staging** before promoting the same change to **prod**: **synthetic** **canaries**, **chaos** **drills** on **pod** **kill**, and **contract** tests that fail if a team bypasses the **gateway** accidentally. Call out **second-order** effects: **retry** storms after **timeouts**, **thundering herds** when **caches** expire together, **cost** of **extra** **hops**, and **SLO** **risk** when **edge** **dependencies** (**Redis** for **rate limits**) become **single points** of failure."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -445,12 +473,40 @@
           "answer": "// clusters:\n// - name: payments\n//   connect_timeout: 0.25s\n//   type: STRICT_DNS\n//   load_assignment:\n//     cluster_name: payments\n//     endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: payments.prod.svc.cluster.local, port_value: 8080 }}}}] }]\n//   health_checks: [{ timeout: 1s, interval: 5s, http_health_check: { path: /actuator/health }}]",
           "followUps": [
             {
-              "question": "Why might **STRICT_DNS** still show **healthy** while **Kubernetes** **Endpoints** are empty?",
-              "answer": "DNS resolves **Service** **ClusterIP** which remains **stable** even when **no** **Ready** pods exist; health checks must target **real** **upstream** **hosts** or use **EDS** from **xDS** instead of **DNS** for **pod-level** accuracy. For **gateway** work, emphasize **non-blocking** **filters**, **connection** **pool** sizing to **upstream**, **TLS** session **resumption**, and **JWKS** **cache** **TTL** trade-offs that bite during **rotation** windows and **traffic** spikes. Explain how you communicate to **non-engineers**: **customer** impact windows, **mitigation** in flight, **ETA** ranges, and **post-incident** **themes** that map to **roadmap** investments like **better** **readiness** or **multi-cluster** **failover**."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What metric shows **health check** failures in **Envoy**?",
-              "answer": "**`upstream_health_check_failure`** and cluster **health** state stats help correlate **gateway** **502** with **bad** **pods**. Wire **Grafana** panels per **cluster** **name**. Explain how you communicate to **non-engineers**: **customer** impact windows, **mitigation** in flight, **ETA** ranges, and **post-incident** **themes** that map to **roadmap** investments like **better** **readiness** or **multi-cluster** **failover**. Reference **security** **baselines**: **mTLS** for **service** identity, **JWT** for **people**, **least privilege** **scopes**, **audit** logs at the **edge**, and why **PII** must never land in **URL** paths that **CDNs** or **access** logs retain."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
+            }
+          ]
+        },
+        {
+          "question": "How would you configure **retries** at the gateway for **GET** vs **POST** to a downstream?",
+          "answer": "**GET** (idempotent): retry on connect timeout or 503 with backoff and **Retry-After** respect. **POST**: default **no retry** to the body unless you know the downstream is idempotent or you carry **Idempotency-Key** end-to-end. Prefer client or service-level retry policies with budgets.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
+            },
+            {
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
+            }
+          ]
+        },
+        {
+          "question": "Give a **health check** pattern that avoids lying **Ready** when dependencies are down.",
+          "answer": "**Liveness** = process up. **Readiness** = can serve traffic (DB reachable, critical deps OK). If Redis is required for login, failing readiness pulls the pod from Service endpoints. Do not put slow checks on liveness — you will get restart loops.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this code path, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
+            },
+            {
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         }
@@ -461,12 +517,12 @@
           "answer": "**(1) Immediate response** Page **payments** and **platform** on-call, freeze **progressive** delivery if active, open **gateway** **502** rate by **routeId** and **payments** **golden signals** (success rate, latency). Announce status referencing **customer-visible** impact and **ETA** for first hypothesis.\n\n**(2) Root cause** Most often **Endpoints** are **empty** or **partial** because **readiness** fails while containers stay **Running**, or **rolling** parameters briefly drain all **Ready** backends. Secondary: **gateway** **upstream** cache or **Envoy** **EDS** lag keeps **drained** **IPs**.\n\n**(3) Fix** 1) `kubectl get endpoints payments -n prod -o yaml` and **`kubectl get endpointslices`**. 2) `kubectl describe pod` on newest pods for **probe** failures. 3) If strategy caused gap, patch **Deployment** **`maxUnavailable`/`maxSurge`** and **rollback** if needed. 4) Bounce **gateway** pods only after confirming **data plane** staleness. 5) Validate with **synthetic** **canary** through gateway before closing.\n\n**(4) Prevention** Align **readiness** with **DB migration** gates, add **minReadySeconds**, run **pre-prod** **load** tests on **rollouts**, and alert on **Endpoints** **subset** size dropping below **2** during **business hours**.",
           "followUps": [
             {
-              "question": "How do you communicate **rollback** versus **forward fix** to stakeholders?",
-              "answer": "Share **error budget** burn rate: if **SLO** is **critically** depleted, **rollback** restores **known** state within **minutes** while you **root-cause** offline. **Forward fix** is justified when **rollback** risks **data** **incompatibility** or **migration** **irreversibility**. Provide **timestamps** and **customer** **region** scope from **metrics** to avoid vague updates. Call out **second-order** effects: **retry** storms after **timeouts**, **thundering herds** when **caches** expire together, **cost** of **extra** **hops**, and **SLO** **risk** when **edge** **dependencies** (**Redis** for **rate limits**) become **single points** of failure."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this scenario, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "Which **SLO** would you add specifically for **gateway→payments**?",
-              "answer": "Track **availability** on **`routeId=checkout_payments`** with **99.9%** monthly target and **latency** **p99** under **budget**. **Burn-rate** alerts on **5xx** share from **upstream** versus **client** errors separate **routing** bugs from **app** defects. Interviewers listen for **runbook** habits: which **dashboard** you open first, which **kubectl** **invocation** proves membership, and when you choose **rollback** versus **forward fix** based on **error budget** burn. Senior answers name **ownership**: platform **SRE** for **mesh** and **certs**, **application** teams for **readiness** semantics, and **security** for **WAF** rules—then explain how those teams coordinate during **sev-1** calls without blame loops."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -475,12 +531,12 @@
           "answer": "**(1) Immediate response** Reject for **production**; offer **public** **gateway** **hostname** with **JWT** + **API key** and optional **HTTP/3** **edge** tuning for latency. Schedule a **design** workshop with **security** and **mobile** leads the same week so the partner hears a **unified** platform stance rather than ad-hoc debate.\n\n**(2) Root cause** The request confuses **in-cluster** **DNS** with **Internet** **reachability** and skips **security** **controls** **WAF**, **audit**, **rotation**, and **DDoS** protection. **`svc.cluster.local`** is not routable from the **public** Internet, and even **VPN** clients should not depend on **volatile** **pod** naming. **Latency** claims rarely survive **tracing** once you separate **TLS**, **payload**, and **device** **radio** effects.\n\n**(3) Fix** 1) Publish **stable** **api.example.com** via **cloud** **LB** to **gateway**. 2) Issue **mTLS** or **JWT** **per partner** with **scoped** **audiences**. 3) Document **SLO**, **rate limits**, and **deprecation** policy in **OpenAPI**. 4) Provide **staging** **curl** **examples** that mirror **production** **headers**. 5) Add **WAF** rules and **bot** protections at the **edge**. 6) Run **load** tests proving **gateway** overhead is not the dominant **p99** term.\n\n**(4) Prevention** Add **architecture decision record** banning **ClusterIP** **leakage**, **CI** checks for **hardcoded** **internal** **DNS** in **mobile** repos, **quarterly** **penetration** tests on **public** **surface**, and **executive** **review** for any **exception** that bypasses **central** **policy**.",
           "followUps": [
             {
-              "question": "How do you measure whether **gateway** **latency** is actually the bottleneck?",
-              "answer": "Compare **p50/p95/p99** **end-to-end** with **segments**: **DNS**, **TLS**, **gateway** processing, **upstream** **payments**. Use **distributed tracing** **spans** tagged **`net.peer.name`**. If **gateway** adds **<2ms** median, **latency** claims should focus on **payload** size or **device** **network** instead. Mention **verification** steps you would run in **staging** before promoting the same change to **prod**: **synthetic** **canaries**, **chaos** **drills** on **pod** **kill**, and **contract** tests that fail if a team bypasses the **gateway** accidentally."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this scenario, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What **contract** clauses belong in a **partner** **API** agreement?",
-              "answer": "Include **rate limits**, **deprecation** policy, **SLA** credits, **incident** **notification** channels, **data** **residency**, and **forbidden** **uses** (scraping, **resale**). Legal language should reference **gateway** **keys** rotation responsibilities. Contrast **happy path** docs with **partition** behavior: **split brain**, **stale** **lists**, **degraded** **read-only** modes, and how **idempotency** keys prevent **duplicate** **writes** when **clients** **retry** during **routing** flaps. Close with **prevention** that is measurable: **SLO** alerts on **empty** **Endpoints**, **synthetic** **auth** checks after **issuer** maintenance, **lint** rules blocking **internal** **DNS** in **mobile** repos, and **quarterly** **game days** with **written** outcomes."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -489,12 +545,12 @@
           "answer": "**(1) Immediate response** Stand up **staging** **clusters** with **`spring-cloud-kubernetes`**, **RBAC** templates, and **golden** **Helm** charts for **probes** and **Service** naming. Publish a **migration** **playbook** with **office hours** so teams know how **serviceId** strings map to **DNS** names and which **dashboards** validate **instance** lists.\n\n**(2) Root cause** Risk is **dual-truth** registries and **inconsistent** **health** semantics causing **flapping** **routes** during **cutover**. **Eureka** **self-preservation** and **Kubernetes** **readiness** are not equivalent; **JVM** apps may register before **Endpoints** would consider them **Ready**, or the reverse if **probes** are mis-tuned.\n\n**(3) Fix** 1) Inventory **serviceId** mapping to **Kubernetes** **Service** names. 2) Pilot **low-risk** **stateless** APIs with **shadow** traffic comparisons. 3) Run **parallel** discovery with **feature** **flag** to switch **`lb://`** resolution source per **namespace**. 4) Decommission **Eureka** **AZ** by **AZ** after **metrics** prove **parity** on **registration** count and **5xx**. 5) Train **teams** on **`kubectl`** **Endpoints** debugging and **Spring** **Actuator** **groups**. 6) Automate **rollback** of the **flag** if **SLO** **burn** spikes during **cutover** windows.\n\n**(4) Prevention** **Lint** **bootstrap** YAML for forbidden **Eureka** properties post-cutover, **dashboard** **discovery** **lag**, **game** days for **registry** **outage**, and **quarterly** audits ensuring **no** **new** **Eureka** **dependencies** sneak in via **copy-paste** templates.",
           "followUps": [
             {
-              "question": "How do you **budget** engineering time across **200** services?",
-              "answer": "Use **tiering**: **P0** **customer** flows first, **P1** internal **APIs**, **P2** batch. Automate **scaffolding** updates and **reject** **manual** **per-service** snowflakes unless **risk** review approves. Track **migration** **burn-down** chart weekly. Reference **security** **baselines**: **mTLS** for **service** identity, **JWT** for **people**, **least privilege** **scopes**, **audit** logs at the **edge**, and why **PII** must never land in **URL** paths that **CDNs** or **access** logs retain. In real incidents you anchor the story with **time-aligned** graphs: **deploy** markers, **Endpoint** subset size, **gateway** **5xx** by **routeId**, and **client** **retry** rates so leadership sees causality instead of opinions."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this scenario, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What **metric** proves you can **decommission Eureka**?",
-              "answer": "Zero **production** **traffic** relying on **Eureka** **DNS** names, **Eureka** **dashboard** **instance** count at **zero** for **30** days, and **no** **alerts** from **Eureka** **server** **JVM**. Backup **snapshots** of **registry** data before **power-off**. In real incidents you anchor the story with **time-aligned** graphs: **deploy** markers, **Endpoint** subset size, **gateway** **5xx** by **routeId**, and **client** **retry** rates so leadership sees causality instead of opinions. Interviewers listen for **runbook** habits: which **dashboard** you open first, which **kubectl** **invocation** proves membership, and when you choose **rollback** versus **forward fix** based on **error budget** burn."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -503,12 +559,12 @@
           "answer": "**(1) Immediate response** Trigger **severity** **1**, open **status** page if **customer** **auth** blocked, and **rollback** **gateway** **deployment** if a **bad** **config** change shipped; otherwise coordinate with **identity** team. Preserve **verbose** **logs** with **redacted** tokens for **post-incident** review while **support** communicates **workarounds** such as **temporary** **maintenance** pages if needed.\n\n**(2) Root cause** **JWKS** fetch **failures**, **clock** **skew**, wrong **`issuer` URI**, or **stale** **cache** after **key** rotation **kid** changes. **Firewall** egress rules or **SPIFFE** **proxy** misconfiguration can block **JWKS** pulls even when **tokens** are valid. **Multi-tenant** gateways may point at the wrong **issuer** per **route** after a **bad** **merge**.\n\n**(3) Fix** 1) `curl -v https://issuer/.well-known/openid-configuration` from **gateway** pod. 2) Inspect **gateway** logs for **`JwtException`** **signatures** and **kid** values. 3) Tune **`cacheDuration`** or **force** **refresh** after **identity** confirms **key** promotion. 4) Verify **NTP** on **nodes** and **pod** **clocks**. 5) Deploy **hotfix** with **relaxed** **cache** only if **security** accepts risk and **overlap** keys exist. 6) Validate **JWKS** **signature** **algorithm** allowlists match **issuer** policy.\n\n**(4) Prevention** **Canary** **gateway** **config** changes, **synthetic** **login** **checks** every **minute**, **runbook** tying **issuer** **maintenance** to **platform** **calendar**, and **automated** tests that **fetch** **JWKS** from **staging** **before** **prod** **promotion** completes.",
           "followUps": [
             {
-              "question": "Why is **rollback** sometimes **unsafe** for **JWT** changes?",
-              "answer": "If **tokens** were already issued with **new** **keys**, **rolling** back **gateway** **trust** might reject **valid** **sessions**, **logging** users out **globally**. Coordinate with **identity** on **key** **overlap** periods and **support** **multiple** **JWK** **entries** until **TTL** expires. Senior answers name **ownership**: platform **SRE** for **mesh** and **certs**, **application** teams for **readiness** semantics, and **security** for **WAF** rules—then explain how those teams coordinate during **sev-1** calls without blame loops."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this scenario, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do **customers** perceive this failure versus **upstream** **500**?",
-              "answer": "**401** feels like “**logged** **out**” and triggers **password** **resets** and **support** **tickets** **spikes** even when **credentials** are fine. **Communicate** clearly that **re-login** may be required and avoid blaming **users**. Contrast **happy path** docs with **partition** behavior: **split brain**, **stale** **lists**, **degraded** **read-only** modes, and how **idempotency** keys prevent **duplicate** **writes** when **clients** **retry** during **routing** flaps. Close with **prevention** that is measurable: **SLO** alerts on **empty** **Endpoints**, **synthetic** **auth** checks after **issuer** maintenance, **lint** rules blocking **internal** **DNS** in **mobile** repos, and **quarterly** **game days** with **written** outcomes."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -517,12 +573,12 @@
           "answer": "**(1) Immediate response** **Feature** **flag** off the **filter** for **non-fraud** **critical** paths or **raise** **replicas** temporarily while **isolating** **hot** **routes**. Capture **before/after** **p99** **histograms** tagged by **routeId** so **leadership** sees objective **impact** and approves **engineering** time for a proper **async** rewrite.\n\n**(2) Root cause** **Blocking** **I/O** on **Netty** **event** **loop** threads serializes **requests**, inflating **queueing** **delay** even when **CPU** looks **low**. **Event-loop** starvation shows up as **growing** **pending** tasks while **GC** and **CPU** remain calm. **Synchronous** **HTTP** clients inside **GatewayFilter** are a classic **foot-gun** during **Black Friday** scale.\n\n**(3) Fix** 1) Move **fraud** call to **async** **WebClient** with **bounded** **concurrency** and **timeouts**. 2) **Offload** to **sidecar** or **external** **policy** **service** with **dedicated** **pool**. 3) Split **gateway** **deployment** for **heavy** **routes** so **blast** **radius** shrinks. 4) Add **metrics** for **`reactor`** **event-loop** **pending** tasks and **Netty** **eventloop** **pending** **queues**. 5) Add **bulkhead** limits per **tenant** if **fraud** **provider** slows down.\n\n**(4) Prevention** **Architecture** **review** **checklist** bans **blocking** **filters**, **load** **test** **gateway** with **k6** **per** **route**, **alert** on **scheduling** **delay** in **Micrometer**, and **profile** **gateway** **releases** on **hardware** similar to **prod** **nodes**.",
           "followUps": [
             {
-              "question": "How do you **prove** **event-loop** **blocking** in **profiling**?",
-              "answer": "Capture **async-profiler** **wall** **clock** stacks on **gateway** pods during **incident** **replay**, look for **`jdbc`** or **`HttpURLConnection`** on **reactor-http** threads. **Arthas** **trace** can also show **hot** **methods**. In real incidents you anchor the story with **time-aligned** graphs: **deploy** markers, **Endpoint** subset size, **gateway** **5xx** by **routeId**, and **client** **retry** rates so leadership sees causality instead of opinions. Interviewers listen for **runbook** habits: which **dashboard** you open first, which **kubectl** **invocation** proves membership, and when you choose **rollback** versus **forward fix** based on **error budget** burn."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this scenario, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "What **business** **trade-off** do you present when **async** adds **complexity**?",
-              "answer": "**Async** **chains** need **clear** **timeout** and **fallback** policies to avoid **silent** **drops**. The **trade-off** is **engineering** **cost** versus **availability**; **executives** care about **fraud** **loss** versus **checkout** **conversion** **SLO**. Senior answers name **ownership**: platform **SRE** for **mesh** and **certs**, **application** teams for **readiness** semantics, and **security** for **WAF** rules—then explain how those teams coordinate during **sev-1** calls without blame loops. Mention **verification** steps you would run in **staging** before promoting the same change to **prod**: **synthetic** **canaries**, **chaos** **drills** on **pod** **kill**, and **contract** tests that fail if a team bypasses the **gateway** accidentally."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         },
@@ -531,12 +587,12 @@
           "answer": "**(1) Immediate response** Shift **traffic** at **global** **load** **balancer** to **healthy** **region**, drain **bad** **AZ** in **DNS** **weights**, and **collect** **packet** **traces** from **failing** **clients**. Engage **cloud** **network** **support** early if **BGP** or **transit** anomalies appear on **provider** **status** pages.\n\n**(2) Root cause** **Subnet** **routing** **blackholes**, **stale** **security** **group** rules, **cross-AZ** **NAT** **exhaustion**, or **clients** **caching** **old** **gateway** **IPs**. **Discovery** can be **truthful** while **data** **plane** **paths** are broken, so **symptoms** look like **timeouts** rather than **502**. **Stateful** **connections** pinned to **bad** **AZ** **ENIs** exacerbate the pain.\n\n**(3) Fix** 1) Verify **cloud** **health** **checks** for **NLB** **targets** and **target** **deregistration** delays. 2) **Revoke** **routes** advertising **dead** **AZ** and **confirm** **propagation** in **route** tables. 3) **Recycle** **connection** **pools** on **gateways** and **Envoy** **clusters** if **EDS** lag suspected. 4) **Lower** **TTL** temporarily with **ops** approval and **communicate** **client** **cache** risk. 5) **Failover** **databases** if **writes** **stuck** and **RPO** allows. 6) Validate **security** **groups** allow **surviving** **subnets** to reach **NAT** gateways.\n\n**(4) Prevention** **Multi-AZ** **integration** tests, **quarterly** **AZ** **drain** drills, **SLO** on **regional** **failover** **minutes**, **dashboards** for **NAT** **port** **allocation**, and **documented** **RTO** **targets** per **tier** so **executives** know expected **customer** **impact** windows.",
           "followUps": [
             {
-              "question": "When do you **escalate** to **network** **team** versus **app** **team**?",
-              "answer": "If **synthetic** **TCP** **connect** fails from **multiple** **services** to the **same** **VIP**, **network** owns **routing**. If **only** one **service** fails while **others** succeed, **app** **team** owns **misconfigured** **Service** **selectors** or **NetworkPolicy**. Close with **prevention** that is measurable: **SLO** alerts on **empty** **Endpoints**, **synthetic** **auth** checks after **issuer** maintenance, **lint** rules blocking **internal** **DNS** in **mobile** repos, and **quarterly** **game days** with **written** outcomes."
+              "question": "Interview follow-up: how would you **verify** this contract in CI and production?",
+              "answer": "For this scenario, you cite OpenAPI diff gates, consumer contract tests (Pact), gateway access logs with trace IDs, and SLO dashboards (p95 latency, error rate by route). You separate what HTTP semantics guarantee from what your gateway and clients must implement."
             },
             {
-              "question": "How do **SRE** **error** **budgets** change during **regional** **failover**?",
-              "answer": "**Freeze** **feature** launches, **prioritize** **stability** work, and **communicate** **reduced** **SLO** targets until **steady** state returns. **Post-incident** review assigns **action** items with **deadlines** for **automation** gaps discovered. Explain how you communicate to **non-engineers**: **customer** impact windows, **mitigation** in flight, **ETA** ranges, and **post-incident** **themes** that map to **roadmap** investments like **better** **readiness** or **multi-cluster** **failover**. Reference **security** **baselines**: **mTLS** for **service** identity, **JWT** for **people**, **least privilege** **scopes**, **audit** logs at the **edge**, and why **PII** must never land in **URL** paths that **CDNs** or **access** logs retain."
+              "question": "What **trap** might the interviewer set next?",
+              "answer": "They may conflate idempotency with safety, push on cache invalidation vs eventual consistency, or ask about breaking vs additive schema changes. You give precise status-code and retry semantics and name one operational metric you would watch."
             }
           ]
         }
@@ -553,9 +609,436 @@
       ]
     },
     {
+      "type": "mcq",
+      "title": "MCQ Quiz — Service Discovery & API Gateway",
+      "description": "Thirty questions from basic to advanced — Service Discovery & API Gateway. Read every option; distractors are plausible but wrong for a precise reason.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "[Discovery & API gateway] **Service discovery** primarily solves:",
+          "options": {
+            "A": "Mapping logical names to current instances",
+            "B": "Compiling Java",
+            "C": "Rendering React",
+            "D": "DNS root servers"
+          },
+          "answer": "A",
+          "explanation": "Ephemeral workloads need dynamic resolution."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "[Discovery & API gateway] **Kubernetes readiness** probe should fail when:",
+          "options": {
+            "A": "Critical dependencies are unavailable",
+            "B": "CPU > 1%",
+            "C": "Pod name is odd",
+            "D": "Logs are JSON"
+          },
+          "answer": "A",
+          "explanation": "Remove bad pods from Service endpoints."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "scenario",
+          "question": "[Discovery & API gateway] **Liveness** probe should stay:",
+          "options": {
+            "A": "Cheap and process-focused",
+            "B": "Same as readiness always",
+            "C": "Always HTTP POST to DB",
+            "D": "Disabled"
+          },
+          "answer": "A",
+          "explanation": "Avoid restart loops from slow checks."
+        },
+        {
+          "id": 4,
+          "level": "basic",
+          "category": "theory",
+          "question": "[Discovery & API gateway] API gateway **rate limiting** protects:",
+          "options": {
+            "A": "Upstream capacity and fairness",
+            "B": "Only CSS",
+            "C": "JVM heap only",
+            "D": "Git history"
+          },
+          "answer": "A",
+          "explanation": "Per key/user/IP as designed."
+        },
+        {
+          "id": 5,
+          "level": "basic",
+          "category": "code",
+          "question": "[Discovery & API gateway] **TLS termination** at the gateway:",
+          "options": {
+            "A": "Offloads crypto; still use TLS behind if needed",
+            "B": "Removes all encryption",
+            "C": "Only for UDP",
+            "D": "Illegal in cloud"
+          },
+          "answer": "A",
+          "explanation": "Common edge pattern."
+        },
+        {
+          "id": 6,
+          "level": "basic",
+          "category": "scenario",
+          "question": "[Discovery & API gateway] **JWT validation** at the edge:",
+          "options": {
+            "A": "Authenticates caller; services still authorize",
+            "B": "Replaces all authz",
+            "C": "Means no HTTPS",
+            "D": "Only for SOAP"
+          },
+          "answer": "A",
+          "explanation": "Edge authn ≠ resource authz."
+        },
+        {
+          "id": 7,
+          "level": "basic",
+          "category": "theory",
+          "question": "[Discovery & API gateway] **Request ID / trace** at gateway:",
+          "options": {
+            "A": "Correlates logs across services",
+            "B": "Stores passwords",
+            "C": "Replaces metrics",
+            "D": "Fixes SQL N+1"
+          },
+          "answer": "A",
+          "explanation": "Propagate context headers."
+        },
+        {
+          "id": 8,
+          "level": "basic",
+          "category": "code",
+          "question": "[Discovery & API gateway] **WAF** placement vs gateway:",
+          "options": {
+            "A": "Often in front for exploit filtering",
+            "B": "Inside JVM only",
+            "C": "After payroll",
+            "D": "Same as Redis"
+          },
+          "answer": "A",
+          "explanation": "Different from business authorization."
+        },
+        {
+          "id": 9,
+          "level": "basic",
+          "category": "scenario",
+          "question": "[Discovery & API gateway] **Path-based routing** sends:",
+          "options": {
+            "A": "/orders to the orders service",
+            "B": "Random instances",
+            "C": "Only WebSocket",
+            "D": "ICMP packets"
+          },
+          "answer": "A",
+          "explanation": "Declarative routes."
+        },
+        {
+          "id": 10,
+          "level": "basic",
+          "category": "theory",
+          "question": "[Discovery & API gateway] **Canary** release means:",
+          "options": {
+            "A": "Small traffic slice to new version",
+            "B": "All users instantly",
+            "C": "Only databases",
+            "D": "Rollback forbidden"
+          },
+          "answer": "A",
+          "explanation": "Measure errors/latency first."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "code",
+          "question": "[Discovery & API gateway] **Blue/green** reduces:",
+          "options": {
+            "A": "Downtime during deploy switch",
+            "B": "Need for tests",
+            "C": "HTTP entirely",
+            "D": "Need for DNS"
+          },
+          "answer": "A",
+          "explanation": "Instant traffic flip between environments."
+        },
+        {
+          "id": 12,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "[Discovery & API gateway] **Timeout** at gateway vs client:",
+          "options": {
+            "A": "Gateway < client budget to return 504 predictably",
+            "B": "Always infinite",
+            "C": "Client must be shortest",
+            "D": "Irrelevant"
+          },
+          "answer": "A",
+          "explanation": "Predictable failure modes."
+        },
+        {
+          "id": 13,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "[Discovery & API gateway] **Retrying POST** blindly at gateway:",
+          "options": {
+            "A": "Risky without idempotency end-to-end",
+            "B": "Always safe",
+            "C": "Forbidden for GET",
+            "D": "Fixes duplicates"
+          },
+          "answer": "A",
+          "explanation": "POST retries can duplicate side effects."
+        },
+        {
+          "id": 14,
+          "level": "intermediate",
+          "category": "code",
+          "question": "[Discovery & API gateway] **Mutual TLS** mesh style:",
+          "options": {
+            "A": "Service identities between nodes",
+            "B": "Public only",
+            "C": "Replaces JWT always",
+            "D": "No certificates"
+          },
+          "answer": "A",
+          "explanation": "Zero-trust patterns."
+        },
+        {
+          "id": 15,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "[Discovery & API gateway] **Sticky sessions** trade:",
+          "options": {
+            "A": "Easier server state vs harder scaling",
+            "B": "No trade-off",
+            "C": "Only HTTP/3",
+            "D": "Only GraphQL"
+          },
+          "answer": "A",
+          "explanation": "Prefer stateless when possible."
+        },
+        {
+          "id": 16,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "[Discovery & API gateway] **CORS** enforcement happens in:",
+          "options": {
+            "A": "Browsers using response headers",
+            "B": "Postgres",
+            "C": "Kafka",
+            "D": "JVM GC"
+          },
+          "answer": "A",
+          "explanation": "Server sets Allow-* headers."
+        },
+        {
+          "id": 17,
+          "level": "intermediate",
+          "category": "code",
+          "question": "[Discovery & API gateway] **API keys** in query strings:",
+          "options": {
+            "A": "Often leak via logs/referrers vs headers",
+            "B": "Safer than headers",
+            "C": "Required by OAuth",
+            "D": "Illegal"
+          },
+          "answer": "A",
+          "explanation": "Prefer headers or signed tokens."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "[Discovery & API gateway] **Global IP rate limit** is:",
+          "options": {
+            "A": "Coarse hygiene; layer finer limits",
+            "B": "Perfect fairness",
+            "C": "Replaces auth",
+            "D": "Only for gRPC"
+          },
+          "answer": "A",
+          "explanation": "Combine with per-key tiers."
+        },
+        {
+          "id": 19,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "[Discovery & API gateway] **Backend timeout** shorter than gateway:",
+          "options": {
+            "A": "Lets gateway return controlled error",
+            "B": "Causes hangs",
+            "C": "Illegal",
+            "D": "Only for SQL"
+          },
+          "answer": "A",
+          "explanation": "Avoid blind proxy waits."
+        },
+        {
+          "id": 20,
+          "level": "intermediate",
+          "category": "code",
+          "question": "[Discovery & API gateway] **Health checks** hitting dependencies in readiness:",
+          "options": {
+            "A": "Reflect real ability to serve",
+            "B": "Always wrong",
+            "C": "Only liveness",
+            "D": "Never for Redis"
+          },
+          "answer": "A",
+          "explanation": "Don't route to broken instances."
+        },
+        {
+          "id": 21,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "[Discovery & API gateway] **BFF / aggregation** at gateway risk:",
+          "options": {
+            "A": "Becoming a domain monolith",
+            "B": "Impossible",
+            "C": "No latency",
+            "D": "Only for SOAP"
+          },
+          "answer": "A",
+          "explanation": "Keep thin; domain stays in services."
+        },
+        {
+          "id": 22,
+          "level": "advanced",
+          "category": "theory",
+          "question": "[Discovery & API gateway] **Envoy / data plane** updates via:",
+          "options": {
+            "A": "Control plane (xDS APIs)",
+            "B": "FTP",
+            "C": "Manual JVM flags",
+            "D": "CSS"
+          },
+          "answer": "A",
+          "explanation": "Dynamic listeners/routes/clusters."
+        },
+        {
+          "id": 23,
+          "level": "advanced",
+          "category": "code",
+          "question": "[Discovery & API gateway] **DNS-based K8s Service** gives:",
+          "options": {
+            "A": "Stable name for changing Pod IPs",
+            "B": "Static bare-metal forever",
+            "C": "No cluster IP",
+            "D": "UDP-only routing"
+          },
+          "answer": "A",
+          "explanation": "Kube-proxy or CNI implements."
+        },
+        {
+          "id": 24,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "[Discovery & API gateway] **Circuit breaker** at edge:",
+          "options": {
+            "A": "Stops hammering failing upstreams",
+            "B": "Replaces unit tests",
+            "C": "Fixes SQL",
+            "D": "Removes metrics"
+          },
+          "answer": "A",
+          "explanation": "Fail fast; optional fallback."
+        },
+        {
+          "id": 25,
+          "level": "advanced",
+          "category": "theory",
+          "question": "[Discovery & API gateway] **Max request body** limits:",
+          "options": {
+            "A": "Protect memory and upstreams",
+            "B": "Unlimited always",
+            "C": "Only GET",
+            "D": "HTTP/2 forbids"
+          },
+          "answer": "A",
+          "explanation": "Reject huge payloads early."
+        },
+        {
+          "id": 26,
+          "level": "advanced",
+          "category": "code",
+          "question": "[Discovery & API gateway] **IP allowlist** for admin APIs:",
+          "options": {
+            "A": "Network guardrail before auth",
+            "B": "Replaces OAuth",
+            "C": "Public only",
+            "D": "Same as CORS"
+          },
+          "answer": "A",
+          "explanation": "Defense in depth."
+        },
+        {
+          "id": 27,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "[Discovery & API gateway] **Observability** per route at gateway:",
+          "options": {
+            "A": "SLO dashboards for p95/errors",
+            "B": "Only stderr",
+            "C": "Only build time",
+            "D": "CPU temp"
+          },
+          "answer": "A",
+          "explanation": "RED/USE style metrics."
+        },
+        {
+          "id": 28,
+          "level": "advanced",
+          "category": "theory",
+          "question": "[Discovery & API gateway] **Zero-trust** networking:",
+          "options": {
+            "A": "Verify every hop; minimal implicit trust",
+            "B": "Trust VPC fully",
+            "C": "No TLS",
+            "D": "No logs"
+          },
+          "answer": "A",
+          "explanation": "Identity + policy everywhere."
+        },
+        {
+          "id": 29,
+          "level": "advanced",
+          "category": "code",
+          "question": "[Discovery & API gateway] **Header injection** attacks:",
+          "options": {
+            "A": "Mitigate by validating/normalizing at trusted edge",
+            "B": "Impossible in HTTP",
+            "C": "Only SQL issue",
+            "D": "Only browser"
+          },
+          "answer": "A",
+          "explanation": "Treat headers as untrusted input."
+        },
+        {
+          "id": 30,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "[Discovery & API gateway] **WebSocket** through gateway needs:",
+          "options": {
+            "A": "Upgrade handling, idle timeouts, limits",
+            "B": "Nothing special",
+            "C": "No TLS",
+            "D": "FTP upgrade"
+          },
+          "answer": "A",
+          "explanation": "Operational limits still apply."
+        }
+      ]
+    },
+    {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Topic | Rule of thumb | Interview one-liner |\n|---|---|---|\n| Service discovery | Truth for live backends | Stale registry = post-deploy 502 |\n| Kubernetes Service | VIP + Endpoints from readiness | describe pod vs get endpoints |\n| API gateway | L7 edge policy | TLS + JWT + rate limit live here |\n| Client-side LB | Library picks instance | Great flexibility, fleet-wide upgrades |\n| Readiness | Gate traffic membership | Wrong probe = empty or bad pool |\n| Eureka | JVM registry history | Know self-preservation + migration |\n| Spring Cloud Gateway | Predicate + filter chain | Order matters; keep filters non-blocking |\n| CoreDNS | In-cluster name resolution | Debug with nslookup from debug pod |\n| mTLS | Service identity | Complements JWT for users |\n| Canary | Weighted routes + metrics | Roll back weights, not hope |\n"
+      "title": "Service Discovery & API Gateway — cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n| --- | --- | --- |\n| Service discovery | Truth for live backends | Stale registry = post-deploy 502 |\n| Kubernetes Service | VIP + Endpoints from readiness | describe pod vs get endpoints |\n| API gateway | L7 edge policy | TLS + JWT + rate limit live here |\n| Client-side LB | Library picks instance | Great flexibility, fleet-wide upgrades |\n| Readiness | Gate traffic membership | Wrong probe = empty or bad pool |\n| Eureka | JVM registry history | Know self-preservation + migration |\n| Spring Cloud Gateway | Predicate + filter chain | Order matters; keep filters non-blocking |\n| CoreDNS | In-cluster name resolution | Debug with nslookup from debug pod |\n| mTLS | Service identity | Complements JWT for users |\n| Canary | Weighted routes + metrics | Roll back weights, not hope |\n| Trace id | Propagate on every hop | Debug 502/504 with correlation |\n| Timeouts | Client < gateway < server | Cancel work; avoid retry storms |\n| Payload size | Cap upload; stream large | Protect memory and threads |\n| Deprecation | Sunset header + docs | Give consumers a calendar |\n| Security | Authn at edge; authz in service | Do not trust gateway alone |"
     }
   ]
 }

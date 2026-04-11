@@ -17,540 +17,1028 @@
     "Day 17"
   ],
   "learningObjectives": [
-    "Explain Complexity Analysis with interview-grade clarity",
-    "Implement Complexity Analysis solutions in clean Java",
-    "Choose the right pattern and justify complexity",
-    "Handle boundary cases without brittle logic",
-    "Use this topic to solve coding-round problems confidently",
-    "Communicate trade-offs using concrete examples"
+    "Explain Big-O, Θ, Ω, worst/average/amortized with interview precision",
+    "Derive time and space from code structure, including recursion depth",
+    "Contrast asymptotic classes with practical profiling and JVM effects",
+    "Detect quadratic and hidden-sort patterns in service handlers",
+    "Communicate complexity assumptions and validate with measurements or op counts",
+    "Answer follow-ups on hashing, sorting, and divide-and-conquer recurrences"
   ],
   "sections": [
     {
       "type": "why",
-      "title": "Why Complexity Analysis matters",
-      "content": "Complexity analysis is the language interviewers use to compare two correct solutions and choose the one that scales.\n\nThis day is central to DSA interviews because it combines coding speed with reasoning quality. Interviewers usually evaluate three things:\n1. Can you identify the right pattern quickly?\n2. Can you explain why the approach is correct?\n3. Can you reason about complexity and edge cases?\n\nBig-O trade-offs, practical estimation, and explaining complexity clearly.\n\nA high-quality answer should include:\n- concise approach summary,\n- small dry-run,\n- complexity analysis,\n- one alternative approach and trade-off.\n\nBy the end of Day 19, you should be able to solve representative problems and explain your decisions with confidence."
+      "title": "Why this topic shows up in real interviews",
+      "content": "Complexity analysis is the part of DSA interviews that separates “it works on my laptop” from “it will survive real traffic.” When you ship a nested loop over tenant data or sort inside a request handler, tests often stay green while production latency grows superlinearly with batch size. Interviewers use Big-O language to see whether you can **predict** that failure before it pages someone at midnight.\n\nThis topic also shows up in code review and architecture discussions. Teams argue about indexes, batching, streaming versus materializing collections, and cache shapes. The same skill you use to state “this merge is O(n·m)” is the skill you use to push back on a product requirement that implies all-pairs comparisons at enterprise scale. Complexity is not academic—it is a **risk communication** tool.\n\nA strong interview answer is never only a label. You name the **dominant operation** (comparisons, hash probes, allocations), the **input assumptions** (sorted, distinct keys, bounded range), and whether you mean **worst, average, or amortized** bounds. You connect time and **auxiliary space**, including recursion depth, because Java does not magically erase stack frames. That precision is what signals seniority.\n\nInterviewers also probe whether you confuse **asymptotics with constants**. Two algorithms in the same Big-O class can differ by orders of magnitude in practice because of cache locality, boxing, and garbage churn. The best candidates acknowledge both: asymptotic class for scalability, profiling for p99 reality. Blindly quoting O(n log n) without naming the hidden sort or map resize is a common rejection pattern.\n\nAt scale, the failure modes are predictable. A feature that worked for 1,000 rows collapses at 100,000 because someone squared the work accidentally. A “fast” hash map path becomes a linked-list scan under collision pressure. A recursive parser blows stack depth. Complexity analysis is how you **recognize** those shapes in code review logs and flame graphs, not just on a whiteboard.\n\nIn day-to-day engineering, complexity shows up when metrics move: p99 latency tracks payload size, CPU pegs on a single hot method, or GC time spikes after a refactor. On call, you triage by asking what grew—users, rows, keys—and whether the handler’s work could be quadratic or unbounded fan-out. The engineer who can answer that question calmly shortens incidents and prevents repeat regressions."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Complexity Analysis",
-      "content": "### Why this topic matters now\nComplexity analysis is the language interviewers use to compare two correct solutions and choose the one that scales.\n\n### Core interview mental model\nFor Complexity Analysis, first identify the problem family, then map it to a known pattern. Pattern-first thinking reduces random trial-and-error.\n\n### Implementation guidance\n1. Write the simplest correct version first.\n2. Validate using one normal and one edge case.\n3. Improve complexity only after correctness is locked.\n4. Refactor to readable helper methods.\n\n### Complexity and trade-off lens\nDo not state complexity by memory. Derive it from operations performed. Mention time + space and where each cost comes from.\n\n### Common failure mode\nMost failures in Complexity Analysis are not syntax errors. They come from broken invariants, weak boundary checks, or unclear state tracking.\n\n### Interview speaking template\n- \"I considered X because...\"\n- \"The invariant is...\"\n- \"Per iteration we do..., so complexity is...\"\n- \"An alternative would be..., but I chose this due to...\"\n\n### Production relevance\nEven outside interviews, these patterns improve throughput, latency, and correctness in backend data processing tasks.\n\n### Satyverse — deeper path (theory → practice)\n**Big-O is about growth, not microseconds.** Count dominant operations; drop constants and lower terms. Worst case matters for interviews; amortized for structures like dynamic arrays.\n\n**Space complexity:** include recursion stack depth; tail recursion is not free in Java.\n\n**Empirical check:** time a few input sizes and see if ratio matches expected doubling behaviour — catches wrong complexity assumptions.\n\n**Interview:** always state assumptions (input size, sorted or not, memory limits) before choosing algorithm."
+      "title": "Complexity Analysis — theory that sticks",
+      "content": "### Plain-language overview\n\n**Complexity analysis** is how engineers predict how work grows when inputs grow. In interviews it is not a ritual suffix you append after coding — it is the **contract** you are signing about scalability, tail latency, and operational risk. Big-O describes an **upper bound** on growth; Theta describes a **tight** bound when best and worst match in order; Omega is a **lower bound**. Candidates who mix these casually sound imprecise; candidates who name the **dominant operation** (comparisons, probes, allocations, recursive calls) sound senior.\n\n**Interview angle:** start every complexity answer with “dominant work per input size,” then name assumptions (sorted input, unique keys, bounded alphabet).\n\n### Big-O, Theta, Omega — precise use\n\n| Symbol | Meaning | Interview phrasing |\n| --- | --- | --- |\n| **O(f)** | Worst case grows ≤ c·f(n) for large n | “At most on the order of …” |\n| **Ω(f)** | Some family forces ≥ c·f(n) | “At least … for adversarial input” |\n| **Θ(f)** | Tight: both O and Ω | “Growth is exactly … up to constants” |\n\n**Interview angle:** saying “average O(n)” without defining the input distribution is a red flag — clarify model or say “expected under random hash” explicitly.\n\n### Worst, average, amortized\n\n**Worst case** protects SLAs when an attacker or pathological dataset hits your service. **Average case** can look sunny but hides spikes. **Amortized** spreads rare expensive operations across many cheap ones (dynamic array doubling, disjoint-set union). In production you still watch **p99** because amortized reasoning can mask periodic latency cliffs when resizing triggers.\n\n**Interview angle:** for **ArrayList.add**, cite amortized O(1) but mention the rare O(n) copy — that is the question behind many “why did GC spike?” incidents.\n\n### Counting dominant operations\n\n1. Pick the **innermost** loop or recursive branch that scales with n.\n2. Multiply nested dimensions (nested loops over n → n²; two independent dimensions n·m → nm).\n3. Add sequential blocks — **keep the largest term**.\n4. Include **hidden** work: sorting inside a loop, **substring** copying, boxing, map resizing.\n\n**Interview angle:** “I charge O(n log n) for the sort; the scan is O(n); total dominated by sort.”\n\n### Recurrence intuition (no magic)\n\n| Recurrence shape | Typical source | Closed form (interview) |\n| --- | --- | --- |\n| T(n)=T(n/2)+O(1) | Halve search space | O(log n) |\n| T(n)=T(n/2)+O(n) | Partition-style | O(n) total level work × log levels |\n| T(n)=2T(n/2)+O(n) | Divide & conquer merge | O(n log n) |\n| T(n)=T(n-1)+O(1) | Linear chain | O(n) |\n| T(n)=T(n-1)+O(n) | Nested recurrence | O(n²) |\n\n**Interview angle:** draw the recursion tree or count levels — interviewers prefer a **sketch** over memorized master-theorem quoting.\n\n### Space: auxiliary vs recursion stack\n\n**Auxiliary space** excludes the input itself but includes allocated buffers, hash tables, and output if required. **Recursion stack** depth can turn a “O(1) extra” claim into O(n) if each frame holds constant work but depth is n. Java has no mandatory tail-call elimination — depth matters.\n\n**Interview angle:** iterative BFS with a queue: O(width) space; DFS recursion: O(height) stack.\n\n### Hidden constants and hardware reality\n\nBig-O drops constants, but constants win at small n and inside tight loops. Cache locality makes adjacent array scans faster than pointer-chasing linked lists with the same asymptotic class. In interviews you acknowledge **O-notation vs engineering**: choose the simpler O(n log n) with better constants over a worse-hidden O(n log² n).\n\n**Interview angle:** “Asymptotically same class, but contiguous memory wins on real CPUs.”\n\n### Common complexity classes (problem families)\n\n| Class | Example patterns |\n| --- | --- |\n| O(1) | Array index, hash map get average |\n| O(log n) | Binary search, balanced BST height ops |\n| O(n) | Single pass, BFS/DFS on graph with O(V+E) |\n| O(n log n) | Sorting lower bound comparison-based |\n| O(n²) | All pairs, naive duplicate check |\n| O(2^n) | Exhaustive subsets (bitmasks/backtracking) |\n\n**Interview angle:** map the **problem statement** to a family before coding — saves ten minutes of dead ends.\n\n### Adversarial inputs that break “average” claims\n\nHash maps degrade without balanced trees if collisions cluster. Quicksort random pivot avoids worst n² on sorted input — in Java **Arrays.sort** uses tuned algorithms; still know the pitfall. Regular nested loops on user-controlled sizes are DoS vectors — complexity is a **security** property.\n\n**Interview angle:** tie worst-case awareness to rate limits and max payload sizes.\n\n### Empirical validation without fooling yourself\n\nMicro-benchmarks lie: JVM warmup, GC, OS scheduling. Still, **growth ratios** across n = 100, 1_000, 10_000 can expose accidental n². Prefer **deterministic operation counters** when teaching or testing; if timing, warm up, fix n trials, report median.\n\n**Interview angle:** “I would sanity-check growth on representative sizes and profile if p99 regresses.”\n\n### Production symptoms mapped to complexity\n\n| Symptom | Often implies |\n| --- | --- |\n| p99 grows superlinearly with batch size | Hidden quadratic merge or sort-in-loop |\n| CPU flat but latency up | Lock contention — not pure asymptotics |\n| GC churn spikes | Allocations inside hot loops / boxing |\n| Timeouts only on large tenants | Per-tenant O(n²) aggregation |\n\n**Interview angle:** connect **metrics** to **algorithm structure**, not only to “CPU high.”\n\n### Interview speaking template (60 seconds)\n\n“I identify the dominant operation and whether input structure changes the bound — sorted, distinct, bounded range. I state time and space, including recursion depth. I mention worst vs amortized if the structure is dynamic. If two solutions differ, I compare classes first, then practical constants and implementation risk. If unsure, I propose a quick growth check or profiler confirmation rather than bluffing.”\n\n### Cheatsheet mindset vs math theater\n\nInterviewers want **sound reasoning**, not calculus. If you derive a sum, keep it lightweight: ∑i = n(n-1)/2 → Θ(n²). If you use master theorem, ensure **regularity** conditions match — otherwise use the tree method.\n\n**Interview angle:** show **clear bookkeeping** of what you count — comparisons vs assignments vs hash probes.\n\n### Trade-off table: faster algorithm vs simpler code\n\n| Situation | Prefer |\n| --- | --- |\n| Small n (< 50) | Simple O(n²) if fewer bugs |\n| Hot path at scale | Lower asymptotic class |\n| Maintenance critical | Readable structure with documented complexity |\n| Security sensitive | Strict worst-case structures (trees, ordered maps) |\n\n### Closing 60-second story\n\n“Complexity analysis is how I communicate scalability contracts. In an interview I derive bounds from dominant operations, separate worst and amortized, and include space for recursion and auxiliary structures. On the job I pair that with profiling because constants matter for p99. If latency grows faster than business growth, I look for nested loops, accidental sorting, and unbounded fan-out — then I prove the fix with measurements and a guardrail test that fails if someone reintroduces quadratic work.”\n\n### Complexity analysis — discipline layer 1\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 1 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 1, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 2\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 2 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 2, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 3\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 3 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 3, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 4\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 4 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 4, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 5\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 5 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 5, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 6\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 6 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 6, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 7\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 7 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 7, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 8\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 8 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 8, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 9\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 9 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 9, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 10\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 10 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 10, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 11\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 11 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 11, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 12\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 12 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 12, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 13\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 13 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 13, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 14\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 14 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 14, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 15\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 15 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 15, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 16\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 16 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 16, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 17\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 17 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 17, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 18\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 18 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 18, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 19\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 19 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 19, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 20\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 20 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 20, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 21\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 21 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 21, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 22\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 22 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 22, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 23\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 23 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 23, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 24\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 24 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 24, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Complexity analysis — discipline layer 25\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 25 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 25, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n"
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "Complexity Analysis — basic",
       "language": "java",
       "filename": "Day19Basic.java",
-      "code": "package arch.day19;\n\npublic class Day19Basic {\n    static int sumArray(int[] a) {\n        int s = 0;\n        for (int x : a) s += x;\n        return s;\n    }\n\n    public static void main(String[] args) {\n        System.out.println(sumArray(new int[] {1,2,3,4}));\n    }\n}",
       "level": "basic",
-      "output": "10\n",
-      "description": "Count loop iterations: O(n) linear scan vs O(1) constant work."
+      "description": "Deterministic prints: reference shapes for dominant operations and common complexity classes.",
+      "code": "package arch.day19;\n\npublic class Day19Basic {\n\n    static void printRow(String name, String time, String example) {\n        System.out.printf(\"%-14s | %-10s | %s%n\", name, time, example);\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Complexity classes — quick reference ===\");\n        System.out.println();\n        printRow(\"Pattern\", \"Typical\", \"Example\");\n        System.out.println(\"---------------+------------+--------------------------------\");\n        printRow(\"single stmt\", \"O(1)\", \"array index a[i]\");\n        printRow(\"one loop n\", \"O(n)\", \"linear scan\");\n        printRow(\"loop * loop\", \"O(n^2)\", \"all pairs i<j\");\n        printRow(\"halve each step\", \"O(log n)\", \"binary search\");\n        printRow(\"sort (compare)\", \"O(n log n)\", \"Arrays.sort int[]\");\n        System.out.println();\n        System.out.println(\"Rule: keep the largest growing term; drop constants.\");\n        System.out.println(\"Rule: nested independent sizes n*m are not automatically n^2.\");\n    }\n}\n",
+      "output": "=== Complexity classes — quick reference ===\n\nPattern        | Typical    | Example\n---------------+------------+--------------------------------\nsingle stmt    | O(1)       | array index a[i]\none loop n     | O(n)       | linear scan\nloop * loop    | O(n^2)     | all pairs i<j\nhalve each step| O(log n)   | binary search\nsort (compare) | O(n log n) | Arrays.sort int[]\n\nRule: keep the largest growing term; drop constants.\nRule: nested independent sizes n*m are not automatically n^2.\n"
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "Complexity Analysis — intermediate",
       "language": "java",
       "filename": "Day19Intermediate.java",
-      "code": "package arch.day19;\n\npublic class Day19Intermediate {\n    static boolean hasDuplicate(int[] a) {\n        for (int i = 0; i < a.length; i++) {\n            for (int j = i + 1; j < a.length; j++) {\n                if (a[i] == a[j]) return true;\n            }\n        }\n        return false;\n    }\n\n    public static void main(String[] args) {\n        System.out.println(hasDuplicate(new int[] {1, 2, 1}));\n    }\n}",
       "level": "intermediate",
-      "output": "true\n",
-      "description": "Nested loops: O(n²) pairwise comparison — classic complexity pattern."
+      "description": "Four labeled scenarios comparing approaches with different asymptotic costs.",
+      "code": "package arch.day19;\n\npublic class Day19Intermediate {\n\n    static long pairComparisons(int n) {\n        return (long) n * (n - 1) / 2;\n    }\n\n    static long linearScanOps(int n) {\n        return n;\n    }\n\n    static long sortCost(int n) {\n        // model comparison-based upper bound as n log2 n (ceiled) for traceability\n        if (n <= 1) return 0;\n        double v = n * (Math.log(n) / Math.log(2));\n        return (long) Math.ceil(v);\n    }\n\n    public static void main(String[] args) {\n        int n = 8;\n\n        // --- Scenario 1: duplicate check with nested loops ---\n        System.out.println(\"--- Scenario 1: duplicate check (nested loops) ---\");\n        System.out.println(\"dominant_comparisons=\" + pairComparisons(n));\n        System.out.println(\"class=O(n^2)\");\n        System.out.println();\n\n        // --- Scenario 2: sort then linear scan (distinct check style) ---\n        System.out.println(\"--- Scenario 2: sort + adjacent scan ---\");\n        System.out.println(\"sort_comparisons_model=\" + sortCost(n));\n        System.out.println(\"scan_ops=\" + (n - 1));\n        System.out.println(\"class=O(n log n)\");\n        System.out.println();\n\n        // --- Scenario 3: hash-set single pass ---\n        System.out.println(\"--- Scenario 3: hash set single pass ---\");\n        System.out.println(\"expected_probes_on_unique_input=\" + linearScanOps(n));\n        System.out.println(\"class=O(n) time average; O(n) space\");\n        System.out.println();\n\n        // --- Scenario 4: binary search — halving steps ---\n        System.out.println(\"--- Scenario 4: binary search (halving model) ---\");\n        int span = n;\n        int steps = 0;\n        while (span > 1) {\n            span = (span + 1) / 2;\n            steps++;\n        }\n        System.out.println(\"halving_steps_for_n=\" + n + \" -> \" + steps);\n        System.out.println(\"class=O(log n)\");\n    }\n}\n",
+      "output": "--- Scenario 1: duplicate check (nested loops) ---\ndominant_comparisons=28\nclass=O(n^2)\n\n--- Scenario 2: sort + adjacent scan ---\nsort_comparisons_model=24\nscan_ops=7\nclass=O(n log n)\n\n--- Scenario 3: hash set single pass ---\nexpected_probes_on_unique_input=8\nclass=O(n) time average; O(n) space\n\n--- Scenario 4: binary search (halving model) ---\nhalving_steps_for_n=8 -> 3\nclass=O(log n)\n"
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "Complexity Analysis — advanced",
       "language": "java",
       "filename": "Day19Advanced.java",
-      "code": "package arch.day19;\n\nimport java.util.*;\n\npublic class Day19Advanced {\n    public static void main(String[] args) {\n        int[] a = {1, 3, 5, 7, 9};\n        int i = Arrays.binarySearch(a, 7);\n        System.out.println(\"index=\" + i);\n    }\n}",
       "level": "advanced",
-      "output": "index=3\n",
-      "description": "Binary search on sorted array: O(log n) lookups vs O(n) linear."
+      "description": "Separated blocks plus printed decision tables for recurrences and tradeoffs.",
+      "code": "package arch.day19;\n\npublic class Day19Advanced {\n\n    static long nestedLoopInner(int n) {\n        long c = 0;\n        for (int i = 0; i < n; i++) {\n            for (int j = i + 1; j < n; j++) {\n                c++;\n            }\n        }\n        return c;\n    }\n\n    static long singleLoop(int n) {\n        long c = 0;\n        for (int i = 0; i < n; i++) c++;\n        return c;\n    }\n\n    public static void main(String[] args) {\n        // === Block 1: empirical operation counts for growing n ===\n        System.out.println(\"=== Block 1: operation counts vs n ===\");\n        for (int n : new int[] { 100, 1000, 10000 }) {\n            long dup = nestedLoopInner(n);\n            long lin = singleLoop(n);\n            System.out.println(\"n=\" + n + \" nested_pair_ops=\" + dup + \" linear_ops=\" + lin);\n        }\n        System.out.println();\n\n        // === Block 2: ratio check (nested ~ n^2/2) ===\n        System.out.println(\"=== Block 2: growth sanity (nested / n) ===\");\n        for (int n : new int[] { 100, 1000, 10000 }) {\n            long dup = nestedLoopInner(n);\n            double ratio = dup / (double) n;\n            System.out.println(\"n=\" + n + \" nested_over_n=\" + String.format(\"%.2f\", ratio));\n        }\n        System.out.println();\n\n        // === Block 3: recurrence cheat sheet (printed) ===\n        System.out.println(\"=== Block 3: recurrence → class (interview table) ===\");\n        System.out.println(\"T(n)=T(n/2)+O(1)   -> O(log n)\");\n        System.out.println(\"T(n)=2T(n/2)+O(n)  -> O(n log n)\");\n        System.out.println(\"T(n)=T(n-1)+O(n)   -> O(n^2)\");\n        System.out.println(\"T(n)=T(n/2)+O(n)   -> O(n) total (levels * per-level)\");\n    }\n}\n",
+      "output": "=== Block 1: operation counts vs n ===\nn=100 nested_pair_ops=4950 linear_ops=100\nn=1000 nested_pair_ops=499500 linear_ops=1000\nn=10000 nested_pair_ops=49995000 linear_ops=10000\n\n=== Block 2: growth sanity (nested / n) ===\nn=100 nested_over_n=49.50\nn=1000 nested_over_n=499.50\nn=10000 nested_over_n=4999.50\n\n=== Block 3: recurrence → class (interview table) ===\nT(n)=T(n/2)+O(1)   -> O(log n)\nT(n)=2T(n/2)+O(n)  -> O(n log n)\nT(n)=T(n-1)+O(n)   -> O(n^2)\nT(n)=T(n/2)+O(n)   -> O(n) total (levels * per-level)\n"
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 19",
-      "diagramType": "component",
-      "description": "Visual model for Complexity Analysis",
-      "plantuml": "@startuml\ntitle Day 19 - Complexity Analysis\nactor Learner\nrectangle \"Satyverse(Satyam Parmar) Lesson Engine\" {\n  component \"Theory\"\n  component \"Code\"\n  component \"Exercise\"\n  component \"Interview Drill\"\n}\nLearner --> \"Theory\" : Understand concept\nLearner --> \"Code\" : Implement\nLearner --> \"Exercise\" : Practice\nLearner --> \"Interview Drill\" : Explain\n@enduml"
+      "title": "Complexity analysis — from code change to latency review",
+      "diagramType": "sequence",
+      "description": "Six participants: engineer ships a change, CI runs tests, staging observes latency, profiler confirms hot path, reviewer demands complexity proof, production SLO guard checks p99.",
+      "plantuml": "@startuml\ntitle Complexity regression — sequence (review + prod signal)\n\nparticipant \"Engineer\" as Dev\nparticipant \"CI\\nUnit tests\" as CI\nparticipant \"Staging\\nmetrics\" as St\nparticipant \"CPU\\nProfiler\" as Pr\nparticipant \"Code\\nReviewer\" as Rev\nparticipant \"Prod\\nSLO monitor\" as Slo\n\nDev -> CI : push diff (nested loop in hot path)\nCI -> CI : tests pass (small n only)\n\nDev -> St : deploy to staging\nloop each load step\n  St -> St : record p50/p99 vs batch size\nend\n\nSt -> Pr : p99 superlinear vs batch\nPr -> Rev : flame graph shows O(n^2) merge\n\nalt reviewer accepts fix\n  Rev -> Dev : require complexity note + guard test\n  Dev -> CI : add max batch + property test\nelse reviewer misses it\n  Rev -> Dev : approve (risk)\n  Slo -> Dev : page: p99 SLO breach\nend\n\nSlo -> Dev : rollback / feature flag off\n@enduml"
     },
     {
       "type": "pitfalls",
-      "title": "Common Pitfalls",
+      "title": "Common pitfalls",
       "items": [
-        "Quoting Big-O without explaining dominant operation.",
-        "Ignoring space complexity while optimizing time.",
-        "Confusing worst-case and average-case in answers.",
-        "Using nested loops without analyzing actual iteration bounds.",
-        "Giving complexity from memory instead of deriving it step-by-step."
+        "Stating Big-O without naming the dominant operation — interviewers hear vague hand-waving while p99 latency maps directly to nested iterations or hidden sorts; count loop dimensions and map resize costs in review; fix by deriving work from the innermost scaling step and documenting it beside the method.",
+        "Quoting average-case O(1) map access while ignoring collision worst case — attackers or skewed keys turn buckets into long chains and timeouts spike; watch bucket depth metrics and CPU on `equals`; fix with better `hashCode`, treeified buckets awareness, or ordered structures when determinism matters.",
+        "Forgetting recursion stack in “O(1) extra space” claims — deep recursion on large inputs throws `StackOverflowError` or thrashes frames; detect with depth limits and thread dumps; fix by rewriting iterative algorithms or explicit stacks.",
+        "Micro-benchmarking on cold JVM to “prove” linearity — JIT warmup and GC noise produce fake conclusions that mislead sizing; use stabilized runs or deterministic operation counters; fix with JMH-style harnesses or growth-ratio checks across n.",
+        "Treating small-n constants as irrelevant forever — at modest n, an O(n²) routine with tiny constants can beat a heavy O(n log n); detect when product limits n < 50; fix by choosing simpler code with explicit max-size guardrails.",
+        "Assuming `Arrays.sort` cost is irrelevant inside a loop — repeated sorts multiply to O(k·n log n) and dominate handlers; detect with profiler samples on `sort`; fix by sorting once, using heaps, or maintaining order incrementally.",
+        "Confusing **upper bound O** with **tight Θ** — you may claim O(n²) when actual is Θ(n), sounding pessimistic or unsure; interviewers test precision; fix by proving both upper and lower arguments or stating dominant term exactly.",
+        "Ignoring auxiliary memory from intermediate collections — streaming pipelines that materialize large lists blow heap and GC; detect allocation rates in metrics; fix by batching, primitive arrays, or single-pass algorithms where possible."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - Complexity Analysis Problem Drill",
-      "problem": "Solve one medium-level Java problem for **Complexity Analysis**.\n\nRequirements:\n1. Provide brute-force and optimized approach.\n2. Explain why optimized approach is better.\n3. Include one edge-case test.\n4. Print expected output for sample input.\n5. State time/space complexity clearly.",
+      "title": "Practice exercise",
+      "difficulty": "Advanced",
+      "problem": "**Day 19 — Complexity Analysis (assignment alignment)**\n\n1. For array sizes **100**, **1000**, and **10000**, print **deterministic operation counts** for a nested duplicate-check style loop (all pairs `i < j`) so growth is visible without relying on noisy wall-clock timers.\n2. Print **linear scan** operation counts for the same sizes (single loop) for contrast.\n3. For each size, print the ratio **nested_ops / n** to show approximate linear growth of the pair count versus n (quadratic total work).\n4. Add a one-line summary class label for the nested approach (**O(n²)**) and the linear scan (**O(n)**), tied to the printed numbers.",
       "hints": [
-        "State invariant before writing loops/recursion.",
-        "Dry-run on paper for one non-trivial case.",
-        "Only optimize after baseline correctness."
+        "Pairwise inner loop comparisons total **n·(n−1)/2** for distinct ordered pairs with i<j.",
+        "Keep everything integer and deterministic—no random input, no wall-clock timing requirement for grading.",
+        "Use `long` for counts when n=10_000 to avoid overflow in intermediate products."
       ],
-      "solution": "package arch.day19;\nimport java.util.*;\n\npublic class Day19Advanced {\n    static record Review(String topic, int confidence, boolean needsRevision) {}\n\n    public static void main(String[] args) {\n        List<Review> reviews = List.of(\n            new Review(\"Complexity Analysis\", 72, true),\n            new Review(\"Coding Practice\", 81, false),\n            new Review(\"Interview Explanation\", 68, true)\n        );\n\n        long reviseCount = reviews.stream().filter(Review::needsRevision).count();\n        int avg = (int) reviews.stream().mapToInt(Review::confidence).average().orElse(0);\n\n        System.out.println(\"avgConfidence = \" + avg);\n        System.out.println(\"needsRevision = \" + reviseCount);\n    }\n}\n",
-      "difficulty": "Intermediate"
+      "solution": "package arch.day19;\n\npublic class Day19Exercise {\n\n    static long pairChecks(int n) {\n        return (long) n * (n - 1) / 2;\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Empirical growth (operation counts) ===\");\n        for (int n : new int[] { 100, 1000, 10000 }) {\n            long nested = pairChecks(n);\n            long linear = n;\n            double ratio = nested / (double) n;\n            System.out.println(\"n=\" + n + \" nested_pair_checks=\" + nested + \" linear_scan_ops=\" + linear\n                + \" nested_over_n=\" + String.format(\"%.2f\", ratio));\n        }\n        System.out.println(\"Summary: nested_pair_checks grow ~Theta(n^2); linear_scan grows Theta(n).\");\n    }\n}\n"
     },
     {
       "type": "interview",
       "title": "Interview Drill",
       "conceptual": [
         {
-          "question": "What does Big-O measure?",
-          "answer": "Upper bound on how runtime or memory grows as input size n increases—ignore constants and lower-order terms.",
+          "question": "Define Big-O in one precise sentence.",
+          "answer": "Big-O upper-bounds how fast work grows with input size n, ignoring constant factors and lower-order terms, for sufficiently large n.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Upper bound on how runtime or memory grows as input size n increases—ignore constants and lower-order terms. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Upper bound on how runtime or memory grows as input size n increases—ignore constants and lower-order terms. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Difference between O(n) and O(n²)?",
-          "answer": "Linear work scales proportionally to n; quadratic doubles impact when n doubles—nested loops over data often yield O(n²).",
+          "question": "How is Θ different from O?",
+          "answer": "Θ is tight: the algorithm is both O(f) and Ω(f). O alone allows being faster than f; Θ says the growth rate matches f up to constants.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Linear work scales proportionally to n; quadratic doubles impact when n doubles—nested loops over data often yield O(n²). Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Linear work scales proportionally to n; quadratic doubles impact when n doubles—nested loops over data often yield O(n²)… Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is amortized analysis?",
-          "answer": "Average cost per operation over a sequence—e.g., dynamic array append is O(1) amortized though occasional resize costs O(n).",
+          "question": "When do you cite worst case vs average case?",
+          "answer": "Worst case for SLAs and adversarial inputs; average or expected when you have a clear random model (e.g., hashing) and can explain assumptions.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Average cost per operation over a sequence—e.g., dynamic array append is O(1) amortized though occasional resize costs O(n). Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Average cost per operation over a sequence—e.g., dynamic array append is O(1) amortized though occasional resize costs O… Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is Ω and Θ?",
-          "answer": "Ω is lower bound; Θ means tight bound (same growth upper and lower)—interviews often focus on Big-O upper bounds.",
+          "question": "What is amortized complexity?",
+          "answer": "Spreading rare expensive operations over many cheap ones so the long-run average per operation is small—classic example ArrayList resizing.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Ω is lower bound; Θ means tight bound (same growth upper and lower)—interviews often focus on Big-O upper bounds. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Ω is lower bound; Θ means tight bound (same growth upper and lower)—interviews often focus on Big-O upper bounds. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Why compare algorithms asymptotically?",
-          "answer": "Predict behavior at large n; constants matter for small n but scalability dominates in system design.",
+          "question": "Why can O(n²) code pass tests but fail in prod?",
+          "answer": "Tests use small n where constants hide growth; production batches or tenant data hit larger n and quadratic loops dominate CPU and p99 latency.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Predict behavior at large n; constants matter for small n but scalability dominates in system design. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Predict behavior at large n; constants matter for small n but scalability dominates in system design. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is space complexity?",
-          "answer": "Extra memory beyond input—O(1) extra means constant auxiliary space regardless of n.",
+          "question": "What is auxiliary space?",
+          "answer": "Extra memory beyond the input storage your algorithm allocates—arrays, maps, recursion stack—not the input itself unless problem requires counting it.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Extra memory beyond input—O(1) extra means constant auxiliary space regardless of n. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Extra memory beyond input—O(1) extra means constant auxiliary space regardless of n. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is worst-case vs average-case?",
-          "answer": "Worst guarantees under adversarial input; average assumes distribution—both matter for different SLAs.",
+          "question": "How does recursion affect space?",
+          "answer": "Each active frame uses stack space; depth d costs O(d) even if each frame is O(1). Java lacks guaranteed TCO.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Worst guarantees under adversarial input; average assumes distribution—both matter for different SLAs. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Worst guarantees under adversarial input; average assumes distribution—both matter for different SLAs. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "How do you analyze a single loop over array?",
-          "answer": "Typically O(n) if body is O(1) per element.",
+          "question": "Why might linked-list traversal be slower than array scan at same Big-O?",
+          "answer": "Both may be O(n) time asymptotically, but pointer chasing hurts cache locality; constants and memory bandwidth dominate real time.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Typically O(n) if body is O(1) per element. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Typically O(n) if body is O(1) per element. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "How do you analyze nested loops?",
-          "answer": "Multiply depths if each depends on n—e.g., i and j both to n often O(n²).",
+          "question": "Explain why comparing all pairs is Θ(n²).",
+          "answer": "There are n choose 2 = n(n-1)/2 unordered pairs; each must be examined in the naive approach, so comparisons grow quadratically.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Multiply depths if each depends on n—e.g., i and j both to n often O(n²). Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Multiply depths if each depends on n—e.g., i and j both to n often O(n²). Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is binary search complexity?",
-          "answer": "O(log n) on sorted array—halves search space each step.",
+          "question": "What is the complexity of binary search?",
+          "answer": "O(log n) comparisons on a sorted random-access structure because each step halves the remaining range.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. O(log n) on sorted array—halves search space each step. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. O(log n) on sorted array—halves search space each step. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is hash map average lookup?",
-          "answer": "O(1) average for get/put; O(n) worst case if many collisions—know your hash function and load factor.",
+          "question": "Why is sorting often O(n log n)?",
+          "answer": "Comparison sorts need Ω(n log n) comparisons in the worst case; standard algorithms like mergesort and Java’s tuned sorts match that bound.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. O(1) average for get/put; O(n) worst case if many collisions—know your hash function and load factor. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. O(1) average for get/put; O(n) worst case if many collisions—know your hash function and load factor. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is the master theorem (sketch)?",
-          "answer": "Recurrence T(n)=aT(n/b)+f(n) solves many divide-and-conquer recurrences—compare f(n) to n^(log_b a).",
+          "question": "When is counting sort not O(n log n)?",
+          "answer": "When keys are integers in a bounded range and you can bucket by value—linear in n plus range—not comparison-based.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Recurrence T(n)=aT(n/b)+f(n) solves many divide-and-conquer recurrences—compare f(n) to n^(log_b a). Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Recurrence T(n)=aT(n/b)+f(n) solves many divide-and-conquer recurrences—compare f(n) to n^(log_b a). Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Why can sorting dominate complexity?",
-          "answer": "O(n log n) sort + O(n) scan may beat O(n²) brute force for structured problems.",
+          "question": "What breaks average-case O(1) hash map claims?",
+          "answer": "Many collisions, poor hash, or adversarial keys producing long chains or unbalanced buckets—worst per-op can become O(n).",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. O(n log n) sort + O(n) scan may beat O(n²) brute force for structured problems. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. O(n log n) sort + O(n) scan may beat O(n²) brute force for structured problems. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is pseudo-polynomial?",
-          "answer": "Looks polynomial in numeric value but exponential in bit length—relevant for subset-sum style DP.",
+          "question": "How do you detect accidental quadratic work in a service?",
+          "answer": "Plot latency vs batch size, profile hot methods, search for sort-in-loop or nested streams over collections, add guardrail tests on max size.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Looks polynomial in numeric value but exponential in bit length—relevant for subset-sum style DP. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Looks polynomial in numeric value but exponential in bit length—relevant for subset-sum style DP. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "How does parallelism change Big-O?",
-          "answer": "Big-O is sequential steps; wall-clock may drop with parallel hardware but work complexity may stay the same.",
+          "question": "What is the master theorem used for?",
+          "answer": "Solving recurrences T(n)=aT(n/b)+f(n) from divide-and-conquer—maps to polynomial vs logarithmic work across levels.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Complexity Analysis** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Big-O is sequential steps; wall-clock may drop with parallel hardware but work complexity may stay the same. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Complexity Analysis**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Big-O is sequential steps; wall-clock may drop with parallel hardware but work complexity may stay the same. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Why state assumptions before complexity?",
+          "answer": "Sorted vs unsorted, distinct elements, bounded alphabet, and memory limits change which bounds are valid—precision avoids wrong algorithm choice.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Give a 60-second complexity answer template.",
+          "answer": "Dominant operation → loops/recursion → multiply nested dimensions → keep largest term → state time and space → note worst vs amortized → mention validation (profile or growth check).",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "codeBased": [
         {
-          "question": "Given nested for i,j to n, state complexity.",
-          "answer": "O(n²) time, O(1) extra space if no large aux structures.",
+          "question": "Complexity of two nested loops both to n?",
+          "answer": "Θ(n²)—inner runs n times for each of n outer iterations.",
           "followUps": [
             {
-              "question": "What breaks if this **Complexity Analysis** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. O(n²) time, O(1) extra space if no large aux structures. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. O(n²) time, O(1) extra space if no large aux structures. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Binary search: why mid = lo + (hi-lo)/2?",
-          "answer": "Avoids integer overflow from (lo+hi)/2 in large indices.",
+          "question": "`for (i=0;i<n;i++) for (j=i;j<n;j++)` inner body count?",
+          "answer": "Triangular number n(n+1)/2 iterations → Θ(n²).",
           "followUps": [
             {
-              "question": "What breaks if this **Complexity Analysis** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Avoids integer overflow from (lo+hi)/2 in large indices. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Avoids integer overflow from (lo+hi)/2 in large indices. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Count operations in: for i 0..n: for j i..n",
-          "answer": "Roughly n²/2 iterations—still O(n²).",
+          "question": "Merging two sorted arrays lengths n and m?",
+          "answer": "O(n+m) time, O(1) extra if output given; two pointers advance monotonically.",
           "followUps": [
             {
-              "question": "What breaks if this **Complexity Analysis** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Roughly n²/2 iterations—still O(n²). Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Roughly n²/2 iterations—still O(n²). Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "When does HashMap degrade to O(n)?",
-          "answer": "Many collisions under poor hash or adversarial keys—use balanced structures or crypto hash if needed.",
+          "question": "Building HashMap frequency of n strings (average case)?",
+          "answer": "Expected O(n) inserts with O(1) average per op under simple hashing assumptions.",
           "followUps": [
             {
-              "question": "What breaks if this **Complexity Analysis** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Many collisions under poor hash or adversarial keys—use balanced structures or crypto hash if needed. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Many collisions under poor hash or adversarial keys—use balanced structures or crypto hash if needed. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Space of merge sort vs heap sort?",
-          "answer": "Merge sort O(n) extra; heap sort O(1) extra—trade memory for stability and constants.",
+          "question": "DFS on graph V,E adjacency lists?",
+          "answer": "O(V+E) time to visit every vertex and edge once.",
           "followUps": [
             {
-              "question": "What breaks if this **Complexity Analysis** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Merge sort O(n) extra; heap sort O(1) extra—trade memory for stability and constants. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Merge sort O(n) extra; heap sort O(1) extra—trade memory for stability and constants. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Two-pointer on sorted array for pair sum—complexity?",
-          "answer": "O(n) time after sort O(n log n) if not already sorted.",
+          "question": "Recursive fib(n) without memo—time and space?",
+          "answer": "Time exponential (~O(2^n) crude), space O(n) stack depth for naive recursion.",
           "followUps": [
             {
-              "question": "What breaks if this **Complexity Analysis** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. O(n) time after sort O(n log n) if not already sorted. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. O(n) time after sort O(n log n) if not already sorted. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Analyze recursion depth for factorial n.",
-          "answer": "O(n) stack frames—may overflow for large n.",
+          "question": "`Arrays.binarySearch` on sorted int[]—time?",
+          "answer": "O(log n) for the search itself; sorting first would add O(n log n).",
           "followUps": [
             {
-              "question": "What breaks if this **Complexity Analysis** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. O(n) stack frames—may overflow for large n. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. O(n) stack frames—may overflow for large n. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "DP with n states and O(1) transition each?",
-          "answer": "O(n) time and O(n) space—or rolling array for O(1) space if applicable.",
+          "question": "Nested loop: outer n, inner m independent?",
+          "answer": "Θ(n·m)—not n² unless m≈n.",
           "followUps": [
             {
-              "question": "What breaks if this **Complexity Analysis** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. O(n) time and O(n) space—or rolling array for O(1) space if applicable. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. O(n) time and O(n) space—or rolling array for O(1) space if applicable. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Compare BFS vs DFS on graph with V,E.",
-          "answer": "BFS/DFS O(V+E) time with adjacency list.",
+          "question": "PriorityQueue insert n elements each O(log n)?",
+          "answer": "O(n log n) total; note `PriorityQueue` uses heap operations.",
           "followUps": [
             {
-              "question": "What breaks if this **Complexity Analysis** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. BFS/DFS O(V+E) time with adjacency list. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. BFS/DFS O(V+E) time with adjacency list. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What complexity to build heap from n elements?",
-          "answer": "O(n) heapify all elements—not O(n log n) repeated insert for building from array.",
+          "question": "Two-pointer pair sum on already sorted array?",
+          "answer": "O(n) after O(1) setup; if unsorted, O(n log n) to sort first unless extra structure.",
           "followUps": [
             {
-              "question": "What breaks if this **Complexity Analysis** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. O(n) heapify all elements—not O(n log n) repeated insert for building from array. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. O(n) heapify all elements—not O(n log n) repeated insert for building from array. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Space for iterative O(n) scan returning new array same size?",
+          "answer": "O(n) output if required; sometimes O(1) extra if in-place mutation allowed.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Quickselect average vs worst for kth element?",
+          "answer": "Average O(n) with good pivots; worst O(n²) without randomization—interviews often ask mitigation.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "seniorScenario": [
         {
-          "question": "Service latency p99 spikes when data doubled—how investigate?",
-          "answer": "Profile hot paths, check algorithmic regression (O(n²) creep), DB indexes, and GC—not just CPU%.",
+          "question": "p99 spikes after a refactor; CPU high on one thread. How do you tie to complexity?",
+          "answer": "Profile flame graph, identify method with superlinear growth vs payload, reproduce with scaled test data, show before/after operation counts or timing curve, ship fix with max batch and regression test.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Complexity Analysis** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Profile hot paths, check algorithmic regression (O(n²) creep), DB indexes, and GC—not just CPU%. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Profile hot paths, check algorithmic regression (O(n²) creep), DB indexes, and GC—not just CPU%. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Interview: “Is this O(n) or O(n log n)?”—ambiguous code.",
-          "answer": "Walk through loops/recursion, state transitions; mention amortized if relevant.",
+          "question": "PM demands feature combining every order with every coupon. What do you say?",
+          "answer": "That is Θ(orders×coupons); propose indexing, prefiltering, or approximate/batch processing with product guardrails and SLO impact analysis.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Complexity Analysis** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Walk through loops/recursion, state transitions; mention amortized if relevant. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Walk through loops/recursion, state transitions; mention amortized if relevant. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Capacity planning: algorithm O(n²) in batch job—ops fix?",
-          "answer": "Shard input, parallelize independent chunks, or replace algorithm; don’t only scale hardware.",
+          "question": "Microservice times out only for largest customers.",
+          "answer": "Suspect O(n²) or unbounded fan-out on tenant size; add metrics on input cardinality per request, cap work, paginate, async offload.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Complexity Analysis** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Shard input, parallelize independent chunks, or replace algorithm; don’t only scale hardware. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Shard input, parallelize independent chunks, or replace algorithm; don’t only scale hardware. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Cache complexity in real systems?",
-          "answer": "Memory hierarchy effects dominate at scale—locality matters even if Big-O same.",
+          "question": "Candidate argues O(n) hash map for dedupe; you see collisions in prod.",
+          "answer": "Discuss worst-case degradation, equals/hashCode contract, treeify threshold, when to use TreeMap/LinkedHashMap for determinism.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Complexity Analysis** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Memory hierarchy effects dominate at scale—locality matters even if Big-O same. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Memory hierarchy effects dominate at scale—locality matters even if Big-O same. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Competitive online algorithms—relate?",
-          "answer": "Different model (future unknown); mention when streaming constraints apply.",
+          "question": "How do you document complexity in a code review?",
+          "answer": "State preconditions, dominant operation, time/space, worst vs amortized, and a test or benchmark that would catch regression.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Complexity Analysis** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Different model (future unknown); mention when streaming constraints apply. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Different model (future unknown); mention when streaming constraints apply. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Team ships “fast” hash map abuse—risk?",
-          "answer": "Worst-case DoS or unbounded memory—need bounds and monitoring.",
+          "question": "JIT and GC skew benchmarks—how proceed?",
+          "answer": "Warm up, fixed seeds, isolate algorithm, use JMH-style rigor or deterministic op counts; interpret as directional not gospel.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Complexity Analysis** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Worst-case DoS or unbounded memory—need bounds and monitoring. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Worst-case DoS or unbounded memory—need bounds and monitoring. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "wrongAnswers": [
-        "Big-O tells you exact milliseconds on a given machine.",
-        "O(2n) is fundamentally larger than O(n) in asymptotic terms.",
-        "Nested loops always mean O(n³).",
-        "Space complexity includes the input array itself.",
-        "Binary search works on any array without precondition.",
-        "HashMap worst-case lookup is always O(1)."
+        "Big-O measures exact milliseconds on your laptop — Big-O is asymptotic growth, not wall-clock time; hardware and constants are stripped out.",
+        "O(n²) always beats O(n log n) for every n — false: constants and small n can favor simpler quadratic code; asymptotics compare growth as n→∞.",
+        "Space complexity never includes recursion stack — false: call depth consumes stack memory and must be counted for recursive solutions.",
+        "Average case equals best case — false without a model; average requires a distribution; best and average can differ wildly (e.g., quicksort).",
+        "Amortized O(1) means every single operation is O(1) worst case — false: amortized bounds allow rare expensive operations (e.g., table resize).",
+        "If two algorithms are both O(n log n), they are equally fast in production — false: hidden constants, memory traffic, and cache behavior dominate real latency.",
+        "Binary search works on any array — false: requires sorted order (or a sorted view) and usually random access; on linked lists it is not meaningful the same way.",
+        "Θ and O are interchangeable in interviews — false: Θ is tight; claiming O without clarifying can hide that you are actually linear not quadratic."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ Quiz — Complexity Analysis",
+      "description": "Thirty questions from basic definitions through recurrences, hashing pitfalls, and amortized reasoning — read distractors carefully.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "What does **O(n)** primarily describe?",
+          "options": {
+            "A": "Exact running time in milliseconds for input size n",
+            "B": "Upper bound on growth rate of work vs n, ignoring constants",
+            "C": "Memory usage of the JVM heap only",
+            "D": "Best-case time for every algorithm"
+          },
+          "answer": "B",
+          "explanation": "Big-O is asymptotic upper bound on how work scales with n, not wall-clock time. A is wrong because constants and hardware differ. C confuses time with space. D is Omega/best-case territory, not Big-O by itself."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "Which is typically true for **Θ(f(n))**?",
+          "options": {
+            "A": "Only a lower bound",
+            "B": "Only an upper bound",
+            "C": "Tight bound: same growth class upper and lower (up to constants)",
+            "D": "Always equal to O(log n)"
+          },
+          "answer": "C",
+          "explanation": "Theta means growth is sandwiched: both O and Ω of the same f. A is Omega-only, B is O-only, D is nonsense without context."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "code",
+          "question": "What is the tight time complexity of this loop?\n\n```java\nfor (int i = 0; i < n; i++) {\n    for (int j = 0; j < n; j++) {\n        // O(1) body\n    }\n}\n```",
+          "options": {
+            "A": "O(n)",
+            "B": "O(n log n)",
+            "C": "O(n^2)",
+            "D": "O(2^n)"
+          },
+          "answer": "C",
+          "explanation": "n iterations of the outer loop each run n inner iterations → n·n = Θ(n²)."
+        },
+        {
+          "id": 4,
+          "level": "basic",
+          "category": "theory",
+          "question": "Saying an algorithm is **O(n^3)** means:",
+          "options": {
+            "A": "It always runs exactly n³ steps",
+            "B": "It runs in cubic time for every possible input",
+            "C": "Work grows at most like a constant times n³ for large n",
+            "D": "It is slower than any O(n²) algorithm for all n"
+          },
+          "answer": "C",
+          "explanation": "Big-O is an upper bound up to constants, not exact step counts. D is false because constants and small-n behavior differ."
+        },
+        {
+          "id": 5,
+          "level": "basic",
+          "category": "theory",
+          "question": "**Space complexity** usually counts:",
+          "options": {
+            "A": "Only the input array size",
+            "B": "Extra memory beyond input (auxiliary), including recursion stack when relevant",
+            "C": "Disk swap usage",
+            "D": "Number of lines of source code"
+          },
+          "answer": "B",
+          "explanation": "Standard interview definition: auxiliary space plus stack frames for recursive algorithms. Input is often excluded unless stated otherwise."
+        },
+        {
+          "id": 6,
+          "level": "basic",
+          "category": "code",
+          "question": "Binary search on a sorted array of length n performs how many comparisons in the worst case (typical model)?",
+          "options": {
+            "A": "O(1)",
+            "B": "O(log n)",
+            "C": "O(n)",
+            "D": "O(n log n)"
+          },
+          "answer": "B",
+          "explanation": "Each step halves the search interval → O(log n) comparisons."
+        },
+        {
+          "id": 7,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Which pair is **correct**?",
+          "options": {
+            "A": "Best case ≤ average case ≤ worst case (always, for every algorithm)",
+            "B": "Big-O of worst case can be looser than Theta of the same algorithm",
+            "C": "If T(n)=Θ(n), then T(n)=O(n) and T(n)=Ω(n)",
+            "D": "O(2^n) and O(n!) are the same class"
+          },
+          "answer": "C",
+          "explanation": "Theta implies both O and Omega of same order. A is false without defining random model. B is confused wording. D is false — factorial dominates exponential."
+        },
+        {
+          "id": 8,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "**Amortized** O(1) `ArrayList.add` means:",
+          "options": {
+            "A": "Every single add costs exactly one CPU cycle",
+            "B": "No add ever triggers resizing",
+            "C": "Average cost per add is constant over a long sequence, though rare adds are O(n)",
+            "D": "Worst-case per add is O(1)"
+          },
+          "answer": "C",
+          "explanation": "Amortized analysis spreads cost of resizing over many cheap adds. Worst single add can still be O(n)."
+        },
+        {
+          "id": 9,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What is the complexity of building a frequency map over an array of n integers with a `HashMap` (average case, simple uniform hashing model)?",
+          "options": {
+            "A": "O(1)",
+            "B": "O(log n)",
+            "C": "O(n)",
+            "D": "O(n^2)"
+          },
+          "answer": "C",
+          "explanation": "One expected O(1) put/get per element → O(n) expected time; worst-case hashing can degrade but average model is O(n)."
+        },
+        {
+          "id": 10,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Which recurrence commonly yields **O(n log n)** divide-and-conquer?",
+          "options": {
+            "A": "T(n)=T(n/2)+O(1)",
+            "B": "T(n)=2T(n/2)+O(n)",
+            "C": "T(n)=T(n-1)+O(1)",
+            "D": "T(n)=T(n/2)+O(n^2)"
+          },
+          "answer": "B",
+          "explanation": "Classic merge-sort style: two subproblems half size + O(n) merge per level → O(n log n)."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Nested loops: outer i in [0,n), inner j in [0,i). Total inner-body executions?",
+          "options": {
+            "A": "n",
+            "B": "n log n",
+            "C": "n(n-1)/2",
+            "D": "n^2"
+          },
+          "answer": "C",
+          "explanation": "Sum_{i=0}^{n-1} i = n(n-1)/2 → Θ(n²) but exact count is triangular number, not n² when j<i."
+        },
+        {
+          "id": 12,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "**Polynomial** vs **exponential** in n:",
+          "options": {
+            "A": "n^100 grows slower than 2^n for all sufficiently large n",
+            "B": "2^n is always polynomial",
+            "C": "n! is O(2^n)",
+            "D": "Any O(n^k) eventually beats Ω(2^n)"
+          },
+          "answer": "A",
+          "explanation": "Exponential 2^n eventually dominates any fixed polynomial n^k. C: n! grows faster than 2^n. D is backwards."
+        },
+        {
+          "id": 13,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why might **micro-benchmarks** mislead complexity conclusions in Java?",
+          "options": {
+            "A": "JIT warmup and GC make short runs noisy",
+            "B": "Java forbids loops in benchmarks",
+            "C": "Big-O ignores n so benchmarks are useless",
+            "D": "Profiler always shows exact comparison counts"
+          },
+          "answer": "A",
+          "explanation": "Warmup, GC, and OS scheduling distort wall time; still useful with care or use operation counting."
+        },
+        {
+          "id": 14,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Merging two sorted arrays of lengths n and m takes:",
+          "options": {
+            "A": "O(1)",
+            "B": "O(log(n+m))",
+            "C": "O(n+m)",
+            "D": "O(n*m)"
+          },
+          "answer": "C",
+          "explanation": "Two-pointer linear scan — each element pushed once."
+        },
+        {
+          "id": 15,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Master theorem case for **T(n)=aT(n/b)+f(n)** when f(n)=Θ(n^{log_b a})?",
+          "options": {
+            "A": "Always O(1)",
+            "B": "Θ(n^{log_b a} log n)",
+            "C": "Θ(n^2) always",
+            "D": "O(log n) only"
+          },
+          "answer": "B",
+          "explanation": "When work at each level matches the critical exponent, you multiply by log n depth factor (balanced tree work)."
+        },
+        {
+          "id": 16,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Adversarial input to naive hash map if **all keys collide**:",
+          "options": {
+            "A": "Lookups become O(1)",
+            "B": "Lookups degrade to O(n) per op if buckets chain linearly",
+            "C": "JVM throws on collision",
+            "D": "TreeMap is automatically used"
+          },
+          "answer": "B",
+          "explanation": "Worst-case chaining devolves to list scan per bucket — why Java 8+ trees long chains, and why interviewers ask worst case."
+        },
+        {
+          "id": 17,
+          "level": "advanced",
+          "category": "code",
+          "question": "What is the time complexity of `Arrays.sort(int[])` in Java (dual-pivot quicksort for primitives)?",
+          "options": {
+            "A": "O(n) worst case",
+            "B": "O(n log n) average, O(n^2) worst case (theoretical)",
+            "C": "O(n^2) always",
+            "D": "O(log n)"
+          },
+          "answer": "B",
+          "explanation": "Primitive sort is highly tuned quicksort-family: average O(n log n); pathological worst cases exist theoretically."
+        },
+        {
+          "id": 18,
+          "level": "advanced",
+          "category": "theory",
+          "question": "**Recursion depth** for naive recursive Fibonacci fib(n):",
+          "options": {
+            "A": "O(log n) stack",
+            "B": "O(n) stack",
+            "C": "O(1) stack",
+            "D": "O(2^n) stack"
+          },
+          "answer": "B",
+          "explanation": "fib(n) calls fib(n-1) before returning — linear depth chain. Total work is exponential but stack depth is O(n)."
+        },
+        {
+          "id": 19,
+          "level": "advanced",
+          "category": "code",
+          "question": "DFS on a graph with V vertices and E edges (adjacency list) time:",
+          "options": {
+            "A": "O(V)",
+            "B": "O(V+E)",
+            "C": "O(V*E)",
+            "D": "O(E^2)"
+          },
+          "answer": "B",
+          "explanation": "Each vertex visited once, each edge examined once in undirected sense — O(V+E)."
+        },
+        {
+          "id": 20,
+          "level": "basic",
+          "category": "theory",
+          "question": "Dropping **lower-order terms** in Big-O is valid because:",
+          "options": {
+            "A": "They are always zero",
+            "B": "For large n, fastest-growing term dominates",
+            "C": "Interviewers forbid mentioning them",
+            "D": "They cancel with constants always"
+          },
+          "answer": "B",
+          "explanation": "Asymptotic analysis keeps term that grows fastest; n² + n is O(n²)."
+        },
+        {
+          "id": 21,
+          "level": "basic",
+          "category": "code",
+          "question": "Single loop from 0 to n-1, O(1) body:",
+          "options": {
+            "A": "O(1)",
+            "B": "O(log n)",
+            "C": "O(n)",
+            "D": "O(n^2)"
+          },
+          "answer": "C",
+          "explanation": "n iterations → Θ(n)."
+        },
+        {
+          "id": 22,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "**Two-pointer** on sorted array for pair sum often yields:",
+          "options": {
+            "A": "O(n^2)",
+            "B": "O(n) after sort (if input unsorted, + sort cost)",
+            "C": "O(log n) without sort",
+            "D": "O(1) always"
+          },
+          "answer": "B",
+          "explanation": "On sorted data, two pointers move linearly. If unsorted, sort first → O(n log n) dominated."
+        },
+        {
+          "id": 23,
+          "level": "intermediate",
+          "category": "code",
+          "question": "How many times does the inner `while` run total for classic insertion sort on n elements (worst case)?",
+          "options": {
+            "A": "n",
+            "B": "n log n",
+            "C": "Θ(n^2)",
+            "D": "Θ(n^3)"
+          },
+          "answer": "C",
+          "explanation": "Reverse-sorted input forces ~n²/2 shifts/comparisons."
+        },
+        {
+          "id": 24,
+          "level": "advanced",
+          "category": "theory",
+          "question": "**Amortized** analysis of incrementing a binary counter from 0 to n:",
+          "options": {
+            "A": "Each increment is O(n) amortized",
+            "B": "Total O(n log n) for n increments from 0",
+            "C": "Amortized O(1) per increment over the sequence",
+            "D": "Amortized O(log log n)"
+          },
+          "answer": "C",
+          "explanation": "Bit flips amortize: many cheap + few expensive carries → O(1) amortized per increment."
+        },
+        {
+          "id": 25,
+          "level": "advanced",
+          "category": "code",
+          "question": "Memoized top-down DP for Fibonacci with memo array size n: time to compute fib(n)?",
+          "options": {
+            "A": "O(2^n)",
+            "B": "O(n)",
+            "C": "O(log n)",
+            "D": "O(n^2)"
+          },
+          "answer": "B",
+          "explanation": "Each value computed once → O(n) subproblems, O(1) each."
+        },
+        {
+          "id": 26,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Which statement about **Ω (Omega)** is correct?",
+          "options": {
+            "A": "f(n)=Ω(g(n)) means f grows at least as fast as g (up to constants) for large n",
+            "B": "Ω describes an asymptotic upper bound",
+            "C": "f=Ω(g) means f(n) ≤ c·g(n) for all n",
+            "D": "Ω and Θ are unrelated symbols"
+          },
+          "answer": "A",
+          "explanation": "Omega is a lower bound: f is at least on the order of g. B describes O. C reverses the inequality. D is false — Θ means both O and Ω."
+        },
+        {
+          "id": 27,
+          "level": "basic",
+          "category": "theory",
+          "question": "If an algorithm runs in **Θ(n log n)** time, which bound is always valid?",
+          "options": {
+            "A": "O(n) only",
+            "B": "O(n log n) and Ω(n log n)",
+            "C": "O(n²) only",
+            "D": "O(1)"
+          },
+          "answer": "B",
+          "explanation": "Θ tight-binds growth: it is both O and Ω of n log n (same class)."
+        },
+        {
+          "id": 28,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What is the time to find an element in a **balanced BST** of n nodes (worst case)?",
+          "options": {
+            "A": "O(1)",
+            "B": "O(log n)",
+            "C": "O(n)",
+            "D": "O(n log n)"
+          },
+          "answer": "B",
+          "explanation": "Height is O(log n) when balanced; search walks one path from root."
+        },
+        {
+          "id": 29,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Why is **O(n log n)** a lower bound for comparison-based sorting?",
+          "options": {
+            "A": "Because Java uses quicksort",
+            "B": "Decision-tree argument: n! leaves need Ω(log(n!)) = Ω(n log n) comparisons",
+            "C": "Because arrays have fixed length",
+            "D": "Because mergesort uses linear extra space"
+          },
+          "answer": "B",
+          "explanation": "Any comparison sort must distinguish all n! permutations — tree height ≥ log₂(n!) = Θ(n log n)."
+        },
+        {
+          "id": 30,
+          "level": "advanced",
+          "category": "code",
+          "question": "Consider `for (int k = n; k > 1; k /= 2) { /* O(1) */ }`. Iterations are:",
+          "options": {
+            "A": "Θ(n)",
+            "B": "Θ(log n)",
+            "C": "Θ(n^2)",
+            "D": "Θ(1)"
+          },
+          "answer": "B",
+          "explanation": "k halves each iteration → about log₂ n iterations."
+        }
       ]
     },
     {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Area | Day 19 Focus | Quick Reminder | Gotcha |\n|---|---|---|---|\n| Pattern | Complexity Analysis | Choose pattern before coding | Random brute-force wandering |\n| Correctness | Invariant + edge checks | Dry-run once | Off-by-one / null-state miss |\n| Complexity | Derive, do not guess | Mention time + space | Incomplete complexity answers |\n| Communication | Explain decisions | Use trade-off statement | Generic textbook responses |\n| Quality | Readable Java methods | Stable naming + small units | Clever but fragile logic |"
+      "title": "Complexity Analysis — cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n| --- | --- | --- |\n| Big-O | Upper bound on growth; drop constants/low terms | Dominant operation + largest growing term |\n| Big-Θ | Tight bound: same upper and lower class | Same growth rate up to constants |\n| Big-Ω | Lower bound — at least this hard | Adversarial input forces this much work |\n| Worst case | Protects SLAs under hostile/large data | State when interviewer cares about guarantees |\n| Average case | Needs a model (e.g., random keys) | Never confuse with best case |\n| Amortized | Spread rare expensive ops over many cheap ones | `ArrayList.add` amortized O(1) |\n| Time vs space | Count both; include recursion stack | Auxiliary space excludes input unless asked |\n| Nested loops | Multiply iterations per dimension | i<j inner sum → Θ(n²) |\n| Sort cost | Comparison sort Ω(n log n) | Identify hidden sorts in loops |\n| Binary search | Halve search space each step | Requires sorted + random access |\n| Hash map | Expected O(1); watch collisions | Know equals/hashCode contract |\n| Two-pointer | Often O(n) on sorted arrays | Prove monotonicity of pointers |\n| Recursion depth | Each frame costs stack | Java: prefer iterative or explicit stack when deep |\n| Profiling | Validates constants p99 reality | Pair with asymptotic reasoning |\n| Master theorem | Recurrence T(n)=aT(n/b)+f(n) | Know divide & conquer templates |"
     }
   ]
 }

@@ -17,83 +17,85 @@
     "Java compiler working"
   ],
   "learningObjectives": [
-    "Use primitive types correctly in Java programs",
-    "Understand wrappers and autoboxing",
-    "Perform safe type casting",
-    "Detect overflow and precision loss",
-    "Use String and char properly",
-    "Select appropriate variable type for requirements"
+    "Name all eight primitives, their default values, and when widening versus narrowing applies",
+    "Contrast primitives with wrappers, autoboxing costs, and Integer caching pitfalls",
+    "Choose BigDecimal versus double for money and long versus int for identifiers and counts",
+    "Predict narrowing truncation (for example int 300 cast to byte) and silent int overflow",
+    "Model banking-style fields with defensible types and document ranges in APIs",
+    "Demonstrate widening and narrowing conversions with deterministic printed output"
   ],
   "sections": [
     {
       "type": "why",
-      "title": "Why Data Types and Variables matters",
-      "content": "Day 2 is where real Java programming begins. Data types and variables determine correctness, memory usage, and readability.\n\nIn interviews, type mistakes are immediate red flags. Choosing int where long is required, or using == for wrapper comparisons, leads to bugs.\n\nIn production, wrong numeric type can cause overflow in payments, analytics, or inventory counts. Correct type decisions prevent costly incidents.\n\nThis lesson teaches not just syntax but decision-making: what type to use, why, and what can go wrong."
+      "title": "Why data types and variables matter in real systems",
+      "content": "A ledger service ships a patch that stores daily transaction volume in an int because “we never get more than a million rows.” Six months later a marketing spike pushes ingest past two billion events in a reporting window. The counter wraps, dashboards show negative growth, and finance opens a severity-one because reconciliation no longer ties. The failure is not a mystery algorithm. It is a type range decision made without arithmetic on the worst day. The environment is a JVM service writing aggregates to a relational database. The lifecycle moment is sustained high throughput, not a single bad request.\n\nInterviewers who probe primitives versus wrappers are not checking whether you memorized eight keywords. They want evidence that you understand representation: bits, default values, nullability, autoboxing cost, and the difference between value semantics for int and reference semantics for Integer. The gap between a weak answer and a strong one is whether you can name a concrete production symptom when those semantics collide, such as NullPointerException after unboxing a null Integer or wrong branch logic after comparing wrappers with == outside the cache range.\n\nUse this four-step pattern whenever you justify a type. First, name the domain quantity and its legal range, including whether zero, negative, or null are meaningful. Second, name the Java type that matches that range with margin for growth, promoting to long or BigDecimal before the multiply, not after. Third, name a failure mode: overflow, truncation on narrowing cast, binary floating error, or null unboxing. Fourth, say how you verify: unit tests at boundaries, Math.addExact in hot paths, or schema documentation that states min, max, unit, and serialization format.\n\nAt scale, small type mistakes compound across services. One team exposes account identifiers as JSON numbers; JavaScript clients lose precision above 2^53 because Number is IEEE-754 double. Another team stores currency as double in DTOs; pennies drift in tax lines. A third team caches Integer instances and accidentally relies on identity equality for values outside -128 to 127, so two logical duplicates fail a deduplication check. Each bug traces back to the same root cause: the engineer treated types as interchangeable labels instead of contracts.\n\nThe answer that signals seniority ties types to observability and API design. You mention that public fields carrying money should be BigDecimal in the domain, serialized as string or integer cents at the edge, and never as raw double. You mention that counters and synthetic IDs that can exceed Integer.MAX_VALUE must be long everywhere they flow, including JDBC getters, message payloads, and UI models if the client can represent them. You mention that narrowing casts are acceptable only with explicit validation or proven invariants, because Java will not throw when high bits are discarded.\n\nIn daily work this topic shows up during code review, debugging, and on-call. A reviewer asks why a method returns Integer instead of int; you explain null as a tri-state signal versus Optional or a sentinel and the cost of accidental null unboxing. While debugging a flaky report, you discover byte casts from upstream integers that silently truncate. On-call you trace a payment mismatch to a single double addition in a discount path and propose migrating that module to BigDecimal with a controlled rollout. This day trains you to treat every variable declaration as a small design decision with measurable consequences."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Data Types and Variables",
-      "content": "Java has primitive and reference types.\n\n### Primitive types\n- byte, short, int, long\n- float, double\n- boolean\n- char\n\n### Wrapper classes\nEach primitive has a wrapper: Integer, Long, Double, Boolean, Character, etc.\n\n### Autoboxing / unboxing\nJava automatically converts between primitive and wrapper in many cases:\n- 'int' -> 'Integer' (autoboxing)\n- 'Integer' -> 'int' (unboxing)\n\n### Type casting\n- Widening: int -> long (safe)\n- Narrowing: long -> int (may lose data)\n\n### Overflow example\n'int max = Integer.MAX_VALUE; max + 1' wraps around to negative value.\n\n### String basics\nString is immutable. Each change creates a new object.\n\n### Interview framing\nAlways explain range, memory, and risk (overflow/precision) while selecting data types.\n\n### Satyverse — deeper path (theory → practice)\n**Primitives live on the stack (locals) or inside objects; wrappers are heap objects.** That is why `Integer` caches small values but `new Integer(500)` behaves differently in identity comparisons — prefer `Integer.valueOf` and always use `equals` for content.\n\n**Choosing types in real specs:** counts in UI → `int`; database bigserial / analytics volumes → `long`; money → `BigDecimal` with string constructors; measurements / ML features → `double` with awareness of epsilon.\n\n**Widening vs narrowing:** widening is silent and safe; narrowing casts are a code smell — log or validate before `(int) bigValue` in business logic.\n\n**Exercise habit:** for every arithmetic chain, ask “can this exceed `Integer.MAX_VALUE`?” If yes, promote to `long` *before* the multiply, not after."
+      "title": "Theory and Internals — primitives, wrappers, widening, narrowing, and numeric contracts",
+      "content": "### Plain-language overview\n\n**Java** splits values into **primitive types** and **reference types**. Primitives encode numeric magnitude, truth, or a single UTF-16 code unit directly in the variable; references point at **objects** on the **heap**, including wrappers such as **Integer**, **String**, and domain classes. Choosing the right representation is not a style preference. It is how you express legal ranges, nullability, arithmetic rules, and serialization contracts to the compiler, to your teammates, and to every downstream service that reads your data.\n\n### 1. The eight primitives and their defaults\n\nJava defines **byte** (8-bit), **short** (16-bit), **int** (32-bit), **long** (64-bit), **float** (32-bit IEEE-754), **double** (64-bit IEEE-754), **char** (16-bit UTF-16 code unit), and **boolean** (true/false, size JVM-specific). Instance fields of these types receive **default values** (zero, false, or `\\\\u0000`) when uninitialized; **local variables** have no default and must be assigned before use, which the compiler enforces. **Interview angle:** Candidates who blur “default zero” for fields with “maybe zero” for locals fail simple screening questions—state the rule in one sentence and move on to a concrete bug it prevents.\n\n| Type | Typical width | Default (field) | Common use |\n|------|----------------|-----------------|------------|\n| byte | 8-bit signed | 0 | binary buffers, tight arrays |\n| short | 16-bit signed | 0 | legacy protocols, rare |\n| int | 32-bit signed | 0 | default integral choice |\n| long | 64-bit signed | 0L | large counts, time as epoch millis |\n| float | 32-bit IEEE | 0.0f | graphics, ML features |\n| double | 64-bit IEEE | 0.0d | scientific, stats (not money) |\n| char | 16-bit UTF-16 | `\\\\u0000` | single code units, not full strings |\n| boolean | JVM-defined | false | flags |\n\n### 2. Wrapper classes and where they appear\n\nEach primitive except **void** has a wrapper (**Byte**, **Short**, **Integer**, **Long**, **Float**, **Double**, **Character**, **Boolean**). Wrappers are **immutable objects**; **Integer** can be **null**, **int** cannot. **Generics** in Java erase to **Object** bounds, so `List<int>` is illegal and you write `List<Integer>`. **Interview angle:** Explain that nullability is the main API design fork—if absent values are impossible, prefer **int**; if absence matters, use **Integer** with discipline or model with **Optional** at boundaries.\n\n### 3. Autoboxing and unboxing—convenience with a bill\n\nThe compiler inserts **valueOf**/**intValue**-style calls when you assign between primitives and wrappers. That convenience hides allocation and **NullPointerException** on unboxing. A hot loop that repeatedly boxes **int** into **Integer** can increase **GC** pressure enough to show up in production flame graphs. **Interview angle:** Say you would profile before micro-optimizing, but you know the escape hatch is primitive streams, specialized collections, or plain **int** locals.\n\n```java\nInteger a = 5;   // autobox\nint b = a;       // unboxing; NPE if a == null\n```\n\n### 4. Widening conversions—silent and safe\n\n**Widening** follows a defined order: **int** to **long** to **float** to **double**, and **int** to **double** directly, etc. The JVM converts without explicit cast when no precision loss occurs for the integral-to-integral widenings you are allowed. **Interview angle:** The subtle trap is **int** multiplication done **before** promotion—`long rows = count * width` can overflow in **int** land before the widen if both operands are **int**; cast or widen **first**.\n\n### 5. Narrowing casts—truncation, not rounding\n\n**Narrowing** requires an explicit cast. High-order bits drop away. The classic classroom example `int x = 300; byte b = (byte) x;` yields **44** because only the low eight bits survive. No exception throws. **Interview angle:** Tie this to binary protocols or careless downcasts from **long** database keys to **int** in DTOs—symptoms look like random small positives or negatives, not clean “overflow exceptions.”\n\n### 6. Integer caching and **==** versus **equals**\n\n**Integer.valueOf** caches a range (commonly **-128** to **127**). **==** compares references, so two **Integer** objects with value **200** may compare false while **100** compares true by accident. Always use **Objects.equals** or **intValue** comparison for values. **Interview angle:** This is a deliberate “gotcha” question—answer with cache range, then say you still never rely on **==** for wrappers in application logic.\n\n### 7. Literals: suffixes and readability\n\nInteger literals default to **int**; append **L** for **long**. Floating literals default to **double**; append **f** for **float**. Underscores in literals (Java 7+) improve readability: `1_000_000`. **Interview angle:** Mention compile-time errors when a literal exceeds **int** range without **L**—a real source of junior confusion in code review.\n\n### 8. **double** versus **BigDecimal** for money\n\n**double** stores binary fractions; many decimal values are not representable exactly, so `0.1 + 0.2` surprises beginners. **BigDecimal** with **String** constructors and explicit **scale** and **RoundingMode** models ledger math. **Interview angle:** Senior answers mention **rounding policy** (bankers vs half-up), **scale** for tax lines, and never serializing money as bare **double** across HTTP for public APIs.\n\n```java\ndouble d = 0.1 + 0.2;\n// BigDecimal exact path:\n// new BigDecimal(\"0.1\").add(new BigDecimal(\"0.2\"))\n```\n\n### 9. Integral overflow—wrap versus fail-fast\n\n**int** arithmetic wraps modulo 2³². **Math.addExact**, **multiplyExact**, and **toIntExact** throw **ArithmeticException** on overflow—use them when silent wrap is unacceptable. **Interview angle:** Connect to metrics, counters, and ID generation; say you promote to **long** **before** multiplication, then optionally check with **exact** helpers.\n\n### 10. **char**, **String**, and supplementary characters\n\n**char** holds one UTF-16 code unit; some Unicode code points need a surrogate **pair**, so iteration by **char** alone can split emoji. Production code often uses **codePoint** APIs for correctness. **String** is immutable; variables hold references to shared character data. **Interview angle:** Do not claim **char** is “a character” in all human languages—phrase it as a UTF-16 code unit.\n\n### 11. **var** for locals (Java 10+)\n\n**var** asks the compiler to infer the type from the initializer. It keeps code concise but can hide accidental boxed types when the right-hand side returns **Integer**. Use it when the initializer makes the intent obvious. **Interview angle:** State that **var** cannot appear without an initializer and is not allowed for parameters.\n\n### 12. Banking-style field choices (scenario table)\n\n| Field | Suggested type | Rationale |\n|-------|----------------|-----------|\n| Account balance | **BigDecimal** | exact decimal money |\n| Transactions per day | **int** or **long** | pick **long** if lifetime totals matter |\n| Account holder name | **String** | textual identity |\n| Active flag | **boolean** | two-state logic |\n| Account ID > 2³¹ | **long** | exceeds **int** range |\n\n**Interview angle:** Mention **null** meaning for **Boolean** in databases versus primitive **boolean**—tri-state flags need care.\n\n### 13. API documentation for numeric fields\n\nPublic models should document **min**, **max**, **unit** (cents versus major currency), **overflow behavior**, and serialization shape. For cross-language clients, **IDs** that may exceed **2⁵³** should be **strings** in JSON. **Interview angle:** This is how you connect Java types to frontend **Number** limitations without hand-waving.\n\n### 14. Sixty-second interview story\n\nJava primitives give you fast, null-free arithmetic with fixed ranges; wrappers add **heap objects**, **null**, and **generics** interop. Widening is implicit and safe when you widen the operands early enough; narrowing is explicit and **silently truncates** high bits—validate before you cast. Money belongs in **BigDecimal** with string construction and explicit rounding, not in **double**. Counters that can exceed **Integer.MAX_VALUE** belong in **long** end to end. Compare wrapper **values** with **equals**, never **==**, because caching only covers a small range. When overflow must not happen silently, use **Math.addExact** or widen before you multiply. After stating that, you sound like someone who has debugged real ledgers, not just read a tutorial.\n\n### 13b. Stack locals versus heap objects (mental model for interviews)\n\nLocal primitives live in **stack frames** and die when the frame pops; wrapper instances live on the **heap** until **GC** reclaims them. This distinction explains performance questions without pretending you always inspect assembly. A method that allocates a fresh **Integer** per loop iteration creates more **GC** traffic than one that accumulates in a primitive **int**. **Interview angle:** Pair this with **escape analysis** only if asked—many interviewers want the high-level story: primitives are dense values, wrappers are small immutable objects with headers.\n\n### 15. Floating-point specials: Infinity and NaN\n\n**double** division by zero yields **Infinity** or **NaN**, not a thrown **ArithmeticException** (integer division by zero still throws). **NaN** is not equal to itself with **==**; use **Double.isNaN**. Defensive financial code never relies on raw **double** comparisons without epsilon when the domain is continuous math, but money still prefers **BigDecimal**. **Interview angle:** Mention **IEEE-754** specials when debugging “why did my comparator sort break?”\n\n### 16. Choosing **int** versus **long** for time and IDs\n\nEpoch milliseconds and snowflake-style identifiers routinely exceed **int**. Store them as **long** in Java models, JDBC mappings, and message DTOs. **Interview angle:** If someone proposes **int** for “database auto-increment,” ask whether the table can exceed two billion rows or whether IDs are reassigned—migration pain arrives quietly.\n\n| Situation | Prefer | Pitfall if wrong |\n|-----------|--------|------------------|\n| Daily page views under a billion | **int** | Promote if totals aggregate globally |\n| Global impression counts | **long** | Silent **int** wrap in dashboards |\n| Money with tax lines | **BigDecimal** | **double** drift in reconciliation |\n| JSON to JS for huge IDs | **String** | Precision loss above 2⁵³ |\n\n### Satyverse drill — tie-down\n\nReproduce three prints in one scratch class: widening **int** to **long**, narrowing **int** to **byte** with a value over **127**, and **BigDecimal** addition of **\"0.1\"** and **\"0.2\"**. Say aloud what you expect before you run. Then explain **why** the **byte** result is not an error at runtime. That loop converts facts into recall.\n\n### 17. From assignment to discipline\n\nYour Day 2 assignment chains four ideas: list primitives and contrast **int** with **Integer**, explain narrowing with **300 → (byte) → 44**, justify banking types from a scenario table, and print widening versus narrowing for **1_000_000**. Treat each as a **checklist** you can reuse in code review: ranges documented, casts justified, money exact, identifiers wide enough, and comparisons using **equals** for wrappers. **Interview angle:** Close answers by naming **one test** you would add—boundary literal, **addExact** guard, or serialization round-trip.\n"
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "Basic — primitive matrix, defaults, and literal rules",
       "language": "java",
       "filename": "Day2Basic.java",
-      "code": "package arch.day2;\n\npublic class Day2Basic {\n    public static void main(String[] args) {\n        int age = 24;\n        long users = 3_000_000_000L;\n        double price = 19.99;\n        boolean active = true;\n        char grade = 'A';\n        System.out.println(\"age = \" + age);\n        System.out.println(\"users = \" + users);\n        System.out.println(\"price = \" + price);\n        System.out.println(\"active = \" + active);\n        System.out.println(\"grade = \" + grade);\n    }\n}",
+      "code": "package arch.day2;\n\n/**\n * Day 2 basic: static tables for primitives vs wrappers (conceptual).\n * // Spring services still map these types to JDBC and JSON every day.\n */\npublic class Day2Basic {\n\n    public static void main(String[] args) {\n        System.out.println(\"=== Eight primitives (width + default field value) ===\");\n        System.out.println(\"byte    8-bit   default 0\");\n        System.out.println(\"short   16-bit  default 0\");\n        System.out.println(\"int     32-bit  default 0\");\n        System.out.println(\"long    64-bit  default 0L\");\n        System.out.println(\"float   32-bit  IEEE  default 0.0f\");\n        System.out.println(\"double  64-bit  IEEE  default 0.0d\");\n        System.out.println(\"char    16-bit  UTF-16 unit  default \\\\u0000\");\n        System.out.println(\"boolean JVM-specific           default false\");\n        System.out.println();\n        System.out.println(\"--- note: locals have no default; fields of these types do ---\");\n        System.out.println();\n        System.out.println(\"=== Wrapper highlights ===\");\n        System.out.println(\"Integer can be null; int cannot — unboxing NPE is real.\");\n        System.out.println(\"List<int> illegal; List<Integer> required for generics.\");\n        System.out.println(\"Prefer Integer.valueOf over new Integer in modern code.\");\n        System.out.println();\n        System.out.println(\"=== Literal suffixes ===\");\n        System.out.println(\"long literal needs L: 3_000_000_000L\");\n        System.out.println(\"float literal needs f: 1.5f\");\n        System.out.println(\"double default: 1.5 or 1.5d\");\n        System.out.println(\"underscores ok: 1_000_000\");\n        System.out.println();\n        System.out.println(\"=== Sample locals (deterministic) ===\");\n        int units = 1_024;\n        long bytes = units * 4L;\n        double ratio = units / (double) 10_000;\n        boolean on = true;\n        char marker = 'Z';\n        System.out.println(\"units=\" + units + \" bytes=\" + bytes);\n        System.out.println(\"ratio=\" + ratio + \" on=\" + on + \" marker=\" + marker);\n        System.out.println(\"done\");\n    }\n}",
       "level": "basic",
-      "output": "age = 24\nusers = 3000000000\nprice = 19.99\nactive = true\ngrade = A\n",
-      "description": "Declare primitives (int, long, double, boolean, char) and print them — core of Java’s type system."
+      "output": "=== Eight primitives (width + default field value) ===\nbyte    8-bit   default 0\nshort   16-bit  default 0\nint     32-bit  default 0\nlong    64-bit  default 0L\nfloat   32-bit  IEEE  default 0.0f\ndouble  64-bit  IEEE  default 0.0d\nchar    16-bit  UTF-16 unit  default \\u0000\nboolean JVM-specific           default false\n\n--- note: locals have no default; fields of these types do ---\n\n=== Wrapper highlights ===\nInteger can be null; int cannot — unboxing NPE is real.\nList<int> illegal; List<Integer> required for generics.\nPrefer Integer.valueOf over new Integer in modern code.\n\n=== Literal suffixes ===\nlong literal needs L: 3_000_000_000L\nfloat literal needs f: 1.5f\ndouble default: 1.5 or 1.5d\nunderscores ok: 1_000_000\n\n=== Sample locals (deterministic) ===\nunits=1024 bytes=4096\nratio=0.1024 on=true marker=Z\ndone\n",
+      "description": "Print-only reference for primitive widths, wrapper nullability, literal suffixes, and a tiny numeric demo — traceable without randomness."
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "Intermediate — four type-system incidents teams actually debug",
       "language": "java",
       "filename": "Day2Intermediate.java",
-      "code": "package arch.day2;\n\npublic class Day2Intermediate {\n    public static void main(String[] args) {\n        Integer boxed = 50;\n        int unboxed = boxed;\n        long amount = 1000L;\n        int narrowed = (int) amount;\n        System.out.println(\"boxed = \" + boxed + \", unboxed = \" + unboxed);\n        System.out.println(\"narrowed = \" + narrowed);\n        int max = Integer.MAX_VALUE;\n        System.out.println(\"overflow demo = \" + (max + 1));\n    }\n}",
+      "code": "package arch.day2;\n\nimport java.math.BigDecimal;\n\n/**\n * Day 2 intermediate: four labelled scenarios, deterministic println only.\n * // Each scenario mirrors a code-review comment you might write on a junior PR.\n */\npublic class Day2Intermediate {\n\n    static void divider(String label) {\n        System.out.println(\"########################################\");\n        System.out.println(\"# \" + label);\n        System.out.println(\"########################################\");\n    }\n\n    static void scenario1() {\n        divider(\"Scenario 1: happy widening path\");\n        System.out.println(\"--- Scenario 1: happy widening path ---\");\n        int daily = 900_000;\n        long annual = daily * 365L;\n        double approx = daily;\n        System.out.println(\"daily int=\" + daily + \" annual long=\" + annual);\n        System.out.println(\"widened to double=\" + approx);\n        System.out.println(\"note: multiply used 365L so product stays in long range\");\n        System.out.println();\n    }\n\n    static void scenario2() {\n        divider(\"Scenario 2: narrowing to byte\");\n        System.out.println(\"--- Scenario 2: narrowing byte from int 300 ---\");\n        int big = 300;\n        byte narrow = (byte) big;\n        System.out.println(\"int value=\" + big + \" (byte) -> \" + narrow);\n        System.out.println(\"why: only low 8 bits kept; no exception thrown\");\n        System.out.println(\"review action: grep for (byte) casts in money or id paths\");\n        System.out.println();\n    }\n\n    static void scenario3() {\n        divider(\"Scenario 3: Integer equality\");\n        System.out.println(\"--- Scenario 3: Integer == trap outside cache ---\");\n        Integer a = Integer.valueOf(200);\n        Integer b = Integer.valueOf(200);\n        System.out.println(\"a.equals(b)=\" + a.equals(b));\n        System.out.println(\"a == b (values 200)=\" + (a == b));\n        System.out.println(\"fix: compare primitives or use equals / Objects.equals\");\n        System.out.println(\"cache trivia: -128..127 often interned; do not rely on it\");\n        System.out.println();\n    }\n\n    static void scenario4() {\n        divider(\"Scenario 4: decimal sums\");\n        System.out.println(\"--- Scenario 4: double versus BigDecimal for cents ---\");\n        double d = 0.1 + 0.2;\n        BigDecimal bd = new BigDecimal(\"0.1\").add(new BigDecimal(\"0.2\"));\n        System.out.println(\"double sum=\" + d);\n        System.out.println(\"BigDecimal sum=\" + bd.toPlainString());\n        System.out.println(\"money rule: BigDecimal + string ctor + explicit scale in real code\");\n        System.out.println(\"never use double for tax lines or invoice totals\");\n        System.out.println();\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"Day2Intermediate — four production-flavoured traces\");\n        System.out.println();\n        scenario1();\n        scenario2();\n        scenario3();\n        scenario4();\n        System.out.println(\"all scenarios complete\");\n    }\n}",
       "level": "intermediate",
-      "output": "boxed = 50, unboxed = 50\nnarrowed = 1000\noverflow demo = -2147483648\n",
-      "description": "Autoboxing/unboxing, narrowing cast, and silent int overflow — common interview talking points."
+      "output": "Day2Intermediate — four production-flavoured traces\n\n########################################\n# Scenario 1: happy widening path\n########################################\n--- Scenario 1: happy widening path ---\ndaily int=900000 annual long=328500000\nwidened to double=900000.0\nnote: multiply used 365L so product stays in long range\n\n########################################\n# Scenario 2: narrowing to byte\n########################################\n--- Scenario 2: narrowing byte from int 300 ---\nint value=300 (byte) -> 44\nwhy: only low 8 bits kept; no exception thrown\nreview action: grep for (byte) casts in money or id paths\n\n########################################\n# Scenario 3: Integer equality\n########################################\n--- Scenario 3: Integer == trap outside cache ---\na.equals(b)=true\na == b (values 200)=false\nfix: compare primitives or use equals / Objects.equals\ncache trivia: -128..127 often interned; do not rely on it\n\n########################################\n# Scenario 4: decimal sums\n########################################\n--- Scenario 4: double versus BigDecimal for cents ---\ndouble sum=0.30000000000000004\nBigDecimal sum=0.3\nmoney rule: BigDecimal + string ctor + explicit scale in real code\nnever use double for tax lines or invoice totals\n\nall scenarios complete\n",
+      "description": "Four production-shaped stories: widen early, silent narrowing, wrapper equality, and decimal money — all deterministic output."
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "Advanced — widening/narrowing calculator + type-choice matrix",
       "language": "java",
       "filename": "Day2Advanced.java",
-      "code": "package arch.day2;\n\nimport java.math.BigDecimal;\n\npublic class Day2Advanced {\n    public static void main(String[] args) {\n        double wrong = 0.1 + 0.2;\n        BigDecimal safe = new BigDecimal(\"0.1\").add(new BigDecimal(\"0.2\"));\n        System.out.println(\"double result = \" + wrong);\n        System.out.println(\"BigDecimal result = \" + safe);\n        long impressions = 5_000_000_000L;\n        if (impressions > Integer.MAX_VALUE) {\n            System.out.println(\"Use long here — int would overflow.\");\n        }\n    }\n}",
+      "code": "package arch.day2;\n\nimport java.util.LinkedHashMap;\nimport java.util.Map;\n\n/**\n * Day 2 advanced: deterministic widening/narrowing demo (assignment-aligned).\n * // Frameworks still boil down to these casts at DTO boundaries.\n */\npublic class Day2Advanced {\n\n    static void printConversionTable(int x) {\n        long asLong = x;\n        double asDouble = x;\n        short asShort = (short) x;\n        byte asByte = (byte) x;\n        System.out.println(\"source int: \" + x);\n        System.out.println(\"long:   \" + asLong + \"   (implicit widen)\");\n        System.out.println(\"double: \" + asDouble + \" (implicit widen)\");\n        System.out.println(\"short:  \" + asShort + \" (explicit narrow)\");\n        System.out.println(\"byte:   \" + asByte + \" (explicit narrow)\");\n    }\n\n    static void printNarrowingLegend() {\n        System.out.println(\"legend: narrowing never throws; validate ranges upstream\");\n    }\n\n    static void printTriageTable() {\n        System.out.println(\"symptom                         | first check\");\n        System.out.println(\"--------------------------------|----------------------------\");\n        System.out.println(\"random small positives in logs  | narrowing cast from long\");\n        System.out.println(\"negative dashboard totals       | int counter overflow\");\n        System.out.println(\"off-by-cent reconciliation      | double in money path\");\n        System.out.println(\"NPE in pricing                  | null Integer unbox\");\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"Day2Advanced start\");\n        System.out.println(\"=== Block 1: assignment value 1_000_000 ===\");\n        printConversionTable(1_000_000);\n        printNarrowingLegend();\n        System.out.println();\n\n        System.out.println(\"=== Block 2: overflow guard pattern ===\");\n        int a = 2_000_000_000;\n        int b = 2_000_000_000;\n        System.out.println(\"operands a=\" + a + \" b=\" + b);\n        try {\n            int bad = Math.addExact(a, b);\n            System.out.println(\"unexpected sum=\" + bad);\n        } catch (ArithmeticException ex) {\n            System.out.println(\"addExact caught overflow for int + int\");\n        }\n        long good = (long) a + (long) b;\n        System.out.println(\"promoted sum long=\" + good);\n        System.out.println(\"plain int add would wrap silently — avoid for money and metrics\");\n        System.out.println();\n\n        System.out.println(\"=== Block 3: banking field decision matrix ===\");\n        Map<String, String> row = new LinkedHashMap<>();\n        row.put(\"balance\", \"BigDecimal + string ctor + RoundingMode in prod\");\n        row.put(\"tx/day\", \"int ok; use long if lifetime totals\");\n        row.put(\"name\", \"String\");\n        row.put(\"active\", \"boolean (watch null vs tri-state)\");\n        row.put(\"acctId\", \"long if values exceed int\");\n        for (Map.Entry<String, String> e : row.entrySet()) {\n            System.out.println(e.getKey() + \" -> \" + e.getValue());\n        }\n        System.out.println();\n        System.out.println(\"=== Bonus triage table (on-call voice) ===\");\n        printTriageTable();\n        System.out.println();\n        System.out.println(\"reminder: promote to long before multiply when counts can grow\");\n        System.out.println(\"reminder: BigDecimal uses string ctor to avoid double pollution\");\n        System.out.println(\"reminder: compare boxed values with equals, not ==\");\n        System.out.println(\"reminder: document JSON id encoding for browser clients\");\n        System.out.println(\"reminder: run golden tests on any change to numeric DTO fields\");\n        System.out.println(\"Day2Advanced end\");\n    }\n}",
       "level": "advanced",
-      "output": "double result = 0.30000000000000004\nBigDecimal result = 0.3\nUse long here — int would overflow.\n",
-      "description": "Compare double vs BigDecimal for decimals; use long when values exceed int range."
+      "output": "Day2Advanced start\n=== Block 1: assignment value 1_000_000 ===\nsource int: 1000000\nlong:   1000000   (implicit widen)\ndouble: 1000000.0 (implicit widen)\nshort:  16960 (explicit narrow)\nbyte:   64 (explicit narrow)\nlegend: narrowing never throws; validate ranges upstream\n\n=== Block 2: overflow guard pattern ===\noperands a=2000000000 b=2000000000\naddExact caught overflow for int + int\npromoted sum long=4000000000\nplain int add would wrap silently — avoid for money and metrics\n\n=== Block 3: banking field decision matrix ===\nbalance -> BigDecimal + string ctor + RoundingMode in prod\ntx/day -> int ok; use long if lifetime totals\nname -> String\nactive -> boolean (watch null vs tri-state)\nacctId -> long if values exceed int\n\n=== Bonus triage table (on-call voice) ===\nsymptom                         | first check\n--------------------------------|----------------------------\nrandom small positives in logs  | narrowing cast from long\nnegative dashboard totals       | int counter overflow\noff-by-cent reconciliation      | double in money path\nNPE in pricing                  | null Integer unbox\n\nreminder: promote to long before multiply when counts can grow\nreminder: BigDecimal uses string ctor to avoid double pollution\nreminder: compare boxed values with equals, not ==\nreminder: document JSON id encoding for browser clients\nreminder: run golden tests on any change to numeric DTO fields\nDay2Advanced end\n",
+      "description": "Three blocks: full widen/narrow trace for 1_000_000, addExact versus long promotion, and a printed matrix echoing the banking scenario."
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 2",
+      "title": "Sequence — from API field to JDBC bind and back",
       "diagramType": "sequence",
-      "description": "Visual model for Data Types and Variables",
-      "plantuml": "@startuml\ntitle Day 2 - Type Selection\nstart\n:Requirement arrives;\nif (Whole number?) then (yes)\n  if (Large range?) then (yes)\n    :Use long;\n  else (no)\n    :Use int;\n  endif\nelse (no)\n  if (Decimal financial?) then (yes)\n    :Use BigDecimal;\n  else (no)\n    :Use double;\n  endif\nendif\nstop\n@enduml"
+      "description": "Shows how a REST DTO field typed as long flows through a service, JDBC prepared statement, database, and back—highlighting where widening, narrowing, or JSON precision could break assumptions.",
+      "plantuml": "@startuml\ntitle Day 2 — Type contract across layers\nactor Client\nparticipant \"Controller DTO\\n(long id)\" as DTO\nparticipant \"Service layer\" as SVC\nparticipant \"JDBC PreparedStatement\" as JDBC\nparticipant \"Database BIGINT\" as DB\nparticipant \"JSON serializer\" as JSON\nparticipant \"Frontend runtime\" as FE\nClient -> DTO : HTTP GET /accounts/{id}\nDTO -> SVC : validate id > 0\nSVC -> JDBC : setLong(1, id)\nJDBC -> DB : bind BIGINT\nDB --> JDBC : fetch row\nJDBC --> SVC : getLong(\"id\")\nSVC --> DTO : map to response DTO\nDTO -> JSON : write number or string\nalt id fits JS safe integer\n  JSON -> FE : numeric JSON\nelse id beyond 2^53\n  JSON -> FE : string id (recommended)\n  note right of FE : Avoid Number precision loss\nend\n@enduml"
     },
     {
       "type": "pitfalls",
       "title": "Common Pitfalls",
       "items": [
-        "Using int where long is required for large values.",
-        "Using double for money calculations instead of BigDecimal.",
-        "Forgetting L suffix for long literals.",
-        "Assuming narrowing cast is always safe.",
-        "Using wrapper == comparison instead of equals."
+        "Using int for global counters or snowflake IDs — production symptom is negative totals or duplicate merges after wrap; detect via metrics anomalies and integration tests at Integer.MAX_VALUE boundaries; fix by promoting to long everywhere and backfilling schemas.",
+        "Storing currency in double — ledgers disagree by cents under load; detect with reconciliation jobs and property-based tests; fix by migrating domain math to BigDecimal with explicit scale and rounding mode.",
+        "Comparing Integer values with == outside the cache range — flaky equality in caches or dedup maps; detect with unit tests using 200 and 200; fix by using Objects.equals or primitive unbox after null check.",
+        "Narrowing long database keys to int in DTOs — silent truncation to garbage IDs; detect when clients log impossible small IDs; fix by mapping BIGINT to long end-to-end and rejecting overflow casts.",
+        "Multiplying two int quantities before promoting to long — overflow then widen is too late; detect with Math.addExact/multiplyExact in staging; fix by casting operands to long before the multiply.",
+        "Returning null Integer and unboxing to int — intermittent NullPointerException in business logic; detect with static analysis and Optional at boundaries; fix by using int with sentinel, or guard null explicitly.",
+        "Serializing large IDs as JSON numbers for JavaScript clients — user sees wrong account in UI; detect in browser console with rounded IDs; fix by encoding IDs as strings or using BigInt on the client.",
+        "Relying on double equality without epsilon for continuous math — rare branch flips in sorting or thresholds; detect with fuzzy tests; fix with Double.compare, tolerances, or decimal types suited to the domain."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - Implement Data Types and Variables",
-      "problem": "Implement a Java program for **Data Types and Variables** with real input and edge-case handling.\n\nRequirements:\n1. Accept at least 5 sample cases.\n2. Print clear intermediate output.\n3. Include one invalid/boundary case.\n4. Explain time complexity in comments.\n5. Keep naming and structure interview-ready.",
+      "title": "Exercise — Day 2 assignment: primitives, banking types, widening/narrowing",
+      "problem": "Tie together the four Day 2 assignment themes in one `arch.day2` program named `Day2Exercise`.\n\nRequirements:\n1. Print a numbered list of all eight Java primitive types with their bit widths and one sentence on when you pick each (conceptual alignment with **Primitives vs Wrapper Classes**).\n2. Demonstrate narrowing by casting `int 300` to `byte` and printing both values with a one-line explanation of the bit pattern (alignment with **Type Casting and Overflow**).\n3. Print a small Markdown-style table (plain text is fine) choosing Java types for account balance, daily transaction count, holder name, active flag, and account ID that may exceed two billion—justify each in one line (alignment with **Choosing the Right Data Type**).\n4. Start from `int x = 1_000_000;` — widen implicitly to `long` and `double`, then narrow explicitly to `short` and `byte`, printing all five values with labels (alignment with **Type Conversion Calculator**).\n5. Add a comment noting that every step is O(1) time and O(1) extra space because only scalar conversions run.",
       "hints": [
-        "Start with a straightforward solution first.",
-        "Write at least one edge case test.",
-        "Refactor variable names for readability."
+        "Use `Integer.valueOf` scenarios separately from `==` versus `equals` if you add a bonus print, but keep the required output deterministic.",
+        "For money in the table, insist on `BigDecimal` with a note about string constructors; never recommend `double` for balances.",
+        "When narrowing, call out that Java does not throw—your defence is range checks or wider types upstream."
       ],
-      "solution": "package arch.day2;\nimport java.math.BigDecimal;\n\npublic class Day2Advanced {\n    public static void main(String[] args) {\n        double wrong = 0.1 + 0.2;\n        BigDecimal safe = new BigDecimal(\"0.1\").add(new BigDecimal(\"0.2\"));\n\n        System.out.println(\"double result = \" + wrong);\n        System.out.println(\"BigDecimal result = \" + safe);\n\n        long impressions = 5_000_000_000L;\n        if (impressions > Integer.MAX_VALUE) {\n            System.out.println(\"Use long, int is unsafe here.\");\n        }\n    }\n}\n",
-      "difficulty": "Beginner"
+      "solution": "package arch.day2;\n\n/**\n * Day 2 exercise — primitives recap, narrowing demo, banking types, widen/narrow trace.\n * Complexity: O(1) time and O(1) space (scalar operations only).\n */\npublic class Day2Exercise {\n\n    public static void main(String[] args) {\n        System.out.println(\"1) Primitives (width + pick rule)\");\n        System.out.println(\"byte    8b  compact arrays/protocol fields\");\n        System.out.println(\"short  16b  seldom; prefer int unless measured\");\n        System.out.println(\"int    32b  default integral choice\");\n        System.out.println(\"long   64b  large counts, epoch millis, wide IDs\");\n        System.out.println(\"float  32b  graphics/ML features; not money\");\n        System.out.println(\"double 64b  scientific stats; not money\");\n        System.out.println(\"char   16b  single UTF-16 code unit\");\n        System.out.println(\"boolean    flags; not numeric\");\n        System.out.println();\n\n        System.out.println(\"2) Narrowing int 300 -> byte\");\n        int wide = 300;\n        byte narrow = (byte) wide;\n        System.out.println(\"int=\" + wide + \" byte=\" + narrow);\n        System.out.println(\"explain: low 8 bits of 300 are 00101100 -> 44\");\n        System.out.println();\n\n        System.out.println(\"3) Banking field picks\");\n        System.out.println(\"balance | BigDecimal | exact decimal ledger math\");\n        System.out.println(\"tx/day  | int        | safe if domain < 2^31-1; else long\");\n        System.out.println(\"name    | String     | textual data\");\n        System.out.println(\"active  | boolean    | two-state flag\");\n        System.out.println(\"acctId  | long       | exceeds int range comfortably\");\n        System.out.println();\n\n        System.out.println(\"4) Widening and narrowing 1_000_000\");\n        int x = 1_000_000;\n        long asLong = x;\n        double asDouble = x;\n        short asShort = (short) x;\n        byte asByte = (byte) x;\n        System.out.println(\"int:    \" + x);\n        System.out.println(\"long:   \" + asLong);\n        System.out.println(\"double: \" + asDouble);\n        System.out.println(\"short:  \" + asShort + \" (narrow)\");\n        System.out.println(\"byte:   \" + asByte + \" (narrow)\");\n    }\n}\n"
     },
     {
       "type": "interview",
@@ -101,7 +103,7 @@
       "conceptual": [
         {
           "question": "List Java primitive types and their main use cases.",
-          "answer": "byte/short/int/long for integers (int default choice; long for large counts); float/double for decimals (double default); boolean for flags; char for single characters.",
+          "answer": "For **List Java primitive types and their main use cases.**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -115,7 +117,7 @@
         },
         {
           "question": "What is the difference between int and Integer?",
-          "answer": "int is a primitive stored by value; Integer is an object wrapper that can be null and is used with generics and collections.",
+          "answer": "For **What is the difference between int and Integer?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -129,7 +131,7 @@
         },
         {
           "question": "What is autoboxing? Give an example.",
-          "answer": "Autoboxing converts int to Integer automatically, e.g. Integer x = 5;. Unboxing is int y = x;.",
+          "answer": "For **What is autoboxing? Give an example.**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -143,7 +145,7 @@
         },
         {
           "question": "Why can int arithmetic overflow silently?",
-          "answer": "Integral types wrap around modulo 2^bits—Integer.MAX_VALUE + 1 becomes Integer.MIN_VALUE without throwing unless you use methods like Math.addExact.",
+          "answer": "For **Why can int arithmetic overflow silently?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -157,7 +159,7 @@
         },
         {
           "question": "When should you use BigDecimal instead of double for money?",
-          "answer": "BigDecimal gives exact decimal arithmetic; double uses binary floating-point and can show 0.1 + 0.2 != 0.3 style errors.",
+          "answer": "For **When should you use BigDecimal instead of double for money?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -171,7 +173,7 @@
         },
         {
           "question": "What is widening vs narrowing conversion?",
-          "answer": "Widening (e.g. int to long) is safe implicitly; narrowing (long to int) requires explicit cast and may lose high bits.",
+          "answer": "For **What is widening vs narrowing conversion?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -185,7 +187,7 @@
         },
         {
           "question": "What does the L suffix mean in literals?",
-          "answer": "123L is a long literal; without L, integer literals default to int and may overflow at compile time if too large.",
+          "answer": "For **What does the L suffix mean in literals?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -199,7 +201,7 @@
         },
         {
           "question": "Can you use == to compare two Integer objects?",
-          "answer": "== compares references; two different Integer objects with value 200 may not be ==. Use equals() for value comparison, or compare unboxed ints.",
+          "answer": "For **Can you use == to compare two Integer objects?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -213,7 +215,7 @@
         },
         {
           "question": "What is Unicode and how does char relate?",
-          "answer": "Java char is 16-bit UTF-16 code units; supplementary characters may need two chars (surrogate pairs).",
+          "answer": "For **What is Unicode and how does char relate?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -227,7 +229,7 @@
         },
         {
           "question": "What is the default value of an uninitialized instance int field?",
-          "answer": "0. Local variables must be assigned before use; fields get default values.",
+          "answer": "For **What is the default value of an uninitialized instance int field?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -241,7 +243,7 @@
         },
         {
           "question": "Why might you choose short or byte over int?",
-          "answer": "Rarely for space in large arrays or binary protocols; usually int is simpler unless you have measured memory constraints.",
+          "answer": "For **Why might you choose short or byte over int?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -255,7 +257,7 @@
         },
         {
           "question": "What is NaN in floating-point and how does == behave with it?",
-          "answer": "NaN means not-a-number; NaN == NaN is false—you must use Float.isNaN or Double.isNaN.",
+          "answer": "For **What is NaN in floating-point and how does == behave with it?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -269,7 +271,7 @@
         },
         {
           "question": "What is var (Java 10+) and when is it allowed for locals?",
-          "answer": "var infers the type of a local variable from the initializer; it cannot be used without an initializer or for parameters.",
+          "answer": "For **What is var (Java 10+) and when is it allowed for locals?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -283,7 +285,7 @@
         },
         {
           "question": "Why avoid float for loop counters or money?",
-          "answer": "float has limited precision; money needs exact decimals (BigDecimal); loop indices are clearer as int/long.",
+          "answer": "For **Why avoid float for loop counters or money?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -297,7 +299,7 @@
         },
         {
           "question": "What does underscore in numeric literals do (Java 7+)?",
-          "answer": "Underscores in literals like 1_000_000 improve readability and are ignored by the compiler.",
+          "answer": "For **What does underscore in numeric literals do (Java 7+)?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Data Types and Variables** show up in **production** debugging or **on-call**?",
@@ -308,12 +310,40 @@
               "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Underscores in literals like 1_000_000 improve readability and are ignored by the compiler. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
             }
           ]
+        },
+        {
+          "question": "When would you expose a numeric account identifier as a String in JSON even though Java uses long internally?",
+          "answer": "JavaScript Number is IEEE-754 double, so integers above 2^53 are not all representable. If your account IDs can exceed that safe range—or if you want to future-proof public APIs—you serialize identifiers as strings in JSON while keeping long in the JVM domain model. **Interview angle:** This is a cross-language contract decision, not superstition; you verify by reading OpenAPI examples, adding a contract test for the UI client, and documenting that consumers must not parse those fields as Number. You still validate format with regex or Long.parseLong after receiving the string on the server. Backend-to-backend JSON might still use numbers if both ends use 64-bit integers, but anything touching browsers or dynamic languages gets strings when magnitude is unknown.",
+          "followUps": [
+            {
+              "question": "Does using String IDs break JDBC or JPA mappings?",
+              "answer": "No—the database column stays BIGINT; only the wire format changes. JPA and JDBC still map BIGINT to long in Java. The DTO layer converts long to String for JSON responses and parses String back to long on input with validation. **Interview angle:** Mention that OpenAPI generators often emit String for such fields when you annotate them correctly, preventing client-side rounding bugs that look like intermittent authorization failures when the wrong account is addressed. For Day 2 specifically, connect the follow-up to primitives versus wrappers, widening before multiply, narrowing truncation, or BigDecimal for money, and end with how you would prove the fix in CI with a focused test."
+            },
+            {
+              "question": "What test would you add to catch a client rounding bug?",
+              "answer": "Create an integration test that serializes a long ID greater than 2^53 minus one, sends it through the same JSON mapper the API uses, and asserts the client stub (or a Node script) keeps the exact decimal digits when the field is a string. If the field is numeric, assert the value changes—demonstrating the bug. **Interview angle:** This shows you think about end-to-end contracts, not only Java correctness. For Day 2 specifically, connect the follow-up to primitives versus wrappers, widening before multiply, narrowing truncation, or BigDecimal for money, and end with how you would prove the fix in CI with a focused test."
+            }
+          ]
+        },
+        {
+          "question": "Walk through `int x = 300; byte b = (byte) x;`—what prints and why is there no exception?",
+          "answer": "For **Walk through `int x = 300; byte b = (byte) x;`—what prints and why is there no exception?**, start from JVM internals: primitive values are stored directly in local variable slots and on the operand stack, while references point to heap objects whose headers, alignment, and card-table writes affect GC behavior. That mechanical difference is why casual boxing or wide object graphs increase allocation rate and young-generation pressure in real services. In production, this shows up as higher p95 latency during burst traffic, elevated allocation rate in JFR, and occasional timeouts when stop-the-world pauses overlap with request spikes. The diagnostic path is concrete: run `jcmd <pid> GC.heap_info` for heap layout, `jstat -gcutil <pid> 1000 10` for GC churn, and `javap -c` on suspect classes to confirm implicit boxing or widening bytecode. Version behavior also matters: Java 8 defaults and ergonomics differ from Java 11 container-awareness, Java 17 UTF-8 default charset, and Java 21 runtime/JIT improvements. A Staff-level answer ties data type choice to observability, failure mode, and JVM-version rollout safety.",
+          "followUps": [
+            {
+              "question": "How is this different from overflow on addition?",
+              "answer": "Addition overflow on **int** wraps modulo 2³² without throwing unless you use **addExact**. Narrowing casts also discard information but are explicit in source; reviewers can grep for `(byte)` or `(short)` and demand justification. **Interview angle:** Say you would add tests at the maximum expected source values and prefer wider types in public APIs so downstream layers never need unsafe casts. For Day 2 specifically, connect the follow-up to primitives versus wrappers, widening before multiply, narrowing truncation, or BigDecimal for money, and end with how you would prove the fix in CI with a focused test."
+            },
+            {
+              "question": "When would narrowing still be acceptable?",
+              "answer": "When a binary frame or hardware register truly defines an eight-bit field and you have validated the **int** is already masked to **0..255** or **-128..127** upstream. You document the invariant beside the cast and test boundary values. **Interview angle:** Never accept narrowing from a **long** database key “just because the DTO field was int”—that is how random IDs appear in logs. For Day 2 specifically, connect the follow-up to primitives versus wrappers, widening before multiply, narrowing truncation, or BigDecimal for money, and end with how you would prove the fix in CI with a focused test."
+            }
+          ]
         }
       ],
       "codeBased": [
         {
           "question": "Write code that demonstrates int overflow.",
-          "answer": "int x = Integer.MAX_VALUE; System.out.println(x + 1); prints -2147483648.",
+          "answer": "// int x = Integer.MAX_VALUE; System.out.println(x + 1); prints -2147483648. // I would run this in a scratch main, capture stdout in a golden test, and pair-review any cast with a comment explaining the invariant that keeps high bits unused. // In production services I mirror the same pattern in module tests so regressions surface in CI instead of reconciliation. // I also log boundary values when narrowing casts are unavoidable so on-call can trace bad rows quickly.",
           "followUps": [
             {
               "question": "What breaks if this **Data Types and Variables** approach, snippet, or config is wrong?",
@@ -327,7 +357,7 @@
         },
         {
           "question": "Show widening from int to long without cast.",
-          "answer": "long y = 1_000_000_000 * 3L; or assign int to long variable.",
+          "answer": "// long y = 1_000_000_000 * 3L; or assign int to long variable. // I would run this in a scratch main, capture stdout in a golden test, and pair-review any cast with a comment explaining the invariant that keeps high bits unused. // In production services I mirror the same pattern in module tests so regressions surface in CI instead of reconciliation. // I also log boundary values when narrowing casts are unavoidable so on-call can trace bad rows quickly.",
           "followUps": [
             {
               "question": "What breaks if this **Data Types and Variables** approach, snippet, or config is wrong?",
@@ -341,7 +371,7 @@
         },
         {
           "question": "Show narrowing cast from long to int with data loss.",
-          "answer": "long big = 3000000000L; int small = (int) big; print both—value truncates to lower 32 bits.",
+          "answer": "// long big = 3000000000L; int small = (int) big; print both—value truncates to lower 32 bits. // I would run this in a scratch main, capture stdout in a golden test, and pair-review any cast with a comment explaining the invariant that keeps high bits unused. // In production services I mirror the same pattern in module tests so regressions surface in CI instead of reconciliation. // I also log boundary values when narrowing casts are unavoidable so on-call can trace bad rows quickly.",
           "followUps": [
             {
               "question": "What breaks if this **Data Types and Variables** approach, snippet, or config is wrong?",
@@ -355,7 +385,7 @@
         },
         {
           "question": "Compare double sum 0.1+0.2 vs BigDecimal sum.",
-          "answer": "double prints imprecise; new BigDecimal(\"0.1\").add(new BigDecimal(\"0.2\")) is exact for decimal scale.",
+          "answer": "// double prints imprecise; new BigDecimal(\"0.1\").add(new BigDecimal(\"0.2\")) is exact for decimal scale. // I would run this in a scratch main, capture stdout in a golden test, and pair-review any cast with a comment explaining the invariant that keeps high bits unused. // In production services I mirror the same pattern in module tests so regressions surface in CI instead of reconciliation. // I also log boundary values when narrowing casts are unavoidable so on-call can trace bad rows quickly.",
           "followUps": [
             {
               "question": "What breaks if this **Data Types and Variables** approach, snippet, or config is wrong?",
@@ -369,7 +399,7 @@
         },
         {
           "question": "Parse user input string \"42\" to int safely.",
-          "answer": "Use Integer.parseInt with try/catch NumberFormatException for invalid input.",
+          "answer": "// Use Integer.parseInt with try/catch NumberFormatException for invalid input. // I would run this in a scratch main, capture stdout in a golden test, and pair-review any cast with a comment explaining the invariant that keeps high bits unused. // In production services I mirror the same pattern in module tests so regressions surface in CI instead of reconciliation. // I also log boundary values when narrowing casts are unavoidable so on-call can trace bad rows quickly.",
           "followUps": [
             {
               "question": "What breaks if this **Data Types and Variables** approach, snippet, or config is wrong?",
@@ -383,7 +413,7 @@
         },
         {
           "question": "Create a List<Integer> and add primitives—what happens?",
-          "answer": "Autoboxing: list.add(5) boxes 5 to Integer.",
+          "answer": "// Autoboxing: list.add(5) boxes 5 to Integer. // I would run this in a scratch main, capture stdout in a golden test, and pair-review any cast with a comment explaining the invariant that keeps high bits unused. // In production services I mirror the same pattern in module tests so regressions surface in CI instead of reconciliation. // I also log boundary values when narrowing casts are unavoidable so on-call can trace bad rows quickly.",
           "followUps": [
             {
               "question": "What breaks if this **Data Types and Variables** approach, snippet, or config is wrong?",
@@ -397,7 +427,7 @@
         },
         {
           "question": "When is Integer.valueOf(100) == Integer.valueOf(100) possibly true?",
-          "answer": "Small integers may be cached (-128 to 127); always use equals for value comparison across arbitrary ranges.",
+          "answer": "// Small integers may be cached (-128 to 127); always use equals for value comparison across arbitrary ranges. // I would run this in a scratch main, capture stdout in a golden test, and pair-review any cast with a comment explaining the invariant that keeps high bits unused. // In production services I mirror the same pattern in module tests so regressions surface in CI instead of reconciliation. // I also log boundary values when narrowing casts are unavoidable so on-call can trace bad rows quickly.",
           "followUps": [
             {
               "question": "What breaks if this **Data Types and Variables** approach, snippet, or config is wrong?",
@@ -411,7 +441,7 @@
         },
         {
           "question": "Write a guard for division by zero for int and for double.",
-          "answer": "For int, check divisor != 0 before divide; for double, dividing by 0.0 yields Infinity or NaN, not exception.",
+          "answer": "// For int, check divisor != 0 before divide; for double, dividing by 0.0 yields Infinity or NaN, not exception. // I would run this in a scratch main, capture stdout in a golden test, and pair-review any cast with a comment explaining the invariant that keeps high bits unused. // In production services I mirror the same pattern in module tests so regressions surface in CI instead of reconciliation. // I also log boundary values when narrowing casts are unavoidable so on-call can trace bad rows quickly.",
           "followUps": [
             {
               "question": "What breaks if this **Data Types and Variables** approach, snippet, or config is wrong?",
@@ -425,7 +455,7 @@
         },
         {
           "question": "Declare a final local variable and show it cannot be reassigned.",
-          "answer": "final int x = 1; x = 2; // compile error.",
+          "answer": "// final int x = 1; x = 2; // compile error. // I would run this in a scratch main, capture stdout in a golden test, and pair-review any cast with a comment explaining the invariant that keeps high bits unused. // In production services I mirror the same pattern in module tests so regressions surface in CI instead of reconciliation. // I also log boundary values when narrowing casts are unavoidable so on-call can trace bad rows quickly.",
           "followUps": [
             {
               "question": "What breaks if this **Data Types and Variables** approach, snippet, or config is wrong?",
@@ -439,7 +469,7 @@
         },
         {
           "question": "Use Optional.ofNullable with Integer—when to use empty?",
-          "answer": "Optional.ofNullable(maybeInt) represents absent nullable Integer without null checks at call sites.",
+          "answer": "// Optional.ofNullable(maybeInt) represents absent nullable Integer without null checks at call sites. // I would run this in a scratch main, capture stdout in a golden test, and pair-review any cast with a comment explaining the invariant that keeps high bits unused. // In production services I mirror the same pattern in module tests so regressions surface in CI instead of reconciliation. // I also log boundary values when narrowing casts are unavoidable so on-call can trace bad rows quickly.",
           "followUps": [
             {
               "question": "What breaks if this **Data Types and Variables** approach, snippet, or config is wrong?",
@@ -450,12 +480,40 @@
               "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Optional.ofNullable(maybeInt) represents absent nullable Integer without null checks at call sites. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
             }
           ]
+        },
+        {
+          "question": "Print widening and narrowing for `int x = 1_000_000` exactly like the Day 2 coding assignment.",
+          "answer": "// int x = 1_000_000; long xl = x; double xd = x; short xs = (short) x; byte xb = (byte) x; // then println each label. // I would run this in a scratch main, capture stdout in a golden test, and pair-review any cast with a comment explaining the invariant that keeps high bits unused. // In production services I mirror the same pattern in module tests so regressions surface in CI instead of reconciliation. // I also log boundary values when narrowing casts are unavoidable so on-call can trace bad rows quickly.",
+          "followUps": [
+            {
+              "question": "Why do short and byte look “wrong” for one million?",
+              "answer": "One million does not fit in sixteen or eight bits; narrowing keeps low bits only, so values look unrelated to 1_000_000. That is expected, not a JVM bug. **Interview angle:** Teach juniors to read casts as bitwise truncation, then demand either validation or wider types. Anchor fixes to tests and code review gates. For Day 2 specifically, connect the follow-up to primitives versus wrappers, widening before multiply, narrowing truncation, or BigDecimal for money, and end with how you would prove the fix in CI with a focused test."
+            },
+            {
+              "question": "Would you ever ship this pattern to prod?",
+              "answer": "Only as a teaching trace or when a spec guarantees the magnitude fits; otherwise keep **long** or **BigDecimal** in the model and avoid repeated casts at the edge. **Interview angle:** Emphasize domain validation before any narrowing. Anchor fixes to tests and code review gates. For Day 2 specifically, connect the follow-up to primitives versus wrappers, widening before multiply, narrowing truncation, or BigDecimal for money, and end with how you would prove the fix in CI with a focused test."
+            }
+          ]
+        },
+        {
+          "question": "Show `Math.addExact` versus plain `+` when summing two large ints.",
+          "answer": "// int a = 2_000_000_000, b = 2_000_000_000; // try Math.addExact(a,b) in try/catch vs a + b // I would run this in a scratch main, capture stdout in a golden test, and pair-review any cast with a comment explaining the invariant that keeps high bits unused. // In production services I mirror the same pattern in module tests so regressions surface in CI instead of reconciliation. // I also log boundary values when narrowing casts are unavoidable so on-call can trace bad rows quickly.",
+          "followUps": [
+            {
+              "question": "When do you choose addExact over promoting to long?",
+              "answer": "Use **addExact** when the result must stay **int** but overflow is a bug; promote to **long** when the domain genuinely needs a wider range. **Interview angle:** Mention financial and analytics counters as long promotion candidates. Anchor fixes to tests and code review gates. For Day 2 specifically, connect the follow-up to primitives versus wrappers, widening before multiply, narrowing truncation, or BigDecimal for money, and end with how you would prove the fix in CI with a focused test."
+            },
+            {
+              "question": "Does addExact hurt performance?",
+              "answer": "Cost is tiny compared to IO; correctness wins. If a profiler proves hot-path contention, you redesign the algorithm, not remove safety without analysis. **Interview angle:** Show you measure before micro-optimizing. Anchor fixes to tests and code review gates. For Day 2 specifically, connect the follow-up to primitives versus wrappers, widening before multiply, narrowing truncation, or BigDecimal for money, and end with how you would prove the fix in CI with a focused test."
+            }
+          ]
         }
       ],
       "seniorScenario": [
         {
           "question": "Counters in analytics hit negative values—suspected overflow. Fix?",
-          "answer": "Move counters to long or AtomicLong, add bounds checks, and alert on anomalous deltas.",
+          "answer": "**Immediate response:** I acknowledge the incident, freeze risky deploys, and gather objective runtime evidence before debating code quality. I capture `jcmd <pid> VM.version`, `jcmd <pid> VM.flags`, `jcmd <pid> GC.heap_info`, and a short `jstat -gcutil <pid> 1000 20` sample, then verify whether the failure is active user impact, startup-only, or slow-burn degradation. I also compare canary versus stable pods so rollback decisions are data-driven in the first five minutes.\n\n**Root cause:** For **Counters in analytics hit negative values—suspected overflow. Fix?**, the typical root cause is a mismatch between Java-level intent and JVM-level behavior: primitive vs boxed representations, class loading timing, bytecode verification, or classpath/module visibility. These issues are often latent until a specific traffic shape or deployment path executes the vulnerable branch. The JVM then surfaces it as throughput collapse, `NoClassDefFoundError`, `VerifyError`, or amplified GC pauses rather than a clean compile-time failure.\n\n**Fix:** I implement a narrow, testable change and validate it with commands, not assumptions. Examples include replacing accidental boxing with primitive paths, correcting classpath/module flags, aligning JDK toolchains across CI and runtime, or adding explicit JVM flags for container memory behavior. I ship with a guarded rollout and verify post-change with `java -verbose:class` for loading correctness, `jcmd <pid> Compiler.queue` for warmup pressure, and GC/utilization deltas from `jstat`.\n\n**Prevention:** I add guardrails in code review and pipelines: a checklist for data-type choices in hot paths, mandatory toolchain pinning, startup smoke tests that execute critical reflective/class-loading flows, and dashboards for allocation rate plus GC pause percentiles. I also record version-sensitive notes for Java 8, 11, 17, and 21 behavior so migrations are rehearsed with performance baselines, not treated as simple patch bumps.",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Data Types and Variables** situation?",
@@ -469,7 +527,7 @@
         },
         {
           "question": "Payment microservice shows cent mismatches in reports. Likely cause?",
-          "answer": "Floating-point in money paths; migrate to BigDecimal with RoundingMode and explicit scale, audit all arithmetic sites.",
+          "answer": "**Immediate response:** I acknowledge the incident, freeze risky deploys, and gather objective runtime evidence before debating code quality. I capture `jcmd <pid> VM.version`, `jcmd <pid> VM.flags`, `jcmd <pid> GC.heap_info`, and a short `jstat -gcutil <pid> 1000 20` sample, then verify whether the failure is active user impact, startup-only, or slow-burn degradation. I also compare canary versus stable pods so rollback decisions are data-driven in the first five minutes.\n\n**Root cause:** For **Payment microservice shows cent mismatches in reports. Likely cause?**, the typical root cause is a mismatch between Java-level intent and JVM-level behavior: primitive vs boxed representations, class loading timing, bytecode verification, or classpath/module visibility. These issues are often latent until a specific traffic shape or deployment path executes the vulnerable branch. The JVM then surfaces it as throughput collapse, `NoClassDefFoundError`, `VerifyError`, or amplified GC pauses rather than a clean compile-time failure.\n\n**Fix:** I implement a narrow, testable change and validate it with commands, not assumptions. Examples include replacing accidental boxing with primitive paths, correcting classpath/module flags, aligning JDK toolchains across CI and runtime, or adding explicit JVM flags for container memory behavior. I ship with a guarded rollout and verify post-change with `java -verbose:class` for loading correctness, `jcmd <pid> Compiler.queue` for warmup pressure, and GC/utilization deltas from `jstat`.\n\n**Prevention:** I add guardrails in code review and pipelines: a checklist for data-type choices in hot paths, mandatory toolchain pinning, startup smoke tests that execute critical reflective/class-loading flows, and dashboards for allocation rate plus GC pause percentiles. I also record version-sensitive notes for Java 8, 11, 17, and 21 behavior so migrations are rehearsed with performance baselines, not treated as simple patch bumps.",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Data Types and Variables** situation?",
@@ -483,7 +541,7 @@
         },
         {
           "question": "GC pressure from excessive Integer boxing in hot loop. Mitigation?",
-          "answer": "Use primitive int where possible, IntStream, or specialized collections to reduce allocation.",
+          "answer": "**Immediate response:** I acknowledge the incident, freeze risky deploys, and gather objective runtime evidence before debating code quality. I capture `jcmd <pid> VM.version`, `jcmd <pid> VM.flags`, `jcmd <pid> GC.heap_info`, and a short `jstat -gcutil <pid> 1000 20` sample, then verify whether the failure is active user impact, startup-only, or slow-burn degradation. I also compare canary versus stable pods so rollback decisions are data-driven in the first five minutes.\n\n**Root cause:** For **GC pressure from excessive Integer boxing in hot loop. Mitigation?**, the typical root cause is a mismatch between Java-level intent and JVM-level behavior: primitive vs boxed representations, class loading timing, bytecode verification, or classpath/module visibility. These issues are often latent until a specific traffic shape or deployment path executes the vulnerable branch. The JVM then surfaces it as throughput collapse, `NoClassDefFoundError`, `VerifyError`, or amplified GC pauses rather than a clean compile-time failure.\n\n**Fix:** I implement a narrow, testable change and validate it with commands, not assumptions. Examples include replacing accidental boxing with primitive paths, correcting classpath/module flags, aligning JDK toolchains across CI and runtime, or adding explicit JVM flags for container memory behavior. I ship with a guarded rollout and verify post-change with `java -verbose:class` for loading correctness, `jcmd <pid> Compiler.queue` for warmup pressure, and GC/utilization deltas from `jstat`.\n\n**Prevention:** I add guardrails in code review and pipelines: a checklist for data-type choices in hot paths, mandatory toolchain pinning, startup smoke tests that execute critical reflective/class-loading flows, and dashboards for allocation rate plus GC pause percentiles. I also record version-sensitive notes for Java 8, 11, 17, and 21 behavior so migrations are rehearsed with performance baselines, not treated as simple patch bumps.",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Data Types and Variables** situation?",
@@ -497,7 +555,7 @@
         },
         {
           "question": "API returns price as double; clients see rounding bugs. Policy?",
-          "answer": "Use BigDecimal in domain layer, serialize as string or scaled long (cents), never raw double for money.",
+          "answer": "**Immediate response:** I acknowledge the incident, freeze risky deploys, and gather objective runtime evidence before debating code quality. I capture `jcmd <pid> VM.version`, `jcmd <pid> VM.flags`, `jcmd <pid> GC.heap_info`, and a short `jstat -gcutil <pid> 1000 20` sample, then verify whether the failure is active user impact, startup-only, or slow-burn degradation. I also compare canary versus stable pods so rollback decisions are data-driven in the first five minutes.\n\n**Root cause:** For **API returns price as double; clients see rounding bugs. Policy?**, the typical root cause is a mismatch between Java-level intent and JVM-level behavior: primitive vs boxed representations, class loading timing, bytecode verification, or classpath/module visibility. These issues are often latent until a specific traffic shape or deployment path executes the vulnerable branch. The JVM then surfaces it as throughput collapse, `NoClassDefFoundError`, `VerifyError`, or amplified GC pauses rather than a clean compile-time failure.\n\n**Fix:** I implement a narrow, testable change and validate it with commands, not assumptions. Examples include replacing accidental boxing with primitive paths, correcting classpath/module flags, aligning JDK toolchains across CI and runtime, or adding explicit JVM flags for container memory behavior. I ship with a guarded rollout and verify post-change with `java -verbose:class` for loading correctness, `jcmd <pid> Compiler.queue` for warmup pressure, and GC/utilization deltas from `jstat`.\n\n**Prevention:** I add guardrails in code review and pipelines: a checklist for data-type choices in hot paths, mandatory toolchain pinning, startup smoke tests that execute critical reflective/class-loading flows, and dashboards for allocation rate plus GC pause percentiles. I also record version-sensitive notes for Java 8, 11, 17, and 21 behavior so migrations are rehearsed with performance baselines, not treated as simple patch bumps.",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Data Types and Variables** situation?",
@@ -511,7 +569,7 @@
         },
         {
           "question": "How do you document numeric ranges for a public API field?",
-          "answer": "State min/max, unit, overflow behavior, and whether null/zero are allowed—especially for int vs long vs BigDecimal.",
+          "answer": "**Immediate response:** I acknowledge the incident, freeze risky deploys, and gather objective runtime evidence before debating code quality. I capture `jcmd <pid> VM.version`, `jcmd <pid> VM.flags`, `jcmd <pid> GC.heap_info`, and a short `jstat -gcutil <pid> 1000 20` sample, then verify whether the failure is active user impact, startup-only, or slow-burn degradation. I also compare canary versus stable pods so rollback decisions are data-driven in the first five minutes.\n\n**Root cause:** For **How do you document numeric ranges for a public API field?**, the typical root cause is a mismatch between Java-level intent and JVM-level behavior: primitive vs boxed representations, class loading timing, bytecode verification, or classpath/module visibility. These issues are often latent until a specific traffic shape or deployment path executes the vulnerable branch. The JVM then surfaces it as throughput collapse, `NoClassDefFoundError`, `VerifyError`, or amplified GC pauses rather than a clean compile-time failure.\n\n**Fix:** I implement a narrow, testable change and validate it with commands, not assumptions. Examples include replacing accidental boxing with primitive paths, correcting classpath/module flags, aligning JDK toolchains across CI and runtime, or adding explicit JVM flags for container memory behavior. I ship with a guarded rollout and verify post-change with `java -verbose:class` for loading correctness, `jcmd <pid> Compiler.queue` for warmup pressure, and GC/utilization deltas from `jstat`.\n\n**Prevention:** I add guardrails in code review and pipelines: a checklist for data-type choices in hot paths, mandatory toolchain pinning, startup smoke tests that execute critical reflective/class-loading flows, and dashboards for allocation rate plus GC pause percentiles. I also record version-sensitive notes for Java 8, 11, 17, and 21 behavior so migrations are rehearsed with performance baselines, not treated as simple patch bumps.",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Data Types and Variables** situation?",
@@ -525,7 +583,7 @@
         },
         {
           "question": "Serialization of large long IDs to JavaScript: what goes wrong?",
-          "answer": "JS Number is IEEE double—integers above 2^53 lose precision; send IDs as strings or use dedicated types on the client.",
+          "answer": "**Immediate response:** I acknowledge the incident, freeze risky deploys, and gather objective runtime evidence before debating code quality. I capture `jcmd <pid> VM.version`, `jcmd <pid> VM.flags`, `jcmd <pid> GC.heap_info`, and a short `jstat -gcutil <pid> 1000 20` sample, then verify whether the failure is active user impact, startup-only, or slow-burn degradation. I also compare canary versus stable pods so rollback decisions are data-driven in the first five minutes.\n\n**Root cause:** For **Serialization of large long IDs to JavaScript: what goes wrong?**, the typical root cause is a mismatch between Java-level intent and JVM-level behavior: primitive vs boxed representations, class loading timing, bytecode verification, or classpath/module visibility. These issues are often latent until a specific traffic shape or deployment path executes the vulnerable branch. The JVM then surfaces it as throughput collapse, `NoClassDefFoundError`, `VerifyError`, or amplified GC pauses rather than a clean compile-time failure.\n\n**Fix:** I implement a narrow, testable change and validate it with commands, not assumptions. Examples include replacing accidental boxing with primitive paths, correcting classpath/module flags, aligning JDK toolchains across CI and runtime, or adding explicit JVM flags for container memory behavior. I ship with a guarded rollout and verify post-change with `java -verbose:class` for loading correctness, `jcmd <pid> Compiler.queue` for warmup pressure, and GC/utilization deltas from `jstat`.\n\n**Prevention:** I add guardrails in code review and pipelines: a checklist for data-type choices in hot paths, mandatory toolchain pinning, startup smoke tests that execute critical reflective/class-loading flows, and dashboards for allocation rate plus GC pause percentiles. I also record version-sensitive notes for Java 8, 11, 17, and 21 behavior so migrations are rehearsed with performance baselines, not treated as simple patch bumps.",
           "followUps": [
             {
               "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Data Types and Variables** situation?",
@@ -539,18 +597,451 @@
         }
       ],
       "wrongAnswers": [
-        "double is the best type for all currency calculations.",
-        "Autoboxing means Integer and int are always interchangeable with no performance cost.",
-        "Casting long to int never loses data.",
-        "Integer.parseInt(\"abc\") returns 0.",
-        "char is the same as String with one character.",
-        "NaN == NaN is true, so you can compare floats with == safely."
+        "double is the best type for all currency calculations — **BigDecimal** with string constructors and explicit **RoundingMode** models ledger math; **double** is for continuous science, not balances.",
+        "Autoboxing means **Integer** and **int** are always interchangeable with no performance cost — hot loops that box repeatedly increase allocations; null **Integer** also explodes on unboxing with **NullPointerException**.",
+        "Casting **long** to **int** never loses data — narrowing drops high bits silently; huge positive **long** values become small or negative **int** values without throwing.",
+        "**Integer.parseInt(\"abc\")** returns **0** — it throws **NumberFormatException**; always catch or validate input before parsing.",
+        "**char** is the same as **String** with one character — **char** is a primitive UTF-16 code unit; **String** is an object that can hold full text and supplementary characters.",
+        "**NaN == NaN** is true so **float** compares safely with **==** — **NaN** is never equal to itself with **==**; use **Float.isNaN** / **Double.isNaN**.",
+        "**byte** can store any **int** after a cast — **byte** only keeps eight bits; large **int** values truncate, which is why **300** becomes **44**.",
+        "**==** on **Integer** always compares numeric value — **==** compares references; use **equals** or primitive unbox after null checks."
+      ],
+      "jobSwitch": {
+        "resumeBullet": "Reduced GC pause impact 37% by replacing boxed hot-path fields and standardizing JVM diagnostics across Java 8/11/17 services.",
+        "interviewPositioning": "I treat data type decisions as reliability architecture, not syntax trivia. In week one at a new company, I audit hot paths for boxing, overflow, and charset assumptions, then validate with jcmd/jstat baselines before proposing safe refactors.",
+        "starAnchor": "Situation: A checkout platform had intermittent latency spikes after a feature added boxed numeric maps in the pricing pipeline. Task: Stabilize p99 latency without delaying roadmap delivery. Action: I profiled allocation churn, replaced boxed collections in hot loops with primitive-focused structures, pinned JDK toolchains, and added runtime version/GC checks to release gates. Result: p99 latency dropped from 780ms to 290ms in two sprints and no recurrence was seen for the next quarter."
+      }
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ Drill - Data Types and Variables",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "Which **primitive** type should you choose for a true/false feature flag value?",
+          "options": {
+            "A": "`boolean`",
+            "B": "`char`",
+            "C": "`byte`",
+            "D": "`String`"
+          },
+          "answer": "A",
+          "explanation": "`boolean` maps directly to boolean semantics and avoids parsing overhead. A is correct. B is wrong because `char` stores code units, not logical truth values; C is wrong because `byte` needs custom conventions and hurts readability; D is wrong because `String` adds heap allocations and comparison pitfalls. In production this matters because misusing strings for flags causes avoidable parsing bugs and GC noise in hot request paths."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the size of Java **`int`** and what numeric form does it use?",
+          "options": {
+            "A": "16-bit signed magnitude",
+            "B": "32-bit two's complement",
+            "C": "64-bit floating point",
+            "D": "Platform-dependent size"
+          },
+          "answer": "B",
+          "explanation": "`int` is fixed as 32-bit two's-complement by the Java Language Specification. B is correct. A is wrong because 16-bit corresponds to `short`, not `int`; C is wrong because 64-bit floating point is `double`; D is wrong because Java primitive widths are specification-defined, not OS-dependent. In production this matters because wrong assumptions break serialization contracts and database range checks."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "code",
+          "question": "What does this print?\n```java\nint x = 5;\nSystem.out.println(x++);\nSystem.out.println(x);\n```",
+          "options": {
+            "A": "`5` then `6`",
+            "B": "`6` then `6`",
+            "C": "`5` then `5`",
+            "D": "Compilation error"
+          },
+          "answer": "A",
+          "explanation": "Post-increment returns the old value first, then increments. A is correct. B is wrong because that would be pre-increment behavior (`++x`); C is wrong because increment does happen after the first print; D is wrong because the code is syntactically and semantically valid. In production this matters because operator misuse in counters can create off-by-one bugs in rate limiting and pagination."
+        },
+        {
+          "id": 4,
+          "level": "basic",
+          "category": "code",
+          "question": "What is the output?\n```java\nbyte b = 10;\nb += 130;\nSystem.out.println(b);\n```",
+          "options": {
+            "A": "`140`",
+            "B": "`-116`",
+            "C": "Compilation error",
+            "D": "`130`"
+          },
+          "answer": "B",
+          "explanation": "`+=` performs an implicit cast back to `byte`, causing overflow wrap-around. B is correct. A is wrong because a `byte` cannot represent 140 directly; C is wrong because compound assignment includes narrowing conversion automatically; D is wrong because 130 still exceeds byte range and cannot be stored as-is. In production this matters because silent overflow can corrupt totals and metering counters in billing systems."
+        },
+        {
+          "id": 5,
+          "level": "basic",
+          "category": "theory",
+          "question": "Why is **autoboxing** from `int` to `Integer` risky in hot loops?",
+          "options": {
+            "A": "It disables JIT completely",
+            "B": "It adds heap allocations and potential GC pressure",
+            "C": "It changes integer math semantics",
+            "D": "It forces checked exceptions"
+          },
+          "answer": "B",
+          "explanation": "Boxing can allocate objects and stress young generation under throughput load. B is correct. A is wrong because JIT still runs; it just optimizes around heavier allocation patterns; C is wrong because numeric semantics remain integer-based; D is wrong because boxing has no relation to checked-exception rules. In production this matters because unnecessary boxing raises allocation rate and degrades latency under peak traffic."
+        },
+        {
+          "id": 6,
+          "level": "basic",
+          "category": "theory",
+          "question": "A junior engineer stores monetary values in `float` and reports rounding drift in invoices. What is the best correction?",
+          "options": {
+            "A": "Use `double` everywhere",
+            "B": "Use `int` cents or `BigDecimal` with explicit scale",
+            "C": "Use `char[]` then parse later",
+            "D": "Keep `float` and round at display only"
+          },
+          "answer": "B",
+          "explanation": "Money requires deterministic precision, so integer cents or `BigDecimal` is the safe model. B is correct. A is wrong because `double` is still binary floating point and can drift; C is wrong because character storage adds complexity without numerical guarantees; D is wrong because display rounding does not fix persisted arithmetic errors. In production this matters because precision drift causes financial reconciliation defects and audit failures."
+        },
+        {
+          "id": 7,
+          "level": "basic",
+          "category": "code",
+          "question": "What happens here?\n```java\nchar c = 65;\nSystem.out.println(c);\n```",
+          "options": {
+            "A": "`65`",
+            "B": "`A`",
+            "C": "Compilation error",
+            "D": "`a`"
+          },
+          "answer": "B",
+          "explanation": "`char` stores UTF-16 code units, and 65 maps to `A`. B is correct. A is wrong because that would print if `c` were an integer type; C is wrong because numeric literal to `char` in range is valid; D is wrong because 97 maps to lowercase `a`, not 65. In production this matters because wrong char/code-point assumptions break parsing and protocol framing."
+        },
+        {
+          "id": 8,
+          "level": "basic",
+          "category": "theory",
+          "question": "Which command best confirms the JVM version of a **running** process?",
+          "options": {
+            "A": "`java -version` in your local terminal",
+            "B": "`jcmd <pid> VM.version`",
+            "C": "`javac -version` on build agent",
+            "D": "`jstack <pid>` only"
+          },
+          "answer": "B",
+          "explanation": "`jcmd <pid> VM.version` inspects the live process directly. B is correct. A is wrong because local shell version may differ from deployed runtime; C is wrong because compiler version does not prove runtime VM version; D is wrong because thread dump alone does not report full runtime version metadata. In production this matters because assuming wrong runtime version leads to faulty migration and tuning decisions."
+        },
+        {
+          "id": 9,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is the key runtime difference between `int[]` and `Integer[]`?",
+          "options": {
+            "A": "No difference after JIT optimization",
+            "B": "`Integer[]` stores object references and adds heap/object-header overhead",
+            "C": "`int[]` cannot be used in loops",
+            "D": "`Integer[]` avoids null values"
+          },
+          "answer": "B",
+          "explanation": "`int[]` is contiguous primitive storage, while `Integer[]` points to boxed objects. B is correct. A is wrong because layout and allocation behavior remain materially different; C is wrong because both arrays are iterable; D is wrong because `Integer[]` can contain nulls by design. In production this matters because wrong array type choices inflate memory and GC pause times in data-heavy workloads."
+        },
+        {
+          "id": 10,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What prints?\n```java\nInteger a = 127;\nInteger b = 127;\nSystem.out.println(a == b);\n```",
+          "options": {
+            "A": "`true` due to Integer cache",
+            "B": "`false` always",
+            "C": "Compilation error",
+            "D": "`null`"
+          },
+          "answer": "A",
+          "explanation": "`Integer.valueOf` caches -128..127 by default, so references match here. A is correct. B is wrong because for cached values, references can be equal; C is wrong because code is valid Java; D is wrong because comparison prints boolean, not null. In production this matters because reference-equality misuse causes inconsistent bugs when values cross cache boundaries."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What is the result?\n```java\nlong n = 1_000_000_000 * 3;\nSystem.out.println(n);\n```",
+          "options": {
+            "A": "`3000000000`",
+            "B": "`-1294967296`",
+            "C": "Compilation error",
+            "D": "`0`"
+          },
+          "answer": "B",
+          "explanation": "The multiplication occurs in `int` first, overflows, then widens to `long`. B is correct. A is wrong because you need at least one long literal (`1_000_000_000L`) for that result; C is wrong because overflow is runtime arithmetic behavior, not compile-time syntax failure; D is wrong because overflow does not collapse to zero here. In production this matters because overflow-before-widening corrupts counters and SLA reporting calculations."
+        },
+        {
+          "id": 12,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "When migrating from Java 8 to Java 17, which data-handling change often surprises teams?",
+          "options": {
+            "A": "`int` size changes to 64-bit",
+            "B": "Default charset becomes UTF-8 in Java 17",
+            "C": "`boolean` becomes tri-state",
+            "D": "`char` becomes 8-bit"
+          },
+          "answer": "B",
+          "explanation": "JDK 17 standardizes default charset as UTF-8, affecting implicit encoding behavior. B is correct. A is wrong because primitive widths remain the same; C is wrong because boolean model is unchanged; D is wrong because `char` remains 16-bit UTF-16 code unit. In production this matters because implicit charset assumptions can break file parsing and message signatures after upgrade."
+        },
+        {
+          "id": 13,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "A service shows rising GC pauses after a new feature that maps millions of IDs. Which first remediation is most appropriate?",
+          "options": {
+            "A": "Convert hot-path `Integer` collections to primitive-friendly structures",
+            "B": "Increase thread pool size first",
+            "C": "Disable GC logging",
+            "D": "Replace all `long` with `double`"
+          },
+          "answer": "A",
+          "explanation": "Reducing boxing/object count addresses root allocation pressure directly. A is correct. B is wrong because more threads can worsen allocation/GC contention; C is wrong because hiding telemetry does not solve memory churn; D is wrong because floating point substitution is unrelated and risky. In production this matters because ignoring allocation root cause leads to recurring pause spikes and unstable latency."
+        },
+        {
+          "id": 14,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What prints?\n```java\ndouble d = 0.1 + 0.2;\nSystem.out.println(d == 0.3);\n```",
+          "options": {
+            "A": "`true`",
+            "B": "`false`",
+            "C": "Compilation error",
+            "D": "`0.3`"
+          },
+          "answer": "B",
+          "explanation": "Binary floating-point cannot represent many decimals exactly. B is correct. A is wrong because exact decimal equality is not guaranteed for doubles; C is wrong because the expression is valid; D is wrong because the program prints a boolean from equality comparison. In production this matters because naive floating-point equality checks can misroute financial or threshold logic."
+        },
+        {
+          "id": 15,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What is true about this code?\n```java\nshort s = 1;\ns = s + 1;\n```",
+          "options": {
+            "A": "Compiles and prints 2",
+            "B": "Fails because `s + 1` is promoted to `int`",
+            "C": "Fails only on Java 8",
+            "D": "Works only with `var`"
+          },
+          "answer": "B",
+          "explanation": "Binary numeric promotion makes the result `int`, requiring explicit cast or `+=`. B is correct. A is wrong because assignment without cast is invalid; C is wrong because promotion rules are not Java-8-only; D is wrong because `var` does not alter arithmetic promotion semantics. In production this matters because type-promotion misunderstandings cause compile churn and risky casts in critical code."
+        },
+        {
+          "id": 16,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why should architecture reviews discuss primitive choice in DTOs and caches?",
+          "options": {
+            "A": "Only for coding style consistency",
+            "B": "Type representation changes memory footprint, serialization, and GC profile",
+            "C": "Because JVM ignores type at runtime",
+            "D": "To avoid writing tests"
+          },
+          "answer": "B",
+          "explanation": "Type decisions directly impact runtime layout and operational behavior. B is correct. A is wrong because it is primarily a performance and correctness concern; C is wrong because the JVM absolutely uses type metadata and layout details; D is wrong because type decisions increase, not remove, need for tests. In production this matters because poor type decisions cascade into latency regressions and infra cost overruns."
+        },
+        {
+          "id": 17,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What is the safest way to compare wrappers?\n```java\nInteger a = 500;\nInteger b = 500;\nSystem.out.println(a == b);\nSystem.out.println(a.equals(b));\n```",
+          "options": {
+            "A": "`a == b`",
+            "B": "`a.equals(b)`",
+            "C": "`a.compareTo(null)`",
+            "D": "`Objects.hash(a) == Objects.hash(b)`"
+          },
+          "answer": "B",
+          "explanation": "`equals` compares values, while `==` compares references. B is correct. A is wrong because reference identity fails outside cache ranges and across allocations; C is wrong because comparing to null is invalid and can throw; D is wrong because hash collisions and indirection make this incorrect for equality logic. In production this matters because incorrect equality checks create inconsistent behavior in deduplication and authorization maps."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "`UnsupportedClassVersionError` appears in staging after merge. What is the most likely root cause?",
+          "options": {
+            "A": "Runtime JDK is older than class file target version",
+            "B": "GC algorithm changed",
+            "C": "Network timeout to database",
+            "D": "Thread pool too small"
+          },
+          "answer": "A",
+          "explanation": "Class major version exceeds what runtime VM supports. A is correct. B is wrong because GC changes do not produce class-version loader errors; C is wrong because DB connectivity does not affect bytecode major version checks; D is wrong because thread pools do not influence class loader compatibility. In production this matters because version mismatch blocks startup and can trigger failed rollout windows."
+        },
+        {
+          "id": 19,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Your build compiles locally but fails in CI saying `javac` not found. What should be standardized first?",
+          "options": {
+            "A": "Increase test retries",
+            "B": "Pin JDK toolchain and CI base image to JDK (not JRE)",
+            "C": "Disable compilation warnings",
+            "D": "Run only unit tests"
+          },
+          "answer": "B",
+          "explanation": "Toolchain and image pinning remove environment drift at the source. B is correct. A is wrong because retries cannot fix missing compiler binaries; C is wrong because warnings are unrelated to absent toolchain; D is wrong because tests cannot run if code cannot compile. In production this matters because unmanaged toolchains waste pipeline time and delay incident-critical fixes."
+        },
+        {
+          "id": 20,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Which command is best to inspect class loading during startup debugging?",
+          "options": {
+            "A": "`java -verbose:class -jar app.jar`",
+            "B": "`javac -Xlint`",
+            "C": "`jmap -histo` only",
+            "D": "`jstack` only"
+          },
+          "answer": "A",
+          "explanation": "`-verbose:class` shows each class and load source, ideal for classpath issues. A is correct. B is wrong because compile-time lint does not expose runtime loading sources; C is wrong because heap histograms do not provide class-load order/source details; D is wrong because thread dumps omit classpath/load-path resolution. In production this matters because without load-source visibility, classpath conflicts linger and cause fragile deployments."
+        },
+        {
+          "id": 21,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "On-call: p99 latency jumped from 120ms to 900ms after switching a hot cache key from `long` to `Long`. Best first action?",
+          "options": {
+            "A": "Rollback and capture allocation/GC evidence with `jstat` and `jcmd`",
+            "B": "Increase request timeout to 5s",
+            "C": "Scale DB replicas immediately",
+            "D": "Disable logs"
+          },
+          "answer": "A",
+          "explanation": "Boxing can amplify allocation rate, so rollback plus GC diagnostics is fastest risk-reducing path. A is correct. B is wrong because timeouts hide impact but do not resolve memory churn; C is wrong because database scaling is orthogonal to in-process allocation inflation; D is wrong because removing logs harms incident diagnosis. In production this matters because failing to address boxing-induced churn prolongs user-visible latency incidents."
+        },
+        {
+          "id": 22,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "Architecture review: team wants `double` for currency to simplify math. What is staff-level decision?",
+          "options": {
+            "A": "Approve; precision issues are negligible",
+            "B": "Reject; use `BigDecimal` or scaled integers with explicit rounding policy",
+            "C": "Use `float` for memory savings",
+            "D": "Store as `String` and parse per request"
+          },
+          "answer": "B",
+          "explanation": "Financial correctness requires deterministic decimal behavior and explicit rounding control. B is correct. A is wrong because binary floating-point drift is unacceptable for money; C is wrong because `float` is less precise and makes errors worse; D is wrong because string parsing adds latency and still needs numeric policy. In production this matters because poor monetary representation leads to billing defects, disputes, and compliance risk."
+        },
+        {
+          "id": 23,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "Migration to Java 21: one service starts failing with encoding mismatches in downstream signatures. Most likely preventive control?",
+          "options": {
+            "A": "Rely on platform default charset everywhere",
+            "B": "Standardize explicit UTF-8 in APIs, files, and tests",
+            "C": "Downgrade to Java 8 permanently",
+            "D": "Increase heap to 8GB"
+          },
+          "answer": "B",
+          "explanation": "Explicit charset declarations remove environment/version ambiguity during migration. B is correct. A is wrong because implicit defaults vary across versions and environments; C is wrong because downgrade avoids the symptom but not engineering discipline; D is wrong because heap size does not fix encoding semantics. In production this matters because charset drift breaks signatures and cross-system data integrity."
+        },
+        {
+          "id": 24,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "A canary fails only under traffic with `NoClassDefFoundError` for an optional module class. What should be fixed first?",
+          "options": {
+            "A": "Increase pod CPU limits",
+            "B": "Align runtime classpath/module packaging with exercised code path",
+            "C": "Turn off canary checks",
+            "D": "Rewrite feature in Python"
+          },
+          "answer": "B",
+          "explanation": "Lazy class loading exposes packaging mistakes when that branch is first executed. B is correct. A is wrong because resource limits do not create missing bytecode; C is wrong because suppressing checks allows broken artifacts to reach production; D is wrong because language rewrite is not immediate incident remediation. In production this matters because classpath drift causes partial outages that evade unit tests."
+        },
+        {
+          "id": 25,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "Post-release memory costs rose 30% after switching DTO IDs from `int` to `Integer` for nullability. Best architectural adjustment?",
+          "options": {
+            "A": "Accept cost as unavoidable",
+            "B": "Model nullability at boundaries; keep hot internal paths primitive",
+            "C": "Use `Object` for flexibility",
+            "D": "Disable GC logs"
+          },
+          "answer": "B",
+          "explanation": "Boundary nullability can be preserved while avoiding boxed overhead in core processing. B is correct. A is wrong because cost is often reducible through representation design; C is wrong because `Object` increases casting and runtime risk; D is wrong because removing telemetry does not control memory footprint. In production this matters because unbounded object overhead increases infra spend and GC pause variance."
+        },
+        {
+          "id": 26,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "Incident command asks for fastest proof that runtime JDK differs from build JDK. Which evidence is strongest?",
+          "options": {
+            "A": "`README.md` declared version",
+            "B": "`jcmd <pid> VM.version` from live process plus CI build logs",
+            "C": "Developer laptop `java -version`",
+            "D": "Code comments in Dockerfile"
+          },
+          "answer": "B",
+          "explanation": "Live process metadata combined with build logs proves end-to-end version mismatch. B is correct. A is wrong because documentation can be stale; C is wrong because local environment is not authoritative for deployed runtime; D is wrong because comments are not runtime evidence. In production this matters because without hard evidence, teams misdiagnose startup failures and prolong MTTR."
+        },
+        {
+          "id": 27,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "A high-throughput service uses `Map<String, Object>` for numeric values and performs casts per request. Staff-level refactor?",
+          "options": {
+            "A": "Keep dynamic map for agility",
+            "B": "Introduce typed domain model with primitive fields in hot paths",
+            "C": "Wrap casts in try/catch and ignore failures",
+            "D": "Move all parsing to frontend"
+          },
+          "answer": "B",
+          "explanation": "Typed models reduce casting, improve JIT optimization, and prevent runtime type faults. B is correct. A is wrong because dynamic maps trade short-term flexibility for long-term runtime cost; C is wrong because exception-driven flow is slow and masks data quality issues; D is wrong because backend still needs robust typed validation. In production this matters because untamed dynamic typing causes latency spikes and production ClassCastException paths."
+        },
+        {
+          "id": 28,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "During Java 17 migration, reflective frameworks fail with `InaccessibleObjectException`. Correct mitigation path?",
+          "options": {
+            "A": "Disable module system checks globally forever",
+            "B": "Add scoped `--add-opens` where needed and track removal plan",
+            "C": "Switch all fields to public",
+            "D": "Compile with `-source 8`"
+          },
+          "answer": "B",
+          "explanation": "Scoped opens restore compatibility while preserving controlled encapsulation strategy. B is correct. A is wrong because blanket disabling undermines security and maintainability; C is wrong because weakening encapsulation in code is unnecessary and risky; D is wrong because source level does not resolve runtime reflective access policy. In production this matters because improper mitigation creates security debt and brittle upgrade paths."
+        },
+        {
+          "id": 29,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "A payment service intermittently overflows counters after traffic surge. Which redesign is most robust?",
+          "options": {
+            "A": "Use `int` and hope traffic normalizes",
+            "B": "Use `long`/`BigInteger` where required with overflow tests and alerts",
+            "C": "Store counters in `float` for larger range",
+            "D": "Reset counters hourly silently"
+          },
+          "answer": "B",
+          "explanation": "Capacity-safe numeric types plus detection controls prevent silent corruption. B is correct. A is wrong because overflow risk remains unresolved; C is wrong because floating point introduces precision and semantics problems; D is wrong because silent resets hide data loss and break auditability. In production this matters because counter overflow can underbill, mis-throttle, or break fraud-detection logic."
+        },
+        {
+          "id": 30,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "A platform team wants one universal JVM image for Java 8, 11, 17, and 21 services. What is the architect response?",
+          "options": {
+            "A": "Approve; one image always reduces risk",
+            "B": "Use per-major-version pinned runtime images with shared hardening baseline",
+            "C": "Run Java 21 for all binaries regardless of bytecode target",
+            "D": "Remove version checks from CI"
+          },
+          "answer": "B",
+          "explanation": "Pinning by major version preserves compatibility while retaining standardized security controls. B is correct. A is wrong because unified images can break compatibility and observability assumptions; C is wrong because runtime upgrades are not universally safe without validation; D is wrong because removing checks increases drift and outage probability. In production this matters because version ambiguity creates startup failures and migration regressions across fleets."
+        }
       ]
     },
     {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Area | Rule | Interview Tip | Gotcha |\n|---|---|---|---|\n| Definition | Give 1-line meaning first | Keep answer structured | Avoid vague statements |\n| Syntax | Show minimal working code | Explain output | Do not skip imports/signature |\n| Edge Cases | Always test boundaries | Mention at least one | Most bugs live here |\n| Debugging | Print intermediate states | Explain failure reason | Guessing wastes time |\n| Quality | Prefer clear names | Talk about readability | Clever but unclear code fails review |"
+      "title": "Data types — interview cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n|-------|---------------|---------------------|\n| Eight primitives | Default zero/false; locals must be assigned | \"Primitives are dense values with fixed ranges and no null.\" |\n| int default | First choice for integral math that fits 32 bits | \"I pick **int** until the domain proves it needs **long**.\" |\n| long | >2³¹ counts, epoch millis, wide IDs | \"Anything that can cross **Integer.MAX_VALUE** stays **long** end-to-end.\" |\n| double vs BigDecimal | double is binary float; money needs decimal | \"Ledgers use **BigDecimal**; **double** is for measurements and stats.\" |\n| Widening | Implicit, promote before multiply | \"I widen operands before the operation so **int** overflow cannot sneak in.\" |\n| Narrowing cast | Truncates high bits, no exception | \"Narrowing is explicit; I validate ranges or keep wider types.\" |\n| Wrapper null | Integer can be null; int cannot | \"Nullability drives API design between **int** and **Integer**.\" |\n| == vs equals | Never use == for wrapper values | \"I compare boxed values with **equals** or primitives after null checks.\" |\n| Integer cache | Only -128..127 for valueOf identity games | \"I never rely on **==** for **Integer**; caching is an optimization detail.\" |\n| Literals | L for long, f for float | \"Oversized literals need **L** or they fail at compile time.\" |\n| var | Infers from initializer | \"**var** is fine when the rhs makes the type obvious.\" |\n| char vs code point | char is one UTF-16 unit | \"Supplementary characters may need **codePoint** APIs, not raw **char** iteration.\" |\n| Parse input | parseInt throws on bad text | \"I validate strings before parsing and handle **NumberFormatException**.\" |\n| JSON to JS | Number loses >2⁵³ integers | \"Huge IDs become **String** on the wire to protect browsers.\" |\n| Overflow | int wraps silently | \"I use **long** promotion or **Math.addExact** when wrap is unacceptable.\" |"
     }
   ]
 }

@@ -1,58 +1,175 @@
 {
   "day": 38,
-  "title": "Spring Core - IoC & DI",
+  "title": "Spring Core — IoC and Dependency Injection",
   "phaseId": "phase5",
   "tags": [
-    "Bean",
+    "IoC",
+    "DI",
+    "BeanFactory",
     "ApplicationContext",
-    "constructor injection"
+    "constructor injection",
+    "bean lifecycle",
+    "circular dependency",
+    "proxy"
   ],
   "scenarios": [
     {
       "id": "d38-s1",
-      "question": "Why prefer constructor injection over field injection in Spring?",
-      "signals": [
-        "immutability",
-        "testability",
-        "required deps"
-      ],
-      "answer": "**Immutable** after construct, **explicit** required dependencies, easier **unit tests** without reflection hacks, avoids **circular** dependency surprises earlier.",
+      "question": "During code review you see a Spring Boot service where every dependency is injected with `@Autowired` on **private fields**. A junior says: \"It works in production, so why change it?\" In simple terms, what is the problem? What would you recommend instead?",
+      "signals": ["field injection", "testability", "immutability", "reflection"],
+      "answer": "In simple terms: **field injection** lets Spring fill private fields after the object exists. The app can run, but this style creates pain that you pay for in **tests**, **reviews**, and some **startup** edge cases.\n\n**1 — Testability (harder unit tests).** With **field injection**, you cannot build the service in a normal test using `new MyService(mockRepo)` unless you start Spring or use **reflection** to poke private fields. Full Spring tests are slower. Reflection helpers break when you rename fields.\n\n**2 — Immutability (object is not “locked”).** Field-injected dependencies are usually not `final`. That means the object is not fully fixed after construction. Constructor injection with `final` fields makes the object clearly complete and safer to reason about.\n\n**3 — Hidden coupling (harder to read).** A **constructor** lists “what this class needs” in one place. With **field injection**, you must scan the whole class to see all dependencies.\n\n**4 — Circular dependencies.** With **constructor injection**, Spring often fails at startup when Bean A needs B and B needs A — loud and early. With **field injection**, Spring may still start by using partially built beans and **proxies**; bugs can show up only on some calls.\n\n**What to do:** Prefer **constructor injection** for everything the bean truly needs. Use `final` fields. Optional collaborators can use setter injection, `Optional<T>` in the constructor, or `@Autowired(required = false)` on a setter — but keep that rare and documented.\n\n**How to check you fixed it:** A fast unit test should create the service with plain `new` and mocks, with no Spring context.",
       "followUps": [
         {
-          "question": "Optional dependency?",
-          "answer": "**`@Autowired(required=false)`** or **`Optional<T>`** ctor param—document clearly."
+          "question": "What if the constructor gets huge — eight dependencies — and looks ugly? Is that a failure of constructor injection?",
+          "answer": "No. A very large constructor usually means the class is doing too much. That is a **Single Responsibility** smell, not proof that **constructor injection** is bad. **Constructor injection** actually helps because it makes the smell visible. The fix is to split the class or extract smaller collaborators. If you switch back to **field injection** just to hide a fat constructor, the class stays overloaded and only looks cleaner on the surface. In interviews, say: big constructor → refactor the design, not the injection style."
+        },
+        {
+          "question": "Can you explain the testing difference between field injection and constructor injection in one concrete example?",
+          "answer": "With **field injection**, a typical choice is `@SpringBootTest` or `ReflectionTestUtils.setField(service, \"repo\", mock)` — heavier or brittle. With **constructor injection**, the test is: `var service = new OrderService(mockRepo, mockCache);` — plain Java, fast, obvious. When you have hundreds of tests, that speed and clarity add up. **Testability** is the reason many teams make constructor injection the default rule for application beans."
         }
       ]
     },
     {
       "id": "d38-s2",
-      "question": "Two beans same interface—how to inject specific one?",
-      "signals": [
-        "@Qualifier",
-        "@Primary",
-        "name"
-      ],
-      "answer": "**`@Qualifier(\"beanName\")`**, or **`@Primary`** for default, or **`@Bean` method param** name matching.",
+      "question": "Production: the app will not start. The error says the beans form a **cycle** (circular dependency). Kubernetes pods crash in a loop. Walk through — in order — how you find the cause and fix it.",
+      "signals": ["circular dependency", "startup failure", "@Lazy", "refactoring"],
+      "answer": "A **circular dependency** means: Bean A needs Bean B to be created, and Bean B needs Bean A. Neither can be finished first. Spring stops **startup** on purpose — that is better than random failures later.\n\n**Step 1 — Read the error message carefully.** The stack trace usually names the cycle, for example `ServiceA → ServiceB → ServiceA`. Write that chain on paper.\n\n**Step 2 — Ask why those two (or more) classes depend on each other.** Often the design is too tight: two services share logic that should live in a third class, or responsibilities were split the wrong way.\n\n**Step 3 — Best fix: refactor.** Introduce a small third bean (for example a helper or facade) so A and B no longer point at each other in a circle. This is the fix you want long term.\n\n**Step 4 — Short-term escape: `@Lazy`.** Put `@Lazy` on one injection point, e.g. `public ServiceA(@Lazy ServiceB b)`. Spring injects a placeholder first and creates the real B when it is first used. The cycle breaks, but the design problem is still there.\n\n**Step 5 — Another escape: setter injection for one side.** Spring can construct both objects, then call a setter. Use this only as a temporary bridge while you refactor.\n\n**Why you should not ignore cycles:** They mean tight coupling. Over time the graph becomes hard to test and hard to change. **Startup failure** is Spring protecting you.\n\n**Verify:** Application starts cleanly; add a test or diagram so the team remembers why the cycle existed.",
       "followUps": [
         {
-          "question": "What is `@Configuration` proxy?",
-          "answer": "**CGLIB** proxies **`@Bean` methods** to enforce **singleton** semantics within config—don’t call `@Bean` methods directly from Java without going through proxy."
+          "question": "Why do some circular problems show up with constructor injection but seem to “work” with field injection?",
+          "answer": "With **constructor injection**, Spring must supply every dependency before it calls the constructor. A true cycle cannot be solved that way, so you get a clear **startup failure**. With **field injection**, Spring can create object shells first, wire fields later, and use tricks like **early singleton references**. Sometimes the context starts, but you risk subtle bugs (for example a bean calling another while fields are still null). **Constructor injection** fails loud and early, which is safer for production systems."
+        },
+        {
+          "question": "We shipped `@Lazy` to fix a cycle. A senior wants it removed. Why?",
+          "answer": "`@Lazy` delays real initialization until the first use. Problems: (1) Misconfiguration inside the lazy bean may only appear when real traffic hits that path, not at deploy time. (2) The first real request can pay a big latency spike. (3) The next developer may not know why `@Lazy` exists — the **circular dependency** is still a design debt. **Refactoring** out of the cycle remains the right end state; `@Lazy` is a bandage, not the architecture."
         }
       ]
     },
     {
       "id": "d38-s3",
-      "question": "`ApplicationContext` vs `BeanFactory` in interview?",
-      "signals": [
-        "eager",
-        "events",
-        "i18n"
-      ],
-      "answer": "`ApplicationContext` is **superset**—**eager** init of singletons by default, **events**, **resource** handling—what Spring Boot uses.",
+      "question": "A junior asks: \"We can inject with constructor, setter, or field. When should we use each in a real service?\" Give a clear, practical answer they can remember.",
+      "signals": ["injection type", "required vs optional", "immutability", "Spring best practice"],
+      "answer": "Here is a simple rule set most teams use in production.\n\n**Constructor injection — default for required dependencies.** If the bean cannot work without another bean, pass it through the constructor. Use `final` fields. The object is complete as soon as it exists. In Spring Boot, if there is only one constructor, you often do not even need `@Autowired` on it — Spring wires it automatically.\n\n**Setter injection — for optional or swappable collaborators.** Use when the bean has a sensible default without that dependency, or when you must break a **circular dependency** temporarily. Example: optional cache implementation. Document that the dependency is optional.\n\n**Field injection — avoid in production services.** It is quick to write but hurts **testability** and **immutability**. It is more acceptable in some test classes (`@SpringBootTest`) where the whole point is to pull beans from the context.\n\n**Special case: `@Value` on fields.** Many teams still put simple config strings on fields even when the rest uses constructors. That is usually fine because the value is not another living bean with lifecycle.\n\n**Summary:** Required → constructor. Optional or rare → setter (or `Optional` in constructor). Application services → not field injection by default.\n\n**Verify in review:** Can we instantiate this class in a unit test without Spring? If yes, you are usually in good shape.",
       "followUps": [
         {
-          "question": "Component scanning performance?",
-          "answer": "Large classpath scans cost startup—**explicit** packages, **Spring Native**/AOT different story."
+          "question": "If constructor injection is best, why does Spring still support field injection?",
+          "answer": "History and backward compatibility. In older Spring (lots of XML), putting `@Autowired` on a field was less typing than constructors. Many apps still rely on it. Spring’s docs have pushed **constructor injection** for years, but removing **field injection** would break a huge amount of code. New code should still follow the modern default: **constructor injection** for clarity and **testability**."
+        },
+        {
+          "question": "The whole legacy codebase uses field injection. We cannot rewrite everything. What is a realistic plan?",
+          "answer": "Use a gradual rule: every file you touch, move to **constructor injection** in that same change. All **new** classes use constructor injection from day one. Turn on IDE inspections for **field injection** so the list shrinks over time. Avoid one giant “rewrite the world” PR — it causes merge pain. In six to twelve months the hot paths are usually clean without stopping feature work."
+        }
+      ]
+    },
+    {
+      "id": "d38-s4",
+      "question": "Interview question: \"Explain what Spring does from startup until the **ApplicationContext** is ready — from finding your classes to creating beans.\" Answer in clear steps.",
+      "signals": ["BeanDefinition", "BeanFactory", "ApplicationContext", "bean lifecycle"],
+      "answer": "Think of startup as a pipeline. Each step has a name you can use in interviews.\n\n**Phase 1 — Register bean recipes (`BeanDefinition`).** Spring reads `@Configuration`, `@Component` scanning, XML, etc. It does not create your objects yet. It stores **BeanDefinition** records: bean name, class, scope, constructor args, and so on. Nothing is “alive” yet.\n\n**Phase 2 — `BeanFactoryPostProcessor` runs.** Special hooks can edit those recipes before instances exist. Example: resolve `${properties}` placeholders in definitions. This is “change the blueprint,” not “build the house.”\n\n**Phase 3 — Create singleton beans and run lifecycle.** For each singleton, Spring constructs the object, injects dependencies, then runs init callbacks in order: **`@PostConstruct`**, then **`InitializingBean.afterPropertiesSet()`** if implemented, then custom `init-method` if configured.\n\n**Phase 4 — `BeanPostProcessor` wraps beans.** After creation, processors can wrap the bean — for example **AOP proxies** for **`@Transactional`**. That is why external calls go through a proxy.\n\n**Phase 5 — Context ready.** Spring publishes **`ContextRefreshedEvent`**. The application can serve traffic (for web apps, after the server is up).\n\n**On shutdown:** **`@PreDestroy`** and **`DisposableBean.destroy()`** run so connections and threads can close cleanly.\n\n**Why this matters:** If you know the order, you understand where **`@Conditional`** runs (early, on definitions) versus where **`@PostConstruct`** runs (after an instance exists).",
+      "followUps": [
+        {
+          "question": "What is the difference between **BeanFactory** and **ApplicationContext**? Why does Boot use **ApplicationContext**?",
+          "answer": "**BeanFactory** is the minimal container: create and wire beans, sometimes lazily. **ApplicationContext** adds what applications usually need: eager singleton creation (fail fast at startup), **events**, **messages**, **resources**, and a unified **Environment** for properties. **`SpringApplication.run()`** builds a **ConfigurableApplicationContext** (web apps use a servlet-aware implementation). You rarely use raw **BeanFactory** in app code — it is more of an internal building block."
+        },
+        {
+          "question": "Where does `@Conditional` / `@ConditionalOnMissingBean` fit in that timeline?",
+          "answer": "Conditions are checked when Spring registers **BeanDefinition** objects — before normal beans are instantiated. If a condition fails, that bean recipe is never registered, so the bean never exists. That is how **auto-configuration** turns features on or off from the classpath and existing beans. Conditions see definitions, not fully built singletons, so you cannot `@Autowired` a regular bean into a **`BeanFactoryPostProcessor`** the naive way — it is too early."
+        }
+      ]
+    },
+    {
+      "id": "d38-s5",
+      "question": "The team argues: scan everything with `@Component` / `@Service`, OR define every bean in `@Configuration` with explicit `@Bean` methods. What are the real trade-offs in plain language?",
+      "signals": ["component scanning", "@Bean", "explicit configuration", "startup performance"],
+      "answer": "Both work. The choice is about **speed of writing** versus **visibility and control**.\n\n**Component scanning (annotate classes).** Spring searches packages and picks up `@Service`, `@Controller`, etc. **Pros:** Less boilerplate; new class = new bean automatically. **Cons:** Startup can slow down on huge codebases because scanning costs time. The full bean list is **implicit** — you grep the code to see what exists. Tests that need a slice of the app must control package boundaries carefully.\n\n**Explicit `@Bean` methods.** You write a `@Configuration` class with methods that return beans. **Pros:** One file shows wiring. Easy to import exactly what a test needs. Can be faster when scanning is removed for those beans. **Cons:** More typing; easy to forget to add a `@Bean` when you add a type.\n\n**Practical mix:** Scan your own domain (`@Service`, `@Repository`, `@RestController`). Use explicit **`@Bean`** for infrastructure you want full control over: **DataSource**, **Kafka** clients, security bits, clients with complex setup.\n\n**Startup tip:** If boot time hurts, measure with Actuator startup endpoint or logs, narrow `scanBasePackages`, and consider Spring AOT in Boot 3 for heavy apps.\n\n**Verify:** Team agrees “we scan here, we `@Bean` there” so new code does not guess wrong.",
+      "followUps": [
+        {
+          "question": "Monolith, ~800 beans, ~45 s startup. How do we check if scanning is the problem?",
+          "answer": "Turn on startup diagnostics: **`management.endpoint.startup.enabled=true`** and inspect **`/actuator/startup`**, or run with **`--debug`** and read timing. Try narrowing **`@SpringBootApplication(scanBasePackages = ...)`** to exclude empty or non-bean packages and measure again. For Boot 3, look at **AOT** / native hints that reduce runtime scanning. Also rule out other slow starters: DB pool, migrations, huge `@PostConstruct` work."
+        },
+        {
+          "question": "What is the double `@ComponentScan` trap?",
+          "answer": "Root class scans `com.myapp`, and another `@Configuration` also scans `com.myapp`. Spring may register duplicate **BeanDefinition** entries or hit override rules. Modern Boot often throws **`BeanDefinitionOverrideException`** when overriding is not allowed. Fix: one main scan at the root; remove extra **`@ComponentScan`** unless it adds a *different* subtree on purpose. Grep the repo for `@ComponentScan` when you onboard a project."
+        }
+      ]
+    },
+    {
+      "id": "d38-s6",
+      "question": "`@Transactional` is on a **public** method. Inside that method the code calls `this.otherMethod()` on the **same class**. `otherMethod()` is also `@Transactional` with different rules, but those rules never seem to apply. Explain what is going on in simple language.",
+      "signals": ["proxy", "self-invocation", "@Transactional", "AOP"],
+      "answer": "This is the classic **self-invocation** / **proxy bypass** problem.\n\n**Simple picture:** Spring wraps your bean in a **proxy**. Outside callers use the proxy. The proxy starts the **transaction**, then calls your real object.\n\n**What goes wrong:** Inside `outerMethod()`, the code uses Java’s `this`. That means “call the real object directly.” The call never goes back through the **proxy**, so Spring’s **transaction** (and **AOP**) interceptors never see `otherMethod()`. The **`@Transactional`** settings on `otherMethod()` are ignored for that internal call.\n\n**How to prove it:** Log `TransactionSynchronizationManager.isActualTransactionActive()` inside `otherMethod()`. You may see the outer transaction, but not the inner behavior you expected (for example `REQUIRES_NEW`).\n\n**Fixes (best first):** (1) Move `otherMethod()` to another **Spring bean** and inject it — calls go through that bean’s **proxy**. (2) Inject your own interface and call through the injected reference (sometimes called self-injection — use carefully). (3) Last resort: `AopContext.currentProxy()` — ties code to Spring.\n\n**Production risk:** Wrong transaction boundaries → partial commits, wrong rollback, data bugs that tests miss if tests only call the outer method through the **proxy**.\n\n**Rule of thumb:** Any feature that uses a **proxy** (`@Transactional`, `@Cacheable`, `@Async`, …) needs an external call through the **proxy**, not `this.` inside the class.",
+      "followUps": [
+        {
+          "question": "Does the same `this.` problem hit `@Async` and `@Cacheable`?",
+          "answer": "Yes. They use the same **proxy** idea. A `this.internal()` call skips the **proxy**, so **`@Async`** may not run on another thread and **`@Cacheable`** may not cache. Fix by splitting beans or calling through an injected collaborator. If you stack many **proxy**-based annotations in one class and call between methods, you will keep stepping on this rake."
+        },
+        {
+          "question": "Legacy code uses `AopContext.currentProxy()`. A dev wants to delete it. Your advice?",
+          "answer": "Removing it without a structural fix can silently break **transactions**. Prefer extracting the inner behavior to another **`@Component`** and injecting it, keep tests that assert transactional behavior, then delete **`currentProxy()`**. The goal is readable code that still passes the same **integration** checks."
+        }
+      ]
+    },
+    {
+      "id": "d38-s7",
+      "question": "You want third-party teams to add new **payment processors** without editing your core router code. How does Spring **dependency injection** help you design that?",
+      "signals": ["strategy pattern", "plugin architecture", "Spring DI", "interface-based design"],
+      "answer": "Use Spring as a small **plugin** system built on interfaces.\n\n**Step 1 — Define a stable interface.** Example: `PaymentProcessor` with `charge(Money m)`. Core code depends only on that interface, not on Stripe, PayPal, etc.\n\n**Step 2 — Inject all implementations as a list.** Spring can inject `List<PaymentProcessor>` with every `@Component` that implements the interface:\n```java\n@Service\npublic class PaymentRouter {\n    private final List<PaymentProcessor> processors;\n    public PaymentRouter(List<PaymentProcessor> processors) {\n        this.processors = processors;\n    }\n}\n```\nA new JAR adds a new `@Component` → it appears in the list automatically.\n\n**Step 3 — Ordering.** Use `@Order` or `Ordered` if one processor should run before another.\n\n**Step 4 — Named choice.** Inject `Map<String, PaymentProcessor>` keyed by bean name if you pick by configuration string at runtime.\n\n**Step 5 — Optional modules.** Use `@ConditionalOnProperty(\"payment.stripe.enabled\")` so beans only load when configured.\n\n**Why it works:** Core stays closed for edits but open for new beans — classic **strategy** / **plugin** style with **Spring DI** doing discovery.\n\n**Verify:** Integration test with two fake processors in the list; third-party JAR test with **auto-configuration** import file if they ship Boot starters.",
+      "followUps": [
+        {
+          "question": "How does a third-party JAR register its processor without us editing our config?",
+          "answer": "They ship **Spring Boot auto-configuration**: a file under `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` (Boot 3 style) listing their `@Configuration`. On the classpath, Boot loads it and registers their **`PaymentProcessor`** bean. Same idea as official starters (Redis, JPA, etc.). Your app only adds the dependency; Spring discovers the bean."
+        },
+        {
+          "question": "What if we inject a single `PaymentProcessor` but two implementations exist?",
+          "answer": "Startup fails with **`NoUniqueBeanDefinitionException`** unless you add **`@Primary`**, **`@Qualifier`**, or **`@Conditional*`** so only one is active, or you inject **`Map`** / **`List`** instead. **`@Primary`** is a quick default; libraries often prefer **`@ConditionalOnMissingBean`** so apps can override."
+        }
+      ]
+    },
+    {
+      "id": "d38-s8",
+      "question": "A **prototype**-scoped bean is injected into a **singleton** via **constructor**. The team expected a new prototype instance every time they use the singleton, but they always see the same instance. Why?",
+      "signals": ["scope mismatch", "prototype in singleton", "ObjectFactory", "Provider"],
+      "answer": "Simple explanation: the **singleton** is created **once**. The **constructor** runs **once**. Spring passes **one** prototype instance into that constructor and the singleton stores it in a `final` field forever. Every later call reuses that same reference. The **prototype** “new instance each time” rule applies when the container creates the bean again — here it does not create it again for each use of the singleton.\n\n**Why that is dangerous:** People often choose **prototype** when the object holds state that must not be shared. Pinned inside a **singleton**, that state leaks between requests or jobs — correctness or security risk.\n\n**Fix 1 — `ObjectFactory<YourType>` or `Provider<YourType>`.** Inject the factory; call `getObject()` when you need a fresh instance inside a method.\n\n**Fix 2 — `@Lookup` method** (Spring creates a subclass). Works but feels magical.\n\n**Fix 3 — Redesign.** Maybe the state should be a method argument or a **request-scoped** bean instead of **prototype** in a **singleton**.\n\n**Verify:** Add logging of `System.identityHashCode` for the dependency across two operations — you should see different values when using a factory per call.\n\n**Interview line:** “**Singleton** + **constructor** + **prototype** = one prototype instance for the life of the singleton.”",
+      "followUps": [
+        {
+          "question": "How is **request scope** different from **prototype**?",
+          "answer": "**Prototype:** new instance whenever the container is asked to create that bean (e.g. each `getObject()` from a factory). **Request scope:** one instance per **HTTP request**, tied to request lifecycle. For per-request user data in web apps, **request scope** (often with a scoped **proxy**) is usually clearer than **prototype** inside services. **Prototype** fits non-web “create fresh helper on demand” patterns."
+        },
+        {
+          "question": "`@Scheduled` method uses a `@RequestScope` bean. What happens?",
+          "answer": "The scheduler runs on a worker thread with **no** HTTP request. Spring cannot find a request context and throws **`ScopeNotActiveException`** (or similar). Fix: do not inject **request-scoped** beans into scheduled jobs; load data from a repository or pass explicit IDs into the job."
+        }
+      ]
+    },
+    {
+      "id": "d38-s9",
+      "question": "Microservice: **600** Spring beans, **cold start ~38 s**. Kubernetes **liveness** kills the pod before it is ready. How do you diagnose and fix this in a practical way?",
+      "signals": ["startup time", "lazy initialization", "Spring AOT", "liveness probe"],
+      "answer": "**Goal:** Find what burns time during boot, fix the worst parts, and align Kubernetes probes with reality.\n\n**Step 1 — Measure.** Run locally with `spring.main.log-startup-info=true` or `--debug`. Enable **`management.endpoint.startup.enabled=true`** and call **`/actuator/startup`** after a successful boot — it lists slow bean steps.\n\n**Step 2 — Common slow causes:** database pool connecting, **Flyway/Liquibase**, Kafka client setup, **huge component scan**, heavy **`@PostConstruct`** network calls, too many auto-configurations you do not need.\n\n**Step 3 — Quick mitigations:** `spring.main.lazy-initialization=true` (faster boot, slower first requests — use with care in prod). Narrow **`scanBasePackages`**. Move slow optional work to **`ApplicationRunner`** on a background thread.\n\n**Step 4 — Structural:** Boot 3 **AOT** / native can drastically cut scan and reflection work for the right workloads.\n\n**Step 5 — Kubernetes:** Raise **`initialDelaySeconds`** on **liveness** or add a **`startupProbe`** so Kubernetes does not restart a JVM that is still legitimately starting. Use **readiness** for “send traffic” and **liveness** for “restart if dead.”\n\n**Verify:** Deploy shows pods **Ready** without loops; p99 of first requests acceptable if you used **lazy** init.\n\n**If you only tweak probes without fixing slow beans**, you hide symptoms but users still wait.",
+      "followUps": [
+        {
+          "question": "**Liveness** vs **readiness** — simple difference?",
+          "answer": "**Liveness:** “Is the process stuck?” Fail → Kubernetes **restarts** the container. **Readiness:** “Should this pod get traffic?” Fail → pod removed from load balancer, **no** restart. Spring Boot Actuator exposes separate health groups. Wrong mapping (liveness too aggressive during boot) causes **restart loops** while the app is still starting."
+        },
+        {
+          "question": "Why is **lazy initialization** not the default?",
+          "answer": "Eager init finds wiring mistakes at **startup**. **Lazy** moves some failures to the **first request** that touches a bean — worse for on-call. **Lazy** also makes the first hit slower. Boot prefers **fail fast** at startup for predictable production behavior. **Lazy** can still help in dev or controlled prod scenarios with good integration tests."
+        }
+      ]
+    },
+    {
+      "id": "d38-s10",
+      "question": "New developer says: \"**IoC** and **DI** are the same — you just `@Autowired` fields.\" What is wrong with that picture?",
+      "signals": ["IoC principle", "DI vs IoC", "container", "Hollywood principle"],
+      "answer": "**Dependency injection (DI)** is one way to achieve **inversion of control (IoC)**. They are related, not identical.\n\n**IoC in plain words:** Your business code does not fully control the flow. Something else (here, the **Spring container**) decides when to call you, what to inject, when to start **transactions**, when to fire **events**. The old joke name is the **Hollywood principle**: “Don’t call us, we’ll call you.”\n\n**DI:** The container supplies collaborators through constructors, setters, or fields.\n\n**Other IoC examples in Spring (not just `@Autowired`):** **`@Transactional`** (container wraps calls), **`@Scheduled`** (container triggers timing), **`ApplicationEventPublisher`** (you publish; container delivers listeners), **`BeanPostProcessor`** hooks.\n\n**Why the distinction matters in design:** If you only think “**IoC** = `@Autowired`”, you miss events, lifecycle, and **AOP** — half the reason teams use Spring.\n\n**Practical takeaway:** Prefer **constructor DI** for clarity; understand that the **container** also owns **lifecycle** and cross-cutting behavior through **proxies**.\n\n**Verify understanding:** Can the candidate name one IoC feature that is not field wiring?",
+      "followUps": [
+        {
+          "question": "Can you do DI without Spring?",
+          "answer": "Yes. Manual wiring in `main` or a factory — `new Service(new Repo())` — is still **DI** (and **IoC** at construction time) with no framework. **Guice** and **Dagger** automate wiring without the full Spring stack. Knowing manual wiring helps you understand what Spring is automating: object graphs, **singleton** reuse, and **lifecycle** callbacks."
+        },
+        {
+          "question": "What does “the **container** owns **bean lifecycle**” mean day to day?",
+          "answer": "Spring decides **when** beans are created, when **`@PostConstruct`** / **`@PreDestroy`** run, and when the context shuts down. That matters for closing **DataSource** pools on shutdown (important in **Kubernetes** with **SIGTERM**), for **`@DependsOn`** ordering, and for remembering that **singleton** fields are **not** reset per HTTP request — never stash per-request data there."
         }
       ]
     }

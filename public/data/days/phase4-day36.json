@@ -17,540 +17,1028 @@
     "Day 34"
   ],
   "learningObjectives": [
-    "Explain CompletableFuture and Virtual Threads with advanced interview clarity",
-    "Implement CompletableFuture and Virtual Threads in Java with clean design",
-    "Identify runtime and maintainability trade-offs",
-    "Avoid high-frequency failure patterns in CompletableFuture and Virtual Threads",
-    "Apply this concept to production-oriented scenarios",
-    "Communicate decisions with concise technical reasoning"
+    "Compose CompletableFuture pipelines with explicit executors",
+    "Handle failures with exceptionally, handle, and whenComplete",
+    "Use allOf/anyOf patterns and understand limitations",
+    "Explain virtual thread benefits and pinning pitfalls",
+    "Apply timeouts and cancellation for resilient async services",
+    "Relate async design to observability and thread dumps"
   ],
   "sections": [
     {
       "type": "why",
-      "title": "Why CompletableFuture and Virtual Threads matters",
-      "content": "Async composition and lightweight threads improve scalability when used with clear boundaries.\n\nDay 36 is an inflection point between writing code that \"works\" and writing code that scales in maintainability and production reliability.\n\nInterviewers at this stage evaluate:\n1. Internal understanding (how it works, not only syntax)\n2. Trade-off reasoning (why this approach over alternatives)\n3. Runtime impact (performance, memory, contention, failure behavior)\n\nThis topic should be explained with one minimal example, one realistic failure mode, and one mitigation strategy.\n\nIf you can defend your design choices clearly, you will stand out from syntax-only answers."
+      "title": "Why this topic shows up in real interviews",
+      "content": "CompletableFuture is the default glue of asynchronous Java services. It expresses dependencies between tasks more clearly than nested callbacks, and it gives you explicit error paths if you use exceptionally and handle instead of letting exceptions disappear into completedExceptionally states that nobody reads.\n\nThe default executor choice is a silent dependency on ForkJoinPool.commonPool. That is fine until your service shares the pool with parallel streams, framework callbacks, and ad hoc supplyAsync calls under load. Senior engineers pass explicit executors to isolate latency classes and to make thread dumps interpretable.\n\nVirtual threads change throughput economics for blocking workloads, but CompletableFuture composition still matters for non-blocking stages and for integrating with libraries that expose futures. You should be able to explain pinning: when a virtual thread blocks a carrier because of synchronized or native code, you have reintroduced the scarcity you thought you eliminated.\n\nTimeouts and cancellation are production requirements, not interview trivia. orTimeout and completeOnTimeout help you fail fast instead of wedging thread pools when downstream systems stall. Structured concurrency approaches group related tasks so failures propagate and resources clean up predictably.\n\nOn call, slow external calls often show up as growing CompletableFuture chains waiting on get or join at the edges. Your mitigation should include deadline propagation, bulkheading, and metrics on stage latencies—not just increasing pool sizes until the JVM runs out of memory."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - CompletableFuture and Virtual Threads",
-      "content": "### Day 36: CompletableFuture and Virtual Threads\nAsync composition and lightweight threads improve scalability when used with clear boundaries.\n\n### Deep understanding goal\nYou should understand the mechanism, its boundaries, and when to avoid it.\n\n### Practical workflow\n1. Implement baseline.\n2. Add correctness checks and edge handling.\n3. Evaluate runtime cost.\n4. Refactor for readability and team adoption.\n\n### Interview quality bar\n- Explain what problem it solves.\n- Show concise Java example.\n- Name one pitfall and one mitigation.\n- State complexity/runtime implication.\n- Compare with one alternative.\n\n### Production angle\nIn backend systems, this concept influences throughput, reliability, and debugging speed. A good implementation must support operations, not just local correctness.\n\n### Quick self-check\n- Can I explain this in <60 seconds?\n- Can I code it from memory?\n- Can I describe a failure scenario and fix?\n\n### Satyverse — deeper path (theory → practice)\n**JVM tuning starts with metrics:** GC logs, heap dumps, async profiler — guesswork wastes time.\n\n**Generational hypothesis:** most objects die young — tune young gen for allocation rate.\n\n**GC algorithms:** throughput vs latency collectors — choose based on SLA (p99 latency vs batch jobs).\n\n**Off-heap / direct buffers** for NIO — understand when OOME is native memory, not heap."
+      "title": "CompletableFuture and Virtual Threads — theory that sticks",
+      "content": "### Plain-language overview\n\n**CompletableFuture** composes async work with **thenApply**, **thenCompose**, **allOf**, **anyOf**, and error routes **exceptionally/handle**. Default **async** uses **ForkJoinPool.commonPool** unless you pass an **Executor**.\n\n**Interview angle:** async methods are not magic parallelism; they shift work to another thread.\n\n### Composition\n\n**thenCompose** flattens nested futures; **thenCombine** joins two independent futures.\n\n### Error handling\n\n**exceptionally** maps failure; **handle** sees both outcomes.\n\n### allOf / anyOf\n\n**allOf** completes when all complete (void aggregate); combine results manually.\n\n### Virtual threads\n\n**lightweight** threads; good for blocking IO; **pinning** if synchronized/native blocks carrier.\n\n### Structured concurrency\n\n**StructuredTaskScope** (preview/stable per JDK) groups related tasks with cancellation.\n\n### Production angle\n\nAlways pass a **bounded executor** for isolation from common pool.\n\n### 60-second story\n\n“I compose futures with explicit executors. I flatten with thenCompose. I handle errors with handle. I avoid blocking in callbacks. I understand virtual thread pinning risks.”\n\n### CompletableFuture and virtual threads — engineering layer 1\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 1 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 1, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 2\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 2 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 2, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 3\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 3 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 3, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 4\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 4 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 4, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 5\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 5 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 5, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 6\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 6 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 6, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 7\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 7 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 7, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 8\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 8 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 8, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 9\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 9 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 9, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 10\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 10 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 10, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 11\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 11 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 11, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 12\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 12 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 12, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 13\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 13 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 13, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 14\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 14 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 14, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 15\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 15 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 15, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 16\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 16 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 16, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 17\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 17 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 17, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 18\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 18 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 18, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 19\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 19 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 19, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 20\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 20 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 20, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 21\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 21 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 21, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 22\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 22 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 22, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 23\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 23 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 23, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 24\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 24 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 24, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n\n### CompletableFuture and virtual threads — engineering layer 25\n\nUnder delivery pressure, Java backends accumulate quiet technical debt: raw types slipping past code review, streams that allocate more than expected, locks taken in inconsistent order, or modern syntax used without a clear migration story. Layer 25 rehearses how you would detect the regression before it becomes an outage—through JDK-aware CI, structured logs, JFR or async-profiler samples, and tests that assert invariants—not only happy-path compilation. You connect symptoms (Metaspace creep, STW pauses, pool starvation, flaky virtual-thread pinning) back to a language or runtime decision and a fix: clearer APIs, safer concurrency, better defaults, or JVM flags validated with before/after evidence.\n\n**Interview angle:** for layer 25, name one spec-backed guarantee, one metric or dump you would inspect, and one backward-compatible change you would ship first.\n"
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "CompletableFuture and Virtual Threads — basic",
       "language": "java",
       "filename": "Day36Basic.java",
-      "code": "package arch.day36;\n\nimport java.util.concurrent.*;\n\npublic class Day36Basic {\n    public static void main(String[] args) throws Exception {\n        CompletableFuture<String> f = CompletableFuture.supplyAsync(() -> \"hi\")\n            .thenApply(String::toUpperCase);\n        System.out.println(f.get());\n    }\n}",
       "level": "basic",
-      "output": "HI\n",
-      "description": "CompletableFuture: async supply + thenApply without blocking yet."
+      "description": "Deterministic reference: core syntax and one minimal end-to-end print.",
+      "code": "package arch.day36;\n\nimport java.util.concurrent.*;\n\npublic class Day36Basic {\n\n    public static void main(String[] args) throws Exception {\n        CompletableFuture<Integer> f = CompletableFuture.supplyAsync(() -> 2);\n        System.out.println(f.thenApply(x -> x * 3).get());\n    }\n}\n",
+      "output": "6\n"
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "CompletableFuture and Virtual Threads — intermediate",
       "language": "java",
       "filename": "Day36Intermediate.java",
-      "code": "package arch.day36;\n\nimport java.util.concurrent.*;\n\npublic class Day36Intermediate {\n    public static void main(String[] args) throws Exception {\n        CompletableFuture<Integer> a = CompletableFuture.supplyAsync(() -> 20);\n        CompletableFuture<Integer> b = CompletableFuture.supplyAsync(() -> 22);\n        CompletableFuture<Integer> sum = a.thenCombine(b, Integer::sum);\n        System.out.println(sum.get());\n    }\n}",
       "level": "intermediate",
-      "output": "42\n",
-      "description": "Combine futures: run two async tasks and join results."
+      "description": "Four labeled scenarios contrasting APIs, safety, and readability.",
+      "code": "package arch.day36;\n\nimport java.util.concurrent.*;\n\npublic class Day36Intermediate {\n\n    public static void main(String[] args) throws Exception {\n        ExecutorService ex = Executors.newSingleThreadExecutor();\n\n        // --- Scenario 1: supplyAsync ---\n        System.out.println(\"--- Scenario 1 ---\");\n        CompletableFuture<String> a = CompletableFuture.supplyAsync(() -> \"x\", ex);\n        System.out.println(a.get());\n        System.out.println();\n\n        // --- Scenario 2: thenApply ---\n        System.out.println(\"--- Scenario 2 ---\");\n        System.out.println(CompletableFuture.completedFuture(1).thenApply(i -> i + 1).get());\n        System.out.println();\n\n        // --- Scenario 3: exceptionally ---\n        System.out.println(\"--- Scenario 3 ---\");\n        String v =\n                CompletableFuture.<String>failedFuture(new RuntimeException(\"e\"))\n                        .exceptionally(t -> \"fallback\")\n                        .get();\n        System.out.println(v);\n        System.out.println();\n\n        // --- Scenario 4: allOf ---\n        System.out.println(\"--- Scenario 4 ---\");\n        CompletableFuture<Void> all =\n                CompletableFuture.allOf(\n                        CompletableFuture.completedFuture(\"a\"),\n                        CompletableFuture.completedFuture(\"b\"));\n        all.join();\n        System.out.println(\"done\");\n        ex.shutdown();\n    }\n}\n",
+      "output": "--- Scenario 1 ---\nx\n\n--- Scenario 2 ---\n2\n\n--- Scenario 3 ---\nfallback\n\n--- Scenario 4 ---\ndone\n"
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "CompletableFuture and Virtual Threads — advanced",
       "language": "java",
       "filename": "Day36Advanced.java",
-      "code": "package arch.day36;\n\nimport java.util.concurrent.*;\n\npublic class Day36Advanced {\n    public static void main(String[] args) throws Exception {\n        CompletableFuture<Void> all = CompletableFuture.allOf(\n            CompletableFuture.runAsync(() -> System.out.println(\"task-a\")),\n            CompletableFuture.runAsync(() -> System.out.println(\"task-b\"))\n        );\n        all.join();\n        System.out.println(\"done\");\n    }\n}",
       "level": "advanced",
-      "output": "task-a\ntask-b\ndone\n",
-      "description": "Parallel async steps with CompletableFuture.allOf — fan-out then join (Java 17 friendly)."
+      "description": "Three blocks plus printed decision or reference table for tradeoffs.",
+      "code": "package arch.day36;\n\nimport java.util.concurrent.*;\n\npublic class Day36Advanced {\n\n    public static void main(String[] args) throws Exception {\n        // === Block 1: thenCompose ===\n        System.out.println(\"=== Block 1 ===\");\n        CompletableFuture<Integer> f =\n                CompletableFuture.completedFuture(2)\n                        .thenCompose(v -> CompletableFuture.completedFuture(v * 5));\n        System.out.println(f.get());\n        System.out.println();\n\n        // === Block 2: handle ===\n        System.out.println(\"=== Block 2 ===\");\n        String h =\n                CompletableFuture.<String>failedFuture(new IllegalStateException())\n                        .handle((ok, err) -> err == null ? ok : \"err\")\n                        .get();\n        System.out.println(h);\n        System.out.println();\n\n        // === Block 3: vt note ===\n        System.out.println(\"=== Block 3 ===\");\n        System.out.println(\"virtual threads: cheap; avoid pinning\");\n    }\n}\n",
+      "output": "=== Block 1 ===\n10\n\n=== Block 2 ===\nerr\n\n=== Block 3 ===\nvirtual threads: cheap; avoid pinning\n"
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 36",
+      "title": "CompletableFuture composition",
       "diagramType": "sequence",
-      "description": "Visual model for CompletableFuture & Virtual Threads",
-      "plantuml": "@startuml\ntitle Day 36 - CompletableFuture & Virtual Threads\nactor Learner\nrectangle \"Satyverse(Satyam Parmar) Lesson Engine\" {\n  component \"Theory\"\n  component \"Code\"\n  component \"Exercise\"\n  component \"Interview Drill\"\n}\nLearner --> \"Theory\" : Understand concept\nLearner --> \"Code\" : Implement\nLearner --> \"Exercise\" : Practice\nLearner --> \"Interview Drill\" : Explain\n@enduml"
+      "description": "supplyAsync schedules task; thenApply chains transform; executor isolates work.",
+      "plantuml": "@startuml\ntitle Day 36 — async pipeline\n\nparticipant App as A\nparticipant CF as C\nparticipant Executor as E\nparticipant Stage as S\nparticipant Callback as K\n\nA -> C : supplyAsync(task)\nC -> E : submit\nE -> S : run supplier\nS -> K : complete value\nK -> C : thenApply(map)\nC -> E : maybe async\nE -> S : map fn\nS --> A : join/get result\n@enduml"
     },
     {
       "type": "pitfalls",
-      "title": "Common Pitfalls",
+      "title": "Common pitfalls",
       "items": [
-        "Assuming thread safety without explicit synchronization strategy.",
-        "Blocking thread pools with long-running I/O operations.",
-        "Ignoring cancellation/interruption semantics in async flows.",
-        "Choosing lock primitives without contention profiling.",
-        "No observability around queue depth, latency, and rejection rates."
+        "**Implicit common pool overload** — pass dedicated ExecutorService.",
+        "**Blocking inside callbacks** — starves pools; offload or use virtual threads carefully.",
+        "**Swallowed exceptions** — always attach handle/exceptionally or log whenComplete.",
+        "**join on calling thread under load** — hides async benefit; use truly async boundaries.",
+        "**No timeout on external CF** — hung pipelines; add orTimeout.",
+        "**Lost MDC/trace context** — propagate manually in async stages.",
+        "**allOf without per-future error check** — partial failures hidden.",
+        "**Assuming virtual threads fix CPU contention** — false; CPU-bound still needs cores."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - CompletableFuture and Virtual Threads Applied Drill",
-      "problem": "Implement a Java solution demonstrating **CompletableFuture and Virtual Threads** in a realistic scenario.\n\nRequirements:\n1. Include one baseline approach and one improvement.\n2. Handle one edge/failure case.\n3. Add short explanation of trade-off.\n4. Keep code readable and testable.\n5. Show sample output.",
+      "title": "Practice exercise",
+      "difficulty": "Intermediate",
+      "problem": "**Day 36 — CompletableFuture and virtual threads (assignment alignment)**\n\n1. Create **ExecutorService** with **newSingleThreadExecutor** for deterministic ordering.\n2. Build **three** `CompletableFuture.supplyAsync` tasks on that executor returning **\"A\"**, **\"B\"**, **\"C\"** respectively.\n3. Use **CompletableFuture.allOf** to wait for all three, then **concatenate** results in **A,B,C order** (submission order on single-thread pool) and print **combined=ABC** style line.\n4. **shutdown** the executor after printing.",
       "hints": [
-        "Start with correctness before optimization.",
-        "Use explicit naming for intent clarity.",
-        "Write one failure-case test and expected result."
+        "Store futures in vars a,b,c; allOf(a,b,c).join(); then a.get()+b.get()+c.get().",
+        "Catch Exception in main or declare throws.",
+        "Package arch.day36, class Day36Exercise."
       ],
-      "solution": "package arch.day36;\nimport java.util.*;\n\npublic class Day36Advanced {\n    static record Review(String topic, int confidence, boolean needsRevision) {}\n\n    public static void main(String[] args) {\n        List<Review> reviews = List.of(\n            new Review(\"CompletableFuture & Virtual Threads\", 72, true),\n            new Review(\"Coding Practice\", 81, false),\n            new Review(\"Interview Explanation\", 68, true)\n        );\n\n        long reviseCount = reviews.stream().filter(Review::needsRevision).count();\n        int avg = (int) reviews.stream().mapToInt(Review::confidence).average().orElse(0);\n\n        System.out.println(\"avgConfidence = \" + avg);\n        System.out.println(\"needsRevision = \" + reviseCount);\n    }\n}\n",
-      "difficulty": "Intermediate"
+      "solution": "package arch.day36;\n\nimport java.util.concurrent.*;\n\npublic class Day36Exercise {\n\n    public static void main(String[] args) throws Exception {\n        ExecutorService ex = Executors.newSingleThreadExecutor();\n        CompletableFuture<String> a = CompletableFuture.supplyAsync(() -> \"A\", ex);\n        CompletableFuture<String> b = CompletableFuture.supplyAsync(() -> \"B\", ex);\n        CompletableFuture<String> c = CompletableFuture.supplyAsync(() -> \"C\", ex);\n        CompletableFuture.allOf(a, b, c).join();\n        System.out.println(\"combined=\" + a.get() + b.get() + c.get());\n        ex.shutdown();\n    }\n}\n"
     },
     {
       "type": "interview",
       "title": "Interview Drill",
       "conceptual": [
         {
-          "question": "What is CompletableFuture?",
-          "answer": "Non-blocking composition of async tasks with callbacks and combining futures.",
+          "question": "CompletableFuture vs Future?",
+          "answer": "Composable callbacks; non-blocking style.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Non-blocking composition of async tasks with callbacks and combining futures. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Non-blocking composition of async tasks with callbacks and combining futures. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "What is thenApply vs thenCompose?",
-          "answer": "thenApply maps value; thenCompose flattens CompletableFuture-returning function.",
+          "question": "thenCompose why?",
+          "answer": "Avoid nested CompletableFuture.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. thenApply maps value; thenCompose flattens CompletableFuture-returning function. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. thenApply maps value; thenCompose flattens CompletableFuture-returning function. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "What is ForkJoinPool.commonPool?",
-          "answer": "Shared pool for parallel streams and default async executor—limited threads.",
+          "question": "Default executor risk?",
+          "answer": "Common pool saturation; pass own.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Shared pool for parallel streams and default async executor—limited threads. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Shared pool for parallel streams and default async executor—limited threads. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "What are virtual threads (Java 21)?",
-          "answer": "Lightweight threads mapped to carrier threads—great for blocking IO at huge scale.",
+          "question": "exceptionally vs handle?",
+          "answer": "handle sees both success and failure.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Lightweight threads mapped to carrier threads—great for blocking IO at huge scale. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Lightweight threads mapped to carrier threads—great for blocking IO at huge scale. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "What is structured concurrency (preview)?",
-          "answer": "Scopes child tasks lifetime—fail together—emerging pattern.",
+          "question": "allOf limitation?",
+          "answer": "Void; combine gets manually.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Scopes child tasks lifetime—fail together—emerging pattern. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Scopes child tasks lifetime—fail together—emerging pattern. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "What is executor choice for CF?",
-          "answer": "Specify Executor for blocking work—don’t block common pool.",
+          "question": "join vs get interrupt?",
+          "answer": "join wraps unchecked.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Specify Executor for blocking work—don’t block common pool. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Specify Executor for blocking work—don’t block common pool. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "What is exceptionally / handle?",
-          "answer": "Recover from failures in pipeline—typed handling.",
+          "question": "Virtual thread use case?",
+          "answer": "Massive blocking IO with cheap threads.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Recover from failures in pipeline—typed handling. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Recover from failures in pipeline—typed handling. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "What is orTimeout / completeOnTimeout (Java 9+)?",
-          "answer": "Bound wait times—avoid hanging futures.",
+          "question": "Pinning causes?",
+          "answer": "synchronized, native, some library locks.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Bound wait times—avoid hanging futures. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Bound wait times—avoid hanging futures. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "What is join vs get on CompletableFuture?",
-          "answer": "join unchecked; get throws checked ExecutionException.",
+          "question": "StructuredTaskScope benefit?",
+          "answer": "Parent-child cancellation.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. join unchecked; get throws checked ExecutionException. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. join unchecked; get throws checked ExecutionException. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "What is runAsync vs supplyAsync?",
-          "answer": "No return vs Supplier return value.",
+          "question": "Timeouts?",
+          "answer": "orTimeout/completeOnTimeout Java 9+.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. No return vs Supplier return value. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. No return vs Supplier return value. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Virtual thread pinning issue?",
-          "answer": "Synchronized block or native code can pin to carrier—use reentrant locks or avoid.",
+          "question": "MDC in async?",
+          "answer": "Propagate context manually or framework.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Synchronized block or native code can pin to carrier—use reentrant locks or avoid. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Synchronized block or native code can pin to carrier—use reentrant locks or avoid. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "What is carrier thread?",
-          "answer": "OS thread backing many virtual threads—scheduling layer.",
+          "question": "Error swallowing?",
+          "answer": "Ensure exceptionally/handle covers pipeline.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. OS thread backing many virtual threads—scheduling layer. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. OS thread backing many virtual threads—scheduling layer. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Platform thread cost?",
-          "answer": "Megabytes stack vs virtual kilobytes—scalability difference.",
+          "question": "Backpressure with CF?",
+          "answer": "Not built-in; bounded queues upstream.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Megabytes stack vs virtual kilobytes—scalability difference. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Megabytes stack vs virtual kilobytes—scalability difference. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "What is CompletableFuture delayedExecutor?",
-          "answer": "Schedule tasks with delay—Java 9+.",
+          "question": "Testing async?",
+          "answer": "Await completion; avoid sleep.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Schedule tasks with delay—Java 9+. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Schedule tasks with delay—Java 9+. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Thread-per-request vs virtual threads for servlet?",
-          "answer": "Virtual threads improve throughput under blocking workloads.",
+          "question": "Reactive vs CF?",
+          "answer": "Push streams vs single future composition.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **CompletableFuture and Virtual Threads** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Virtual threads improve throughput under blocking workloads. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **CompletableFuture and Virtual Threads**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Virtual threads improve throughput under blocking workloads. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
+            }
+          ]
+        },
+        {
+          "question": "ThreadLocal leaks async?",
+          "answer": "Copy context per task.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
+            },
+            {
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
+            }
+          ]
+        },
+        {
+          "question": "60-second CF story?",
+          "answer": "compose, explicit executor, error routes, avoid block, vt pinning.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this topic, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
+            },
+            {
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         }
       ],
       "codeBased": [
         {
-          "question": "CompletableFuture.supplyAsync(() -> fetch()).thenApply(String::toUpperCase)",
-          "answer": "Pipeline.",
+          "question": "Chain two async calls?",
+          "answer": "thenCompose first.thenCompose(second).",
           "followUps": [
             {
-              "question": "What breaks if this **CompletableFuture and Virtual Threads** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Pipeline. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Pipeline. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "thenCombine add two async ints.",
-          "answer": "cf1.thenCombine(cf2, Integer::sum)",
+          "question": "Combine two CF int sum?",
+          "answer": "a.thenCombine(b, Integer::sum).",
           "followUps": [
             {
-              "question": "What breaks if this **CompletableFuture and Virtual Threads** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. cf1.thenCombine(cf2, Integer::sum) Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. cf1.thenCombine(cf2, Integer::sum) Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "exceptionally ex -> default",
-          "answer": "Recover from failure.",
+          "question": "Recover fallback?",
+          "answer": "exceptionally(t -> default).",
           "followUps": [
             {
-              "question": "What breaks if this **CompletableFuture and Virtual Threads** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Recover from failure. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Recover from failure. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "allOf futures then run.",
-          "answer": "CompletableFuture.allOf(fs).thenRun(...).",
+          "question": "Run after both?",
+          "answer": "allOf.thenRun(...).",
           "followUps": [
             {
-              "question": "What breaks if this **CompletableFuture and Virtual Threads** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. CompletableFuture.allOf(fs).thenRun(...). Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. CompletableFuture.allOf(fs).thenRun(...). Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "custom Executor for supplyAsync.",
-          "answer": "supplyAsync(task, executor).",
+          "question": "Supply from executor?",
+          "answer": "supplyAsync(sup, pool).",
           "followUps": [
             {
-              "question": "What breaks if this **CompletableFuture and Virtual Threads** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. supplyAsync(task, executor). Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. supplyAsync(task, executor). Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "join multiple with CompletableFuture.anyOf?",
-          "answer": "First success—careful semantics.",
+          "question": "Complete explicitly?",
+          "answer": "complete(value) or completeExceptionally.",
           "followUps": [
             {
-              "question": "What breaks if this **CompletableFuture and Virtual Threads** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. First success—careful semantics. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. First success—careful semantics. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Virtual thread ExecutorService Java 21.",
-          "answer": "Executors.newVirtualThreadPerTaskExecutor()",
+          "question": "Cancel task?",
+          "answer": "cancel(true) cooperative with interruption.",
           "followUps": [
             {
-              "question": "What breaks if this **CompletableFuture and Virtual Threads** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Executors.newVirtualThreadPerTaskExecutor() Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Executors.newVirtualThreadPerTaskExecutor() Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Future get with timeout.",
-          "answer": "future.get(1, TimeUnit.SECONDS)",
+          "question": "Stream of CF?",
+          "answer": "List allOf pattern.",
           "followUps": [
             {
-              "question": "What breaks if this **CompletableFuture and Virtual Threads** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. future.get(1, TimeUnit.SECONDS) Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. future.get(1, TimeUnit.SECONDS) Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "handle (result, ex) both.",
-          "answer": "Unified success/failure path.",
+          "question": "Blocking get in servlet?",
+          "answer": "Avoid; use async servlet APIs.",
           "followUps": [
             {
-              "question": "What breaks if this **CompletableFuture and Virtual Threads** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Unified success/failure path. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Unified success/failure path. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "thenAccept async logging.",
-          "answer": "End pipeline consumer.",
+          "question": "Retry CF?",
+          "answer": "Manual loop or resilience4j.",
           "followUps": [
             {
-              "question": "What breaks if this **CompletableFuture and Virtual Threads** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. End pipeline consumer. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. End pipeline consumer. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
+            }
+          ]
+        },
+        {
+          "question": "Delay stage?",
+          "answer": "CompletableFuture.delayedExecutor Java 9+.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
+            },
+            {
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
+            }
+          ]
+        },
+        {
+          "question": "Record result in CF?",
+          "answer": "supplyAsync returns DTO.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this code path, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
+            },
+            {
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         }
       ],
       "seniorScenario": [
         {
-          "question": "Outage: thread pool saturated—symptoms?",
-          "answer": "Latency spikes, rejected executions—metrics on active count and queue.",
+          "question": "Outage cascading timeouts?",
+          "answer": "Bulkhead thread pools; deadlines.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **CompletableFuture and Virtual Threads** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Latency spikes, rejected executions—metrics on active count and queue. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this scenario, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Latency spikes, rejected executions—metrics on active count and queue. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Blocking call inside CF common pool—impact?",
-          "answer": "Starves parallel streams and other async—dedicate pool.",
+          "question": "Metrics for async?",
+          "answer": "Latency percentiles per stage.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **CompletableFuture and Virtual Threads** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Starves parallel streams and other async—dedicate pool. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this scenario, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Starves parallel streams and other async—dedicate pool. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Distributed trace across CF stages?",
-          "answer": "Propagate trace context manually or with framework support.",
+          "question": "Common pool exhausted?",
+          "answer": "Separate executor for app async.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **CompletableFuture and Virtual Threads** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Propagate trace context manually or with framework support. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this scenario, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Propagate trace context manually or with framework support. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Virtual threads and JDBC drivers?",
-          "answer": "Ensure drivers release pinning; monitor thread dumps.",
+          "question": "Library uses CF internally?",
+          "answer": "Document threading assumptions.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **CompletableFuture and Virtual Threads** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Ensure drivers release pinning; monitor thread dumps. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this scenario, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Ensure drivers release pinning; monitor thread dumps. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Choosing CompletableFuture vs Project Reactor?",
-          "answer": "Ecosystem integration—Spring WebFlux uses Reactor.",
+          "question": "Graal native image?",
+          "answer": "Register reflection and substitutions if needed.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **CompletableFuture and Virtual Threads** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Ecosystem integration—Spring WebFlux uses Reactor. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this scenario, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Ecosystem integration—Spring WebFlux uses Reactor. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         },
         {
-          "question": "Cancellation of CompletableFuture chains?",
-          "answer": "cancel may not stop running task—cooperative cancellation.",
+          "question": "Kotlin coroutine interop?",
+          "answer": "Bridge executors; structured concurrency.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **CompletableFuture and Virtual Threads** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: cancel may not stop running task—cooperative cancellation. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **verify** this in a running service?",
+              "answer": "For this scenario, you name concrete signals: thread dumps for lock ordering, JFR for allocation hot spots, logs for suppressed warnings, and metrics for pool saturation. You describe a minimal reproducer or integration test that encodes the invariant, and you avoid hand-wavy claims by tying behaviour to JDK version and documented semantics."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. cancel may not stop running task—cooperative cancellation. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **follow-up trap** might the interviewer set?",
+              "answer": "They may push on binary compatibility, preview features, migration from older JDKs, or subtle happens-before edges. You respond with scope: what is guaranteed by the JLS or JVM spec versus what is implementation detail, and when to prefer explicit, boring code over clever syntax."
             }
           ]
         }
       ],
       "wrongAnswers": [
-        "CompletableFuture.get never blocks the calling thread.",
-        "Virtual threads replace the need for thread pools entirely.",
-        "thenApply runs on the same thread that completed the previous stage always.",
-        "ForkJoinPool.commonPool has unlimited threads.",
-        "CompletableFuture cannot complete exceptionally.",
-        "join() throws checked InterruptedException like get()."
+        "CompletableFuture always uses new thread per stage — false pools.",
+        "Blocking get inside CF callback is fine — false starvation.",
+        "allOf returns combined list — false void.",
+        "Virtual threads remove all locking concerns — false pinning.",
+        "thenApply runs on calling thread always — false async overload.",
+        "Cancellation always stops computation — false cooperative.",
+        "Failed futures cannot be composed — false exceptionally.",
+        "Common pool unbounded threads — false FJP limits."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ Quiz — CompletableFuture and Virtual Threads",
+      "description": "Thirty questions on composition, executors, error handling, and virtual threads.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "CompletableFuture.get blocks:",
+          "options": {
+            "A": "Until complete",
+            "B": "Never",
+            "C": "Only void",
+            "D": "Illegal"
+          },
+          "answer": "A",
+          "explanation": "API."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "supplyAsync runs:",
+          "options": {
+            "A": "Async supplier",
+            "B": "Main only",
+            "C": "GC",
+            "D": "static"
+          },
+          "answer": "A",
+          "explanation": "Executor."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "theory",
+          "question": "thenApply vs thenCompose:",
+          "options": {
+            "A": "Compose flattens nested CF",
+            "B": "Same",
+            "C": "Only name",
+            "D": "throws"
+          },
+          "answer": "A",
+          "explanation": "Monadic."
+        },
+        {
+          "id": 4,
+          "level": "intermediate",
+          "category": "code",
+          "question": "allOf returns:",
+          "options": {
+            "A": "CompletableFuture<Void>",
+            "B": "List",
+            "C": "String",
+            "D": "int"
+          },
+          "answer": "A",
+          "explanation": "Aggregate."
+        },
+        {
+          "id": 5,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Default async executor:",
+          "options": {
+            "A": "ForkJoin common pool",
+            "B": "newCached",
+            "C": "Single",
+            "D": "None"
+          },
+          "answer": "A",
+          "explanation": "Default."
+        },
+        {
+          "id": 6,
+          "level": "intermediate",
+          "category": "code",
+          "question": "exceptionally maps:",
+          "options": {
+            "A": "Throwable to value",
+            "B": "void",
+            "C": "Stream",
+            "D": "Thread"
+          },
+          "answer": "A",
+          "explanation": "Recovery."
+        },
+        {
+          "id": 7,
+          "level": "advanced",
+          "category": "theory",
+          "question": "join vs get:",
+          "options": {
+            "A": "join unchecked interrupt",
+            "B": "Same",
+            "C": "join waits forever only",
+            "D": "get no wait"
+          },
+          "answer": "A",
+          "explanation": "Ergonomic."
+        },
+        {
+          "id": 8,
+          "level": "intermediate",
+          "category": "code",
+          "question": "handle takes:",
+          "options": {
+            "A": "BiFunction value,throwable",
+            "B": "Runnable",
+            "C": "Supplier",
+            "D": "Comparator"
+          },
+          "answer": "A",
+          "explanation": "Both paths."
+        },
+        {
+          "id": 9,
+          "level": "basic",
+          "category": "theory",
+          "question": "completedFuture:",
+          "options": {
+            "A": "Already done",
+            "B": "Never completes",
+            "C": "Error",
+            "D": "Random"
+          },
+          "answer": "A",
+          "explanation": "Factory."
+        },
+        {
+          "id": 10,
+          "level": "intermediate",
+          "category": "code",
+          "question": "thenCombine:",
+          "options": {
+            "A": "Waits two CFs",
+            "B": "One only",
+            "C": "void",
+            "D": "Sort"
+          },
+          "answer": "A",
+          "explanation": "Zip."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Blocking in CF callback:",
+          "options": {
+            "A": "Risk pool starvation",
+            "B": "Always good",
+            "C": "No effect",
+            "D": "Faster"
+          },
+          "answer": "A",
+          "explanation": "Care."
+        },
+        {
+          "id": 12,
+          "level": "advanced",
+          "category": "code",
+          "question": "anyOf:",
+          "options": {
+            "A": "First success or failure completes",
+            "B": "All must finish",
+            "C": "Never",
+            "D": "Sort"
+          },
+          "answer": "A",
+          "explanation": "Race."
+        },
+        {
+          "id": 13,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Virtual thread cheap:",
+          "options": {
+            "A": "Many blocking IO tasks",
+            "B": "CPU compute bound",
+            "C": "Never use",
+            "D": "Replaces GC"
+          },
+          "answer": "A",
+          "explanation": "Model."
+        },
+        {
+          "id": 14,
+          "level": "basic",
+          "category": "code",
+          "question": "runAsync:",
+          "options": {
+            "A": "Runnable no result",
+            "B": "Supplier",
+            "C": "Callable",
+            "D": "Stream"
+          },
+          "answer": "A",
+          "explanation": "Void."
+        },
+        {
+          "id": 15,
+          "level": "intermediate",
+          "category": "code",
+          "question": "thenAccept:",
+          "options": {
+            "A": "Consumer side effect",
+            "B": "Returns mapped",
+            "C": "throws only",
+            "D": "Supplier"
+          },
+          "answer": "A",
+          "explanation": "Terminal-ish."
+        },
+        {
+          "id": 16,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Pinning virtual thread:",
+          "options": {
+            "A": "synchronized/native blocks carrier",
+            "B": "Never happens",
+            "C": "GC",
+            "D": "JIT"
+          },
+          "answer": "A",
+          "explanation": "Limitation."
+        },
+        {
+          "id": 17,
+          "level": "intermediate",
+          "category": "code",
+          "question": "copy with executor:",
+          "options": {
+            "A": "async methods may use custom pool",
+            "B": "Impossible",
+            "C": "Only common",
+            "D": "static"
+          },
+          "answer": "A",
+          "explanation": "*Async overload."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Cancellation:",
+          "options": {
+            "A": "cancel mayInterruptIfRunning",
+            "B": "Cannot cancel",
+            "C": "Always stops",
+            "D": "GC only"
+          },
+          "answer": "A",
+          "explanation": "Cooperative."
+        },
+        {
+          "id": 19,
+          "level": "basic",
+          "category": "code",
+          "question": "obtrudeValue:",
+          "options": {
+            "A": "Force complete",
+            "B": "Illegal",
+            "C": "Join",
+            "D": "Sleep"
+          },
+          "answer": "A",
+          "explanation": "Rare."
+        },
+        {
+          "id": 20,
+          "level": "advanced",
+          "category": "code",
+          "question": "orTimeout:",
+          "options": {
+            "A": "Fail if late",
+            "B": "Extend time",
+            "C": "No JDK support",
+            "D": "GC hint"
+          },
+          "answer": "A",
+          "explanation": "Java 9+."
+        },
+        {
+          "id": 21,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Composition vs raw threads:",
+          "options": {
+            "A": "Callbacks structured",
+            "B": "Same chaos",
+            "C": "No difference",
+            "D": "Slower always"
+          },
+          "answer": "A",
+          "explanation": "DX."
+        },
+        {
+          "id": 22,
+          "level": "intermediate",
+          "category": "code",
+          "question": "failedFuture:",
+          "options": {
+            "A": "Pre-completed exceptionally",
+            "B": "Success",
+            "C": "Empty",
+            "D": "Random"
+          },
+          "answer": "A",
+          "explanation": "Factory."
+        },
+        {
+          "id": 23,
+          "level": "basic",
+          "category": "theory",
+          "question": "Executor isolation:",
+          "options": {
+            "A": "Separate pool for latency",
+            "B": "Always common",
+            "C": "Forbidden",
+            "D": "One thread"
+          },
+          "answer": "A",
+          "explanation": "Ops."
+        },
+        {
+          "id": 24,
+          "level": "advanced",
+          "category": "code",
+          "question": "whenComplete:",
+          "options": {
+            "A": "Runs on completion success or fail",
+            "B": "Success only",
+            "C": "Fail only",
+            "D": "Never"
+          },
+          "answer": "A",
+          "explanation": "Side effect."
+        },
+        {
+          "id": 25,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Structured concurrency idea:",
+          "options": {
+            "A": "Group tasks with scope cancel",
+            "B": "No groups",
+            "C": "Only threads",
+            "D": "SQL"
+          },
+          "answer": "A",
+          "explanation": "Modern."
+        },
+        {
+          "id": 26,
+          "level": "intermediate",
+          "category": "code",
+          "question": "thenApplyAsync:",
+          "options": {
+            "A": "May run on executor async",
+            "B": "Same thread always",
+            "C": "Illegal",
+            "D": "void"
+          },
+          "answer": "A",
+          "explanation": "Overload."
+        },
+        {
+          "id": 27,
+          "level": "basic",
+          "category": "theory",
+          "question": "CompletableFuture immutable?",
+          "options": {
+            "A": "Completes once",
+            "B": "Reopen",
+            "C": "Twice set",
+            "D": "Random"
+          },
+          "answer": "A",
+          "explanation": "State machine."
+        },
+        {
+          "id": 28,
+          "level": "advanced",
+          "category": "code",
+          "question": "nativeImage CF?",
+          "options": {
+            "A": "May need configuration",
+            "B": "Always trivial",
+            "C": "Banned",
+            "D": "Only GUI"
+          },
+          "answer": "A",
+          "explanation": "Graal."
+        },
+        {
+          "id": 29,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Async logging in callbacks:",
+          "options": {
+            "A": "Care MDC propagation",
+            "B": "Auto always",
+            "C": "No logs",
+            "D": "GC"
+          },
+          "answer": "A",
+          "explanation": "Observability."
+        },
+        {
+          "id": 30,
+          "level": "intermediate",
+          "category": "code",
+          "question": "allOf then combine results:",
+          "options": {
+            "A": "Manual get each after join",
+            "B": "Automatic tuple",
+            "C": "Illegal",
+            "D": "List merge"
+          },
+          "answer": "A",
+          "explanation": "Pattern."
+        }
       ]
     },
     {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Area | Phase 4 Focus | Quick Rule | Gotcha |\n|---|---|---|---|\n| Concept | CompletableFuture and Virtual Threads | Explain mechanism + boundary | Syntax-only answers |\n| Runtime | Performance/memory/concurrency | Mention impact explicitly | Hidden runtime costs |\n| Code | Clean composable units | Prefer readability first | Over-chained complexity |\n| Failure | Known pitfall + mitigation | Name one concrete case | Hand-wavy debugging |\n| Interview | Decision reasoning | Compare alternatives | No trade-off discussion |"
+      "title": "CompletableFuture and Virtual Threads — cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n| --- | --- | --- |\n| supplyAsync | Supplier | executor |\n| thenApply | map | transform |\n| thenCompose | flatMap | nested CF |\n| thenCombine | zip | two CFs |\n| allOf | void wait | manual get |\n| anyOf | first finish | race |\n| exceptionally | recover | throwable |\n| handle | both | bi fn |\n| whenComplete | side effect | always |\n| join | unchecked | wait |\n| completedFuture | ready | constant |\n| failedFuture | failed | factory |\n| orTimeout | fail late | deadline |\n| runAsync | Runnable | void |\n| executor param | isolate | ops |"
     }
   ]
 }

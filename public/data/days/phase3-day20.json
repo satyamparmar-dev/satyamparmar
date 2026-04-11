@@ -17,540 +17,1028 @@
     "Day 18"
   ],
   "learningObjectives": [
-    "Explain Arrays and Two Pointers with interview-grade clarity",
-    "Implement Arrays and Two Pointers solutions in clean Java",
-    "Choose the right pattern and justify complexity",
-    "Handle boundary cases without brittle logic",
-    "Use this topic to solve coding-round problems confidently",
-    "Communicate trade-offs using concrete examples"
+    "Use two pointers on sorted arrays with correct monotonic proofs",
+    "Implement sliding window variants with clear invariants",
+    "Compare hash-based vs sort+scan strategies for pair problems",
+    "Handle duplicates, overflow, and empty inputs cleanly",
+    "Merge sorted sequences and partition arrays in linear time",
+    "Explain production joins and streaming merges using pointer techniques"
   ],
   "sections": [
     {
       "type": "why",
-      "title": "Why Arrays and Two Pointers matters",
-      "content": "Two-pointer patterns turn many O(n^2) brute-force array problems into O(n) or O(n log n) solutions.\n\nThis day is central to DSA interviews because it combines coding speed with reasoning quality. Interviewers usually evaluate three things:\n1. Can you identify the right pattern quickly?\n2. Can you explain why the approach is correct?\n3. Can you reason about complexity and edge cases?\n\nSliding windows, pointer movement logic, and invariant maintenance.\n\nA high-quality answer should include:\n- concise approach summary,\n- small dry-run,\n- complexity analysis,\n- one alternative approach and trade-off.\n\nBy the end of Day 20, you should be able to solve representative problems and explain your decisions with confidence."
+      "title": "Why this topic shows up in real interviews",
+      "content": "Arrays are the default data structure in backend services: request payloads, columnar batches, time series windows, and in-memory caches almost always land in contiguous memory. **Two pointers** are the pattern that turns many “try everything” sketches into linear passes when order or monotonicity is present. Interviewers use them to see whether you reason about **invariants** instead of memorizing templates.\n\nIn production, the same pattern appears when you merge sorted audit streams, collapse duplicate events in a timeline, or walk two ordered indexes during an incremental ETL join. The failure mode is familiar: someone squares the work by nested loops because the data was sortable once. Complexity here is not trivia—it is how you keep join logic from becoming a latency bomb.\n\nInterview answers should start with **preconditions**: is the input sorted? can it contain duplicates? do we need one pair or all unique triplets? Then you describe how moving `left` or `right` **cannot** skip the only valid answer. That proof sketch separates mid-level code from senior reasoning.\n\nTwo pointers also sit next to **sliding windows**: both use two indices, but windows optimize contiguous segments while classic two-pointer pair search optimizes sums on sorted arrays. Mixing the two confuses candidates; clarifying which invariant you maintain fixes most stalls.\n\nAt scale, **integer overflow** and **empty inputs** decide whether your “simple” two-pointer solution is trustworthy. Production bugs from `a[i]+a[j]` wrapping positive are rare in interviews but memorable on call. Mentioning `long` sums signals you have shipped real parsers or financial aggregations.\n\nFinally, on-call scenarios often trace back to accidental quadratic joins in application memory. When metrics show latency scaling with the product of two growing lists, the mental model you built on Day 20 is how you find the nested loops or repeated scans and replace them with sorted merges or hash-based joins."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Arrays and Two Pointers",
-      "content": "### Why this topic matters now\nTwo-pointer patterns turn many O(n^2) brute-force array problems into O(n) or O(n log n) solutions.\n\n### Core interview mental model\nFor Arrays and Two Pointers, first identify the problem family, then map it to a known pattern. Pattern-first thinking reduces random trial-and-error.\n\n### Implementation guidance\n1. Write the simplest correct version first.\n2. Validate using one normal and one edge case.\n3. Improve complexity only after correctness is locked.\n4. Refactor to readable helper methods.\n\n### Complexity and trade-off lens\nDo not state complexity by memory. Derive it from operations performed. Mention time + space and where each cost comes from.\n\n### Common failure mode\nMost failures in Arrays and Two Pointers are not syntax errors. They come from broken invariants, weak boundary checks, or unclear state tracking.\n\n### Interview speaking template\n- \"I considered X because...\"\n- \"The invariant is...\"\n- \"Per iteration we do..., so complexity is...\"\n- \"An alternative would be..., but I chose this due to...\"\n\n### Production relevance\nEven outside interviews, these patterns improve throughput, latency, and correctness in backend data processing tasks.\n\n### Satyverse — deeper path (theory → practice)\n**Two pointers** often turn O(n²) into O(n) on sorted arrays — pair sum, triplet, container with most water pattern.\n\n**Sliding window** for contiguous subarray problems — expand/shrink while maintaining invariant.\n\n**Prefix sums** answer range queries in O(1) after O(n) prep — essential for competitive and analytics code."
+      "title": "Arrays and Two Pointers — theory that sticks",
+      "content": "### Plain-language overview\n\n**Arrays** give O(1) random access by index; **two pointers** are two indices moving through an array (or two arrays) while preserving a **invariant**—often monotonicity in a sorted structure. Interviews love this pattern because it turns O(n²) “try all pairs” thinking into O(n) single-pass reasoning when the data supports it.\n\n**Interview angle:** before coding, say whether the array is **sorted**, whether elements are **distinct**, and whether you need **all** solutions or one.\n\n### Why two pointers work\n\nWhen the array is sorted, if `a[i] + a[j]` is too small for a target, increasing `i` raises the sum; if too large, decreasing `j` lowers it. That **monotone** adjustment visits each candidate edge at most once—hence linear time. The same spirit appears in merging sorted arrays and partitioning.\n\n**Interview angle:** prove that you never skip the only valid pair—usually because moving the wrong pointer would only worsen the gap.\n\n### Sliding window (related family)\n\nA **window** is a subarray defined by left/right pointers. **Fixed-size** windows slide one step; **variable-size** windows grow/shrink while a condition holds (longest substring with at most k distinct chars). Complexity is often O(n) because each element enters and leaves the window a bounded number of times.\n\n**Interview angle:** state what you count inside the window and what you reset when the constraint breaks.\n\n### Sorted vs unsorted\n\nTwo-pointer pair tricks typically require **sorted** input. If unsorted, sorting costs O(n log n) unless another structure (hash map) gives O(n) expected. Choose based on whether you need indices stable, memory limits, or duplicate handling.\n\n**Interview angle:** compare **O(n) hash** vs **O(n log n) sort + two pointers** for two-sum variants.\n\n### Invariants checklist\n\n| Invariant type | Example |\n| --- | --- |\n| Ordering | `i < j` and both move toward center |\n| Value bound | sum ≤ target while maximizing length |\n| Partition | elements left of p are ≤ pivot |\n\n**Interview angle:** one sentence: “I keep left as the smallest viable index and right as the largest.”\n\n### Common pitfalls in code\n\nOff-by-one with empty arrays, duplicate skipping when problem wants unique triplets, and integer overflow on `a[i]+a[j]` (use `long` in Java for sums). For **subarray** problems, clarify if empty subarray is allowed.\n\n**Interview angle:** mention overflow before the interviewer does.\n\n### Stability and duplicates\n\nWhen skipping duplicates for uniqueness, move pointers while `a[i] == a[i+1]` **after** recording a valid triplet—order matters to avoid dropping valid combinations.\n\n**Interview angle:** show dry-run on `[1,1,2,2,3]`.\n\n### Partition and Dutch flag\n\n**Partition** around a pivot rearranges elements in O(n) with two or three regions. Dutch national flag extends to three colors—three pointers. This is the structural cousin of quicksort and certain stream aggregations.\n\n**Interview angle:** connect partition to quickselect for k-th largest.\n\n### Prefix sums (array companion pattern)\n\n**Prefix sum** turns range sum queries into O(1) after O(n) preprocessing: `psum[i] = sum(a[0..i-1])`. Pair with hash map for “subarray sum = k” in O(n).\n\n**Interview angle:** separate **index** prefix from **value** prefix to avoid off-by-one.\n\n### Two arrays, two pointers\n\nMerging sorted arrays or computing intersections uses two indices advancing independently—total work O(n+m) because each step advances at least one pointer.\n\n**Interview angle:** tie-break when `a[i]==b[j]` based on problem (unique intersection vs multiset).\n\n### Complexity table\n\n| Pattern | Preconditions | Time | Extra space |\n| --- | --- | --- | --- |\n| Two sum sorted | sorted | O(n) | O(1) |\n| Two sum unsorted | none | O(n) expected hash | O(n) |\n| Merge sorted | two sorted | O(n+m) | O(1) if output given |\n| Sliding window | contiguous | O(n) typical | O(k) for counts |\n\n### Production mapping\n\nBatch processors often **sort once** then **stream** with two pointers to avoid quadratic joins in memory. Watch for **stable sort** needs when merging labeled events.\n\n**Interview angle:** mention sort cost amortized over many queries on the same array.\n\n### 60-second story\n\n“I check if the array is sorted. If yes, I use two pointers with a monotone invariant—each adjustment excludes impossible candidates. If not, I compare hash map O(n) expected versus sort-then-scan O(n log n) for memory and determinism. I watch overflow on sums, duplicate policy, and empty inputs. I prove we never skip the answer by showing the rejected side cannot contain the target.”\n\n### Arrays and two pointers — discipline layer 1\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 1 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 1, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 2\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 2 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 2, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 3\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 3 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 3, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 4\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 4 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 4, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 5\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 5 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 5, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 6\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 6 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 6, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 7\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 7 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 7, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 8\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 8 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 8, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 9\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 9 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 9, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 10\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 10 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 10, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 11\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 11 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 11, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 12\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 12 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 12, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 13\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 13 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 13, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 14\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 14 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 14, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 15\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 15 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 15, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 16\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 16 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 16, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 17\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 17 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 17, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 18\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 18 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 18, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 19\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 19 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 19, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 20\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 20 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 20, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 21\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 21 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 21, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 22\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 22 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 22, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 23\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 23 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 23, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 24\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 24 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 24, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n\n### Arrays and two pointers — discipline layer 25\n\nUnder delivery pressure, teams often ship “fast enough” code that becomes fragile at scale: nested loops over growing collections, accidental sorting inside request handlers, or “average case” assumptions that fail on adversarial inputs. Layer 25 rehearses how you would detect the regression early—through latency SLOs, CPU profiles, and structured logs that record input sizes—not after an outage. You connect the symptom (p99 spikes, GC churn, thread pool saturation) back to a complexity class and a concrete fix: better structure, indexing, batching, or algorithmic replacement.\n\n**Interview angle:** for layer 25, name one metric you would watch, one experiment you would run, and one rollback-safe change you would ship first.\n"
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "Arrays and Two Pointers — basic",
       "language": "java",
       "filename": "Day20Basic.java",
-      "code": "package arch.day20;\n\npublic class Day20Basic {\n    static boolean palindrome(char[] s) {\n        int l = 0, r = s.length - 1;\n        while (l < r) {\n            if (s[l++] != s[r--]) return false;\n        }\n        return true;\n    }\n\n    public static void main(String[] args) {\n        System.out.println(palindrome(\"racecar\".toCharArray()));\n    }\n}",
       "level": "basic",
-      "output": "true\n",
-      "description": "Two pointers from both ends: palindrome check on char array."
+      "description": "Deterministic prints: reference shapes for dominant operations and common complexity classes.",
+      "code": "package arch.day20;\n\npublic class Day20Basic {\n\n    static void printPair(int[] a, int i, int j) {\n        System.out.println(\"i=\" + i + \" j=\" + j + \" sum=\" + (a[i] + a[j]));\n    }\n\n    public static void main(String[] args) {\n        int[] a = { 1, 3, 4, 6, 10 };\n        int target = 9;\n        int i = 0;\n        int j = a.length - 1;\n        System.out.println(\"=== Two pointers on sorted array ===\");\n        System.out.println(\"target=\" + target);\n        while (i < j) {\n            int s = a[i] + a[j];\n            if (s == target) {\n                printPair(a, i, j);\n                break;\n            } else if (s < target) {\n                i++;\n            } else {\n                j--;\n            }\n        }\n        System.out.println(\"final_i=\" + i + \" final_j=\" + j);\n    }\n}\n",
+      "output": "=== Two pointers on sorted array ===\ntarget=9\ni=1 j=3 sum=9\nfinal_i=1 final_j=3\n"
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "Arrays and Two Pointers — intermediate",
       "language": "java",
       "filename": "Day20Intermediate.java",
-      "code": "package arch.day20;\n\npublic class Day20Intermediate {\n    static boolean pairSum(int[] a, int target) {\n        int l = 0, r = a.length - 1;\n        while (l < r) {\n            int s = a[l] + a[r];\n            if (s == target) return true;\n            if (s < target) l++;\n            else r--;\n        }\n        return false;\n    }\n\n    public static void main(String[] args) {\n        int[] a = {1, 2, 4, 6, 10};\n        System.out.println(pairSum(a, 8));\n    }\n}",
       "level": "intermediate",
-      "output": "true\n",
-      "description": "Sorted array + two pointers: find pair summing to target in O(n)."
+      "description": "Four labeled scenarios comparing approaches with different asymptotic costs.",
+      "code": "package arch.day20;\n\nimport java.util.*;\n\npublic class Day20Intermediate {\n\n    static int[] twoSumSorted(int[] a, int t) {\n        int i = 0, j = a.length - 1;\n        while (i < j) {\n            long s = (long) a[i] + a[j];\n            if (s == t) return new int[] { i, j };\n            if (s < t) i++;\n            else j--;\n        }\n        return new int[] { -1, -1 };\n    }\n\n    static List<Integer> mergeUnique(int[] x, int[] y) {\n        List<Integer> out = new ArrayList<>();\n        int i = 0, j = 0;\n        while (i < x.length && j < y.length) {\n            if (x[i] < y[j]) {\n                out.add(x[i++]);\n            } else if (x[i] > y[j]) {\n                out.add(y[j++]);\n            } else {\n                out.add(x[i]);\n                i++;\n                j++;\n            }\n        }\n        while (i < x.length) out.add(x[i++]);\n        while (j < y.length) out.add(y[j++]);\n        return out;\n    }\n\n    public static void main(String[] args) {\n        int[] a = { 1, 2, 4, 7, 10 };\n\n        // --- Scenario 1: two sum sorted ---\n        System.out.println(\"--- Scenario 1: two sum sorted ---\");\n        int[] p = twoSumSorted(a, 9);\n        System.out.println(\"indices=\" + p[0] + \",\" + p[1]);\n        System.out.println();\n\n        // --- Scenario 2: merge two sorted ---\n        System.out.println(\"--- Scenario 2: merge sorted arrays ---\");\n        System.out.println(mergeUnique(new int[] { 1, 3, 5 }, new int[] { 2, 3, 6 }));\n        System.out.println();\n\n        // --- Scenario 3: remove duplicates in-place length ---\n        System.out.println(\"--- Scenario 3: dedupe sorted length ---\");\n        int[] d = { 1, 1, 2, 2, 3 };\n        int w = 0;\n        for (int r = 0; r < d.length; r++) {\n            if (w == 0 || d[r] != d[w - 1]) {\n                d[w++] = d[r];\n            }\n        }\n        System.out.println(\"unique_count=\" + w);\n        System.out.println();\n\n        // --- Scenario 4: partition negatives left ---\n        System.out.println(\"--- Scenario 4: partition (<0 left) ---\");\n        int[] z = { 3, -1, 2, -4, 1 };\n        int lo = 0, hi = z.length - 1;\n        while (lo < hi) {\n            while (lo < hi && z[lo] < 0) lo++;\n            while (lo < hi && z[hi] >= 0) hi--;\n            if (lo < hi) {\n                int tmp = z[lo];\n                z[lo] = z[hi];\n                z[hi] = tmp;\n                lo++;\n                hi--;\n            }\n        }\n        System.out.println(\"split_index=\" + lo + \" arr=\" + Arrays.toString(z));\n    }\n}\n",
+      "output": "--- Scenario 1: two sum sorted ---\nindices=1,3\n\n--- Scenario 2: merge sorted arrays ---\n[1, 2, 3, 5, 6]\n\n--- Scenario 3: dedupe sorted length ---\nunique_count=3\n\n--- Scenario 4: partition (<0 left) ---\nsplit_index=2 arr=[-4, -1, 2, 3, 1]\n"
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "Arrays and Two Pointers — advanced",
       "language": "java",
       "filename": "Day20Advanced.java",
-      "code": "package arch.day20;\n\npublic class Day20Advanced {\n    static int maxArea(int[] h) {\n        int l = 0, r = h.length - 1, best = 0;\n        while (l < r) {\n            best = Math.max(best, Math.min(h[l], h[r]) * (r - l));\n            if (h[l] < h[r]) l++;\n            else r--;\n        }\n        return best;\n    }\n\n    public static void main(String[] args) {\n        System.out.println(maxArea(new int[] {1,8,6,2,5,4,8,3,7}));\n    }\n}",
       "level": "advanced",
-      "output": "49\n",
-      "description": "Container with most water style: move the pointer at the shorter line."
+      "description": "Separated blocks plus printed decision tables for recurrences and tradeoffs.",
+      "code": "package arch.day20;\n\npublic class Day20Advanced {\n\n    static int maxLenSubarraySumAtMost(int[] a, int k) {\n        int n = a.length;\n        int best = 0;\n        int sum = 0;\n        int left = 0;\n        for (int right = 0; right < n; right++) {\n            sum += a[right];\n            while (sum > k && left <= right) {\n                sum -= a[left++];\n            }\n            if (sum <= k) {\n                best = Math.max(best, right - left + 1);\n            }\n        }\n        return best;\n    }\n\n    public static void main(String[] args) {\n        // === Block 1: variable window — max length sum <= k ===\n        System.out.println(\"=== Block 1: sliding window (sum <= k) ===\");\n        int[] w = { 1, 1, 1, 2 };\n        System.out.println(\"max_len=\" + maxLenSubarraySumAtMost(w, 3));\n        System.out.println();\n\n        // === Block 2: two-pointer decision table ===\n        System.out.println(\"=== Block 2: when two pointers apply ===\");\n        System.out.println(\"Problem                    | Needs sort? | Typical time\");\n        System.out.println(\"---------------------------|-------------|-------------\");\n        System.out.println(\"Two sum pair               | YES (scan)| O(n)\");\n        System.out.println(\"Merge sorted               | YES       | O(n+m)\");\n        System.out.println(\"Container with most water  | NO        | O(n) two ends\");\n        System.out.println(\"Three sum unique triplets  | YES       | O(n^2) with skips\");\n        System.out.println();\n\n        // === Block 3: trap — unsorted two-sum ===\n        System.out.println(\"=== Block 3: hash vs sort tradeoff ===\");\n        System.out.println(\"Unsorted two-sum: HashMap expected O(n) time O(n) space.\");\n        System.out.println(\"Sort + two pointers: O(n log n) time O(1) extra besides sort.\");\n    }\n}\n",
+      "output": "=== Block 1: sliding window (sum <= k) ===\nmax_len=3\n\n=== Block 2: when two pointers apply ===\nProblem                    | Needs sort? | Typical time\n---------------------------|-------------|-------------\nTwo sum pair               | YES (scan)| O(n)\nMerge sorted               | YES       | O(n+m)\nContainer with most water  | NO        | O(n) two ends\nThree sum unique triplets  | YES       | O(n^2) with skips\n\n=== Block 3: hash vs sort tradeoff ===\nUnsorted two-sum: HashMap expected O(n) time O(n) space.\nSort + two pointers: O(n log n) time O(1) extra besides sort.\n"
     },
     {
       "type": "diagram",
-      "title": "Architecture View - Day 20",
+      "title": "Two pointers — sorted array pair search",
       "diagramType": "sequence",
-      "description": "Visual model for Arrays & Two Pointers",
-      "plantuml": "@startuml\ntitle Day 20 - Arrays & Two Pointers\nactor Learner\nrectangle \"Satyverse(Satyam Parmar) Lesson Engine\" {\n  component \"Theory\"\n  component \"Code\"\n  component \"Exercise\"\n  component \"Interview Drill\"\n}\nLearner --> \"Theory\" : Understand concept\nLearner --> \"Code\" : Implement\nLearner --> \"Exercise\" : Practice\nLearner --> \"Interview Drill\" : Explain\n@enduml"
+      "description": "Engineer, array buffer, left pointer, right pointer, sum comparator, and interviewer trace a monotone walk.",
+      "plantuml": "@startuml\ntitle Two pointers on sorted data\n\nparticipant \"Engineer\" as E\nparticipant \"Sorted\\nint[] a\" as A\nparticipant \"left\\nindex i\" as L\nparticipant \"right\\nindex j\" as R\nparticipant \"sum\\ncompare\" as S\nparticipant \"Interviewer\" as I\n\nE -> A : read length n, empty check\nE -> L : i = 0\nE -> R : j = n-1\n\nloop while i < j\n  E -> S : s = a[i]+a[j]\n  alt s < target\n    S -> L : i++ (need larger sum)\n  else s > target\n    S -> R : j-- (need smaller sum)\n  else s == target\n    S -> I : report pair (i,j)\n  end\nend\n\nI -> E : follow-up: duplicates? overflow?\n@enduml"
     },
     {
       "type": "pitfalls",
-      "title": "Common Pitfalls",
+      "title": "Common pitfalls",
       "items": [
-        "Moving both pointers incorrectly and skipping valid candidates.",
-        "Forgetting to update window state when left pointer shifts.",
-        "Not defining the window invariant before coding.",
-        "Applying two pointers on unsorted data without justification.",
-        "Missing edge cases for empty/single-element arrays."
+        "Using two pointers on **unsorted** data without proving monotonicity — pair-sum searches skip valid answers while p99 looks fine on toy tests; draw a counterexample for increasing/decreasing sums; fix by sorting once or switching to `HashMap` expected O(n).",
+        "Ignoring **integer overflow** on `int` sums — comparisons break silently and branches move wrong; add unit tests with `Integer.MAX_VALUE` neighbors; fix by summing in `long` or using safe comparison tricks.",
+        "Off-by-one when array is **empty or length 1** — `while (i < j)` never runs or indices invalid; detect with guard clauses in code review; fix by early return and explicit handling of no-solution cases.",
+        "Applying **sliding window** where negatives break the shrink assumption — window sum is not monotone; profiler shows wrong outputs on mixed-sign arrays; fix with prefix sums + map or re-derive invariant.",
+        "Emitting **duplicate triplets** in 3Sum — forgetting to skip equal neighbors after a hit explodes output and timeouts; trace sorted array with repeats; fix by advancing `lo`/`hi` while values unchanged after recording.",
+        "Claiming **O(n)** after an uncounted **sort** — total time becomes O(n log n); reviewers miss hidden domination; fix by stating sort cost explicitly in complexity answer.",
+        "Confusing **stable** vs **unstable** partition needs — labeled rows reorder incorrectly after in-place partition; QA catches flaky ordering; fix with stable algorithm or auxiliary index array.",
+        "Using two pointers on **linked lists** without **null** checks — `fast.next` dereference on short lists crashes; static analysis flags risky while loops; fix with guarded advances and dummy head patterns where needed."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - Arrays and Two Pointers Problem Drill",
-      "problem": "Solve one medium-level Java problem for **Arrays and Two Pointers**.\n\nRequirements:\n1. Provide brute-force and optimized approach.\n2. Explain why optimized approach is better.\n3. Include one edge-case test.\n4. Print expected output for sample input.\n5. State time/space complexity clearly.",
+      "title": "Practice exercise",
+      "difficulty": "Intermediate",
+      "problem": "**Day 20 — Arrays and two pointers (assignment alignment)**\n\n1. Given a **sorted** integer array and a **target**, find **one** pair of indices `(i, j)`, `i < j`, such that `a[i] + a[j] == target`, using the **two-pointer** technique (start at both ends).\n2. If **no** pair exists, print `NO_PAIR` deterministically.\n3. Print the **indices** and **values** found (or the sentinel line).\n4. Include a brief trailing comment line in output: `method=two_pointer_sorted`.\n\nUse this sample in your solution: `int[] a = { 1, 3, 4, 6, 10 }`, `target = 9` (expect pair values 3 and 6).",
       "hints": [
-        "State invariant before writing loops/recursion.",
-        "Dry-run on paper for one non-trivial case.",
-        "Only optimize after baseline correctness."
+        "If `a[left] + a[right] < target`, increase `left`; if greater, decrease `right`.",
+        "Use `long` for the sum comparison if values can be large in your own tests.",
+        "For the sample, indices should be `1` and `3` (0-based) with values `3` and `6`."
       ],
-      "solution": "package arch.day20;\nimport java.util.*;\n\npublic class Day20Advanced {\n    static record Review(String topic, int confidence, boolean needsRevision) {}\n\n    public static void main(String[] args) {\n        List<Review> reviews = List.of(\n            new Review(\"Arrays & Two Pointers\", 72, true),\n            new Review(\"Coding Practice\", 81, false),\n            new Review(\"Interview Explanation\", 68, true)\n        );\n\n        long reviseCount = reviews.stream().filter(Review::needsRevision).count();\n        int avg = (int) reviews.stream().mapToInt(Review::confidence).average().orElse(0);\n\n        System.out.println(\"avgConfidence = \" + avg);\n        System.out.println(\"needsRevision = \" + reviseCount);\n    }\n}\n",
-      "difficulty": "Intermediate"
+      "solution": "package arch.day20;\n\npublic class Day20Exercise {\n\n    public static void main(String[] args) {\n        int[] a = { 1, 3, 4, 6, 10 };\n        int target = 9;\n        int i = 0, j = a.length - 1;\n        boolean found = false;\n        while (i < j) {\n            long s = (long) a[i] + a[j];\n            if (s == target) {\n                System.out.println(\"indices=\" + i + \",\" + j);\n                System.out.println(\"values=\" + a[i] + \",\" + a[j]);\n                found = true;\n                break;\n            }\n            if (s < target) {\n                i++;\n            } else {\n                j--;\n            }\n        }\n        if (!found) {\n            System.out.println(\"NO_PAIR\");\n        }\n        System.out.println(\"method=two_pointer_sorted\");\n    }\n}\n"
     },
     {
       "type": "interview",
       "title": "Interview Drill",
       "conceptual": [
         {
-          "question": "What is the two-pointer technique?",
-          "answer": "Two indices move through array/string—often from both ends or both forward—to reduce brute force O(n²) to O(n).",
+          "question": "When are two pointers applicable on arrays?",
+          "answer": "When sorted order or a monotone invariant lets you discard half the remaining search space by moving one pointer—common for sorted pair sums, merging, and some partition problems.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Two indices move through array/string—often from both ends or both forward—to reduce brute force O(n²) to O(n). Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Two indices move through array/string—often from both ends or both forward—to reduce brute force O(n²) to O(n). Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "When is two pointers applicable?",
-          "answer": "Sorted arrays, palindromes, pair-sum with ordering, merging sorted lists—monotonic movement exploits structure.",
+          "question": "Why does two-sum sorted work in O(n)?",
+          "answer": "With sorted values, if the sum is too small you must increase the left index; if too large you decrease the right—each move is forced and each index moves at most n steps.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Sorted arrays, palindromes, pair-sum with ordering, merging sorted lists—monotonic movement exploits structure. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Sorted arrays, palindromes, pair-sum with ordering, merging sorted lists—monotonic movement exploits structure. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Difference from sliding window?",
-          "answer": "Sliding window maintains a subarray range; two pointers often meet or chase on fixed structure—related but different patterns.",
+          "question": "What is a sliding window?",
+          "answer": "A contiguous subarray defined by left/right bounds that you expand or shrink while maintaining a constraint—often O(n) total pointer movement.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Sliding window maintains a subarray range; two pointers often meet or chase on fixed structure—related but different patterns. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Sliding window maintains a subarray range; two pointers often meet or chase on fixed structure—related but different pat… Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is Dutch national flag problem?",
-          "answer": "Partition array into regions by value with linear scan—related pointer discipline.",
+          "question": "How do you handle integer overflow in sums?",
+          "answer": "Cast to long before adding large ints, or compare with careful subtraction tricks—state this before coding.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Partition array into regions by value with linear scan—related pointer discipline. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Partition array into regions by value with linear scan—related pointer discipline. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Why sort before two-sum sometimes?",
-          "answer": "Sorting enables moving pointers based on comparison to target—trade index loss if original indices needed.",
+          "question": "Sorted vs unsorted two-sum tradeoff?",
+          "answer": "Hash map gives O(n) expected time O(n) space unsorted; sort + two pointers gives O(n log n) time and may allow O(1) extra besides sort output.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Sorting enables moving pointers based on comparison to target—trade index loss if original indices needed. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Sorting enables moving pointers based on comparison to target—trade index loss if original indices needed. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is “collision” of pointers?",
-          "answer": "When left and right pointers cross or meet—termination condition.",
+          "question": "What are duplicate-skipping patterns in 3Sum?",
+          "answer": "After finding a triplet, advance pointers while skipping equal neighbors to avoid duplicate outputs—only after recording a valid answer.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. When left and right pointers cross or meet—termination condition. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. When left and right pointers cross or meet—termination condition. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "What invariant do you keep in merge of sorted arrays?",
+          "answer": "Always advance the pointer pointing to the smaller head element to maintain global order.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
           "question": "Can two pointers work on linked lists?",
-          "answer": "Yes—detect cycle (Floyd), merge sorted lists, middle node.",
+          "answer": "Yes—detect cycles with slow/fast, find middle, reverse half for palindrome checks—different invariant but same two-index idea.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Yes—detect cycle (Floyd), merge sorted lists, middle node. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Yes—detect cycle (Floyd), merge sorted lists, middle node. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is three-sum reduction?",
-          "answer": "Fix one element, two-pointer on remainder—O(n²) after sort.",
+          "question": "What breaks two-pointer monotonicity?",
+          "answer": "Negative numbers in subarray sum problems or unsorted data without preprocessing—need prefix sums + map or sort first.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Fix one element, two-pointer on remainder—O(n²) after sort. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Fix one element, two-pointer on remainder—O(n²) after sort. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "In-place removal of duplicates sorted array?",
-          "answer": "Slow/fast pointer writes unique elements forward.",
+          "question": "Explain partition around a pivot.",
+          "answer": "Rearrange so elements ≤ pivot sit left and ≥ pivot right in O(n)—foundation of quicksort/quickselect.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Slow/fast pointer writes unique elements forward. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Slow/fast pointer writes unique elements forward. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is trapping rain water intuition?",
-          "answer": "Left/right max arrays or two pointers with running max—O(n) time.",
+          "question": "What is stable vs unstable partition?",
+          "answer": "Stable preserves relative order of equal keys; quicksort partition is typically unstable—matters for labeled records.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Left/right max arrays or two pointers with running max—O(n) time. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Left/right max arrays or two pointers with running max—O(n) time. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Two-pointer vs binary search?",
-          "answer": "Binary search halves search space on sorted data; two pointers often scan with two moving indices simultaneously.",
+          "question": "How do you prove you do not skip the answer?",
+          "answer": "Show that if you move the other pointer, the sum moves away from target under the ordering assumption—case analysis on too small vs too large.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Binary search halves search space on sorted data; two pointers often scan with two moving indices simultaneously. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Binary search halves search space on sorted data; two pointers often scan with two moving indices simultaneously. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What if input not sorted for pair sum?",
-          "answer": "Hash map O(n) space for complements, or sort losing stability of indices—choose per requirements.",
+          "question": "What is two-pointer for container with most water?",
+          "answer": "Start at both ends; always move the shorter line inward because width shrinks—only a taller line can improve area.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Hash map O(n) space for complements, or sort losing stability of indices—choose per requirements. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Hash map O(n) space for complements, or sort losing stability of indices—choose per requirements. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Stability of partition algorithms?",
-          "answer": "Some partition schemes stable, many quicksort partitions are not—know interview variant.",
+          "question": "Difference between subarray and subsequence?",
+          "answer": "Subarray is contiguous—sliding window applies; subsequence picks indices without contiguity—often DP.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Some partition schemes stable, many quicksort partitions are not—know interview variant. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Some partition schemes stable, many quicksort partitions are not—know interview variant. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "What is merge step in merge sort?",
-          "answer": "Two pointers walk two sorted halves—classic pattern.",
+          "question": "When is variable-size window linear?",
+          "answer": "When each index is added/removed a bounded number of times—typically each element enters and leaves once.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Two pointers walk two sorted halves—classic pattern. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Two pointers walk two sorted halves—classic pattern. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Edge case: empty or length-1 array?",
-          "answer": "Pointers may not enter loop—always test boundaries.",
+          "question": "How does merging relate to external sort?",
+          "answer": "K-way merge uses heaps or repeated two-pointer merges—same merge kernel scaled up.",
           "followUps": [
             {
-              "question": "Interview follow-up: how does **Arrays and Two Pointers** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Pointers may not enter loop—always test boundaries. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "What is a **common trap** or **follow-up** question on **Arrays and Two Pointers**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Pointers may not enter loop—always test boundaries. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Give a 60-second two-pointer story.",
+          "answer": "Check sorted/preprocess, set two indices, state monotone rule, handle overflow/duplicates/empties, analyze O(n) moves, mention hash alternative if unsorted.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this topic, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "codeBased": [
         {
-          "question": "Palindrome check with two pointers on char array.",
-          "answer": "while (l<r) if (s[l++]!=s[r--]) return false; return true;",
+          "question": "Time to merge sorted A[n] and B[m]?",
+          "answer": "O(n+m) with two indices.",
           "followUps": [
             {
-              "question": "What breaks if this **Arrays and Two Pointers** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. while (l<r) if (s[l++]!=s[r--]) return false; return true; Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. while (l<r) if (s[l++]!=s[r--]) return false; return true; Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Pair sum sorted: move lo/hi based on sum vs target.",
-          "answer": "if sum<target lo++; else if sum>target hi--; else found.",
+          "question": "Two-sum sorted space?",
+          "answer": "O(1) extra besides input/output arrays.",
           "followUps": [
             {
-              "question": "What breaks if this **Arrays and Two Pointers** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. if sum<target lo++; else if sum>target hi--; else found. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. if sum<target lo++; else if sum>target hi--; else found. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Remove duplicates in-place sorted array return new length.",
-          "answer": "Slow pointer tracks write position; fast scans.",
+          "question": "Reverse array in place?",
+          "answer": "O(n) time swap from both ends until pointers meet.",
           "followUps": [
             {
-              "question": "What breaks if this **Arrays and Two Pointers** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Slow pointer tracks write position; fast scans. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Slow pointer tracks write position; fast scans. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Merge two sorted arrays without extra space (if fits).",
-          "answer": "Fill from end when merging into buffer with space at end.",
+          "question": "Remove val from array in-place (unsorted)?",
+          "answer": "O(n) write index scanning once—two-pointer variant.",
           "followUps": [
             {
-              "question": "What breaks if this **Arrays and Two Pointers** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Fill from end when merging into buffer with space at end. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Fill from end when merging into buffer with space at end. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Container with most water: move shorter line.",
-          "answer": "Greedy two-pointer proof often asked—know intuition.",
+          "question": "Is palindrome check two pointers?",
+          "answer": "Yes—compare symmetric chars toward center O(n).",
           "followUps": [
             {
-              "question": "What breaks if this **Arrays and Two Pointers** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Greedy two-pointer proof often asked—know intuition. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Greedy two-pointer proof often asked—know intuition. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Three-sum avoid duplicates after sort.",
-          "answer": "Skip equal adjacent values when advancing pointers.",
+          "question": "Squares of sorted array sorted O(n)?",
+          "answer": "Two pointers from ends picking larger square magnitude.",
           "followUps": [
             {
-              "question": "What breaks if this **Arrays and Two Pointers** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Skip equal adjacent values when advancing pointers. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Skip equal adjacent values when advancing pointers. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Fast/slow pointer start same for cycle detection.",
-          "answer": "If fast meets slow, cycle exists.",
+          "question": "Move zeros to end stable?",
+          "answer": "Write pointer places non-zeros in order while reader scans—O(n).",
           "followUps": [
             {
-              "question": "What breaks if this **Arrays and Two Pointers** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. If fast meets slow, cycle exists. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. If fast meets slow, cycle exists. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Partition array around pivot (Lomuto/Hoare sketch).",
-          "answer": "Know one variant’s loop invariants.",
+          "question": "Three sum brute force?",
+          "answer": "O(n³); optimized sort + two pointers O(n²).",
           "followUps": [
             {
-              "question": "What breaks if this **Arrays and Two Pointers** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Know one variant’s loop invariants. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Know one variant’s loop invariants. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Two arrays merge pointer i,j.",
-          "answer": "Compare a[i], b[j], advance smaller—like merge step.",
+          "question": "Binary search vs two-pointer on sorted array?",
+          "answer": "BS finds one position in O(log n); two-pointer scans for pair properties in O(n).",
           "followUps": [
             {
-              "question": "What breaks if this **Arrays and Two Pointers** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Compare a[i], b[j], advance smaller—like merge step. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Compare a[i], b[j], advance smaller—like merge step. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Minimum window substring—related?",
-          "answer": "Sliding window with need counts—often separate pattern but contrasts with simple two-pointer.",
+          "question": "Subarray sum equals K with negatives?",
+          "answer": "Prefix sum + HashMap O(n); pure two-pointer fails without positivity constraint.",
           "followUps": [
             {
-              "question": "What breaks if this **Arrays and Two Pointers** approach, snippet, or config is wrong?",
-              "answer": "**Compile** errors, **wrong** runtime behavior, or **silent** bugs often appear only under **load**, **concurrency**, or **bad** inputs. **Anchor** fixes to **tests** and **code review** gates. Sliding window with need counts—often separate pattern but contrasts with simple two-pointer. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "How do you **test** or **review** this in **CI** or before merge?",
-              "answer": "**Unit** / **integration** tests, **static** analysis, **minimal** **repro** in the **PR**, and **pair** review for subtle **API** or **JVM** issues. Sliding window with need counts—often separate pattern but contrasts with simple two-pointer. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Longest substring k distinct?",
+          "answer": "Expand right, shrink left while map counts exceed k—O(n).",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
+            }
+          ]
+        },
+        {
+          "question": "Pair with difference in sorted array?",
+          "answer": "Two pointers or binary search complement—O(n) or O(n log n) depending variant.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this code path, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
+            },
+            {
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "seniorScenario": [
         {
-          "question": "Image processing pipeline O(n²) per frame—missed SLA.",
-          "answer": "Downsample, GPU offload, or algorithm change; profile before blaming GC.",
+          "question": "Service joins two sorted streams—how scale?",
+          "answer": "Stream merge two-pointer style chunk-by-chunk, backpressure, bounded buffers; avoid materializing full lists.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Arrays and Two Pointers** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Downsample, GPU offload, or algorithm change; profile before blaming GC. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Downsample, GPU offload, or algorithm change; profile before blaming GC. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Security: two-pointer on user string in C—risk?",
-          "answer": "Buffer bounds—Java safer but still validate lengths for DoS.",
+          "question": "Data unsorted but memory tiny—two-sum?",
+          "answer": "External sort chunks then merge streams with pointers; or disk-backed hash if feasible; discuss constraints.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Arrays and Two Pointers** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Buffer bounds—Java safer but still validate lengths for DoS. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Buffer bounds—Java safer but still validate lengths for DoS. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Streaming data: can’t sort full array?",
-          "answer": "Use heaps, reservoir sampling, or approximate algorithms—two-pointer may not apply.",
+          "question": "p99 regression after ‘small’ feature—what check?",
+          "answer": "Profile for nested loops on request payload; add metrics on list sizes; cap batch with product agreement.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Arrays and Two Pointers** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Use heaps, reservoir sampling, or approximate algorithms—two-pointer may not apply. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Use heaps, reservoir sampling, or approximate algorithms—two-pointer may not apply. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Parallel two-pointer patterns?",
-          "answer": "Harder—partition first then parallel merge; sequential two-pointer often inherently sequential.",
+          "question": "Duplicates explode output in k-sum—mitigation?",
+          "answer": "Sort + skip rules, early pruning, or switch representation; warn interviewer about output size.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Arrays and Two Pointers** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Harder—partition first then parallel merge; sequential two-pointer often inherently sequential. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Harder—partition first then parallel merge; sequential two-pointer often inherently sequential. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Database index scan vs two-pointer in app?",
-          "answer": "Push work to DB when possible—less data movement.",
+          "question": "Parallelizing two-pointer merge?",
+          "answer": "Harder than divide partitions; often parallel merge sort uses copies; discuss tradeoffs and stability.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Arrays and Two Pointers** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Push work to DB when possible—less data movement. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Push work to DB when possible—less data movement. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         },
         {
-          "question": "Regression: “optimized” pair sum wrong on duplicates.",
-          "answer": "Add test cases with repeated values and negative numbers.",
+          "question": "Testing two-pointer correctness?",
+          "answer": "Property tests on random sorted arrays vs brute for small n; edge cases empty, single, all equal, negatives.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Arrays and Two Pointers** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Add test cases with repeated values and negative numbers. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how would you **prove** this in production?",
+              "answer": "For this scenario, you describe a minimal reproducer, a stable workload, and a before/after measurement plan (CPU, latency percentiles, allocations). You avoid hand-wavy Big-O claims by naming the dominant term, the hidden constants, and the dataset shape that triggers worst case. You close with guardrails: budgets, canaries, and a regression test that fails if complexity regresses."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Add test cases with repeated values and negative numbers. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What **trap** might follow your answer?",
+              "answer": "Interviewers may push on amortized costs, cache effects, or JIT warmup invalidating micro-benchmarks. You respond with methodology: warm up, fixed seeds, isolate the algorithm, and interpret results as directional—not marketing. You mention when to escalate to profilers versus paper analysis."
             }
           ]
         }
       ],
       "wrongAnswers": [
-        "Two pointers always require sorted input.",
-        "Two-pointer pair sum is O(n²) after sorting.",
-        "Fast/slow pointers only work on arrays, never linked lists.",
-        "You never need hash map if you use two pointers.",
-        "Three-sum is always O(n log n).",
-        "Two pointers from both ends always move both every step."
+        "Two pointers always work in O(n) on any array — false: needs monotonic structure or preprocessing; unsorted arbitrary two-sum needs hash or sort.",
+        "Sliding window solves every substring problem in O(n) — false: some need DP or exponential sets; only certain constraints allow linear two-pointer.",
+        "You never need long for int sums in Java — false: adjacent large ints overflow and break comparisons.",
+        "Sorting is free if you call `sort` once — false: O(n log n) cost must be included in total analysis.",
+        "Two pointers and double-ended queue are the same — false: deque is a structure; two pointers is a technique on sequences.",
+        "Stable partition is automatic in quicksort — false: standard partition is unstable; mergesort is stable.",
+        "Binary search replaces two pointers for pair sum — false: BS helps variants but classic linear two-pointer is O(n) after sort.",
+        "Moving both pointers inward always is safe — false: must follow the rule derived from problem invariant; wrong rule skips answers."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ Quiz — Arrays and Two Pointers",
+      "description": "Thirty questions on sorted two-pointer reasoning, windows, merges, partitions, and pitfalls (overflow, stability).",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "Two pointers on a **sorted** array for two-sum usually run in:",
+          "options": {
+            "A": "O(n^2)",
+            "B": "O(n)",
+            "C": "O(log n)",
+            "D": "O(1)"
+          },
+          "answer": "B",
+          "explanation": "Each pointer moves monotonically at most n steps total."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "Array access by index is:",
+          "options": {
+            "A": "O(n)",
+            "B": "O(log n)",
+            "C": "O(1)",
+            "D": "O(n^2)"
+          },
+          "answer": "C",
+          "explanation": "Random access by index is constant in RAM model."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "theory",
+          "question": "After sorting for two-pointer solutions, time often becomes:",
+          "options": {
+            "A": "O(n)",
+            "B": "O(n log n) + scan",
+            "C": "O(1)",
+            "D": "O(2^n)"
+          },
+          "answer": "B",
+          "explanation": "Sort dominates when input unsorted; scan is linear."
+        },
+        {
+          "id": 4,
+          "level": "basic",
+          "category": "theory",
+          "question": "A **sliding window** keeps:",
+          "options": {
+            "A": "Two sorted heaps",
+            "B": "A subarray range [L,R] with a constraint",
+            "C": "Only binary tree",
+            "D": "HashMap only"
+          },
+          "answer": "B",
+          "explanation": "Window is contiguous segment; pointers define bounds."
+        },
+        {
+          "id": 5,
+          "level": "basic",
+          "category": "code",
+          "question": "Merge two sorted arrays lengths n,m — typical time:",
+          "options": {
+            "A": "O(1)",
+            "B": "O(log(n+m))",
+            "C": "O(n+m)",
+            "D": "O(n*m)"
+          },
+          "answer": "C",
+          "explanation": "Each element pushed once; two pointers advance."
+        },
+        {
+          "id": 6,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why can’t naive two pointers work on arbitrary unsorted two-sum?",
+          "options": {
+            "A": "Because pointers cannot move",
+            "B": "No monotonicity — shrinking sum is not predictable",
+            "C": "Arrays are immutable",
+            "D": "Java forbids it"
+          },
+          "answer": "B",
+          "explanation": "Sorted order enables excluding half the space each step."
+        },
+        {
+          "id": 7,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Container With Most Water uses:",
+          "options": {
+            "A": "Only BFS",
+            "B": "Two ends moving inward by height rule",
+            "C": "Dijkstra",
+            "D": "Sorting n^2 pairs"
+          },
+          "answer": "B",
+          "explanation": "Classic O(n) two-pointer from both ends."
+        },
+        {
+          "id": 8,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Fixed-size window of k: compute max sum in:",
+          "options": {
+            "A": "O(n k)",
+            "B": "O(n)",
+            "C": "O(log n)",
+            "D": "O(1)"
+          },
+          "answer": "B",
+          "explanation": "Slide one step; add new element, drop old — O(n) total."
+        },
+        {
+          "id": 9,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Remove duplicates from **sorted** array in-place typically:",
+          "options": {
+            "A": "O(n^2)",
+            "B": "O(n) one pass write pointer",
+            "C": "O(log n)",
+            "D": "O(n log n) per element"
+          },
+          "answer": "B",
+          "explanation": "Single traversal with slow write index."
+        },
+        {
+          "id": 10,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "3Sum unique triplets often:",
+          "options": {
+            "A": "O(n)",
+            "B": "O(n log n)",
+            "C": "O(n^2) after sort",
+            "D": "O(1)"
+          },
+          "answer": "C",
+          "explanation": "Fix one index, two-pointer remainder; duplicate skips needed."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "code",
+          "question": "`a[i] + a[j]` may overflow with large ints — fix:",
+          "options": {
+            "A": "Ignore",
+            "B": "Use `long` cast/sum",
+            "C": "Use double only",
+            "D": "Divide first"
+          },
+          "answer": "B",
+          "explanation": "Java int overflows; long avoids for sum compare."
+        },
+        {
+          "id": 12,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Two-pointer vs hash map for two-sum unsorted:",
+          "options": {
+            "A": "Hash always slower",
+            "B": "Hash O(n) expected time, O(n) space",
+            "C": "Two pointer always O(n) unsorted",
+            "D": "Cannot use hash"
+          },
+          "answer": "B",
+          "explanation": "Classic trade: time vs space and sort requirement."
+        },
+        {
+          "id": 13,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Longest substring with at most K distinct — typical:",
+          "options": {
+            "A": "O(n) expand/shrink with frequency map",
+            "B": "O(n^2) always",
+            "C": "O(log n)",
+            "D": "O(k^n)"
+          },
+          "answer": "A",
+          "explanation": "Each char enters/leaves window O(1) amortized across scan."
+        },
+        {
+          "id": 14,
+          "level": "advanced",
+          "category": "code",
+          "question": "Trapping rain water (two pointers) uses:",
+          "options": {
+            "A": "Only stack O(n) space",
+            "B": "Left/right max tracking O(1) extra",
+            "C": "BFS",
+            "D": "Cannot do O(n)"
+          },
+          "answer": "B",
+          "explanation": "Dual-pointer with running leftMax/rightMax."
+        },
+        {
+          "id": 15,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Stability requirement when merging labeled records:",
+          "options": {
+            "A": "Any sort works",
+            "B": "Use stable sort if equal keys must keep order",
+            "C": "Two pointers never stable",
+            "D": "HashMap is stable"
+          },
+          "answer": "B",
+          "explanation": "Stable sort preserves relative order of equal elements."
+        },
+        {
+          "id": 16,
+          "level": "basic",
+          "category": "code",
+          "question": "Empty array — two-pointer init:",
+          "options": {
+            "A": "Crash always",
+            "B": "Check length 0 before loop",
+            "C": "Assume n>=2 always",
+            "D": "Use while(true)"
+          },
+          "answer": "B",
+          "explanation": "Interview edge: guard empty or single-element."
+        },
+        {
+          "id": 17,
+          "level": "basic",
+          "category": "theory",
+          "question": "Partition step in quicksort around pivot costs:",
+          "options": {
+            "A": "O(n)",
+            "B": "O(n^2)",
+            "C": "O(log n)",
+            "D": "O(1)"
+          },
+          "answer": "A",
+          "explanation": "Single pass to place elements relative to pivot."
+        },
+        {
+          "id": 18,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Reverse array in-place:",
+          "options": {
+            "A": "O(n) two pointers swap",
+            "B": "O(n^2)",
+            "C": "O(log n)",
+            "D": "Impossible"
+          },
+          "answer": "A",
+          "explanation": "Swap a[i] with a[n-1-i] until pointers meet."
+        },
+        {
+          "id": 19,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Faster two-pointer proves correctness by:",
+          "options": {
+            "A": "Random testing",
+            "B": "Showing no valid answer skipped when moving pointer",
+            "C": "Ignoring proofs",
+            "D": "Sorting twice"
+          },
+          "answer": "B",
+          "explanation": "Monotone argument excludes impossible region."
+        },
+        {
+          "id": 20,
+          "level": "advanced",
+          "category": "code",
+          "question": "Subarray sum equals K with prefix map:",
+          "options": {
+            "A": "O(n^2)",
+            "B": "O(n)",
+            "C": "O(log n)",
+            "D": "O(1)"
+          },
+          "answer": "B",
+          "explanation": "Track prefix sums in HashMap; two-pointer alone insufficient for negatives."
+        },
+        {
+          "id": 21,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Linked list middle detection (runner):",
+          "options": {
+            "A": "Two pointers slow/fast",
+            "B": "Only binary search",
+            "C": "BFS",
+            "D": "Impossible O(n)"
+          },
+          "answer": "A",
+          "explanation": "Fast moves 2x; when fast ends, slow is middle."
+        },
+        {
+          "id": 22,
+          "level": "basic",
+          "category": "theory",
+          "question": "Contiguous vs subsequence:",
+          "options": {
+            "A": "Same",
+            "B": "Subarray is contiguous; subsequence picks indices",
+            "C": "Subsequence always contiguous",
+            "D": "Neither exists"
+          },
+          "answer": "B",
+          "explanation": "Sliding window applies to contiguous subarrays."
+        },
+        {
+          "id": 23,
+          "level": "advanced",
+          "category": "code",
+          "question": "Pair closest to target in sorted array two-pointer:",
+          "options": {
+            "A": "Track best |sum-target| while moving",
+            "B": "Always exact O(1)",
+            "C": "Requires O(n^2)",
+            "D": "Impossible"
+          },
+          "answer": "A",
+          "explanation": "Monotone adjustment plus best-so-far tracking."
+        },
+        {
+          "id": 24,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Merge intervals sorted by start:",
+          "options": {
+            "A": "O(n) sweep after sort",
+            "B": "O(1)",
+            "C": "O(log n) only",
+            "D": "Need graph"
+          },
+          "answer": "A",
+          "explanation": "Sort O(n log n); linear merge with last interval pointer."
+        },
+        {
+          "id": 25,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Minimum window substring complexity typical:",
+          "options": {
+            "A": "O(|s|+|t|) with two pointers + counts",
+            "B": "O(1)",
+            "C": "O(n^3)",
+            "D": "O(log n)"
+          },
+          "answer": "A",
+          "explanation": "Each boundary moves linearly total across scan."
+        },
+        {
+          "id": 26,
+          "level": "basic",
+          "category": "code",
+          "question": "Valid palindrome check on char array (case/space stripped) can be:",
+          "options": {
+            "A": "O(n) two ends",
+            "B": "O(n^2)",
+            "C": "O(2^n)",
+            "D": "O(log n)"
+          },
+          "answer": "A",
+          "explanation": "Inward pointers comparing characters."
+        },
+        {
+          "id": 27,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "When **not** to use two pointers on arrays:",
+          "options": {
+            "A": "Never",
+            "B": "When non-contiguous pick needed without structure",
+            "C": "Always prefer n^2",
+            "D": "When array length 1 only"
+          },
+          "answer": "B",
+          "explanation": "Some problems need DP, heap, or graph — two pointers not universal."
+        },
+        {
+          "id": 28,
+          "level": "advanced",
+          "category": "code",
+          "question": "Squares of sorted array sorted result O(n):",
+          "options": {
+            "A": "Two pointers from both ends (largest |val|)",
+            "B": "Sort squares O(n log n) only",
+            "C": "Impossible O(n)",
+            "D": "Binary search each"
+          },
+          "answer": "A",
+          "explanation": "Largest square comes from one of the extreme magnitudes."
+        },
+        {
+          "id": 29,
+          "level": "basic",
+          "category": "theory",
+          "question": "Binary search differs from two-pointer scan because:",
+          "options": {
+            "A": "Same thing",
+            "B": "BS halves search space each step on sorted data",
+            "C": "BS requires unsorted",
+            "D": "Two pointers always O(log n)"
+          },
+          "answer": "B",
+          "explanation": "Binary search is index halving; two-pointer often linear scan with two ends."
+        },
+        {
+          "id": 30,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Move all zeros to end while preserving order (stable):",
+          "options": {
+            "A": "Two pointers write non-zero sequentially",
+            "B": "Sort O(n log n) only",
+            "C": "Impossible O(n)",
+            "D": "Stack only"
+          },
+          "answer": "A",
+          "explanation": "Classic stable partition variant with read/write indices."
+        }
       ]
     },
     {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Area | Day 20 Focus | Quick Reminder | Gotcha |\n|---|---|---|---|\n| Pattern | Arrays and Two Pointers | Choose pattern before coding | Random brute-force wandering |\n| Correctness | Invariant + edge checks | Dry-run once | Off-by-one / null-state miss |\n| Complexity | Derive, do not guess | Mention time + space | Incomplete complexity answers |\n| Communication | Explain decisions | Use trade-off statement | Generic textbook responses |\n| Quality | Readable Java methods | Stable naming + small units | Clever but fragile logic |"
+      "title": "Arrays and Two Pointers — cheatsheet",
+      "content": "| Topic | Rule of thumb | Interview one-liner |\n| --- | --- | --- |\n| Sorted two-sum | Move left if sum small, right if large | O(n) after sort; prove monotonicity |\n| Merge sorted | Advance smaller head pointer | O(n+m) time, linear scan |\n| Sliding window fixed-k | Add right, drop left each step | O(n) total steps |\n| Sliding window variable | Grow until valid, shrink until invalid | O(n) if each entry leaves once |\n| Remove dup sorted | Write slow pointer on change | O(n) in-place |\n| Partition | Hoare/Lomuto variants | O(n) per pass |\n| Reverse array | Swap ends until meet | O(n), O(1) space |\n| Container water | Move shorter line inward | O(n) greedy proof |\n| 3Sum unique | Fix i, two-pointer rest, skip dups | O(n²) after sort |\n| Overflow | Cast to long for sums | Mention before coding |\n| Hash two-sum | Map value→index | O(n) expected unsorted |\n| Palindrome chars | Two ends inward | O(n) after normalize |\n| Runner technique | Slow 1x fast 2x | Cycle detection |\n| Subarray sum K | Prefix + map | O(n) with negatives |\n| Squares sorted | Pick larger |x| from ends | O(n) output fill |"
     }
   ]
 }

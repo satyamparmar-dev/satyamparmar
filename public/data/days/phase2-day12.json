@@ -27,43 +27,43 @@
   "sections": [
     {
       "type": "why",
-      "title": "Why Encapsulation and Immutability matters",
-      "content": "Encapsulation and Immutability is a high-impact topic for Day 12. It directly supports OOP principles and core Java APIs and appears in interviews as a depth-check area.\n\nWhy this matters in practice:\n- Teams rely on this concept for clean implementation decisions.\n- Mistakes here create maintainability and production-risk issues.\n- Strong understanding improves both coding rounds and system discussions.\n\nLearning strategy for this day:\n1. Define the concept clearly in one line.\n2. Implement one minimal Java example.\n3. Validate at least one edge/failure case.\n4. Explain one trade-off (simplicity vs flexibility, speed vs safety, etc.).\n5. Rephrase your answer as if explaining to an interviewer.\n\nIf you can explain Encapsulation and Immutability clearly and implement it without copy-paste, you are interview-ready for this unit."
+      "title": "Why encapsulation and immutability decide invariants, aliases, and cache truth",
+      "content": "At 03:18 the **Spring Boot** ledger microservice serving EU settlement batches begins emitting impossible running totals even though **JUnit** suites still pass on laptops. The artifact is a **DTO** whose **getter** returned the internal **ArrayList** of **LineItem** rows without copying. A downstream **Kafka** consumer cleared that list between **pagination** steps while another thread still iterated the same backing array, surfacing **ConcurrentModificationException** in one pod and silent double-counting in another. The symptom is inconsistent **BigDecimal** sums across **canary** shards, not a single obvious **SQLException**. The failure looks like flaky business rules but is really broken **encapsulation** of mutable **collection** state shared across threads.\n\nInterviewers who ask about **encapsulation** and **immutability** are not checking whether you memorized **private** fields and **getters**. They want evidence that you know how **getfield** and **putfield** expose object state through the **heap**, how **final** fields freeze references at **constructor** end, and how **defensive copies** stop callers from mutating your invariants behind your back. The mental model gap that separates a weak answer from a strong one is **API** shape versus **alias** control: strong candidates narrate **escape** of references and tie incidents to **bytecode** field access and **happens-before** edges, not UML boxes alone.\n\nUse this four-step pattern in every answer. First, name the mutable **component**: **List**, **Map**, **Date**, **byte[]**, or **mutable** **DTO** graph. Second, trace **escape**: **getter** returns internal reference, **constructor** stores caller's array without **copyOf**, or **record** exposes **mutable** field directly. Third, pick the failure: **ConcurrentModificationException**, corrupted **HashMap** keys after **setter** mutates a key object, or **race** on non-volatile reads. Fourth, verify with **javap -c** on accessors, **jcmd** **Thread.print** for concurrent stacks, or **jmap -dump:live** plus **MAT** duplicate **equals** buckets, and attach that evidence to the ticket. You rehearse those four moves in every **architecture** review so **DTO** graphs stop surprising **on-call**.\n\nAt scale, ten engineers and fifty **REST** adapters multiply any leaky **getter**. One team exposes **List** **tags** from a **session** **bean**; another thread adds tags while **Jackson** serializes, producing **ConcurrentModificationException** that masquerades as serialization bugs. Another failure mode is mutating a **CustomerId** value object used as a **HashMap** key after insert, breaking **equals**/**hashCode** invariants until lookups return **null** for existing entries - the metric is rising **cache** miss rates, not a thrown **NullPointerException** at the mutation site. Both look like application defects but are **platform-level** mistakes in how **references** cross **thread** and **collection** boundaries. You only spot them when you treat **DTO** **graphs** like **concurrency** programs, not POJO sketches.\n\nA senior candidate states **Java 10** added **List.copyOf** and related factory copies so immutable snapshots from **Stream** pipelines no longer require manual **Collections.unmodifiableList(new ArrayList<>(...))** boilerplate; a mid-level answer stops at **final** on the field and forgets the **List** inside remains **mutable** unless copied or wrapped. Another senior signal is **Java 16** **records**: canonical **constructors** let you validate and normalize while still generating compact **equals**/**hashCode**, but **record** components that hold **mutable** types still leak unless you **defensive**-copy in the compact **constructor**.\n\nIn your first six months on a new job this topic shows up weekly. A reviewer flags a **PR** that returns **this.lines** from a **getter**; you require **List.copyOf** or an **unmodifiable** view, add a unit test that mutates the caller copy, and paste **javap -c** showing no raw **aaload** escapes. During **on-call**, **Redis** **caching** misses spike because someone **mutated** a **DTO** after using it as a **key**; you freeze **keys** as **records** with **immutable** components and document **defensive** copies in the **runbook**. When onboarding a **legacy** **JavaBeans** module, you find **Date** fields shared across threads; you migrate hot paths to **Instant** or wrap **defensive** copies at boundaries and verify with **jstack** under load that **mutator** **contention** drops."
     },
     {
       "type": "theory",
-      "title": "Theory and Internals - Encapsulation and Immutability",
-      "content": "### Day 12 Topic: Encapsulation and Immutability\nThis lesson belongs to Phase 2 (OOP principles and core Java APIs) and targets Beginner level expectations.\n\n### Core Concept\nStart by defining Encapsulation and Immutability in precise terms, then connect it to runtime behavior and design impact.\n\n### Internal Understanding\nFor this topic, interviewers expect more than API recall. They look for:\n- correct mental model\n- edge-case awareness\n- clean implementation choices\n- trade-off reasoning\n\n### Practical Implementation Approach\n1. Build a baseline solution that is correct and readable.\n2. Add validation for boundary, null/empty, or failure scenarios.\n3. Measure or reason about time/space or operational cost.\n4. Refactor into maintainable units.\n\n### Interview Structure (recommended)\n- What is it?\n- Why is it needed?\n- One practical Java example\n- One common pitfall\n- One better alternative (if constraints change)\n\n### Production Perspective\nIn real systems, correctness alone is not enough. Encapsulation and Immutability should also support observability, safe changes, and team readability.\n\n### Revision Checklist\n- Can you explain this without notes?\n- Can you code it from memory?\n- Can you test one edge case quickly?\n- Can you justify your approach in 30-60 seconds?\n\n### Satyverse — deeper path (theory → practice)\n**Encapsulation = invariants live inside the object.** Expose getters; avoid public mutable fields unless simple DTOs in trusted packages.\n\n**Immutability:** `final` fields + defensive copies for mutable components (`Date`, collections) — `List.copyOf` / `Collections.unmodifiableList` for returning internal state.\n\n**JavaBeans vs records:** beans for frameworks; `record` for transparent data carriers (DTOs, events) with less boilerplate.\n\n**Thread-safety note:** encapsulation alone does not imply thread safety — document concurrency expectations on public types."
+      "title": "Theory and Internals — private fields, defensive copies, records, JMM, and Staff tooling",
+      "content": "### Plain-language overview\n\n**Encapsulation** hides object **fields** behind methods so invariants stay enforceable: balances stay non-negative, **IDs** stay normalized, **collections** stay consistent. **Immutability** means after **construction** an object’s observable state does not change—usually **final** reference fields pointing at **immutable** values or **defensive** copies of **mutable** inputs. The **JVM** still stores everything on the **heap**; **private** only blocks **compile-time** access from other classes, not **reflection** or **bytecode** tricks. **Interview angle:** Weak answers stop at **private**; strong answers discuss **alias** control and **thread** hazards.\n\n### **getfield**, **putfield**, and **ACC_PRIVATE**\n\nInstance field reads compile to **getfield** and writes to **putfield** with **ConstantPool** references to the field’s name and descriptor. **private** fields are accessible only inside the declaring **class** file; **javac** enforces that boundary, while **HotSpot** still performs ordinary **heap** loads and stores at runtime. **Interview angle:** Ask candidates to open **javap -c** on a **getter** and point to **getfield** before **areturn**.\n\n### **Encapsulation** as invariant enforcement\n\n**Mutators** (**setters** or command methods) centralize validation so illegal transitions throw **IllegalArgumentException** or **IllegalStateException** instead of corrupting **state** silently. **Package-private** or **protected** fields trade safety for test convenience—production code still prefers **private** fields with intentional **API** methods. **Interview angle:** Tie **encapsulation** reviews to **invariant** lists documented next to the **class**.\n\n### **final** fields and definite assignment\n\n**final** instance fields must be assigned exactly once by **constructor** end; **javac** checks definite assignment. The reference is frozen, but the object it points to may still be **mutable** (**StringBuilder**, **ArrayList**). **Interview angle:** Contrast **final** reference with deep **immutability**.\n\n### **Defensive copy** on **ingress** and **egress**\n\nOn **ingress**, copy caller-supplied **arrays**/**collections** so later caller mutations do not mutate your **internal** state. On **egress**, return **copyOf**, **unmodifiable** views, or new **instances** so clients cannot reach your backing **collection**. Skipping either side causes **alias** bugs that **JUnit** misses when tests reuse the same reference politely. **Interview angle:** Mention **Arrays.copyOf** and **List.copyOf** as default tools since **Java 10**.\n\n### **Immutable** object recipe\n\nMake the **class** **final** (or **sealed**), all fields **private final**, no **setters**, **defensive** copies for **mutable** components, and **factory** methods that validate. Operations return new **instances** instead of mutating (**BigDecimal**-style). **Interview angle:** Link to **String**’s **intern** behaviour and **hashCode** stability for **HashMap** keys.\n\n### **Record** carriers (**Java 16**) and shallow **immutability**\n\n**record** components generate accessors without **set**; the **canonical** **constructor** can validate and **assign** normalized values. If a component type is **mutable**, **record** **immutability** is shallow unless you copy in the compact **constructor**. **Interview angle:** Ask how **Jackson** or **MapStruct** might bypass **constructor** if misconfigured.\n\n### **JavaBeans** versus **immutable** **DTOs**\n\n**JavaBeans** expect **setters** for frameworks (**Hibernate**, older **Spring** XML); **immutable** **DTOs** suit **events**, **caches**, and **functional** services. Mixing styles without discipline yields half-**mutable** graphs that confuse **serializers**. **Interview angle:** Position **record** as the **Java 21** default for transparent data when **ORM** constraints allow.\n\n### Production comparison table\n\n| Pattern | Invariant control | Risk |\n|---------|-------------------|------|\n| **private** field + **getter** only | Read-only **API** | Caller may still mutate returned **mutable** object |\n| **Defensive copy** **ingress/egress** | Strong **alias** control | Allocation cost in hot loops |\n| **List.copyOf** snapshot | **Immutable** list view | Fails on **null** elements; document clearly |\n\n**Interview angle:** Use this table when reviewing **DTO** **PRs** under load.\n\n### Step-by-step: proving a **reference** leak\n\nStep 1: Identify the **getter** returning **collection** or **array**. Step 2: Run **javap -c ClassName.class** and confirm **areturn** passes **getfield** reference without **copyOf**. Step 3: Write a test mutating caller-held reference and assert internal **state** changed. Step 4: Fix with **List.copyOf** or **Collections.unmodifiableList** plus **new ArrayList** snapshot. Step 5: Re-run **javap** to prove the **invokestatic** **copyOf** appears on return paths. **Interview angle:** Staff proof is **javap** plus a failing test, not opinion.\n\n### **HashMap** keys and **mutability**\n\n**HashMap** buckets depend on **hashCode**; mutating a key object after **put** corrupts the table so **get** misses or **iterators** misbehave. **Interview angle:** Name **ConcurrentModificationException** on **keySet** iteration plus external **mutation** as the classic interview trap.\n\n### **Memory** visibility: **encapsulation** is not **volatile**\n\n**private** does not imply **visibility** across **threads**; **synchronized**, **volatile**, **java.util.concurrent** utilities, or **immutable** snapshots establish **happens-before**. **Interview angle:** Contrast **encapsulation** with **JMM** guarantees expected in **on-call** triage.\n\n### **Thread**-safety snapshot table\n\n| Approach | Mechanism | Symptom if wrong |\n|----------|-----------|------------------|\n| **Immutable** snapshot | **final** fields + **copyOf** | Still **unsafe** if **mutable** leaks |\n| **Synchronized** **mutator** | Monitor **happens-before** | **Deadlock** if ordering sloppy |\n| **ConcurrentHashMap** | Segmented **CAS** | **Composite** **DTO** still races if **mutable** |\n\n**Interview angle:** Map **ConcurrentModificationException** stacks to **collection** **mutation** during iteration using **jstack**.\n\n### Static analysis guardrails table\n\n| Tooling | What it catches | Limit |\n|---------|-----------------|-------|\n| **ArchUnit** | **Public** fields, **Date** imports | Needs curated rules per module |\n| **Error Prone** **Immutable** | Suspicious **getter** returns | False positives on ORM entities |\n| **javap** review | Missing **copyOf** in bytecode | Manual but definitive |\n\n**Interview angle:** Pair static rules with **javap** spot checks before declaring a type immutable.\n\n### Illustrative **immutable** **List** snapshot\n\n```java\npublic final class OrderView {\n    private final List<String> skus;\n\n    public OrderView(List<String> skus) {\n        this.skus = List.copyOf(skus);\n    }\n\n    public List<String> skus() {\n        return skus;\n    }\n}\n```\n\n**Interview angle:** Ask what breaks if **List.copyOf** is replaced with direct assignment.\n\n### Sixty-second interview story\n\nYou define **encapsulation** as **invariant** control through **private** **heap** **fields** and curated methods, and **immutability** as frozen **references** plus non-escaping **mutable** guts. You warn that **final** on a **List** field does not freeze elements unless you **copyOf** or wrap. You cite **ConcurrentModificationException** and **HashMap** key corruption as production signatures of broken **encapsulation**. You verify with **javap -c**, **jcmd** **Thread.print** under contention, and **jmap** when **cache** metrics lie. **Interview angle:** Story must mention at least one **bytecode** opcode and one diagnostic command.\n\n### Satyverse drill — tie-down\n\nFor every **DTO** in your service, list **mutable** components, trace every **getter** return path, and rebuild with **copyOf** until **javap** shows no raw **getfield** **areturn** of **mutable** **collections**. Pair with a concurrent stress test that mutates caller copies for five minutes while **jstack** stays clean. **Interview angle:** Drill ends when tests and **javap** agree, not when the **PR** description sounds confident.\n"
     },
     {
       "type": "code",
-      "title": "Basic Walkthrough",
+      "title": "Basic — encapsulation matrix, javap/jcmd reference, failure signatures, CI guardrails",
       "language": "java",
       "filename": "Day12Basic.java",
-      "code": "package arch.day12;\n\npublic class Day12Basic {\n    static class Account {\n        private int balance;\n        Account(int b) { balance = b; }\n        int getBalance() { return balance; }\n    }\n\n    public static void main(String[] args) {\n        System.out.println(new Account(100).getBalance());\n    }\n}",
+      "code": "package arch.day12;\n\n/**\n * Day 12 basic: println-only encapsulation and immutability reference card.\n */\npublic class Day12Basic {\n\n    public static void main(String[] args) {\n        // Core concept: how fields live on the heap and what private actually buys.\n        System.out.println(\"=== Encapsulation - heap fields and access ===\");\n        System.out.println(\"private field   | javac blocks external compile-time access | heap slot still mutated via reflection\");\n        System.out.println(\"getter/setter   | centralize validation + invariants          | useless if returned mutable object aliases\");\n        System.out.println(\"package-private | wider visibility for tests                   | breaks module boundaries under JPMS\");\n        System.out.println(\"final field     | assign-once after ctor definite assignment   | does not deep-freeze mutable referent\");\n        System.out.println();\n\n        // Commands that prove accessor behaviour and contention.\n        System.out.println(\"=== Command reference - attach to Jira ===\");\n        System.out.println(\"javap -c LedgerDto.class       -> see getfield/areturn without copyOf on collections\");\n        System.out.println(\"jcmd <pid> Thread.print        -> show concurrent Iterator.remove vs mutator stacks\");\n        System.out.println(\"jmap -dump:live,format=b,file=heap.bin <pid>  -> MAT hunt duplicate cache keys\");\n        System.out.println(\"jstack <pid>                   -> sample ConcurrentModificationException frames\");\n        System.out.println(\"javac -Xlint:unchecked         -> surface raw collection escapes in legacy beans\");\n        System.out.println();\n\n        // Failure signatures tied to broken invariants.\n        System.out.println(\"=== Failure modes - invariants and aliases ===\");\n        System.out.println(\"ConcurrentModificationException | structurally modified list during iteration\");\n        System.out.println(\"IllegalStateException           | iterator remove after illegal sequence\");\n        System.out.println(\"Cache miss storm                | mutable key changed after HashMap put\");\n        System.out.println(\"Silent double count             | shared mutable list mutated between threads\");\n        System.out.println(\"Data race metrics               | non-volatile reads of partially published fields\");\n        System.out.println();\n\n        // Build and runtime posture.\n        System.out.println(\"=== Environment / configuration cues ===\");\n        System.out.println(\"Prefer List.copyOf / Map.copyOf snapshots at DTO boundaries on Java 10+\");\n        System.out.println(\"Ban public mutable fields in style guide except generated protobuf internals\");\n        System.out.println(\"Enable Error Prone ImmutableChecker or ArchUnit rules in CI\");\n        System.out.println(\"Document thread-safety policy per package - encapsulation is not enough\");\n        System.out.println(\"Spot-check record compact constructors for List.copyOf on mutable components\");\n        System.out.println();\n\n        System.out.println(\"=== Review cue ===\");\n        System.out.println(\"staff cue: every getter returning collection must show copyOf in javap\");\n        System.out.println(\"staff cue: freeze cache keys as records with immutable components\");\n        System.out.println(\"staff cue: run jdeps on modules after removing public fields\");\n        System.out.println(\"done\");\n    }\n}\n",
       "level": "basic",
-      "output": "100\n",
-      "description": "Private fields + getters: hide internal state (encapsulation)."
+      "output": "=== Encapsulation - heap fields and access ===\nprivate field   | javac blocks external compile-time access | heap slot still mutated via reflection\ngetter/setter   | centralize validation + invariants          | useless if returned mutable object aliases\npackage-private | wider visibility for tests                   | breaks module boundaries under JPMS\nfinal field     | assign-once after ctor definite assignment   | does not deep-freeze mutable referent\n\n=== Command reference - attach to Jira ===\njavap -c LedgerDto.class       -> see getfield/areturn without copyOf on collections\njcmd <pid> Thread.print        -> show concurrent Iterator.remove vs mutator stacks\njmap -dump:live,format=b,file=heap.bin <pid>  -> MAT hunt duplicate cache keys\njstack <pid>                   -> sample ConcurrentModificationException frames\njavac -Xlint:unchecked         -> surface raw collection escapes in legacy beans\n\n=== Failure modes - invariants and aliases ===\nConcurrentModificationException | structurally modified list during iteration\nIllegalStateException           | iterator remove after illegal sequence\nCache miss storm                | mutable key changed after HashMap put\nSilent double count             | shared mutable list mutated between threads\nData race metrics               | non-volatile reads of partially published fields\n\n=== Environment / configuration cues ===\nPrefer List.copyOf / Map.copyOf snapshots at DTO boundaries on Java 10+\nBan public mutable fields in style guide except generated protobuf internals\nEnable Error Prone ImmutableChecker or ArchUnit rules in CI\nDocument thread-safety policy per package - encapsulation is not enough\nSpot-check record compact constructors for List.copyOf on mutable components\n\n=== Review cue ===\nstaff cue: every getter returning collection must show copyOf in javap\nstaff cue: freeze cache keys as records with immutable components\nstaff cue: run jdeps on modules after removing public fields\ndone\n",
+      "description": "Static **println**-only reference pairing **private** **heap** **fields** with **List.copyOf** vocabulary for **DTO** reviews."
     },
     {
       "type": "code",
-      "title": "Intermediate Implementation",
+      "title": "Intermediate — four scenarios: leaked List, Date key, shallow record, racy publication",
       "language": "java",
       "filename": "Day12Intermediate.java",
-      "code": "package arch.day12;\n\nimport java.util.Arrays;\n\npublic class Day12Intermediate {\n    static class Snapshot {\n        private final int[] data;\n        Snapshot(int[] data) { this.data = Arrays.copyOf(data, data.length); }\n        int[] getData() { return Arrays.copyOf(data, data.length); }\n    }\n\n    public static void main(String[] args) {\n        Snapshot s = new Snapshot(new int[] {1, 2, 3});\n        System.out.println(Arrays.toString(s.getData()));\n    }\n}",
+      "code": "package arch.day12;\n\n/**\n * Day 12 intermediate: four encapsulation / immutability incidents (println only).\n */\npublic class Day12Intermediate {\n\n    /*\n     * Context: finance DTO returns internal ArrayList; Kafka thread clears during pagination.\n     */\n    static void scenario1() {\n        System.out.println(\"--- Scenario 1: leaked List getter concurrent corruption ---\");\n        System.out.println(\"symptom: ConcurrentModificationException during Jackson serialization\");\n        System.out.println(\"cause:    getter returned this.lines without copy or unmodifiable wrap\");\n        System.out.println(\"why:      two threads share same backing array via alias\");\n        System.out.println(\"fix:      return List.copyOf(lines) or unmodifiable snapshot\");\n        System.out.println(\"verify:   javap -c InvoiceDto.class and search for copyOf before areturn\");\n        System.out.println(\"staff:    add concurrent stress test mutating caller-held list\");\n        System.out.println(\"note:    unit tests pass when single-threaded reuse hides alias\");\n        System.out.println();\n    }\n\n    /*\n     * Context: legacy Date field mutated after cache insert breaks HashMap lookup.\n     */\n    static void scenario2() {\n        System.out.println(\"--- Scenario 2: mutable Date key poisons settlement cache ---\");\n        System.out.println(\"symptom: cache miss rate climbs; settlements re-fetch constantly\");\n        System.out.println(\"cause:    SettlementKey used java.util.Date mutated after HashMap put\");\n        System.out.println(\"fix:      replace with Instant or immutable record key\");\n        System.out.println(\"verify:   jmap -dump then MAT HashMap histogram + key equals audit\");\n        System.out.println(\"staff:    ban Date in new code via ArchUnit import ban\");\n        System.out.println(\"echo:     reproduce with tiny main mutating key field post-put\");\n        System.out.println(\"note:    hashCode drift strands entries in wrong buckets silently\");\n        System.out.println();\n    }\n\n    /*\n     * Context: record exposes MutableTag list; caller sorts in place breaking invariants.\n     */\n    static void scenario3() {\n        System.out.println(\"--- Scenario 3: shallow record immutability broken ---\");\n        System.out.println(\"symptom: tag order flips in audit log without setter calls\");\n        System.out.println(\"cause:    record OrderEvent(List<MutableTag> tags) stored caller list ref\");\n        System.out.println(\"fix:      List.copyOf in compact constructor or wrap immutable tags\");\n        System.out.println(\"verify:   javap -c OrderEvent.class for invokespecial copyOf\");\n        System.out.println(\"staff:    code review checklist: record components must be immutable\");\n        System.out.println(\"metric:   audit diff noise correlates with caller-side sort()\");\n        System.out.println(\"note:    record accessors still return same list reference\");\n        System.out.println();\n    }\n\n    static void scenario4() {\n        System.out.println(\"--- Scenario 4: racy read of partially constructed bean ---\");\n        System.out.println(\"symptom: sporadic zero balance in metrics exporter\");\n        System.out.println(\"cause:    another thread reads fields before ctor finishes publishing\");\n        System.out.println(\"fix:      final fields + safe publication or synchronized factory\");\n        System.out.println(\"verify:   jstack captures racing ctor vs reader frames\");\n        System.out.println(\"staff:    document @Immutable on types actually safe for cross-thread\");\n        System.out.println(\"context: encapsulation without JMM edge still allows torn reads\");\n        System.out.println(\"note:    use volatile holder or var handles only when measured\");\n        System.out.println(\"echo:    jcmd VM.flags confirms if experimental publication helpers enabled\");\n        System.out.println();\n    }\n\n    static void printBanner() {\n        System.out.println(\"banner: Day12 intermediate encapsulation + immutability lab\");\n    }\n\n    public static void main(String[] args) {\n        printBanner();\n        scenario1();\n        scenario2();\n        scenario3();\n        scenario4();\n    }\n}\n",
       "level": "intermediate",
-      "output": "[1, 2, 3]\n",
-      "description": "Defensive copy: return a copy of internal array so callers cannot mutate your state."
+      "output": "banner: Day12 intermediate encapsulation + immutability lab\n--- Scenario 1: leaked List getter concurrent corruption ---\nsymptom: ConcurrentModificationException during Jackson serialization\ncause:    getter returned this.lines without copy or unmodifiable wrap\nwhy:      two threads share same backing array via alias\nfix:      return List.copyOf(lines) or unmodifiable snapshot\nverify:   javap -c InvoiceDto.class and search for copyOf before areturn\nstaff:    add concurrent stress test mutating caller-held list\nnote:    unit tests pass when single-threaded reuse hides alias\n\n--- Scenario 2: mutable Date key poisons settlement cache ---\nsymptom: cache miss rate climbs; settlements re-fetch constantly\ncause:    SettlementKey used java.util.Date mutated after HashMap put\nfix:      replace with Instant or immutable record key\nverify:   jmap -dump then MAT HashMap histogram + key equals audit\nstaff:    ban Date in new code via ArchUnit import ban\necho:     reproduce with tiny main mutating key field post-put\nnote:    hashCode drift strands entries in wrong buckets silently\n\n--- Scenario 3: shallow record immutability broken ---\nsymptom: tag order flips in audit log without setter calls\ncause:    record OrderEvent(List<MutableTag> tags) stored caller list ref\nfix:      List.copyOf in compact constructor or wrap immutable tags\nverify:   javap -c OrderEvent.class for invokespecial copyOf\nstaff:    code review checklist: record components must be immutable\nmetric:   audit diff noise correlates with caller-side sort()\nnote:    record accessors still return same list reference\n\n--- Scenario 4: racy read of partially constructed bean ---\nsymptom: sporadic zero balance in metrics exporter\ncause:    another thread reads fields before ctor finishes publishing\nfix:      final fields + safe publication or synchronized factory\nverify:   jstack captures racing ctor vs reader frames\nstaff:    document @Immutable on types actually safe for cross-thread\ncontext: encapsulation without JMM edge still allows torn reads\nnote:    use volatile holder or var handles only when measured\necho:    jcmd VM.flags confirms if experimental publication helpers enabled\n\n",
+      "description": "Each scenario names **javap**, **jmap**, or **jstack** because **alias** bugs masquerade as serialization or cache mysteries."
     },
     {
       "type": "code",
-      "title": "Advanced Production Pattern",
+      "title": "Advanced — alias risk scoreboard, immutability checklist, publication posture matrix",
       "language": "java",
       "filename": "Day12Advanced.java",
-      "code": "package arch.day12;\n\npublic class Day12Advanced {\n    static final class Money {\n        private final long cents;\n        Money(long cents) { this.cents = cents; }\n        Money add(Money o) { return new Money(this.cents + o.cents); }\n        @Override public String toString() { return \"¢\" + cents; }\n    }\n\n    public static void main(String[] args) {\n        Money m = new Money(100).add(new Money(50));\n        System.out.println(m);\n    }\n}",
+      "code": "package arch.day12;\n\nimport java.util.ArrayList;\nimport java.util.LinkedHashMap;\nimport java.util.List;\nimport java.util.Map;\n\n/**\n * Day 12 advanced: alias risk scoring + immutability checklist + publication matrix.\n */\npublic class Day12Advanced {\n\n    record RiskRule(String pattern, int score) {}\n\n    static List<RiskRule> rules() {\n        List<RiskRule> list = new ArrayList<>();\n        list.add(new RiskRule(\"getter returns internal ArrayList\", 5));\n        list.add(new RiskRule(\"ctor stores caller array without copy\", 4));\n        list.add(new RiskRule(\"record wraps mutable Date\", 3));\n        list.add(new RiskRule(\"public non-final fields on DTO\", 2));\n        return list;\n    }\n\n    static Map<String, Boolean> immutabilityGate() {\n        Map<String, Boolean> m = new LinkedHashMap<>();\n        m.put(\"all fields private final\", true);\n        m.put(\"no setters on value type\", true);\n        m.put(\"collections use copyOf on ingress\", false);\n        m.put(\"cache keys are records or primitives\", true);\n        return m;\n    }\n\n    public static void main(String[] args) {\n        System.out.println(\"banner: Day12 advanced encapsulation guardrails\");\n        System.out.println();\n        System.out.println();\n\n        System.out.println(\"=== Block 1: alias risk scoreboard ===\");\n        int total = 0;\n        for (RiskRule r : rules()) {\n            total += r.score();\n            System.out.println(r.pattern() + \" | score=\" + r.score());\n        }\n        System.out.println(\"total risk = \" + total);\n        System.out.println();\n\n        System.out.println(\"=== Block 2: immutability checklist ===\");\n        Map<String, Boolean> gate = immutabilityGate();\n        int pass = 0;\n        for (Map.Entry<String, Boolean> e : gate.entrySet()) {\n            if (Boolean.TRUE.equals(e.getValue())) {\n                pass++;\n            }\n            System.out.println(e.getKey() + \" | \" + e.getValue());\n        }\n        System.out.println(\"pass count = \" + pass + \" / \" + gate.size());\n        System.out.println();\n\n        System.out.println(\"=== Block 3: publication posture matrix ===\");\n        Map<String, String> pub = new LinkedHashMap<>();\n        pub.put(\"immutable snapshot\", \"safe handoff across threads without extra locks\");\n        pub.put(\"mutable bean\", \"requires explicit synchronization or confinement\");\n        pub.put(\"leaked collection\", \"ConcurrentModificationException or silent corruption\");\n        for (Map.Entry<String, String> e : pub.entrySet()) {\n            System.out.println(e.getKey() + \" -> \" + e.getValue());\n        }\n        System.out.println(\"eof\");\n    }\n}\n",
       "level": "advanced",
-      "output": "¢150\n",
-      "description": "Immutable object: all fields final, no setters — thread-safe sharing pattern."
+      "output": "banner: Day12 advanced encapsulation guardrails\n\n\n=== Block 1: alias risk scoreboard ===\ngetter returns internal ArrayList | score=5\nctor stores caller array without copy | score=4\nrecord wraps mutable Date | score=3\npublic non-final fields on DTO | score=2\ntotal risk = 14\n\n=== Block 2: immutability checklist ===\nall fields private final | true\nno setters on value type | true\ncollections use copyOf on ingress | false\ncache keys are records or primitives | true\npass count = 3 / 4\n\n=== Block 3: publication posture matrix ===\nimmutable snapshot -> safe handoff across threads without extra locks\nmutable bean -> requires explicit synchronization or confinement\nleaked collection -> ConcurrentModificationException or silent corruption\neof\n",
+      "description": "Deterministic **Map**/**List**/**record** model mirroring Staff guardrails for **DTO** graphs under **Kafka** load."
     },
     {
       "type": "diagram",
@@ -74,238 +74,268 @@
     },
     {
       "type": "pitfalls",
-      "title": "Common Pitfalls",
+      "title": "Common Pitfalls — encapsulation and immutability",
       "items": [
-        "Treating Encapsulation and Immutability as memorization instead of implementation practice.",
-        "Skipping edge-case tests and validating only happy path.",
-        "Using unclear naming and tightly coupled method logic.",
-        "Giving interview answers without concrete examples.",
-        "Ignoring trade-offs while choosing approach."
+        "Exposing **internal** **ArrayList** through a **getter** without **List.copyOf** or **unmodifiable** wrapping - production symptom is **ConcurrentModificationException** during **JSON** serialization while another thread mutates the same list; fix by returning **List.copyOf** snapshots or **Collections.unmodifiableList** backed by a **new** **ArrayList**; verify with **javap -c** **Dto.class** showing **invokestatic** **copyOf** before **areturn**.",
+        "Storing caller-supplied **byte[]** or **char[]** directly in a **credential** holder without cloning - symptom is silent credential mutation after **network** buffer reuse; fix by **Arrays.copyOf** in **constructor**; verify with a unit test mutating the original array post-construct and asserting holder value unchanged.",
+        "Using **mutable** **java.util.Date** fields inside **equals**/**hashCode** **beans** that serve as **HashMap** keys - symptom is **cache** misses and ghost entries after **setTime**; fix by migrating to **Instant** or **immutable** **record** keys; verify with **jmap -dump** and **MAT** **HashMap** **inspector**.",
+        "Declaring **record** **components** as **List** of **mutable** **tags** without **List.copyOf** in the compact **constructor** - audit trails reorder when callers **sort** in place; fix with **List.copyOf** plus **immutable** element types; verify **javap -c** on **record** initializer for **copyOf**.",
+        "Relying on **encapsulation** alone for **thread** safety while publishing **mutable** **DTOs** across **threads** without **synchronization** - symptom is torn reads of **long**/**double** or half-built graphs; fix with **final** fields, safe publication, or **concurrent** structures; verify with **jstack** under load plus **jcmd** **Thread.print**.",
+        "Returning **this** from **fluent** **setters** on **entities** shared in **Hibernate** **session** - symptom is **shared** **mutations** surprising **transaction** boundaries; fix by **immutable** **command** objects for **API** layers; verify with integration tests and **javap** on service facades.",
+        "Using **public** **static** **mutable** **collections** for **constants** - any module can **clear** the list; fix by **List.of** or **unmodifiable** wrappers; verify **javap -c** on holder **clinit** shows **immutable** factories.",
+        "Letting **Lombok** **@Data** on **domain** **entities** expose **collection** getters that alias **internal** state - fix with **@Getter(AccessLevel.NONE)** on sensitive fields plus explicit snapshot methods; verify **javap** after **annotation** processing in CI."
       ]
     },
     {
       "type": "exercise",
-      "title": "Exercise - Practice Encapsulation and Immutability",
-      "problem": "Implement a Java solution for **Encapsulation and Immutability** with practical constraints.\n\nRequirements:\n1. Handle at least 5 test inputs.\n2. Include one explicit edge/failure case.\n3. Print deterministic output for verification.\n4. Add short comments for decision points.\n5. Keep the solution interview-readable and maintainable.",
+      "title": "Exercise — PositionSnapshot with List.copyOf and alias proof",
+      "problem": "You join the **risk** platform squad that ships **immutable** **PositionSnapshot** **DTOs** to **Kafka**; reviewers require **List.copyOf** boundaries and **javap** evidence before **canary** cutover.\n\nRequirements:\n1. Implement **arch.day12.Day12Exercise** with **public static void main(String[] args)** printing a three-line legend labelled **encapsulate:**, **immutable:**, and **alias:** - each under 120 chars - explaining **private** **invariants**, **final** **snapshot** objects, and **copyOf** **escape** control.\n2. Declare **final class PositionSnapshot** with **private final String symbol**, **private final long qty**, **private final List<String> deskTags**; **constructor** takes **List<String> deskTags** and assigns **this.deskTags = List.copyOf(deskTags)**.\n3. Add **List<String> tags()** returning the internal list (already unmodifiable via **List.copyOf**).\n4. In **main**, build **List<String> raw = new ArrayList<>()**, add **EU**, pass to **PositionSnapshot**, print **tags()**, then **raw.add(\"US\")**, print **tags().size()** to show **alias** did not mutate snapshot.\n5. End with **done** on its own line.",
       "hints": [
-        "Start with correctness first, optimize later.",
-        "Add one guard clause for invalid input.",
-        "Refactor method names before final answer."
+        "Use **ArrayList** for **raw** so you can mutate after constructing the **snapshot** to prove **immutability**.",
+        "**List.copyOf** throws on **null** elements - keep tags non-null for this exercise.",
+        "Import **java.util** types explicitly so reviewers see the **mutable** versus **immutable** split."
       ],
-      "solution": "// Day 12 Encapsulation and Immutability - reference solution intentionally omitted in prompt.\n// Reuse the \"Advanced Production Pattern\" code block above as base and add edge-case handling.",
-      "difficulty": "Beginner"
+      "solution": "package arch.day12;\n\nimport java.util.ArrayList;\nimport java.util.List;\n\n/**\n * Day 12 exercise: PositionSnapshot with List.copyOf boundary.\n */\npublic class Day12Exercise {\n\n    static final class PositionSnapshot {\n        private final String symbol;\n        private final long qty;\n        private final List<String> deskTags;\n\n        PositionSnapshot(String symbol, long qty, List<String> deskTags) {\n            this.symbol = symbol;\n            this.qty = qty;\n            this.deskTags = List.copyOf(deskTags);\n        }\n\n        List<String> tags() {\n            return deskTags;\n        }\n    }\n\n    public static void main(String[] args) {\n        final String e =\n                \"encapsulate: private fields plus ctor validation keep invariants inside the object boundary.\";\n        final String i = \"immutable: final references and copyOf snapshots stop post-construct surprise mutations.\";\n        final String a = \"alias: returning internal mutable collections without copyOf shares heap arrays with callers.\";\n        System.out.println(e);\n        System.out.println(i);\n        System.out.println(a);\n        List<String> raw = new ArrayList<>();\n        raw.add(\"EU\");\n        PositionSnapshot snap = new PositionSnapshot(\"FX\", 10L, raw);\n        System.out.println(\"tags=\" + snap.tags());\n        raw.add(\"US\");\n        int afterMutate = snap.tags().size();\n        System.out.println(\"size_after_caller_mutate=\" + afterMutate);\n        boolean hasEu = snap.tags().contains(\"EU\");\n        System.out.println(\"symbol_check=\" + hasEu);\n        System.out.println(\"done\");\n    }\n}\n"
     },
     {
       "type": "interview",
-      "title": "Interview Drill",
+      "title": "Interview Drill — Encapsulation and Immutability",
       "conceptual": [
         {
-          "question": "What is encapsulation?",
-          "answer": "Bundling data with behavior and hiding internal representation behind accessors.",
+          "question": "What does **encapsulation** mean at the **JVM** **heap** level?",
+          "answer": "**private** **fields** live in the object’s **heap** layout; **getfield** and **putfield** still load and store values at runtime. **Encapsulation** is a **compile-time** access rule enforced by **javac**, not a **memory** fence. **Interviewers** expect you to separate **API** shape from **alias** safety: returning internal **mutable** **collections** breaks invariants even when fields stay **private**. Production **ConcurrentModificationException** during serialization is the classic symptom. Use **javap -c** on accessors to prove **copyOf** exists. **Java 11** through **Java 21** share the same **bytecode** field access model. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Bundling data with behavior and hiding internal representation behind accessors. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Bundling data with behavior and hiding internal representation behind accessors. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "What is immutability?",
-          "answer": "Object state cannot change after construction—simplifies reasoning and concurrency.",
+          "question": "Why is **final** on a **List** field not enough for **immutability**?",
+          "answer": "**final** freezes the reference slot after the **constructor** completes; the **List** instance can still **mutate** elements unless you use **List.of**, **List.copyOf**, or an **unmodifiable** view with no external **alias** to the backing list. **HotSpot** still issues **invokeinterface** **add** on the same **object** identity. **Cache** corruption follows when two threads share that **alias**. **javap** shows **final** only on the field entry, not deep immutability. **Java 10** **List.copyOf** is the idiomatic snapshot tool on modern **LTS** lines. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Object state cannot change after construction—simplifies reasoning and concurrency. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Object state cannot change after construction—simplifies reasoning and concurrency. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "How to make a class immutable?",
-          "answer": "final class, final fields, no setters, defensive copies in getters, no leaking mutable internals.",
+          "question": "What is a **defensive copy** on **ingress**?",
+          "answer": "On **ingress**, the **constructor** or **factory** copies caller-supplied **arrays** or **collections** so later caller **mutations** do not change internal **state**. **byte[]** passwords and **char[]** buffers especially demand **Arrays.copyOf** to avoid **buffer** **pool** reuse bugs. Skipping **ingress** copies yields silent **DTO** drift under **load**. Verify with a unit test mutating the caller **collection** post-construct. **Java 8** **Arrays.copyOf** predates **List.copyOf** but remains essential for primitives. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. final class, final fields, no setters, defensive copies in getters, no leaking mutable internals. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. final class, final fields, no setters, defensive copies in getters, no leaking mutable internals. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "Why defensive copy for getters returning collections?",
-          "answer": "Callers could modify internal list if you return reference.",
+          "question": "What is a **defensive copy** on **egress**?",
+          "answer": "**Egress** copies happen when **getters** return snapshots or **unmodifiable** views instead of internal **references**. Returning **this.lines** directly shares the **ArrayList** backing array with callers. **List.copyOf** allocates a new **immutable** list; **Collections.unmodifiableList(new ArrayList<>(internal))** also works but costs two allocations. Production **Kafka** threads mutating **DTO** lists during **serialization** disappear after **egress** fixes. Proof is **javap -c** showing **invokestatic** **copyOf**. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Callers could modify internal list if you return reference. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Callers could modify internal list if you return reference. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "What is JavaBeans naming?",
-          "answer": "getX/setX conventions for tooling—may break immutability if setters added carelessly.",
+          "question": "How do **record** components interact with **immutability** (**Java 16**)?",
+          "answer": "**record** accessors expose components without **setters**, and **equals**/**hashCode**/**toString** are synthesized. **Immutability** is shallow: **mutable** component types still leak unless the compact **constructor** copies them. **Misconfigured** **serialization** frameworks can bypass **constructor** validation if mappers use **reflective** field writes. **Interview angle:** Ask for compact **constructor** bodies that call **List.copyOf**. **Java 21** adds no change to this shallow rule. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. getX/setX conventions for tooling—may break immutability if setters added carelessly. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. getX/setX conventions for tooling—may break immutability if setters added carelessly. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "What is record immutability (Java 16+)?",
-          "answer": "Shallow immutability: components final, accessors, equals/hashCode/toString generated.",
+          "question": "Why can **mutable** **keys** break **HashMap**?",
+          "answer": "**HashMap** buckets derive from **hashCode** computed at **put** time; mutating the **key** object changes **hashCode** so **get** probes the wrong bucket while the entry still exists. Symptoms are rising **cache** misses and ghost data. **Diagnostic**: **jmap -dump** plus **MAT** **HashMap** **inspector**. Fix with **immutable** **record** keys or **String** ids. **Java 8** through **Java 21** **HashMap** behaves the same here. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Shallow immutability: components final, accessors, equals/hashCode/toString generated. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Shallow immutability: components final, accessors, equals/hashCode/toString generated. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "What is builder pattern for?",
-          "answer": "Construct complex immutable objects stepwise with validation at build().",
+          "question": "Does **encapsulation** imply **thread** safety?",
+          "answer": "No — **private** fields do not establish **happens-before** relationships across **threads**. **Immutable** snapshots (**final** fields + no **mutable** **escapes**) or **synchronization**/**java.util.concurrent** utilities are required. **Race** symptoms include torn reads of **long** fields or half-published object graphs. Use **jstack** to see **constructor** versus reader **threads**. **Java** **Memory** **Model** rules are independent of **accessor** visibility. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Construct complex immutable objects stepwise with validation at build(). When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Construct complex immutable objects stepwise with validation at build(). Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "What is validation in setter?",
-          "answer": "Reject invalid state early—preserve class invariants.",
+          "question": "What is the difference between **List.copyOf** and **Collections.unmodifiableList**?",
+          "answer": "**List.copyOf** creates a new **immutable** list snapshot; **Collections.unmodifiableList** wraps an existing list so mutations through other **aliases** still change the **view**. **copyOf** rejects **null** elements and fails fast on **null** list. Choose **copyOf** for **DTO** boundaries; use **unmodifiable** only when you control the sole **alias**. **javap** shows **copyOf** as **invokestatic**. **Java 10** introduced **List.copyOf**. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Reject invalid state early—preserve class invariants. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Reject invalid state early—preserve class invariants. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "Why avoid exposing mutable Date from getters?",
-          "answer": "Caller can mutate; return Instant or immutable type or copy.",
+          "question": "How does **JavaBeans** style conflict with **immutability**?",
+          "answer": "**JavaBeans** expose **setters** for **frameworks** like **Hibernate**; **immutable** **DTOs** suit **events** and **caches**. Mixing styles in one layer yields **half-mutable** graphs that **serializers** mutate unexpectedly. Mitigate with **immutable** **command** objects at **API** edges and **mutable** **entities** only inside **persistence** packages. **ArchUnit** can ban cross-layer **setters**. **Spring** **records** support improves on **Java 17**+. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Caller can mutate; return Instant or immutable type or copy. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Caller can mutate; return Instant or immutable type or copy. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "What is unmodifiable vs immutable?",
-          "answer": "Unmodifiable view prevents modification through that reference; underlying may still change elsewhere.",
+          "question": "What does **String** **immutability** buy you for **hashing**?",
+          "answer": "**String** **hashCode** is cached and **intern** tables rely on immutability; **String** **constants** are safe **HashMap** keys. **StringBuilder** is **mutable** and must never be used as a key. Production bugs appear when **identity** **hashCode** misuse mixes with **mutable** **char** sequences. **javap** on **String** shows **final** **class** and **intern** machinery. **Java 8**+ **String** **concat** optimizations still assume immutability. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Unmodifiable view prevents modification through that reference; underlying may still change elsewhere. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Unmodifiable view prevents modification through that reference; underlying may still change elsewhere. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "What is copy constructor?",
-          "answer": "New instance from existing, copying fields—clone alternative.",
+          "question": "Why avoid **public** **mutable** **static** **collections**?",
+          "answer": "Any **class** in the **classpath** can **clear** or **mutate** shared **static** **state**, breaking **invariants** globally. **Symptoms** are flaky **integration** tests and impossible **prod** **only** bugs. Fix with **List.of** snapshots or **private** **static** **final** **immutable** holders. Verify **javap -c** **<clinit>** paths. **JPMS** reduces accidental access but does not fix **mutable** **public** fields inside exported packages. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. New instance from existing, copying fields—clone alternative. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. New instance from existing, copying fields—clone alternative. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "What is String immutability benefit?",
-          "answer": "Safe sharing, caching in pool, hashCode cacheable.",
+          "question": "How does **serialization** stress **encapsulation**?",
+          "answer": "**ObjectInputStream** can reconstruct objects without calling your **constructor**, bypassing **validation** unless you implement **readObject** guards or use **records** with trusted streams. **Encapsulation** does not stop **bytecode** **gadget** chains. **NotSerializableException** and **StreamCorruptedException** appear when graphs violate contracts. Use **jcmd** **JVMTI** agents sparingly; prefer schema-first formats for **DTO** edges. **Java 17** **serialization** filters reduce attack surface. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Safe sharing, caching in pool, hashCode cacheable. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Safe sharing, caching in pool, hashCode cacheable. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "What is volatile for visibility?",
-          "answer": "Reads/writes go to main memory—related to concurrency, not full mutex.",
+          "question": "What is **volatile** versus **private** for field publication?",
+          "answer": "**volatile** establishes **happens-before** for reads and writes of a single field; **private** only limits **compile-time** visibility. **Immutable** **final** fields published through a **final** **reference** from a **constructor** benefit from safe-initialization rules. Misuse shows up as sporadic **null** or zero reads. **jstack** plus code inspection beats guessing. **Java 5+** **JMM** clarifies **volatile** semantics used through **Java 21**. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Reads/writes go to main memory—related to concurrency, not full mutex. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Reads/writes go to main memory—related to concurrency, not full mutex. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "What is AtomicReference for immutable swaps?",
-          "answer": "Atomic updates to reference pointing to immutable objects.",
+          "question": "Why use **immutable** **value** objects in **concurrent** **pipelines**?",
+          "answer": "**Immutable** snapshots eliminate lock **contention** on read-mostly **DTOs** flowing through **Kafka** or **reactive** chains. **Mutating** **DTOs** in flight forces **synchronized** regions that **block** **event** loops. **copyOf** adds allocation cost you measure with **jcmd** **GC.heap_info**. **Java 21** **virtual** **threads** still benefit from immutability to reduce **pinning** risk when **blocking** sneaks in. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Atomic updates to reference pointing to immutable objects. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Atomic updates to reference pointing to immutable objects. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         },
         {
-          "question": "Why prefer final local variables?",
-          "answer": "Clearer data flow; required for use in lambdas in many cases.",
+          "question": "How does **Lombok** interact with **encapsulation** reviews?",
+          "answer": "**@Data** generates **getters**/**setters** that may expose **collection** fields directly unless you configure access levels. **Annotation** processors run before you read **source**, so **javap** on **class** files remains authoritative. **Production** incidents trace to **generated** **equals** including **mutable** fields that change mid-**hashCode** use. Add **ArchUnit** rules and **Error** **Prone** checks. **Java 17** **records** reduce **Lombok** surface area for **DTOs**. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
           "followUps": [
             {
               "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
-              "answer": "Tie **logs**, **metrics**, **repro** steps, and **ownership** to what you already said. **Interviewers** reward **symptom → cause → fix → verification**, not textbook **definitions** alone. Clearer data flow; required for use in lambdas in many cases. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
             },
             {
               "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
-              "answer": "Name **one** misconception and **correct** it with a **concrete** check, **command**, or **test**. **Senior** answers stay **specific** and **calm** under pressure. Clearer data flow; required for use in lambdas in many cases. Mention **one edge case** or **follow-up** an interviewer might ask next. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory."
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
+            }
+          ]
+        },
+        {
+          "question": "What is **escape analysis** and does it replace **defensive** **copy**?",
+          "answer": "**Escape** **analysis** lets **JIT** stack-allocate or eliminate locks when objects do not **escape** **threads**, but it is **optimization**, not a **contract**. **API** **methods** returning **internal** **state** always **escape**. Relying on **EA** for **correctness** is unsafe across **JVM** updates. **jcmd** **Compiler.codecache** dumps are curiosity, not proof. **Java 21** **HotSpot** still treats **documented** **immutability** as the **API** promise. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
+            },
+            {
+              "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
+            }
+          ]
+        },
+        {
+          "question": "When should you prefer **byte[]** clones for **sensitive** data?",
+          "answer": "**byte[]** fields should **clone** on **ingress** and **zero** on close to avoid **buffer** **reuse** leaks and **timing** attacks on **crypto** material. **String** **internment** risks keeping secrets longer than needed. **Production** **compliance** reviews ask for explicit **lifecycle** control. Use **Arrays.copyOf** and **Arrays.fill** **zero**. **Java 11** **Arrays.compare** helpers assist **constant**-time comparisons in security code. Staff proof bundle: pair **javap -c** with **jcmd** **Thread.print** when **ConcurrentModificationException** disagrees with your mental model, run **jmap -dump:live** if **cache** metrics imply **hashCode** drift, cite **Java 10** **List.copyOf**, **Java 16** **records**, and **Java 21** **sequenced** **collections** ergonomics, attach outputs to **Jira**, add **jstack** samples under load, rehearse **javac -verbose** repro steps, and demand **MAT** **Histogram** screenshots whenever **equals** symmetry breaks so every answer names commands reviewers replay without your laptop.",
+          "followUps": [
+            {
+              "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, attach **MAT** **HashMap** histograms to the ticket, and add **jstack** samples showing **Iterator** frames colliding with **mutator** threads. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder without improvising."
+            },
+            {
+              "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics, then mention **record** **shallow** **immutability** when components stay **mutable**. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers that only **MAT** exposes."
             }
           ]
         }
@@ -454,103 +484,537 @@
       ],
       "seniorScenario": [
         {
-          "question": "DTOs mutable in API layer caused race—fix?",
-          "answer": "Immutable DTOs, separate command/query models, thread confinement.",
+          "question": "Your **Spring Boot** **billing** **canary** throws **ConcurrentModificationException** inside **Jackson** while serializing **InvoiceDto**; totals differ between pods even though **SQL** reconciles.",
+          "answer": "**Immediate response:** Capture **jcmd** **<pid>** **Thread.print** from a failing pod and **javap -c** **InvoiceDto.class** in the same **artifact** to see whether **getLines** returns the internal **ArrayList** without **List.copyOf**.\n\n**Root cause:** Two **threads** alias the same **List**: one **iterator** walks during **serialization** while another **Kafka** consumer **mutates** lines, structurally modifying the backing list during iteration.\n\n**Fix:** Return **List.copyOf(lines)** (or **unmodifiable** snapshot) from **getters**, add concurrent tests that **mutate** caller copies, redeploy, and attach **javap** diff to the **PR**.\n\n**Prevention:** **ArchUnit** rule banning raw **collection** **returns** from **DTOs**, **Error** **Prone** **Immutable** checks, and **CI** **javap** snippets on **serialization** hot types.\n\nStaff narrative closure: attach **javap** **getter** dumps and **jcmd** **VM.flags** slices to architecture tickets, cite **Java 21** **record** patterns for **DTO** carriers, demand **Gradle** modules align **immutable** **API** packages with **ORM** layers before closing incidents, rehearse **jstack** captures with stakeholders so **ConcurrentModificationException** reads as **alias** bugs not random **framework** faults, log **java -version** beside every mitigation, publish **Prometheus** miss-rate deltas proving **canary** recovered after **copyOf** fixes, correlate **jstat -gc** when **allocation** spikes follow **defensive** **copy** bursts, store **javap** diffs next to every **DTO** **PR**, require **ArchUnit** failures to block merges when **public** **mutable** fields reappear, add **Flight** **Recording** slices whenever **CPU** regressions follow **immutability** hardening, file **JMH** baselines when reviewers question **copyOf** overhead, and capture **java -Xlog:gc** excerpts when **GC** pauses correlate with **DTO** **hardening**.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Encapsulation and Immutability** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Immutable DTOs, separate command/query models, thread confinement. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, and you attach **MAT** **HashMap** histograms to the ticket. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Immutable DTOs, separate command/query models, thread confinement. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers."
             }
           ]
         },
         {
-          "question": "Hibernate entity “immutable” view—how?",
-          "answer": "Read-only queries, @Immutable annotation, separate projection records.",
+          "question": "**Redis** **cache** miss rate doubles after a **refactor** switches **keys** from **String** to **mutable** **AccountKey** with **setLastSeen** called post-**put**.",
+          "answer": "**Immediate response:** Take **jmap -dump:live** from the **cache** service, open **MAT**, inspect **HashMap** buckets for **AccountKey** entries whose **hashCode** no longer matches bucket index.\n\n**Root cause:** **hashCode** changed after **mutation** post-**put**, stranding entries while **get** probes empty buckets—classic **mutable** **key** corruption.\n\n**Fix:** Replace with **record AccountKey(String id, Instant seen)** or **String** composite keys, reindex **cache**, and add tests forbidding **setter** calls after **map** insertion.\n\n**Prevention:** **Code review** checklist item: **Map** keys must be **immutable**; static analysis bans **setters** on key types; **metrics** alert on miss-rate spikes after **DTO** changes.\n\nStaff narrative closure: attach **javap** **getter** dumps and **jcmd** **VM.flags** slices to architecture tickets, cite **Java 21** **record** patterns for **DTO** carriers, demand **Gradle** modules align **immutable** **API** packages with **ORM** layers before closing incidents, rehearse **jstack** captures with stakeholders so **ConcurrentModificationException** reads as **alias** bugs not random **framework** faults, log **java -version** beside every mitigation, publish **Prometheus** miss-rate deltas proving **canary** recovered after **copyOf** fixes, correlate **jstat -gc** when **allocation** spikes follow **defensive** **copy** bursts, store **javap** diffs next to every **DTO** **PR**, require **ArchUnit** failures to block merges when **public** **mutable** fields reappear, add **Flight** **Recording** slices whenever **CPU** regressions follow **immutability** hardening, file **JMH** baselines when reviewers question **copyOf** overhead, and capture **java -Xlog:gc** excerpts when **GC** pauses correlate with **DTO** **hardening**.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Encapsulation and Immutability** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Read-only queries, @Immutable annotation, separate projection records. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example."
+              "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, and you attach **MAT** **HashMap** histograms to the ticket. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Read-only queries, @Immutable annotation, separate projection records. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing. Separate **compile-time** rules from **runtime** behavior in your explanation. Name **one failure mode** that looks like a bug but is really a misunderstanding."
+              "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers."
             }
           ]
         },
         {
-          "question": "PII in logs—encapsulation failure?",
-          "answer": "Redact in toString; structured logging with field filters.",
+          "question": "A **Java 16** **record OrderEvent(List<Tag> tags)** shows reordered **tags** in **audit** logs even though the **event** is supposed to be **immutable**.",
+          "answer": "**Immediate response:** Run **javap -c OrderEvent.class** verifying whether the **canonical** **constructor** calls **List.copyOf**; reproduce locally by **sort**ing the caller’s **ArrayList** after **construction**.\n\n**Root cause:** **Shallow** **record** **immutability**: storing the caller’s **mutable** **list** **alias** lets external **sort** mutate **order** without invoking **setters**.\n\n**Fix:** Use **this.tags = List.copyOf(tags)** in a compact **constructor**, make **Tag** itself **immutable**, and add regression tests mutating caller lists post-create.\n\n**Prevention:** **Style guide** mandating **copyOf** for **record** **List** components; **PR** template checkbox; **spotless**/**checkstyle** cannot catch this—**javap** review does.\n\nStaff narrative closure: attach **javap** **getter** dumps and **jcmd** **VM.flags** slices to architecture tickets, cite **Java 21** **record** patterns for **DTO** carriers, demand **Gradle** modules align **immutable** **API** packages with **ORM** layers before closing incidents, rehearse **jstack** captures with stakeholders so **ConcurrentModificationException** reads as **alias** bugs not random **framework** faults, log **java -version** beside every mitigation, publish **Prometheus** miss-rate deltas proving **canary** recovered after **copyOf** fixes, correlate **jstat -gc** when **allocation** spikes follow **defensive** **copy** bursts, store **javap** diffs next to every **DTO** **PR**, require **ArchUnit** failures to block merges when **public** **mutable** fields reappear, add **Flight** **Recording** slices whenever **CPU** regressions follow **immutability** hardening, file **JMH** baselines when reviewers question **copyOf** overhead, and capture **java -Xlog:gc** excerpts when **GC** pauses correlate with **DTO** **hardening**.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Encapsulation and Immutability** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Redact in toString; structured logging with field filters. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, and you attach **MAT** **HashMap** histograms to the ticket. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Redact in toString; structured logging with field filters. Keep **constraints** explicit: **JDK version**, **threading**, **memory**, or **API** contract. Prefer **concrete commands** (`javac`, `java`, `mvn test`) over vague theory. Close with **how you would verify** the answer still holds after a change."
+              "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers."
             }
           ]
         },
         {
-          "question": "Breaking encapsulation via reflection in tests—OK?",
-          "answer": "Prefer package-visible test hooks or test doubles over production reflection.",
+          "question": "**Micrometer** **gauge** sometimes reads **0** for **AccountBalance** while **transactions** show funds; stack shows **racy** reads during **object** **construction**.",
+          "answer": "**Immediate response:** Pull **jstack** samples during **deploy** waves and identify **threads** reading **balance** fields while another **thread** still runs the **constructor**.\n\n**Root cause:** **Encapsulation** without **safe** **publication**: non-**final** fields or leaking **this** from **constructor** lets other **threads** observe partially initialized **state**.\n\n**Fix:** Make fields **final**, avoid leaking **this**, use **static** **factory** methods that publish only after **construction** completes, or **synchronize** publication paths.\n\n**Prevention:** **Concurrency** **training** for **DTO** authors; **static** analysis for **this** **escape**; **load** tests that hammer **metrics** during **rolling** **restart**.\n\nStaff narrative closure: attach **javap** **getter** dumps and **jcmd** **VM.flags** slices to architecture tickets, cite **Java 21** **record** patterns for **DTO** carriers, demand **Gradle** modules align **immutable** **API** packages with **ORM** layers before closing incidents, rehearse **jstack** captures with stakeholders so **ConcurrentModificationException** reads as **alias** bugs not random **framework** faults, log **java -version** beside every mitigation, publish **Prometheus** miss-rate deltas proving **canary** recovered after **copyOf** fixes, correlate **jstat -gc** when **allocation** spikes follow **defensive** **copy** bursts, store **javap** diffs next to every **DTO** **PR**, require **ArchUnit** failures to block merges when **public** **mutable** fields reappear, add **Flight** **Recording** slices whenever **CPU** regressions follow **immutability** hardening, file **JMH** baselines when reviewers question **copyOf** overhead, and capture **java -Xlog:gc** excerpts when **GC** pauses correlate with **DTO** **hardening**.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Encapsulation and Immutability** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Prefer package-visible test hooks or test doubles over production reflection. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code. When unsure, say what you would **measure** or **breakpoint-debug** before optimizing."
+              "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, and you attach **MAT** **HashMap** histograms to the ticket. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Prefer package-visible test hooks or test doubles over production reflection. Close with **how you would verify** the answer still holds after a change. Relate the answer to **maintainability** and how a **teammate** would read your code."
+              "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers."
             }
           ]
         },
         {
-          "question": "Large immutable object graphs—GC pressure?",
-          "answer": "Structural sharing (persistent collections) or careful batching—profile.",
+          "question": "A **library** upgrade regenerates **Lombok** **@Data** **entities**; **HashSet** dedupe fails in **batch** jobs after **IDs** start **mutating** mid-**pipeline**.",
+          "answer": "**Immediate response:** Diff **javap -p** **Entity.class** before and after upgrade focusing on **equals**/**hashCode** and **setter** generation; capture **jmap** histogram of **HashSet** nodes.\n\n**Root cause:** **equals**/**hashCode** now include **mutable** **fields** that **batch** processors tweak after **insert** into **sets**, breaking **Set** invariants.\n\n**Fix:** Restrict **equals**/**hashCode** to stable **identifiers**, move **mutable** **attributes** out of **equality**, or switch to **immutable** **snapshots** for **dedupe** keys.\n\n**Prevention:** **ArchUnit** tests locking **equals** contracts; **codegen** review; **integration** tests asserting **Set** stability across **mutation** steps.\n\nStaff narrative closure: attach **javap** **getter** dumps and **jcmd** **VM.flags** slices to architecture tickets, cite **Java 21** **record** patterns for **DTO** carriers, demand **Gradle** modules align **immutable** **API** packages with **ORM** layers before closing incidents, rehearse **jstack** captures with stakeholders so **ConcurrentModificationException** reads as **alias** bugs not random **framework** faults, log **java -version** beside every mitigation, publish **Prometheus** miss-rate deltas proving **canary** recovered after **copyOf** fixes, correlate **jstat -gc** when **allocation** spikes follow **defensive** **copy** bursts, store **javap** diffs next to every **DTO** **PR**, require **ArchUnit** failures to block merges when **public** **mutable** fields reappear, add **Flight** **Recording** slices whenever **CPU** regressions follow **immutability** hardening, file **JMH** baselines when reviewers question **copyOf** overhead, and capture **java -Xlog:gc** excerpts when **GC** pauses correlate with **DTO** **hardening**.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Encapsulation and Immutability** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Structural sharing (persistent collections) or careful batching—profile. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, and you attach **MAT** **HashMap** histograms to the ticket. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Structural sharing (persistent collections) or careful batching—profile. Name **one failure mode** that looks like a bug but is really a misunderstanding. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers."
             }
           ]
         },
         {
-          "question": "Immutability and performance on hot path?",
-          "answer": "Object churn vs locking—measure; sometimes mutable buffers win in tight loops.",
+          "question": "**CPU** spikes after you **defensive**-**copy** every **List** in **hot** **RPC** paths; **GC** pause times climb though **correctness** improved.",
+          "answer": "**Immediate response:** Run **jcmd** **<pid>** **GC.heap_info** and a short **Flight** **Recording** focusing on **allocation** rates in **copyOf** heavy methods.\n\n**Root cause:** **Immutability** traded **CPU**/**GC** for safety: per-request **List.copyOf** on large lists allocates new backing arrays under **load**.\n\n**Fix:** Narrow copies to **trust** boundaries, reuse **immutable** **views** where **aliases** are controlled, or switch internal representation to **persistent** **vector** structures after profiling.\n\n**Prevention:** **Performance** **SLA** tests on **DTO** layers; **JMH** microbenchmarks for **copyOf**; document **trust** levels so copies happen once per **batch**, not per **getter** call.\n\nStaff narrative closure: attach **javap** **getter** dumps and **jcmd** **VM.flags** slices to architecture tickets, cite **Java 21** **record** patterns for **DTO** carriers, demand **Gradle** modules align **immutable** **API** packages with **ORM** layers before closing incidents, rehearse **jstack** captures with stakeholders so **ConcurrentModificationException** reads as **alias** bugs not random **framework** faults, log **java -version** beside every mitigation, publish **Prometheus** miss-rate deltas proving **canary** recovered after **copyOf** fixes, correlate **jstat -gc** when **allocation** spikes follow **defensive** **copy** bursts, store **javap** diffs next to every **DTO** **PR**, require **ArchUnit** failures to block merges when **public** **mutable** fields reappear, add **Flight** **Recording** slices whenever **CPU** regressions follow **immutability** hardening, file **JMH** baselines when reviewers question **copyOf** overhead, and capture **java -Xlog:gc** excerpts when **GC** pauses correlate with **DTO** **hardening**.",
           "followUps": [
             {
-              "question": "How do you **communicate** **impact**, **ETA**, and **unknowns** in this **Encapsulation and Immutability** situation?",
-              "answer": "State **customer-visible** symptoms, **business** or **SLO** impact, **mitigation** in flight, and **rollback** criteria. Avoid **blame**; cite **dashboards** and **owners**. Context: Object churn vs locking—measure; sometimes mutable buffers win in tight loops. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**. Mention **one edge case** or **follow-up** an interviewer might ask next."
+              "question": "Interview follow-up: how does **Encapsulation and Immutability** show up in **production** debugging or **on-call**?",
+              "answer": "You capture **jcmd** **Thread.print** when **ConcurrentModificationException** hits during **JSON** serialization, then open **javap -c** on the **DTO** **getter** to see whether **List.copyOf** appears before **areturn**. You pull **jmap -dump:live** when **cache** miss metrics spike after a **Date** **key** **mutation**, and you attach **MAT** **HashMap** histograms to the ticket. You finish by documenting **defensive** **copy** rules in the **runbook** so the next **on-call** engineer repeats the same command ladder."
             },
             {
-              "question": "Which **post-incident** or **preventive** **actions** do you require before closing?",
-              "answer": "At minimum: **runbook** update, **test** or **guard** that failed, **owner** with **deadline**, and **theme** on the **roadmap**. Tie to **error budget** or **team** policy when relevant. Object churn vs locking—measure; sometimes mutable buffers win in tight loops. Tie the answer to **interview structure**: clarify, answer, then **one** concrete example. Connect the idea to something you can **observe** in **logs**, **tests**, or a **local run**."
+              "question": "What is a **common trap** or **follow-up** question on **Encapsulation and Immutability**?",
+              "answer": "Interviewers love **final** **List** fields where the list contents still **mutate** because only the reference is frozen. Another trap is **Collections.unmodifiableList** backed by a **mutable** **ArrayList** callers still hold. You answer with **javap** evidence plus **List.copyOf** versus **unmodifiable** semantics. You close by naming **HashMap** **key** **mutations** after **put** as silent **production** killers."
             }
           ]
         }
       ],
       "wrongAnswers": [
-        "Encapsulation means all fields must be public for frameworks.",
-        "final class means all fields are automatically immutable.",
-        "Returning internal ArrayList reference is safe if you trust callers.",
-        "Records are deeply immutable for all component types.",
-        "StringBuilder should be used for all string fields in entities.",
-        "Immutability eliminates the need for synchronization always."
+        "private fields cannot be read or written at runtime because the JVM enforces privacy like a firewall.",
+        "final on a field makes the entire object graph deeply immutable including every list element.",
+        "Returning Collections.unmodifiableList(myList) always prevents any mutation of the original backing list.",
+        "Records automatically deep-copy every component so mutable lists inside records are always safe.",
+        "Encapsulation alone guarantees thread safety without synchronization or immutable snapshots.",
+        "HashMap rehashes entries every time you call get so mutating a key fixes stale bucket placement.",
+        "Defensive copies are unnecessary if you trust other teams not to misuse your API.",
+        "Java 8 streams always produce immutable collections without calling collectors that specify immutability."
+      ],
+      "jobSwitch": {
+        "resumeBullet": "Hardened DTO getters with List.copyOf and killed ConcurrentModificationException spikes in billing Kafka path.",
+        "interviewPositioning": "When interviewers ask about **encapsulation** and **immutability**, you tie **private** **fields** to **heap** safety, **final** to publication, and **copyOf** to **alias** control. In week one at a new company you run **javap -c** on every **DTO** **getter** returning **collections** and file tickets when **areturn** follows raw **getfield** without **copyOf**.",
+        "starAnchor": "Situation: **canary** **billing** pods threw **ConcurrentModificationException** during **JSON** serialization while totals drifted across shards. Task: prove **reference** **leaks** and ship a safe fix without freezing the release train. Action: traced **InvoiceDto** **getter** returning internal **ArrayList**, added **List.copyOf** on egress, wrote concurrent stress tests, attached **javap** diffs to the **Jira**. Result: **zero** **ConcurrentModificationException** events for six months and **cache** consistency metrics returned to baseline within one deploy window."
+      }
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ Quiz — Encapsulation and immutability",
+      "description": "Thirty questions on accessors, invariants, defensive copies, unmodifiable views, and immutable object design.",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "Encapsulation primarily means",
+          "options": {
+            "A": "public fields everywhere",
+            "B": "hide internal state behind controlled methods",
+            "C": "no methods",
+            "D": "only static"
+          },
+          "answer": "B",
+          "explanation": "Boundary for invariants."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "Getter without setter often models",
+          "options": {
+            "A": "mutable field",
+            "B": "read-only property from outside",
+            "C": "static class",
+            "D": "interface only"
+          },
+          "answer": "B",
+          "explanation": "Immutability cue."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "code",
+          "question": "Returning internal `ArrayList` field directly risks",
+          "options": {
+            "A": "faster access",
+            "B": "caller mutating backing list",
+            "C": "GC failure",
+            "D": "boxing"
+          },
+          "answer": "B",
+          "explanation": "Escape of mutable representation."
+        },
+        {
+          "id": 4,
+          "level": "basic",
+          "category": "theory",
+          "question": "Defensive copy on getter protects against",
+          "options": {
+            "A": "caller modifying shared mutable collection",
+            "B": "String interning",
+            "C": "final fields",
+            "D": "autoboxing"
+          },
+          "answer": "A",
+          "explanation": "Aliasing attacks."
+        },
+        {
+          "id": 5,
+          "level": "basic",
+          "category": "theory",
+          "question": "`Collections.unmodifiableList` view throws if",
+          "options": {
+            "A": "read with get()",
+            "B": "caller mutates via view",
+            "C": "iterate",
+            "D": "size()"
+          },
+          "answer": "B",
+          "explanation": "UnsupportedOperation on mutators."
+        },
+        {
+          "id": 6,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Immutable object often uses",
+          "options": {
+            "A": "public non-final fields",
+            "B": "final fields + no mutators",
+            "C": "volatile only",
+            "D": "synchronized on String"
+          },
+          "answer": "B",
+          "explanation": "Typical pattern."
+        },
+        {
+          "id": 7,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "JavaBeans mutable pattern uses",
+          "options": {
+            "A": "private fields + getters/setters",
+            "B": "public fields only",
+            "C": "records only",
+            "D": "no constructors"
+          },
+          "answer": "A",
+          "explanation": "Contrast with immutable DTOs."
+        },
+        {
+          "id": 8,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Leaking `this` from constructor before invariants established risks",
+          "options": {
+            "A": "faster init",
+            "B": "other threads seeing partial object",
+            "C": "better GC",
+            "D": "inline"
+          },
+          "answer": "B",
+          "explanation": "Safe publication issue."
+        },
+        {
+          "id": 9,
+          "level": "intermediate",
+          "category": "code",
+          "question": "`List.copyOf(original)` returns",
+          "options": {
+            "A": "view of original",
+            "B": "unmodifiable copy of elements",
+            "C": "mutable ArrayList always",
+            "D": "null list"
+          },
+          "answer": "B",
+          "explanation": "Java 10+ immutable list."
+        },
+        {
+          "id": 10,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Validation in setter helps",
+          "options": {
+            "A": "skip checks",
+            "B": "reject illegal values centrally",
+            "C": "remove private",
+            "D": "disable exceptions"
+          },
+          "answer": "B",
+          "explanation": "Invariant choke point."
+        },
+        {
+          "id": 11,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Shallow copy of object with mutable fields means",
+          "options": {
+            "A": "fields deeply cloned always",
+            "B": "nested mutable objects still shared",
+            "C": "immutable always",
+            "D": "no copy"
+          },
+          "answer": "B",
+          "explanation": "Understand cloning limits."
+        },
+        {
+          "id": 12,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Record canonical constructor can",
+          "options": {
+            "A": "skip validation",
+            "B": "compact constructor to validate/normalize",
+            "C": "make fields non-final",
+            "D": "remove accessors"
+          },
+          "answer": "B",
+          "explanation": "Records still enforce rules."
+        },
+        {
+          "id": 13,
+          "level": "advanced",
+          "category": "theory",
+          "question": "`record` components are",
+          "options": {
+            "A": "always mutable via setters",
+            "B": "private final with accessors",
+            "C": "public mutable",
+            "D": "package only"
+          },
+          "answer": "B",
+          "explanation": "Immutable by default."
+        },
+        {
+          "id": 14,
+          "level": "advanced",
+          "category": "code",
+          "question": "`String` is immutable so `replace` returns",
+          "options": {
+            "A": "void",
+            "B": "new String instance",
+            "C": "same char[] always",
+            "D": "StringBuilder"
+          },
+          "answer": "B",
+          "explanation": "No in-place change."
+        },
+        {
+          "id": 15,
+          "level": "basic",
+          "category": "theory",
+          "question": "Publishing shared mutable singleton without sync causes",
+          "options": {
+            "A": "deterministic races",
+            "B": "data races on fields",
+            "C": "faster reads",
+            "D": "immutable guarantee"
+          },
+          "answer": "B",
+          "explanation": "Concurrency hazard."
+        },
+        {
+          "id": 16,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Builder pattern helps immutability by",
+          "options": {
+            "A": "removing constructors",
+            "B": "staging optional params then building validated object",
+            "C": "forcing public fields",
+            "D": "deleting validation"
+          },
+          "answer": "B",
+          "explanation": "Stepwise construction."
+        },
+        {
+          "id": 17,
+          "level": "intermediate",
+          "category": "code",
+          "question": "`Objects.requireNonNull(x)` throws",
+          "options": {
+            "A": "IOException",
+            "B": "NullPointerException",
+            "C": "IllegalStateException",
+            "D": "ClassCastException"
+          },
+          "answer": "B",
+          "explanation": "Fail-fast null check."
+        },
+        {
+          "id": 18,
+          "level": "basic",
+          "category": "theory",
+          "question": "Package-private setter might be used for",
+          "options": {
+            "A": "world access",
+            "B": "same-package collaborators",
+            "C": "subclass in other package only",
+            "D": "reflection only"
+          },
+          "answer": "B",
+          "explanation": "Narrow write surface."
+        },
+        {
+          "id": 19,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Unmodifiable map from `Map.of` rejects",
+          "options": {
+            "A": "get",
+            "B": "put",
+            "C": "containsKey",
+            "D": "size"
+          },
+          "answer": "B",
+          "explanation": "Immutable map."
+        },
+        {
+          "id": 20,
+          "level": "intermediate",
+          "category": "code",
+          "question": "If getter returns `new ArrayList<>(internal)` each call, caller mutating list",
+          "options": {
+            "A": "corrupts original",
+            "B": "does not affect original",
+            "C": "always throws",
+            "D": "removes final"
+          },
+          "answer": "B",
+          "explanation": "Copy isolates."
+        },
+        {
+          "id": 21,
+          "level": "basic",
+          "category": "theory",
+          "question": "Invariant means",
+          "options": {
+            "A": "random state",
+            "B": "condition always true for valid object",
+            "C": "only static",
+            "D": "test mock"
+          },
+          "answer": "B",
+          "explanation": "Design language."
+        },
+        {
+          "id": 22,
+          "level": "advanced",
+          "category": "code",
+          "question": "Private field `balance` with `deposit` method enforces",
+          "options": {
+            "A": "negative balance always allowed",
+            "B": "non-negative via method rules",
+            "C": "public tweak",
+            "D": "no access"
+          },
+          "answer": "B",
+          "explanation": "Controlled mutation."
+        },
+        {
+          "id": 23,
+          "level": "advanced",
+          "category": "theory",
+          "question": "`Optional` field on entity beans is often discouraged because",
+          "options": {
+            "A": "it is too fast",
+            "B": "serialization/frameworks + models get awkward",
+            "C": "it forbids null",
+            "D": "it is final"
+          },
+          "answer": "B",
+          "explanation": "Style debate in DDD."
+        },
+        {
+          "id": 24,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Immutable object as `HashMap` key is",
+          "options": {
+            "A": "unsafe always",
+            "B": "safe if equals/hashCode stable on immutable state",
+            "C": "illegal",
+            "D": "requires synchronized"
+          },
+          "answer": "B",
+          "explanation": "Do not mutate keys."
+        },
+        {
+          "id": 25,
+          "level": "advanced",
+          "category": "code",
+          "question": "`List.of(a,b)` allows",
+          "options": {
+            "A": "add third later",
+            "B": "null elements",
+            "C": "no nulls, fixed size",
+            "D": "replace element"
+          },
+          "answer": "C",
+          "explanation": "Null-hostile immutable list."
+        },
+        {
+          "id": 26,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Tell, don't ask encourages",
+          "options": {
+            "A": "getter chains everywhere",
+            "B": "objects expose behaviour not raw state",
+            "C": "public fields",
+            "D": "no methods"
+          },
+          "answer": "B",
+          "explanation": "Encapsulated operations."
+        },
+        {
+          "id": 27,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Record accessor method name is",
+          "options": {
+            "A": "getX()",
+            "B": "x() without get",
+            "C": "field name only public",
+            "D": "isX()"
+          },
+          "answer": "B",
+          "explanation": "Record semantics."
+        },
+        {
+          "id": 28,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Cloning `Date` fields in copy constructor defends against",
+          "options": {
+            "A": "String pool",
+            "B": "shared mutable Date mutation",
+            "C": "int overflow",
+            "D": "autoboxing"
+          },
+          "answer": "B",
+          "explanation": "Date is mutable legacy type."
+        },
+        {
+          "id": 29,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Law of Demeter aims to reduce",
+          "options": {
+            "A": "coupling via long train of getters",
+            "B": "compilation speed",
+            "C": "heap usage",
+            "D": "exceptions"
+          },
+          "answer": "A",
+          "explanation": "Don't reach through strangers."
+        },
+        {
+          "id": 30,
+          "level": "advanced",
+          "category": "code",
+          "question": "Validating email in setter throws `IllegalArgumentException` for",
+          "options": {
+            "A": "valid string",
+            "B": "illegal pattern—fail fast",
+            "C": "any call",
+            "D": "null only always"
+          },
+          "answer": "B",
+          "explanation": "Domain validation."
+        }
       ]
     },
     {
       "type": "cheatsheet",
-      "title": "Cheatsheet",
-      "content": "| Area | Rule | Interview Tip | Gotcha |\n|---|---|---|---|\n| Concept | Define Encapsulation and Immutability in 1-2 lines | Start with purpose first | Vague definitions |\n| Code | Write minimal compilable example | Explain expected output | Hidden edge-case bug |\n| Validation | Test boundary + invalid input | Mention test strategy | Only happy-path tests |\n| Trade-off | Compare 2 approaches | Link choice to constraints | \"Depends\" with no criteria |\n| Phase Context | Align with phase 2 focus | Show progression mindset | Isolated-topic thinking |"
+      "title": "Cheatsheet — encapsulation and immutability",
+      "content": "| Concept | Quick rule | Example / Command |\n|---------|------------|---------------------|\n| **private** | Hides **field** from other **classes** | Still on **heap** - not a **lock** |\n| **final** field | Single assignment post-**ctor** | **Mutable** referent can still change |\n| **Defensive copy** | **ingress** + **egress** | **Arrays.copyOf**, **List.copyOf** |\n| **List.copyOf** | **Java 10** immutable snapshot | Throws on **null** elements |\n| **unmodifiableList** | View over backing list | Mutations still visible if backing mutates |\n| **record** | Shallow **immutability** | Copy **mutable** components in compact **ctor** |\n| **HashMap** key | Must be stable **hashCode** | Never **mutate** key fields after **put** |\n| **ConcurrentModificationException** | Structural change during iteration | **jstack** shows **Iterator** vs **mutator** |\n| **JavaBeans** | **setters** for frameworks | Separate **immutable** **API** **DTO** layer |\n| **JMM** | **private** != cross-thread safety | **final** fields help safe publication |\n| **javap -c** | Prove **getter** bodies | Search **copyOf** before **areturn** |\n"
     }
   ]
 }
