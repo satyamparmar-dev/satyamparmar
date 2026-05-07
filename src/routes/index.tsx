@@ -13,6 +13,8 @@ import BlogIndex from '../pages/BlogIndex';
 import BlogPost from '../pages/BlogPost';
 import EmailLoginRoute from '../pages/EmailLoginRoute';
 import { RouteErrorBoundary } from '../components/RouteErrorBoundary';
+import CompaniesHome from '../pages/companies/CompaniesHome';
+import MorganStanley from '../pages/companies/MorganStanley';
 import ProHome from '../pages/pro/ProHome';
 import ProOnboarding from '../pages/pro/ProOnboarding';
 import ProPaths from '../pages/pro/ProPaths';
@@ -25,6 +27,10 @@ import NewsRoom from '../pages/pro/NewsRoom';
 import ToolsReference from '../pages/pro/ToolsReference';
 import ProTutor from '../pages/pro/ProTutor';
 import Certifications from '../pages/pro/Certifications';
+import JavaGithubHome from '../pages/javaGithub/JavaGithubHome';
+import JavaGithubTopic from '../pages/javaGithub/JavaGithubTopic';
+import KafkaGithubHome from '../pages/apacheKafka/KafkaGithubHome';
+import KafkaGithubTopic from '../pages/apacheKafka/KafkaGithubTopic';
 
 const AppRoutes: React.FC = () => (
   <Routes>
@@ -56,11 +62,17 @@ const AppRoutes: React.FC = () => (
       }
     />
     <Route path="/llm" element={<LlmOverview />} />
+    <Route path="/java-repo" element={<JavaGithubHome />} />
+    <Route path="/java-repo/topic/:step" element={<JavaGithubTopic />} />
+    <Route path="/kafka-repo" element={<KafkaGithubHome />} />
+    <Route path="/kafka-repo/topic/:step" element={<KafkaGithubTopic />} />
     <Route path="/blog" element={<BlogIndex />} />
     <Route path="/blog/:slug" element={<BlogPost />} />
     <Route path="/roadmap" element={<Roadmap />} />
     <Route path="/bookmarks" element={<Bookmarks />} />
     <Route path="/settings" element={<Settings />} />
+    <Route path="/companies" element={<CompaniesHome />} />
+    <Route path="/companies/morgan-stanley" element={<MorganStanley />} />
     <Route path="/pro" element={<ProHome />} />
     <Route path="/pro/onboarding" element={<ProOnboarding />} />
     <Route path="/pro/paths" element={<ProPaths />} />

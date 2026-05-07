@@ -1,0 +1,142 @@
+{
+  "day": 2,
+  "phase": 0,
+  "title": "Python Basics for AI — Variables, Functions & Loops",
+  "estimatedHours": 2,
+  "difficulty": "Beginner",
+  "level": "Beginner",
+  "track": "Fresher",
+  "tags": ["Python", "Functions", "Loops", "Data Types", "Phase 0"],
+  "prerequisites": ["Day 1 — What is AI"],
+  "learningObjectives": [
+    "Use Python variables, types, lists, and dicts confidently",
+    "Write functions with type hints and default parameters",
+    "Use list comprehensions instead of verbose loops",
+    "Handle exceptions with try/except",
+    "Explain why Python is the dominant AI language",
+    "Build a simple token budget tracker"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Python for AI",
+      "content": "Python is the undisputed language of AI engineering. Not because it is the fastest (it isn't — C++ runs circles around it for raw compute), but because:\n\n- **Every major AI library** — PyTorch, TensorFlow, LangChain, NumPy, Hugging Face — is Python-first\n- **API SDKs** from Anthropic, OpenAI, Google, and Cohere are Python-first\n- **Rapid prototyping** — Python lets you test an AI idea in 10 lines that would take 100 in Java\n- **Jupyter notebooks** — the standard format for sharing AI experiments and tutorials\n\nIf you already know another language, this day will feel fast. Focus on the Python-specific idioms that appear constantly in AI code: type hints, list comprehensions, f-strings, and the `dict` as the universal data exchange format."
+    },
+    {
+      "type": "theory",
+      "title": "Python for AI Engineers — Core Concepts",
+      "content": "### 1. Variables and Types\n\n```python\nname: str = \"Claude\"          # Type hints: optional but strongly recommended in AI code\ntemperature: float = 0.7      # API parameter\nmax_tokens: int = 1024        # API parameter\nis_streaming: bool = True     # Feature flag\nmodel: str | None = None      # Union type (Python 3.10+)\n```\n\nPython is dynamically typed — you don't declare types. Type hints are annotations only; Python doesn't enforce them. But they are essential in AI code because they serve as documentation when you're reading someone else's API client.\n\n---\n\n### 2. Lists and Dicts — The AI Data Formats\n\n```python\n# Lists: ordered sequences\nmessages = []                          # Start empty\nmessages.append({\"role\": \"user\", \"content\": \"Hi\"})\nprint(messages[0])                     # First item\nprint(messages[-1])                    # Last item\n\n# Dicts: key-value pairs (JSON maps to dicts)\nresponse = {\n    \"model\": \"claude-sonnet-4-6\",\n    \"usage\": {\"input_tokens\": 12, \"output_tokens\": 45},\n    \"content\": [{\"type\": \"text\", \"text\": \"Hello!\"}]\n}\nprint(response[\"usage\"][\"input_tokens\"])  # 12\nprint(response.get(\"error\", None))        # Safe access\n```\n\nEvery AI API call sends and receives dicts. Mastering dict access is non-negotiable.\n\n---\n\n### 3. Functions with Type Hints\n\n```python\ndef estimate_cost(\n    input_tokens: int,\n    output_tokens: int,\n    price_per_million: float = 3.0  # default = Sonnet pricing\n) -> float:\n    total_tokens = input_tokens + output_tokens\n    return (total_tokens / 1_000_000) * price_per_million\n\n# Call it\ncost = estimate_cost(500, 200)\nprint(f\"Cost: ${cost:.4f}\")\n```\n\nType hints make function signatures self-documenting. In AI code with 10+ parameters, this prevents constant reference-checking.\n\n---\n\n### 4. List Comprehensions\n\n```python\n# Verbose loop\ntoken_counts = []\nfor msg in messages:\n    token_counts.append(len(msg[\"content\"].split()) * 1.3)\n\n# List comprehension (preferred)\ntoken_counts = [len(m[\"content\"].split()) * 1.3 for m in messages]\n\n# With filter\nlong_messages = [m for m in messages if len(m[\"content\"]) > 100]\n\n# Dict comprehension\ntoken_map = {m[\"role\"]: len(m[\"content\"]) for m in messages}\n```\n\nList comprehensions appear in virtually every AI data processing script. They are faster than explicit loops and more readable.\n\n---\n\n### 5. Error Handling\n\n```python\nimport requests\n\ndef safe_api_call(url: str) -> dict | None:\n    try:\n        response = requests.get(url, timeout=10)\n        response.raise_for_status()   # Raises on 4xx/5xx\n        return response.json()\n    except requests.exceptions.Timeout:\n        print(\"Request timed out\")\n        return None\n    except requests.exceptions.HTTPError as e:\n        print(f\"HTTP error: {e.response.status_code}\")\n        return None\n    except Exception as e:\n        print(f\"Unexpected error: {e}\")\n        return None\n```\n\nProduction AI code always wraps API calls in try/except. LLM APIs can timeout, return 429s, or return malformed JSON.\n\n---\n\n### 6. f-strings and String Formatting\n\n```python\nmodel = \"claude-sonnet-4-6\"\ntokens = 1024\ncost = 0.0031\n\n# f-string (preferred in modern Python)\nprint(f\"Model: {model} | Tokens: {tokens:,} | Cost: ${cost:.4f}\")\n\n# Multi-line f-string for prompts\nprompt = f\"\"\"\nYou are an expert in {topic}.\nAnswer in {language}.\nMax length: {max_words} words.\n\"\"\"\n```\n\nf-strings are essential for constructing dynamic prompts — one of the most common operations in AI engineering."
+    },
+    {
+      "type": "code",
+      "title": "AI Message Pipeline — Python in Action",
+      "description": "Build a complete message management system using Python fundamentals — the exact pattern used in LLM chatbot backends.",
+      "language": "python",
+      "filename": "message_pipeline.py",
+      "level": "basic",
+      "code": "from typing import Optional\n\n# ── Types ────────────────────────────────────────────\nMessage = dict  # {\"role\": str, \"content\": str}\n\n# ── Core Pipeline Class ──────────────────────────────\nclass ConversationManager:\n    \"\"\"Manages a conversation with a budget cap — common in production AI.\"\"\"\n    \n    def __init__(self, model: str, max_budget_usd: float = 1.0):\n        self.model = model\n        self.max_budget_usd = max_budget_usd\n        self.messages: list[Message] = []\n        self.total_tokens_used: int = 0\n        self.total_cost_usd: float = 0.0\n    \n    def add_message(self, role: str, content: str) -> None:\n        if role not in (\"user\", \"assistant\", \"system\"):\n            raise ValueError(f\"Invalid role: {role}\")\n        self.messages.append({\"role\": role, \"content\": content})\n    \n    def estimate_tokens(self, text: str) -> int:\n        \"\"\"Rough estimate: 1 token ≈ 0.75 words.\"\"\"\n        return int(len(text.split()) / 0.75)\n    \n    def estimate_cost(self, input_tokens: int, output_tokens: int,\n                      price_per_m_in: float = 3.0, price_per_m_out: float = 15.0) -> float:\n        return (input_tokens / 1_000_000 * price_per_m_in +\n                output_tokens / 1_000_000 * price_per_m_out)\n    \n    def record_usage(self, input_tokens: int, output_tokens: int) -> None:\n        self.total_tokens_used += input_tokens + output_tokens\n        cost = self.estimate_cost(input_tokens, output_tokens)\n        self.total_cost_usd += cost\n        \n        if self.total_cost_usd > self.max_budget_usd:\n            print(f\"⚠️  Budget exceeded! ${self.total_cost_usd:.4f} > ${self.max_budget_usd}\")\n    \n    def get_context_for_api(self) -> list[Message]:\n        \"\"\"Filter system messages to start; user/assistant alternate after.\"\"\"\n        return self.messages\n    \n    def summary(self) -> str:\n        turns = sum(1 for m in self.messages if m[\"role\"] == \"user\")\n        return (\n            f\"Model: {self.model} | Turns: {turns} | \"\n            f\"Tokens: {self.total_tokens_used:,} | Cost: ${self.total_cost_usd:.4f}\"\n        )\n\n\n# ── Demo ─────────────────────────────────────────────\nif __name__ == \"__main__\":\n    mgr = ConversationManager(model=\"claude-sonnet-4-6\", max_budget_usd=0.50)\n    \n    mgr.add_message(\"system\", \"You are a helpful Python tutor.\")\n    mgr.add_message(\"user\", \"What is a list comprehension?\")\n    \n    # Simulate API response + usage recording\n    fake_response = \"A list comprehension is a concise way to create lists: [x*2 for x in range(10)]\"\n    mgr.add_message(\"assistant\", fake_response)\n    mgr.record_usage(input_tokens=45, output_tokens=32)\n    \n    mgr.add_message(\"user\", \"Give me another example.\")\n    mgr.add_message(\"assistant\", \"Filter even numbers: [x for x in range(20) if x % 2 == 0]\")\n    mgr.record_usage(input_tokens=90, output_tokens=28)\n    \n    # Print all messages using list comprehension\n    print(\"Conversation:\")\n    print(\"\\n\".join(f\"  [{m['role'].upper()}]: {m['content'][:60]}\" for m in mgr.messages))\n    \n    print(f\"\\n{mgr.summary()}\")\n    \n    # Dict comprehension: token count per role\n    token_by_role = {\n        role: sum(mgr.estimate_tokens(m['content'])\n                  for m in mgr.messages if m['role'] == role)\n        for role in {'user', 'assistant', 'system'}\n    }\n    print(\"\\nTokens by role:\")\n    for role, tokens in token_by_role.items():\n        print(f\"  {role}: ~{tokens} tokens\")",
+      "output": "Conversation:\n  [SYSTEM]: You are a helpful Python tutor.\n  [USER]: What is a list comprehension?\n  [ASSISTANT]: A list comprehension is a concise way to create lists: [x*2 for x in\n  [USER]: Give me another example.\n  [ASSISTANT]: Filter even numbers: [x for x in range(20) if x % 2 == 0]\n\nModel: claude-sonnet-4-6 | Turns: 2 | Tokens: 195 | Cost: $0.0004\n\nTokens by role:\n  user: ~8 tokens\n  assistant: ~22 tokens\n  system: ~7 tokens"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Python Pitfalls in AI Code",
+      "items": [
+        "**Using `dict['key']` instead of `dict.get('key', default)`** — API responses often have optional fields; `.get()` prevents KeyError crashes.",
+        "**Mutable default arguments** — `def fn(msgs=[])` shares the list across calls. Use `def fn(msgs=None)` and `if msgs is None: msgs = []`.",
+        "**Catching bare `except:`** — catches `SystemExit` and `KeyboardInterrupt`. Always catch specific exceptions or at minimum `except Exception:`.",
+        "**String concatenation in loops** — `result += text` is O(n²). Use `''.join(parts)` or an f-string.",
+        "**Not using type hints in API client code** — with 8 parameters, undocumented types cause bugs that take hours to debug."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Token Budget Tracker",
+      "difficulty": "Beginner",
+      "problem": "Build a `TokenBudget` class that:\n1. Initializes with a daily token limit (e.g., 100,000)\n2. Has an `add_usage(input_tokens, output_tokens)` method\n3. Has a `remaining()` method returning tokens left\n4. Has a `is_over_budget()` method returning a bool\n5. Has a `report()` method printing a formatted usage summary\n\nTest it by simulating 5 API calls with varying token counts and print the report after each call.",
+      "hints": [
+        "Start with `self.limit` and `self.used = 0` in `__init__`",
+        "Use an f-string in `report()` with percentage: `self.used / self.limit * 100`",
+        "Track calls in a list and use a list comprehension for the per-call summary"
+      ],
+      "solution": "class TokenBudget:\n    def __init__(self, daily_limit: int = 100_000):\n        self.limit = daily_limit\n        self.used = 0\n        self.calls: list[dict] = []\n    \n    def add_usage(self, input_tokens: int, output_tokens: int) -> None:\n        total = input_tokens + output_tokens\n        self.used += total\n        self.calls.append({\"in\": input_tokens, \"out\": output_tokens, \"total\": total})\n    \n    def remaining(self) -> int:\n        return max(0, self.limit - self.used)\n    \n    def is_over_budget(self) -> bool:\n        return self.used > self.limit\n    \n    def report(self) -> None:\n        pct = self.used / self.limit * 100\n        print(f\"Budget: {self.used:,} / {self.limit:,} tokens ({pct:.1f}%)\")\n        print(f\"Remaining: {self.remaining():,} | Over budget: {self.is_over_budget()}\")\n        print(\"Calls:\", [(c['in'], c['out']) for c in self.calls])\n\n# Test\nbudget = TokenBudget(1000)\nfor in_t, out_t in [(100, 50), (200, 80), (300, 120), (150, 60), (120, 40)]:\n    budget.add_usage(in_t, out_t)\n    budget.report()"
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Python for AI",
+      "conceptual": [
+        {
+          "question": "Why is Python the dominant language for AI engineering despite being slower than C++ or Java?",
+          "answer": "Python's dominance comes from ecosystem, not performance. PyTorch, TensorFlow, NumPy, SciPy, LangChain, Hugging Face, and every major AI API SDK are Python-first. The expensive compute (neural network training) runs in C/CUDA under the hood — Python is just the orchestration layer. Python's dynamic typing and REPL allow rapid experimentation that is critical in research and prototyping. The cost of switching languages would exceed any performance benefit for most AI applications."
+        },
+        {
+          "question": "What is the difference between a list and a dict in Python, and when do you use each in AI code?",
+          "answer": "A list is an ordered sequence accessed by index — use it for sequences of messages, embeddings, or batch items where order matters. A dict is an unordered key-value map accessed by key — use it for structured data like API request bodies, response objects, and configuration. In AI code: the `messages` array in an LLM API call is a list of dicts — each dict has `role` and `content` keys, ordered by conversation turn."
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "What does this code do and what is its output?\n```python\nmsgs = [\n    {\"role\": \"user\", \"content\": \"Hello\"},\n    {\"role\": \"assistant\", \"content\": \"Hi there!\"},\n    {\"role\": \"user\", \"content\": \"How are you?\"}\n]\nresult = [m[\"content\"] for m in msgs if m[\"role\"] == \"user\"]\nprint(result)\n```",
+          "answer": "It filters the messages list to only include messages where role is 'user', then extracts the content field from each. Output: `['Hello', 'How are you?']`. This list comprehension pattern is used constantly in AI code — extracting user turns for analysis, filtering messages, building context windows."
+        }
+      ],
+      "seniorScenario": [],
+      "wrongAnswers": [
+        "**Wrong:** 'Python type hints enforce types at runtime.' — **Correction:** Python type hints are annotations only. Python does not enforce them. Tools like mypy, pyright, or your IDE check them statically. At runtime, you can still pass an int where str is annotated.",
+        "**Wrong:** 'List comprehensions are slower than for loops because they do extra work.' — **Correction:** List comprehensions are faster than equivalent for loops in CPython because they're optimized at the bytecode level (avoid repeated attribute lookups for `.append`). They are also more readable."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Quick MCQ — Python Basics",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "code",
+          "question": "What does `response.get('error', None)` do that `response['error']` does not?",
+          "options": {
+            "A": "It converts the value to string",
+            "B": "It returns None instead of raising KeyError if the key is missing",
+            "C": "It checks the type of the value",
+            "D": "It searches nested dicts recursively"
+          },
+          "answer": "B",
+          "explanation": "`dict.get(key, default)` returns the default value if the key is not present, avoiding KeyError. `dict['key']` raises KeyError if the key is missing. In API responses, many fields are optional — `.get()` is safer."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "What is the output of `[x**2 for x in range(5) if x % 2 == 0]`?",
+          "options": {
+            "A": "[0, 1, 4, 9, 16]",
+            "B": "[0, 4, 16]",
+            "C": "[1, 9]",
+            "D": "[4, 16]"
+          },
+          "answer": "B",
+          "explanation": "`range(5)` = [0,1,2,3,4]. Filter `x % 2 == 0` keeps evens: [0,2,4]. Square each: [0,4,16]."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "code",
+          "question": "What is wrong with this function definition?\n```python\ndef add_message(messages=[]):\n    messages.append('new')\n    return messages\n```",
+          "options": {
+            "A": "append() is not a valid list method",
+            "B": "The function should return None",
+            "C": "The default mutable argument [] is shared across all calls — a classic Python bug",
+            "D": "Nothing is wrong"
+          },
+          "answer": "C",
+          "explanation": "In Python, default argument values are evaluated once at function definition time. A mutable default like `[]` is shared across all calls that use the default. After the first call, subsequent calls without an argument will see the already-modified list."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "title": "Python for AI — Quick Reference",
+      "content": "### Essential Patterns\n```python\n# Type hints (document AI API parameters)\ndef call_api(prompt: str, temperature: float = 0.7, max_tokens: int = 1024) -> dict: ...\n\n# Safe dict access (API responses have optional fields)\nvalue = response.get('usage', {}).get('input_tokens', 0)\n\n# List comprehension (filter + transform messages)\nuser_msgs = [m['content'] for m in messages if m['role'] == 'user']\n\n# f-string (build prompts dynamically)\nprompt = f\"Summarize this in {language}: {document[:2000]}\"\n\n# Error handling (all API calls must have this)\ntry:\n    result = api_client.post(url, json=body)\nexcept requests.Timeout:\n    print(\"Retry\")\nexcept requests.HTTPError as e:\n    print(f\"Error {e.response.status_code}\")\n```\n\n### Data Structures for AI\n| Structure | Use case | Example |\n|-----------|----------|---------|\n| `list` | Ordered sequence | `messages`, `embeddings` |\n| `dict` | Structured data | API request body, response |\n| `list[dict]` | Batch data | conversation history |\n| `str \\| None` | Optional fields | `system_prompt: str \\| None = None` |\n\n### Token Estimation\n- 1 token ≈ 0.75 words ≈ 4 characters\n- 1 page ≈ 500 tokens\n- `len(text.split()) / 0.75` — quick estimate without a tokenizer"
+    }
+  ]
+}

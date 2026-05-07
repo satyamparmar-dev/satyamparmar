@@ -4,6 +4,7 @@
 
 export type Level = 'Beginner' | 'Intermediate' | 'Advanced' | 'Expert';
 export type Track = 'Fresher' | 'Mid-Level' | 'Senior' | 'Staff';
+export type CurriculumId = 'java' | 'ai';
 export type Difficulty = Level;
 
 // ─── Curriculum Meta ────────────────────────────────────────
@@ -260,6 +261,37 @@ export interface AppProgress {
   exercisesSolved: number[];
   /** Maps day number → array of completed question IDs */
   assignmentsCompleted: Record<string, string[]>;
+}
+
+// ─── Kafka Roadmap ───────────────────────────────────────────
+export interface KafkaTopic {
+  id: string;
+  order: number;
+  title: string;
+  tags: string[];
+  estimatedMinutes: number;
+  content: string; // markdown
+}
+
+export interface KafkaPhase {
+  id: string;
+  level: string;
+  levelLabel: string;
+  color: 'success' | 'primary' | 'warning' | 'error';
+  icon: string;
+  description: string;
+  topics: KafkaTopic[];
+}
+
+export interface KafkaRoadmapData {
+  version: number;
+  meta: {
+    title: string;
+    description: string;
+    totalTopics: number;
+    estimatedHours: number;
+  };
+  phases: KafkaPhase[];
 }
 
 // ─── KPI ─────────────────────────────────────────────────────

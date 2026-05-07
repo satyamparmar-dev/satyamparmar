@@ -1,5 +1,6 @@
 import axios from 'axios';
 import {
+  CurriculumId,
   CurriculumMeta,
   LessonDay,
   PhaseData,
@@ -13,6 +14,15 @@ function phaseFileBase(phaseFile: string): string {
   return phaseFile.replace(/\.json$/i, '');
 }
 
+const CURRICULUM_ROOT: Record<CurriculumId, string> = {
+  java: '',
+  ai: 'ai-curriculum/',
+};
+
+function withCurriculumPath(curriculumId: CurriculumId, relativePath: string): string {
+  return `${CURRICULUM_ROOT[curriculumId]}${relativePath}`;
+}
+
 // Base URL for data files (relative to public/)
 const BASE = ((import.meta as unknown) as { env: { BASE_URL: string } }).env.BASE_URL || '/';
 
@@ -22,15 +32,24 @@ const api = axios.create({
 });
 
 // ─── Fetch Curriculum Metadata ─────────────────────────────
-export const fetchCurriculum = async (): Promise<CurriculumMeta> => {
-  const { data } = await api.get<CurriculumMeta>('curriculum.json');
+export const fetchCurriculum = async (
+  curriculumId: CurriculumId = 'java'
+): Promise<CurriculumMeta> => {
+  const { data } = await api.get<CurriculumMeta>(
+    withCurriculumPath(curriculumId, 'curriculum.json')
+  );
   return data;
 };
 
 // ─── Fetch Phase Data ──────────────────────────────────────
 /** Merges `externalDayNumbers` from `phase{N}.json` with `data/days/phase{N}-day{D}.json` files. */
-export const fetchPhase = async (phaseFile: string): Promise<PhaseData> => {
-  const { data } = await api.get<PhaseData>(phaseFile);
+export const fetchPhase = async (
+  phaseFile: string,
+  curriculumId: CurriculumId = 'java'
+): Promise<PhaseData> => {
+  const { data } = await api.get<PhaseData>(
+    withCurriculumPath(curriculumId, phaseFile)
+  );
   const extraDayNums = data.externalDayNumbers;
   if (!extraDayNums?.length) {
     return data;
@@ -38,7 +57,9 @@ export const fetchPhase = async (phaseFile: string): Promise<PhaseData> => {
   const base = phaseFileBase(phaseFile);
   const results = await Promise.allSettled(
     extraDayNums.map((n) =>
-      api.get<LessonDay>(`days/${base}-day${n}.json`).then((r) => r.data)
+      api
+        .get<LessonDay>(withCurriculumPath(curriculumId, `days/${base}-day${n}.json`))
+        .then((r) => r.data)
     )
   );
   const loaded = results
@@ -57,10 +78,11 @@ export const fetchPhase = async (phaseFile: string): Promise<PhaseData> => {
 
 // ─── Search Across All Phases ──────────────────────────────
 export const fetchAllPhases = async (
-  phaseFiles: string[]
+  phaseFiles: string[],
+  curriculumId: CurriculumId = 'java'
 ): Promise<PhaseData[]> => {
   const results = await Promise.allSettled(
-    phaseFiles.map((file) => fetchPhase(file))
+    phaseFiles.map((file) => fetchPhase(file, curriculumId))
   );
   return results
     .filter(
@@ -73,13 +95,15 @@ export const fetchAllPhases = async (
 const phaseCache = new Map<string, PhaseData>();
 
 export const fetchPhaseWithCache = async (
-  phaseFile: string
+  phaseFile: string,
+  curriculumId: CurriculumId = 'java'
 ): Promise<PhaseData> => {
-  if (phaseCache.has(phaseFile)) {
-    return phaseCache.get(phaseFile)!;
+  const cacheKey = `${curriculumId}:${phaseFile}`;
+  if (phaseCache.has(cacheKey)) {
+    return phaseCache.get(cacheKey)!;
   }
-  const data = await fetchPhase(phaseFile);
-  phaseCache.set(phaseFile, data);
+  const data = await fetchPhase(phaseFile, curriculumId);
+  phaseCache.set(cacheKey, data);
   return data;
 };
 
@@ -147,51 +171,29 @@ interface AssignmentFile {
   assignments: Record<string, AssignmentSection>;
 }
 
-const assignmentCache = new Map<number, AssignmentFile>();
-
-/**
- * Maps a day number to its phase number.
- * ⚠️  MUST stay in sync with the phase day ranges in public/data/curriculum.json
- * If the curriculum changes, update both this function AND curriculum.json.
- * Days:  1–9  → Phase 1
- *       10–18 → Phase 2
- *       19–27 → Phase 3
- *       28–37 → Phase 4
- *       38–48 → Phase 5
- *       49–58 → Phase 6
- *       59–67 → Phase 7
- *       68–76 → Phase 8
- *       77–84 → Phase 9
- *       85–90 → Phase 10
- */
-const PHASE_FOR_DAY = (day: number): number => {
-  if (day <= 9)  return 1;
-  if (day <= 18) return 2;
-  if (day <= 27) return 3;
-  if (day <= 37) return 4;
-  if (day <= 48) return 5;
-  if (day <= 58) return 6;
-  if (day <= 67) return 7;
-  if (day <= 76) return 8;
-  if (day <= 84) return 9;
-  return 10;
-};
+const assignmentCache = new Map<string, AssignmentFile>();
 
 export const fetchAssignmentForDay = async (
-  day: number
+  day: number,
+  phaseNumber: number,
+  curriculumId: CurriculumId = 'java'
 ): Promise<AssignmentSection | null> => {
-  const phase = PHASE_FOR_DAY(day);
-  if (!assignmentCache.has(phase)) {
+  const cacheKey = `${curriculumId}:phase${phaseNumber}`;
+  if (!assignmentCache.has(cacheKey)) {
     try {
-      const { data } = await api.get<AssignmentFile>(
-        `assignments_phase${phase}.json`
+      const filePath = withCurriculumPath(
+        curriculumId,
+        `assignments_phase${phaseNumber}.json`
       );
-      assignmentCache.set(phase, data);
+      const { data } = await api.get<AssignmentFile>(
+        filePath
+      );
+      assignmentCache.set(cacheKey, data);
     } catch {
       return null;
     }
   }
-  const file = assignmentCache.get(phase);
+  const file = assignmentCache.get(cacheKey);
   return file?.assignments?.[String(day)] ?? null;
 };
 

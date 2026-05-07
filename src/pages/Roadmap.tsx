@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box, Typography, Chip, Tooltip, Paper, Tabs, Tab, Button,
-  Grid,
+  Grid, ToggleButtonGroup, ToggleButton,
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PlayCircleIcon from '@mui/icons-material/PlayCircle';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
-import { Track } from '../types';
+import { fetchCurriculum, fetchPhaseWithCache } from '../services/api';
+import { CurriculumId, Track } from '../types';
 import { getLevelColor, getTrackColor } from '../utils/formatters';
 import LevelBadge from '../components/LevelBadge';
 import PrintIcon from '@mui/icons-material/Print';
@@ -16,8 +17,21 @@ const trackOptions: (Track | 'All')[] = ['All', 'Fresher', 'Mid-Level', 'Senior'
 
 const Roadmap: React.FC = () => {
   const navigate = useNavigate();
-  const { curriculum, loadedPhases, progress, activeTrack, setActiveTrack } = useAppStore();
+  const {
+    curriculum, setCurriculum, loadedPhases, loadPhase, progress, activeTrack, setActiveTrack,
+    activeCurriculum, setActiveCurriculum,
+  } = useAppStore();
   const [hovered, setHovered] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (curriculum) return;
+    fetchCurriculum(activeCurriculum).then((c) => {
+      setCurriculum(c);
+      c.phases.forEach((p) => {
+        fetchPhaseWithCache(p.file, activeCurriculum).then((d) => loadPhase(p.id, d));
+      });
+    }).catch(() => undefined);
+  }, [curriculum, activeCurriculum, setCurriculum, loadPhase]);
 
   if (!curriculum) {
     return (
@@ -35,12 +49,27 @@ const Roadmap: React.FC = () => {
     <Box className="fade-in">
       <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={3} flexWrap="wrap" gap={2}>
         <Box>
-          <Typography variant="h4" fontWeight={800}>90-Day Roadmap</Typography>
-          <Typography color="text.secondary">Visual journey from Fresher to Senior Engineer</Typography>
+          <Typography variant="h4" fontWeight={800}>{curriculum.title}</Typography>
+          <Typography color="text.secondary">{curriculum.subtitle}</Typography>
         </Box>
         <Button variant="outlined" startIcon={<PrintIcon />} onClick={() => window.print()}>
           Print
         </Button>
+      </Box>
+
+      <Box mb={2}>
+        <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" mb={0.75}>
+          Curriculum
+        </Typography>
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={activeCurriculum}
+          onChange={(_, value: CurriculumId | null) => value && setActiveCurriculum(value)}
+        >
+          <ToggleButton value="java">Java Track</ToggleButton>
+          <ToggleButton value="ai">AI / GenAI Track</ToggleButton>
+        </ToggleButtonGroup>
       </Box>
 
       {/* Legend */}

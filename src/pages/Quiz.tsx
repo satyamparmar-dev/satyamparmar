@@ -26,7 +26,9 @@ const Quiz: React.FC = () => {
   const navigate = useNavigate();
   const initialDay = searchParams.get('day');
 
-  const { curriculum, setCurriculum, loadedPhases, loadPhase, progress, saveQuizScore } = useAppStore();
+  const {
+    curriculum, setCurriculum, loadedPhases, loadPhase, progress, saveQuizScore, activeCurriculum,
+  } = useAppStore();
   const { hasFullAccess } = useContentAccess();
 
   const [selectedPhase, setSelectedPhase] = useState<string>('all');
@@ -41,14 +43,14 @@ const Quiz: React.FC = () => {
 
   useEffect(() => {
     if (!curriculum) {
-      fetchCurriculum().then((c) => {
+      fetchCurriculum(activeCurriculum).then((c) => {
         setCurriculum(c);
         c.phases.slice(0, 3).forEach((p) =>
-          fetchPhaseWithCache(p.file).then((d) => loadPhase(p.id, d))
+          fetchPhaseWithCache(p.file, activeCurriculum).then((d) => loadPhase(p.id, d))
         );
       });
     }
-  }, []);
+  }, [curriculum, activeCurriculum, setCurriculum, loadPhase]);
 
   useEffect(() => {
     if (!curriculum) return;
@@ -97,7 +99,7 @@ const Quiz: React.FC = () => {
 
     let phaseData = loadedPhases[phase.id];
     if (!phaseData) {
-      phaseData = await fetchPhaseWithCache(phase.file);
+      phaseData = await fetchPhaseWithCache(phase.file, activeCurriculum);
       loadPhase(phase.id, phaseData);
     }
 

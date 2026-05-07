@@ -12,6 +12,7 @@ import {
 import { buildLlmTabSections, llmOverviewFullMarkdown } from '../content/llm/bundle';
 import plainLanguageScript from '../content/llm/plain-language-script.md?raw';
 import { parseMarkdown } from '../utils/markdown';
+import ConceptsGlossarySection from '../components/llm/ConceptsGlossarySection';
 
 const baseMdSx = {
   lineHeight: 1.8,
@@ -135,6 +136,8 @@ const LlmOverview: React.FC = () => {
           }}
         />
       </Paper>
+
+      <ConceptsGlossarySection />
     </Box>
   );
 };

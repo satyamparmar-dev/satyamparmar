@@ -1,0 +1,161 @@
+{
+  "day": 7,
+  "phase": 0,
+  "title": "HTTP Deep Dive — Headers, Auth & Status Codes",
+  "estimatedHours": 2,
+  "difficulty": "Beginner",
+  "level": "Beginner",
+  "track": "Fresher",
+  "tags": ["HTTP", "Headers", "Authentication", "REST", "Retry Logic", "Phase 0"],
+  "prerequisites": ["Day 3 — APIs and JSON", "Day 6 — Documentation"],
+  "learningObjectives": [
+    "Name and explain 8 essential request headers used by AI APIs",
+    "Read response headers for rate limit and request ID information",
+    "Map HTTP status codes to the correct remediation action",
+    "Explain the difference between Bearer token and x-api-key authentication",
+    "Implement exponential backoff with jitter in Python",
+    "Explain why AI APIs must never be called directly from the browser"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "HTTP Is the Interface You Debug Most Often",
+      "content": "Every AI API call is an HTTP request. When your code silently fails — empty responses, 401 errors, models that seem to ignore your instructions — it's almost always an HTTP-layer problem.\n\nEngineers who understand headers, auth flows, and status codes debug these in minutes. Those who don't spend hours. The difference:\n- Knowing that `anthropic-version` pins API behavior (and that forgetting it causes unexpected errors)\n- Knowing that a 429 requires reading `Retry-After`, not just sleeping for 60 seconds\n- Knowing that a 403 means your key is valid but lacks model access — a billing/permissions issue, not a code bug\n\nThis is not just theory — you will hit every one of these status codes within your first month of building with AI APIs."
+    },
+    {
+      "type": "theory",
+      "title": "HTTP In Depth — Headers, Auth, and Error Recovery",
+      "content": "### 1. The HTTP Request Anatomy\n\nEvery HTTP request has four parts:\n1. **Request line**: `POST /v1/messages HTTP/1.1`\n2. **Headers**: key-value metadata\n3. **Blank line**: separator\n4. **Body**: JSON payload (for POST)\n\nAI APIs use `POST` for inference (you send a prompt body) and `GET` for metadata (list models, check limits).\n\n---\n\n### 2. Essential Request Headers\n\n| Header | Purpose | Example |\n|--------|---------|----------|\n| `Authorization` | Bearer token auth | `Bearer sk-ant-...` |\n| `x-api-key` | Key-in-header auth (Anthropic style) | `sk-ant-api03-...` |\n| `Content-Type` | Body format | `application/json` |\n| `Accept` | Expected response format | `application/json` |\n| `anthropic-version` | Pin API version to prevent breaking changes | `2023-06-01` |\n| `User-Agent` | Identify your client | `MyApp/1.0` |\n| `X-Request-ID` | Trace ID for debugging | `uuid-here` |\n| `OpenAI-Beta` | Opt into beta features | `assistants=v2` |\n\n---\n\n### 3. Response Headers You Must Read\n\n| Header | What it tells you |\n|--------|------------------|\n| `X-RateLimit-Limit` | Max requests allowed in window |\n| `X-RateLimit-Remaining` | Requests left this window |\n| `X-RateLimit-Reset` | Unix timestamp when limit resets |\n| `Retry-After` | Seconds to wait after 429 |\n| `X-Request-ID` | Trace ID for support tickets |\n| `CF-Ray` | Cloudflare trace (Anthropic/OpenAI use this) |\n\n---\n\n### 4. HTTP Status Codes — Complete Action Map\n\n**2xx — Success**\n- `200 OK` → Parse the response body\n- `201 Created` → Resource created (file uploads, fine-tune jobs)\n- `204 No Content` → Success with no body\n\n**4xx — Client Errors (your fault — fix your code)**\n- `400 Bad Request` → Malformed JSON or invalid parameter names\n- `401 Unauthorized` → Missing or invalid API key\n- `403 Forbidden` → Key is valid but no access to this model/endpoint\n- `404 Not Found` → Wrong URL or model ID\n- `422 Unprocessable Entity` → Valid JSON but invalid field values (e.g., `temperature: 99`)\n- `429 Too Many Requests` → Rate limited; read `Retry-After`\n\n**5xx — Server Errors (their fault — retry)**\n- `500 Internal Server Error` → Bug on their side\n- `502 Bad Gateway` → Proxy/load balancer issue\n- `503 Service Unavailable` → Overloaded; retry\n- `504 Gateway Timeout` → Request too slow upstream\n\n---\n\n### 5. Authentication Patterns\n\n**Bearer Token** (most common)\n```\nAuthorization: Bearer sk-ant-api03-...\n```\nUsed by: OpenAI, Cohere, Mistral, Google Gemini\n\n**Key in Custom Header** (Anthropic)\n```\nx-api-key: sk-ant-api03-...\n```\nUsed by: Anthropic (alongside or instead of Bearer)\n\n**OAuth 2.0** (enterprise)\nGet temporary token, refresh before expiry. Used by Vertex AI, Azure AD.\n\n⚠️ **Never embed secrets in URLs** — they appear in server logs and browser history.\n\n---\n\n### 6. Exponential Backoff with Jitter\n\nProduction rule: retry transient errors (429, 5xx) with exponential backoff + jitter:\n\n```\nwait = base_delay × 2^attempt + random(0, 1)\n```\n\n**Why jitter?** Without it, all clients retry at the exact same time, causing a thundering herd that re-triggers the rate limit.\n\nRetry map:\n| Status | Retry? | Wait |\n|--------|--------|------|\n| 429 | Yes | `Retry-After` header |\n| 500, 502, 503, 504 | Yes | Exponential backoff |\n| 400, 401, 403, 404 | No | Fix your code |\n\n---\n\n### 7. CORS — Why AI APIs Must Not Be Called from the Browser\n\nCORS (Cross-Origin Resource Sharing) is a browser security policy. It only affects browser JavaScript, not Python.\n\nIf you call an AI API directly from a React frontend, the browser blocks it (unless the API returns permissive CORS headers — which most AI APIs don't, for security).\n\n**Rule**: Never call AI APIs from browser code. Always proxy through your backend (FastAPI, Node.js). Reasons:\n1. API key would be visible in browser DevTools → anyone can steal it\n2. No rate limiting control\n3. No cost controls\n4. CORS blocks the call anyway"
+    },
+    {
+      "type": "code",
+      "title": "HTTP Inspector & Retry Client",
+      "description": "Inspect real HTTP responses from AI APIs and implement production-grade retry logic with exponential backoff.",
+      "language": "python",
+      "filename": "http_inspector.py",
+      "level": "intermediate",
+      "code": "import os\nimport time\nimport random\nimport requests\nfrom dotenv import load_dotenv\n\nload_dotenv()\n\ndef inspect_response(response: requests.Response) -> None:\n    \"\"\"Print diagnostic information from an HTTP response.\"\"\"\n    print(f\"Status: {response.status_code} {response.reason}\")\n    \n    # Rate limit headers\n    rate_headers = [\n        'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset',\n        'Retry-After', 'X-Request-ID', 'request-id', 'CF-Ray'\n    ]\n    found = {}\n    for h in rate_headers:\n        val = response.headers.get(h) or response.headers.get(h.lower())\n        if val:\n            found[h] = val\n    \n    if found:\n        print(\"Notable headers:\")\n        for k, v in found.items():\n            print(f\"  {k}: {v}\")\n    \n    print(f\"Content-Type: {response.headers.get('Content-Type', 'not set')}\")\n    print(f\"Response size: {len(response.content)} bytes\")\n    \n    if response.status_code == 429:\n        wait = response.headers.get('Retry-After', '60')\n        print(f\"\\n⏳ RATE LIMITED — wait {wait}s before retrying\")\n    elif response.status_code == 401:\n        print(\"\\n❌ UNAUTHORIZED — check your API key\")\n    elif response.status_code == 403:\n        print(\"\\n🚫 FORBIDDEN — key valid but no access to this resource\")\n    elif response.status_code >= 500:\n        print(\"\\n🔥 SERVER ERROR — retry with backoff\")\n    elif response.status_code == 200:\n        print(\"\\n✅ Success\")\n\n\ndef call_with_backoff(\n    session: requests.Session,\n    method: str,\n    url: str,\n    max_retries: int = 3,\n    base_delay: float = 1.0,\n    **kwargs\n) -> requests.Response | None:\n    \"\"\"HTTP call with exponential backoff + jitter.\"\"\"\n    for attempt in range(max_retries + 1):\n        try:\n            response = session.request(method, url, **kwargs)\n            \n            if response.status_code in (200, 201, 204):\n                return response\n            \n            # Client errors — don't retry\n            if response.status_code in (400, 401, 403, 404, 422):\n                print(f\"Non-retryable error {response.status_code}\")\n                return response\n            \n            if attempt == max_retries:\n                print(f\"Exhausted {max_retries} retries\")\n                return response\n            \n            # Calculate wait time\n            if response.status_code == 429:\n                wait = float(response.headers.get('Retry-After', base_delay * (2 ** attempt)))\n            else:  # 5xx\n                wait = base_delay * (2 ** attempt) + random.uniform(0, 1)  # jitter\n            \n            print(f\"Attempt {attempt + 1} failed ({response.status_code}) — retrying in {wait:.1f}s\")\n            time.sleep(wait)\n            \n        except requests.exceptions.Timeout:\n            if attempt < max_retries:\n                time.sleep(2 ** attempt)\n            else:\n                print(\"Timeout — all retries exhausted\")\n                return None\n        except requests.exceptions.ConnectionError:\n            print(\"Connection error — check network\")\n            return None\n    \n    return None\n\n\n# ── Demo ─────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    session = requests.Session()\n    session.headers.update({'Accept': 'application/json', 'User-Agent': 'AIApp/1.0'})\n    \n    print(\"Demo 1: Successful GET\")\n    r = session.get('https://httpbin.org/get', timeout=10)\n    inspect_response(r)\n    \n    print(\"\\nDemo 2: 401 Unauthorized simulation\")\n    r = session.get('https://httpbin.org/status/401', timeout=10)\n    inspect_response(r)\n    \n    print(\"\\nDemo 3: 429 Rate limit simulation\")\n    r = session.get('https://httpbin.org/status/429', timeout=10)\n    inspect_response(r)\n    \n    print(\"\\nDemo 4: Anthropic headers (no key needed to see the structure)\")\n    anthropic_headers = {\n        'x-api-key': 'PLACEHOLDER',\n        'anthropic-version': '2023-06-01',\n        'content-type': 'application/json',\n    }\n    print(\"Required Anthropic headers:\")\n    for k, v in anthropic_headers.items():\n        print(f\"  {k}: {v[:20]}...\" if len(v) > 20 else f\"  {k}: {v}\")",
+      "output": "Demo 1: Successful GET\nStatus: 200 OK\nContent-Type: application/json\nResponse size: 312 bytes\n✅ Success\n\nDemo 2: 401 Unauthorized simulation\nStatus: 401 UNAUTHORIZED\n❌ UNAUTHORIZED — check your API key\n\nDemo 3: 429 Rate limit simulation\nStatus: 429 TOO MANY REQUESTS\n⏳ RATE LIMITED — wait 60s before retrying\n\nDemo 4: Anthropic headers (no key needed to see the structure)\nRequired Anthropic headers:\n  x-api-key: PLACEHOLDER\n  anthropic-version: 2023-06-01\n  content-type: application/json"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common HTTP Integration Pitfalls",
+      "items": [
+        "**Only reading the status code and ignoring response headers** — rate limit info and request IDs live in headers; without them you can't debug or implement proper retry logic.",
+        "**Retrying 4xx errors** — 400, 401, 403, and 422 indicate bugs in your code. Retrying them wastes time and doesn't fix the problem. Only retry 429 and 5xx.",
+        "**Hardcoding sleep(60) instead of reading Retry-After** — the actual wait time may be shorter or longer. Always read the header.",
+        "**Calling AI APIs from browser JavaScript** — exposes your API key in DevTools. Always proxy through your backend.",
+        "**Forgetting the `anthropic-version` header** — Anthropic requires this header. Without it, you get a 400 error with an unhelpful message."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build an HTTP Debugger Tool",
+      "difficulty": "Beginner",
+      "problem": "Build a CLI tool `debug_api.py` that:\n1. Accepts a URL as a command-line argument (`sys.argv[1]`)\n2. Makes a GET request to that URL with a 10-second timeout\n3. Prints the status code and reason\n4. Prints all headers that contain 'rate', 'limit', 'retry', or 'request-id' (case-insensitive)\n5. Prints a human-readable diagnosis:\n   - 200 → 'Success'\n   - 401 → 'Check your API key'\n   - 429 → 'Rate limited — wait N seconds' (read Retry-After)\n   - 5xx → 'Server error — retry with backoff'\n   - Other → 'Unknown — check docs'\n\nTest it with: `python debug_api.py https://httpbin.org/status/429`",
+      "hints": [
+        "`sys.argv[1]` gets the first command-line argument",
+        "Iterate `response.headers.items()` and check `key.lower()`",
+        "`response.headers.get('Retry-After', 'unknown')` reads the header safely"
+      ],
+      "solution": "import sys\nimport requests\n\ndef debug_api(url: str) -> None:\n    try:\n        r = requests.get(url, timeout=10)\n    except requests.exceptions.RequestException as e:\n        print(f'Connection error: {e}')\n        return\n    \n    print(f'Status: {r.status_code} {r.reason}')\n    \n    # Rate/limit related headers\n    keywords = ('rate', 'limit', 'retry', 'request-id')\n    notable = {k: v for k, v in r.headers.items()\n               if any(kw in k.lower() for kw in keywords)}\n    if notable:\n        print('Notable headers:')\n        for k, v in notable.items():\n            print(f'  {k}: {v}')\n    \n    # Diagnosis\n    code = r.status_code\n    if code == 200:\n        print('✅ Success')\n    elif code == 401:\n        print('❌ Check your API key')\n    elif code == 429:\n        wait = r.headers.get('Retry-After', 'unknown')\n        print(f'⏳ Rate limited — wait {wait} seconds')\n    elif code >= 500:\n        print('🔥 Server error — retry with backoff')\n    else:\n        print('❓ Unknown — check docs')\n\nif __name__ == '__main__':\n    url = sys.argv[1] if len(sys.argv) > 1 else 'https://httpbin.org/get'\n    debug_api(url)"
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — HTTP and APIs",
+      "conceptual": [
+        {
+          "question": "What is the difference between a 401 and a 403 response?",
+          "answer": "401 Unauthorized means authentication failed — the server doesn't know who you are (missing or invalid API key). 403 Forbidden means authentication succeeded but you lack permission — the server knows who you are but won't allow access to that resource. For AI APIs: 401 means your API key is wrong or expired; 403 means your key is valid but doesn't have access to that specific model tier or endpoint (billing/permissions issue)."
+        },
+        {
+          "question": "Why must you use exponential backoff with jitter instead of fixed retry intervals?",
+          "answer": "Fixed retry intervals cause a thundering herd problem — all clients that hit a rate limit simultaneously retry at the same fixed time, re-triggering the rate limit repeatedly. Exponential backoff (wait = base × 2^attempt) spreads retries over time. Jitter (adding random 0–1 seconds) further desynchronizes retries across clients. The math: without jitter, 1000 clients hit 429, all wait exactly 60s, then all retry simultaneously — another 429 wave. With jitter, they spread across 60–61 seconds, reducing the retry spike by 100×."
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write a function that extracts the wait time from a 429 response, defaulting to exponential backoff if Retry-After is missing.",
+          "answer": "```python\nimport time, random\n\ndef get_retry_wait(response, attempt: int, base_delay: float = 1.0) -> float:\n    if response.status_code == 429:\n        retry_after = response.headers.get('Retry-After')\n        if retry_after:\n            return float(retry_after)\n    # Exponential backoff + jitter for all retryable errors\n    return base_delay * (2 ** attempt) + random.uniform(0, 1)\n```"
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your production AI pipeline has 25% error rate at 2 AM with 503 responses. Walk through your incident response.",
+          "answer": "Immediate: check provider status page (status.anthropic.com, status.openai.com) for active incidents. While checking: ensure your retry logic is active and catching 503s. If provider incident: nothing to do but wait and monitor. If no incident: examine your logs for patterns — are 503s clustered (burst) or sustained? Clustered suggests you're hitting capacity limits at that traffic time. Sustained suggests regional issues or account limits. Mitigations: (1) If burst: implement request queuing with rate limiter. (2) If sustained: consider failover to secondary provider. (3) Long-term: set up monitoring/alerts so you catch 5% error rate before it becomes 25%, and page before 2 AM."
+        }
+      ],
+      "wrongAnswers": [
+        "**Wrong:** '401 means the server is down.' — **Correction:** 401 is authentication failure (bad/missing API key). Server down would be 503 or a connection error that never returns an HTTP response at all.",
+        "**Wrong:** 'You should retry immediately after any error to be fast.' — **Correction:** Retrying immediately on 429 makes rate limiting worse (thundering herd). And 4xx errors (400, 401, 403) won't fix themselves on retry — they require code changes. Only 429 and 5xx are retryable, with appropriate backoff."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Quick MCQ — HTTP Protocol",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "Which HTTP status code means your API key is valid but you don't have permission for this resource?",
+          "options": {
+            "A": "401 Unauthorized",
+            "B": "403 Forbidden",
+            "C": "404 Not Found",
+            "D": "422 Unprocessable Entity"
+          },
+          "answer": "B",
+          "explanation": "403 Forbidden: the server authenticated you successfully but you lack the required permission. 401 means authentication itself failed. For AI APIs, 403 typically means your API key tier doesn't include that model."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "What is jitter in the context of API retry logic?",
+          "options": {
+            "A": "The time between two API calls",
+            "B": "Random delay added to prevent all clients retrying at the exact same moment",
+            "C": "A type of JSON parsing error in API responses",
+            "D": "The base delay multiplied by the attempt number"
+          },
+          "answer": "B",
+          "explanation": "Jitter is a small random delay (e.g., 0–1 second) added to the exponential backoff wait time. Without it, all rate-limited clients retry simultaneously, causing a thundering herd that re-triggers the rate limit."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "The `anthropic-version: 2023-06-01` request header serves what purpose?",
+          "options": {
+            "A": "Tells Anthropic which SDK version you're using",
+            "B": "Selects the Claude model version",
+            "C": "Pins API behavior so version changes don't break your app",
+            "D": "Sets the response language"
+          },
+          "answer": "C",
+          "explanation": "API versioning via headers lets the provider evolve the API while older callers keep consistent behavior. Without this header, Anthropic returns a 400 error requesting you specify a version."
+        },
+        {
+          "id": 4,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why should you never call an AI API directly from browser JavaScript?",
+          "options": {
+            "A": "JavaScript cannot make HTTP requests",
+            "B": "Browsers block all HTTPS requests",
+            "C": "Your API key would be exposed in browser DevTools — anyone could steal it",
+            "D": "AI APIs only accept requests from servers"
+          },
+          "answer": "C",
+          "explanation": "Any API key in browser JavaScript is visible in the Network tab of DevTools. It can be extracted and used by anyone visiting your site. Always proxy AI API calls through your backend server, which holds the key in an environment variable."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "title": "HTTP Quick Reference",
+      "content": "### Status Code Action Map\n| Code | Meaning | Action |\n|------|---------|--------|\n| 200 | OK | Parse response |\n| 400 | Bad Request | Fix your JSON/params |\n| 401 | Unauthorized | Fix API key |\n| 403 | Forbidden | Check model access/billing |\n| 422 | Invalid values | Fix field values |\n| 429 | Rate limited | Read Retry-After, wait |\n| 500-504 | Server error | Retry with backoff |\n\n### Essential Request Headers\n```\nx-api-key: sk-ant-...              # Anthropic\nAuthorization: Bearer sk-...       # OpenAI, most others\nanthropic-version: 2023-06-01      # Required for Anthropic\ncontent-type: application/json     # Always needed for POST\n```\n\n### Retry Pattern\n```python\nfor attempt in range(max_retries):\n    r = requests.post(url, headers=h, json=body)\n    if r.status_code == 200: return r.json()\n    if r.status_code in (400, 401, 403): break  # Don't retry\n    wait = float(r.headers.get('Retry-After',\n                 1.0 * (2 ** attempt))) + random.uniform(0, 1)\n    time.sleep(wait)\n```\n\n### CORS Rule\n- CORS only affects browser JavaScript\n- Never call AI APIs from frontend code — proxy through backend\n- Backend holds the API key securely in env variables"
+    }
+  ]
+}

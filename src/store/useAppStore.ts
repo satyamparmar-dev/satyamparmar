@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { AppProgress, CurriculumMeta, PhaseData, Track } from '../types';
+import { AppProgress, CurriculumId, CurriculumMeta, PhaseData, Track } from '../types';
 import { format } from 'date-fns';
 
 // ─── Default Progress ─────────────────────────────────────────
@@ -31,6 +31,7 @@ interface AppStore {
   searchQuery: string;
   searchOpen: boolean;
   activeTrack: Track | 'All';
+  activeCurriculum: CurriculumId;
   onboardingComplete: boolean;
   sidebarOpen: boolean;
 
@@ -50,6 +51,7 @@ interface AppStore {
   setSearchOpen: (open: boolean) => void;
   setSearchQuery: (q: string) => void;
   setActiveTrack: (track: Track | 'All') => void;
+  setActiveCurriculum: (curriculumId: CurriculumId) => void;
   resetProgress: () => void;
   exportProgress: () => void;
   importProgress: (data: AppProgress) => void;
@@ -75,6 +77,7 @@ export const useAppStore = create<AppStore>()(
       searchQuery: '',
       searchOpen: false,
       activeTrack: 'All',
+      activeCurriculum: 'java',
       onboardingComplete: false,
       sidebarOpen: true,
 
@@ -211,6 +214,19 @@ export const useAppStore = create<AppStore>()(
 
       setActiveTrack: (track) => set({ activeTrack: track }),
 
+      setActiveCurriculum: (curriculumId) =>
+        set((state) =>
+          state.activeCurriculum === curriculumId
+            ? state
+            : {
+                activeCurriculum: curriculumId,
+                curriculum: null,
+                loadedPhases: {},
+                currentSection: 'why',
+                activeTrack: 'All',
+              }
+        ),
+
       resetProgress: () =>
         set({
           progress: defaultProgress,
@@ -302,6 +318,7 @@ export const useAppStore = create<AppStore>()(
         progress: state.progress,
         theme: state.theme,
         activeTrack: state.activeTrack,
+        activeCurriculum: state.activeCurriculum,
         onboardingComplete: state.onboardingComplete,
         sidebarOpen: state.sidebarOpen,
       }),

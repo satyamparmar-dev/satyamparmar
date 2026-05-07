@@ -1,0 +1,64 @@
+@startuml Replication Model
+!theme plain
+skinparam backgroundColor #FFFFFF
+
+title Kafka Replication and Leader-Follower Model
+
+package "Topic: user-events" {
+    component "Partition 0" as p0 {
+        component "Leader\n(Broker 1)" as leader0 #LightGreen
+        component "Replica\n(Broker 2)" as replica0_1
+        component "Replica\n(Broker 3)" as replica0_2
+    }
+    
+    component "Partition 1" as p1 {
+        component "Replica\n(Broker 1)" as replica1_0
+        component "Leader\n(Broker 2)" as leader1 #LightGreen
+        component "Replica\n(Broker 3)" as replica1_2
+    }
+    
+    component "Partition 2" as p2 {
+        component "Replica\n(Broker 1)" as replica2_0
+        component "Replica\n(Broker 2)" as replica2_1
+        component "Leader\n(Broker 3)" as leader2 #LightGreen
+    }
+}
+
+component "Producer" as prod
+component "Consumer" as cons
+
+prod --> leader0 : Write message
+leader0 --> replica0_1 : Replicate
+leader0 --> replica0_2 : Replicate
+
+replica0_1 --> leader0 : Acknowledge (ISR)
+replica0_2 --> leader0 : Acknowledge (ISR)
+
+leader0 --> prod : Commit (acks=all)
+
+cons --> leader0 : Read message
+cons --> leader1 : Read message
+cons --> leader2 : Read message
+
+note right of p0
+  **Replication Factor: 3**
+  - 1 Leader (handles reads/writes)
+  - 2 Followers (replicate data)
+  - All in ISR (In-Sync Replicas)
+end note
+
+note right of leader0
+  **Leader Responsibilities:**
+  - Handle all read/write requests
+  - Track ISR status
+  - Coordinate replication
+end note
+
+note right of replica0_1
+  **Follower Responsibilities:**
+  - Replicate data from leader
+  - Become leader if current leader fails
+  - Stay in sync with leader
+end note
+
+@enduml

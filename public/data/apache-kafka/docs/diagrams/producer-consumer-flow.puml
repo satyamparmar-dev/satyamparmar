@@ -1,0 +1,70 @@
+@startuml Producer-Consumer Flow
+!theme plain
+skinparam backgroundColor #FFFFFF
+
+title Kafka Producer-Consumer Message Flow
+
+actor "Application" as app
+participant "Producer" as prod
+participant "Kafka Broker" as broker
+participant "Topic Partition" as topic
+participant "Consumer" as cons
+participant "Business Logic" as logic
+
+== Message Production ==
+app -> prod: sendMessage(topic, key, value)
+activate prod
+
+prod -> prod: Serialize message
+prod -> prod: Select partition (key-based)
+prod -> broker: Send message
+activate broker
+
+broker -> topic: Store message
+activate topic
+topic -> topic: Assign offset
+topic --> broker: Offset confirmed
+deactivate topic
+
+broker --> prod: Acknowledgment (acks=all)
+deactivate broker
+
+prod --> app: Success callback
+deactivate prod
+
+== Message Consumption ==
+cons -> broker: Poll for messages
+activate broker
+broker -> topic: Fetch messages
+activate topic
+topic --> broker: Return messages with offsets
+deactivate topic
+broker --> cons: Messages + metadata
+deactivate broker
+
+cons -> logic: Process message
+activate logic
+logic --> cons: Processing complete
+deactivate logic
+
+cons -> broker: Commit offset
+activate broker
+broker -> broker: Update consumer offset
+broker --> cons: Offset committed
+deactivate broker
+
+note over prod,broker
+  **Producer Configuration:**
+  - acks=all (wait for all replicas)
+  - retries=3
+  - idempotence=true
+end note
+
+note over cons,logic
+  **Consumer Configuration:**
+  - Manual acknowledgment
+  - Auto-offset-reset=earliest
+  - Max poll records=500
+end note
+
+@enduml

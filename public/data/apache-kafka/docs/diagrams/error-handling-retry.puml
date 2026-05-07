@@ -1,0 +1,61 @@
+@startuml Error Handling and Retry
+!theme plain
+skinparam backgroundColor #FFFFFF
+
+title Error Handling and Retry Mechanism
+
+participant "Consumer" as cons
+participant "Business Logic" as logic
+participant "Retry Handler" as retry
+participant "Dead Letter Queue" as dlq
+participant "Kafka Topic" as topic
+
+cons -> topic: Poll messages
+topic --> cons: Return messages
+
+cons -> logic: Process message
+activate logic
+
+alt Processing Success
+    logic --> cons: Success
+    cons -> topic: Acknowledge (commit offset)
+    note right: Message processed successfully
+else Processing Failure (Transient)
+    logic --> cons: Exception (retryable)
+    activate retry
+    retry -> retry: Check retry count
+    alt Retry Count < Max
+        retry -> retry: Wait (exponential backoff)
+        retry -> logic: Retry processing
+        deactivate retry
+    else Retry Count >= Max
+        retry -> dlq: Send to Dead Letter Queue
+        retry --> cons: Mark as failed
+        cons -> topic: Acknowledge (to avoid infinite retry)
+        deactivate retry
+        note right: Max retries exceeded
+    end
+else Processing Failure (Permanent)
+    logic --> cons: Exception (non-retryable)
+    cons -> dlq: Send to Dead Letter Queue
+    cons -> topic: Acknowledge
+    note right: Permanent failure
+end
+
+deactivate logic
+
+note right of retry
+  **Retry Strategy:**
+  - Exponential backoff
+  - Max retries: 3-5
+  - Retryable exceptions only
+end note
+
+note right of dlq
+  **Dead Letter Queue:**
+  - Failed messages stored
+  - Manual investigation
+  - Possible reprocessing
+end note
+
+@enduml

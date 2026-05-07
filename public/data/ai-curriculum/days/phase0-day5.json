@@ -1,0 +1,142 @@
+{
+  "day": 5,
+  "phase": 0,
+  "title": "Cloud Platforms for AI — Colab, AWS, GCP, Azure",
+  "estimatedHours": 2,
+  "difficulty": "Beginner",
+  "level": "Beginner",
+  "track": "Fresher",
+  "tags": ["Cloud", "Colab", "AWS Bedrock", "Vertex AI", "Azure OpenAI", "Phase 0"],
+  "prerequisites": ["Day 4 — Dev Environment Setup"],
+  "learningObjectives": [
+    "Explain IaaS, PaaS, and SaaS distinctions for AI services",
+    "Use Google Colab for free GPU access and secret management",
+    "Identify the correct AWS, GCP, and Azure AI service for a given use case",
+    "Call an AI model through a cloud platform API",
+    "Explain when to use a cloud API vs a self-hosted model",
+    "Estimate cloud AI compute costs for a simple use case"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Cloud Platforms Matter for AI Engineering",
+      "content": "Running AI models requires compute that most engineers can't afford locally. A single A100 GPU costs ~$10,000. Training even a small model locally takes days. Cloud platforms solve this by providing:\n\n- **On-demand GPUs** at $1–4/hour instead of buying hardware\n- **Managed AI APIs** (AWS Bedrock, Vertex AI, Azure OpenAI) that eliminate infrastructure management\n- **Auto-scaling** for production workloads\n- **Enterprise compliance** (SOC2, HIPAA, GDPR) that's essential for healthcare, finance, legal\n\nMore importantly: most AI products you'll build will run on cloud infrastructure. Understanding the options — Colab for experimentation, managed APIs for production, self-hosted for privacy — lets you make informed architectural decisions."
+    },
+    {
+      "type": "theory",
+      "title": "Cloud AI Platforms — Complete Landscape",
+      "content": "### 1. Service Model Hierarchy\n\n| Model | You manage | Provider manages | AI example |\n|-------|-----------|-----------------|------------|\n| **IaaS** | App, runtime, data | Hardware, networking | AWS EC2 GPU instance for self-hosted Llama |\n| **PaaS** | App, data | Runtime, OS, hardware | Google Vertex AI endpoint |\n| **SaaS** | Config only | Everything | OpenAI API, Anthropic API |\n\nFor most AI engineering work, you use SaaS APIs (call Claude/GPT via REST) or PaaS platforms (deploy a fine-tuned model on Vertex AI). IaaS is for teams that need full control.\n\n---\n\n### 2. Google Colab — Free GPU for Learning\n\nColab is a free Jupyter notebook environment with GPU access. Perfect for:\n- Learning AI/ML without a powerful local machine\n- Running fine-tuning experiments on small models\n- Sharing reproducible AI experiments\n\n**GPU Tiers**:\n- Free: T4 GPU (16GB) — enough for small models\n- Colab Pro ($10/mo): A100 access, longer sessions\n- Colab Pro+ ($50/mo): Priority GPU, background execution\n\n**Secret management in Colab**:\n```python\nfrom google.colab import userdata\napi_key = userdata.get('ANTHROPIC_API_KEY')  # Set in Colab Secrets tab\n```\n\n---\n\n### 3. AWS Bedrock — Enterprise AI Gateway\n\nAWS Bedrock provides managed access to foundation models (Claude, Titan, Llama, Stable Diffusion) inside your AWS account:\n\n- Your data never leaves AWS — critical for compliance\n- Unified API across different model providers\n- IAM-based authentication (no API keys to manage)\n- Pricing: per-token, similar to direct provider pricing\n\n```python\nimport boto3\nbedrock = boto3.client('bedrock-runtime', region_name='us-east-1')\nresponse = bedrock.invoke_model(\n    modelId='anthropic.claude-3-5-sonnet-20241022-v2:0',\n    body=json.dumps({\"messages\": [...], \"max_tokens\": 256, \"anthropic_version\": \"bedrock-2023-05-31\"})\n)\n```\n\n---\n\n### 4. Google Vertex AI — ML Platform + Gemini\n\nVertex AI is Google's unified ML platform:\n- Access to Gemini models via API (same as Anthropic but within GCP)\n- Model Garden: hundreds of open-source models (Llama, Mistral, Falcon)\n- Auto-scaling endpoints for fine-tuned model deployment\n- Vertex AI Search: managed RAG for enterprise documents\n\nAuthentication uses Google OAuth (application default credentials):\n```bash\ngcloud auth application-default login\n```\n\n---\n\n### 5. Azure OpenAI — Microsoft's AI Services\n\nAzure OpenAI gives enterprise access to GPT-4, GPT-4o, DALL-E, and Whisper:\n- Data stays within your Azure tenant (compliance)\n- Active Directory / Entra integration for access control\n- Content filtering and safety controls\n- HIPAA, SOC2, FedRAMP certified — required for regulated industries\n\n```python\nfrom openai import AzureOpenAI\nclient = AzureOpenAI(\n    azure_endpoint=\"https://your-resource.openai.azure.com/\",\n    api_key=os.getenv(\"AZURE_OPENAI_KEY\"),\n    api_version=\"2024-02-01\"\n)\n```\n\n---\n\n### 6. Decision Framework — Which Platform?\n\n| Situation | Best choice |\n|-----------|-------------|\n| Learning / experimenting | Google Colab (free GPU) |\n| Fast prototype, best models | Direct Anthropic/OpenAI API |\n| Already on AWS, data compliance needed | AWS Bedrock |\n| Google ecosystem, Gemini models | Vertex AI |\n| Microsoft/Office integration, regulated industry | Azure OpenAI |\n| Privacy: no data to third parties | Self-hosted Llama on AWS/GCP GPU |\n\n---\n\n### 7. Cost Estimation\n\nAI cloud costs have two components:\n- **Compute**: GPU time for inference/training ($1–4/hr for A100)\n- **API tokens**: Per-million-token pricing ($0.25–$75 depending on model)\n\nFor a chatbot handling 10,000 conversations/day (avg 500 input + 200 output tokens):\n- Input: 10,000 × 500 = 5M tokens/day × $3/M = $15/day = ~$450/month\n- Output: 10,000 × 200 = 2M tokens/day × $15/M = $30/day = ~$900/month\n- **Total: ~$1,350/month** for Claude Sonnet — check volume pricing for discounts"
+    },
+    {
+      "type": "code",
+      "title": "Multi-Cloud AI Template",
+      "description": "A unified template that works in Google Colab, local venv, and cloud environments — handles secret loading for each context.",
+      "language": "python",
+      "filename": "cloud_ai_template.py",
+      "level": "basic",
+      "code": "\"\"\"Universal AI script — works in Colab, local venv, and CI environments.\"\"\"\nimport os\nimport sys\n\ndef load_api_key(key_name: str) -> str | None:\n    \"\"\"\n    Load API key from the appropriate source:\n    1. Colab Secrets (when running in Google Colab)\n    2. Environment variables / .env file (local dev)\n    3. Returns None if not found\n    \"\"\"\n    # Check if we're in Colab\n    try:\n        from google.colab import userdata\n        key = userdata.get(key_name)\n        if key:\n            print(f\"✅ Loaded {key_name} from Colab Secrets\")\n            return key\n    except ImportError:\n        pass  # Not in Colab\n    except Exception:\n        pass  # Colab secret not set\n    \n    # Try .env file (local dev)\n    try:\n        from dotenv import load_dotenv\n        load_dotenv()\n    except ImportError:\n        pass  # python-dotenv not installed\n    \n    key = os.getenv(key_name)\n    if key:\n        print(f\"✅ Loaded {key_name} from environment\")\n        return key\n    \n    print(f\"⚠️  {key_name} not found\")\n    return None\n\n\ndef detect_environment() -> str:\n    \"\"\"Detect where we're running.\"\"\"\n    try:\n        import google.colab\n        return \"google-colab\"\n    except ImportError:\n        pass\n    \n    if os.getenv('AWS_EXECUTION_ENV') or os.getenv('AWS_LAMBDA_FUNCTION_NAME'):\n        return \"aws-lambda\"\n    \n    if os.getenv('GITHUB_ACTIONS'):\n        return \"github-actions\"\n    \n    if os.getenv('CI'):\n        return \"ci\"\n    \n    return \"local\"\n\n\ndef call_anthropic_direct(prompt: str, api_key: str) -> str | None:\n    \"\"\"Call Claude directly via Anthropic API.\"\"\"\n    import requests\n    response = requests.post(\n        \"https://api.anthropic.com/v1/messages\",\n        headers={\n            \"x-api-key\": api_key,\n            \"anthropic-version\": \"2023-06-01\",\n            \"content-type\": \"application/json\",\n        },\n        json={\n            \"model\": \"claude-haiku-4-5-20251001\",\n            \"max_tokens\": 128,\n            \"messages\": [{\"role\": \"user\", \"content\": prompt}]\n        },\n        timeout=30\n    )\n    if response.status_code == 200:\n        return response.json()[\"content\"][0][\"text\"]\n    print(f\"API error: {response.status_code}\")\n    return None\n\n\ndef call_aws_bedrock(prompt: str) -> str | None:\n    \"\"\"Call Claude via AWS Bedrock (requires boto3 and AWS credentials).\"\"\"\n    try:\n        import boto3, json\n        bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')\n        response = bedrock.invoke_model(\n            modelId='anthropic.claude-3-haiku-20240307-v1:0',\n            body=json.dumps({\n                \"messages\": [{\"role\": \"user\", \"content\": prompt}],\n                \"max_tokens\": 128,\n                \"anthropic_version\": \"bedrock-2023-05-31\"\n            })\n        )\n        result = json.loads(response['body'].read())\n        return result['content'][0]['text']\n    except Exception as e:\n        print(f\"Bedrock error: {e}\")\n        return None\n\n\nif __name__ == \"__main__\":\n    env = detect_environment()\n    print(f\"Environment: {env}\")\n    \n    api_key = load_api_key('ANTHROPIC_API_KEY')\n    \n    prompt = \"In exactly one sentence, what is Google Colab?\"\n    \n    if api_key:\n        print(f\"\\nCalling Claude with prompt: '{prompt}'\")\n        answer = call_anthropic_direct(prompt, api_key)\n        if answer:\n            print(f\"Claude: {answer}\")\n    else:\n        print(\"\\nNo API key — showing mock response\")\n        print(\"Claude: Google Colab is a free cloud Jupyter notebook environment with GPU access.\")",
+      "output": "Environment: local\n⚠️  ANTHROPIC_API_KEY not found\n\nNo API key — showing mock response\nClaude: Google Colab is a free cloud Jupyter notebook environment with GPU access."
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Cloud AI Pitfalls",
+      "items": [
+        "**Forgetting Colab sessions expire** — free Colab disconnects after ~12h idle. Save outputs to Google Drive or download before the session ends.",
+        "**Using the wrong AWS region** — Bedrock model availability varies by region. Claude models may not be available in all regions. Always check the Bedrock console for your region.",
+        "**Confusing Azure OpenAI with OpenAI API** — They have different endpoints, different API versions, and different authentication. Code written for one does not work for the other without changes.",
+        "**Not enabling model access in AWS Bedrock** — Models in Bedrock require explicit access request in the AWS console before you can call them. Requests are usually approved in minutes.",
+        "**Ignoring cloud cost alerts** — AI API calls at scale can cost hundreds of dollars per day. Set billing alerts on every cloud account before running batch jobs."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Cloud Platform Comparison",
+      "difficulty": "Beginner",
+      "problem": "Research and fill in this comparison table for three cloud AI platforms:\n\n| Feature | AWS Bedrock | Google Vertex AI | Azure OpenAI |\n|---------|-------------|------------------|---------------|\n| Models available | ? | ? | ? |\n| Auth method | ? | ? | ? |\n| Free tier? | ? | ? | ? |\n| Best for | ? | ? | ? |\n\nThen answer:\n1. You're building a HIPAA-compliant healthcare chatbot. Which platform do you choose and why?\n2. You want to run Llama 3 without sending data to Anthropic/OpenAI. Which platforms support this?\n3. Your company is all-in on Google Cloud. Which AI platform do you use?",
+      "hints": [
+        "AWS Bedrock docs: https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html",
+        "For HIPAA: look for BAA (Business Associate Agreement) support",
+        "Llama 3 is open-source — check which platforms host open-source models"
+      ],
+      "solution": "| Feature | AWS Bedrock | Google Vertex AI | Azure OpenAI |\n|---------|-------------|------------------|---------------|\n| Models | Claude, Titan, Llama, Stable Diffusion | Gemini, Llama, Mistral, 100+ | GPT-4o, DALL-E, Whisper |\n| Auth | IAM / AWS credentials | OAuth / service account | API key / Entra ID |\n| Free tier | No (pay per token) | $300 credit for new accounts | Limited free tier |\n| Best for | AWS shops, data compliance | Google ecosystem, Gemini | Microsoft/Azure shops, regulated industries |\n\n1. HIPAA chatbot → Azure OpenAI (Microsoft has BAA, HIPAA certification, enterprise SLAs)\n2. Self-host Llama 3 → AWS Bedrock (hosts Llama via Meta partnership) or Vertex AI Model Garden (hosts Llama 3 variants)\n3. All-in GCP → Vertex AI with Gemini models"
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Cloud AI Platforms",
+      "conceptual": [
+        {
+          "question": "What is the difference between IaaS, PaaS, and SaaS in the context of AI?",
+          "answer": "IaaS (Infrastructure as a Service): You get raw compute — GPU instances where you install everything yourself. Example: AWS EC2 g5.xlarge for running Llama. You manage the OS, Python, model weights, scaling. PaaS (Platform as a Service): Provider manages runtime and infrastructure; you deploy your model/app. Example: Google Vertex AI endpoint or AWS SageMaker. SaaS (Software as a Service): Everything managed; you just call an API. Example: Anthropic API, OpenAI API. For most AI engineering, you use SaaS (model APIs) and PaaS (deployment platforms), only going to IaaS when you need full control."
+        },
+        {
+          "question": "Why would a company choose AWS Bedrock or Azure OpenAI over calling Anthropic/OpenAI directly?",
+          "answer": "Three main reasons: (1) Data compliance — in Bedrock/Azure, data stays within your cloud account and never reaches the provider's systems directly. Critical for healthcare (HIPAA), finance (PCI-DSS), government (FedRAMP). (2) Unified billing — all AI costs on a single cloud bill, existing enterprise contracts apply. (3) Integration — Bedrock integrates with IAM, VPC, CloudWatch; Azure OpenAI integrates with Entra ID, Azure Monitor. The trade-off: slightly more complex setup, occasionally newer models available directly before cloud platforms."
+        }
+      ],
+      "codeBased": [],
+      "seniorScenario": [
+        {
+          "question": "Your fintech startup needs to build a document analysis AI. The legal team says no customer financial data can leave your AWS account. How do you architect this?",
+          "answer": "Use AWS Bedrock: it provides Claude access entirely within your AWS account — no data traverses the internet to Anthropic. Architecture: (1) Documents uploaded to S3 with server-side encryption. (2) Lambda or ECS task reads document from S3. (3) Call Bedrock's Claude API — stays within AWS network. (4) Store results in DynamoDB or RDS within VPC. (5) Enable VPC endpoints for Bedrock so traffic never leaves AWS network. (6) Enable CloudTrail for audit log of all AI calls. (7) Use IAM roles (not API keys) for authentication — no secrets to rotate. This satisfies data residency requirements and gives you a full audit trail."
+        }
+      ],
+      "wrongAnswers": [
+        "**Wrong:** 'Google Colab is suitable for production AI workloads.' — **Correction:** Colab sessions expire (free tier after ~12h), have no SLAs, can't be called programmatically, and are for interactive experimentation only. Production workloads need Vertex AI, Cloud Run, or dedicated compute with guaranteed uptime.",
+        "**Wrong:** 'Calling Claude through AWS Bedrock is the same as calling Anthropic directly.' — **Correction:** Bedrock uses different model IDs, different API structure (AWS SDK vs REST), different authentication (IAM vs API key), and different request format (`anthropic_version` in body, not in header). The underlying model may be identical but the integration code is completely different."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Quick MCQ — Cloud Platforms",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "A healthcare company needs HIPAA-compliant LLM access. Which is their best option?",
+          "options": {
+            "A": "Google Colab with API key",
+            "B": "Calling Anthropic API directly",
+            "C": "AWS Bedrock or Azure OpenAI with BAA signed",
+            "D": "Running a local LLM on a laptop"
+          },
+          "answer": "C",
+          "explanation": "HIPAA requires a Business Associate Agreement (BAA) and data must stay within the covered entity's control. AWS Bedrock and Azure OpenAI both sign BAAs and keep data within your cloud account. Colab and direct APIs don't meet this requirement."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the main benefit of Google Colab for AI learners?",
+          "options": {
+            "A": "It runs faster than local Python",
+            "B": "It provides free GPU access without any hardware investment",
+            "C": "It automatically deploys models to production",
+            "D": "It has lower API costs than other platforms"
+          },
+          "answer": "B",
+          "explanation": "Colab's main value is free GPU (T4, and A100 on Pro) — running ML experiments that would take hours on a CPU or require expensive hardware. It's not faster than local (network overhead), doesn't deploy to production, and doesn't reduce API costs."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "In AWS Bedrock, what authentication method is used instead of API keys?",
+          "options": {
+            "A": "Username and password",
+            "B": "JWT tokens",
+            "C": "IAM roles and AWS credentials (access key ID + secret)",
+            "D": "API keys set in the Bedrock console"
+          },
+          "answer": "C",
+          "explanation": "AWS services use IAM for authentication. In Bedrock, you authenticate via AWS credentials (IAM role, access key pair, or instance profile). This integrates with your existing AWS access controls and doesn't require managing separate API keys."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "title": "Cloud AI Platforms — Quick Reference",
+      "content": "### Service Model for AI\n| Model | Example | You manage |\n|-------|---------|------------|\n| SaaS | Anthropic API, OpenAI API | Config only |\n| PaaS | Vertex AI, SageMaker | App + data |\n| IaaS | EC2 GPU instance | Everything |\n\n### Platform Quick Picks\n| Need | Use |\n|------|-----|\n| Learning / experiments | Google Colab (free T4 GPU) |\n| Best models, fast start | Anthropic/OpenAI direct |\n| AWS compliance | AWS Bedrock |\n| Google ecosystem | Vertex AI |\n| Azure/Microsoft stack | Azure OpenAI |\n| Private model, no external data | Self-hosted on IaaS |\n\n### Colab Secret Loading\n```python\ntry:\n    from google.colab import userdata\n    api_key = userdata.get('ANTHROPIC_API_KEY')\nexcept ImportError:\n    from dotenv import load_dotenv; import os\n    load_dotenv()\n    api_key = os.getenv('ANTHROPIC_API_KEY')\n```\n\n### Cost Estimation Formula\n```\nDaily cost = (daily_calls × avg_input_tokens × input_price_per_M / 1M)\n           + (daily_calls × avg_output_tokens × output_price_per_M / 1M)\n```\n\n### AWS Bedrock vs Direct API\n| | AWS Bedrock | Anthropic Direct |\n|---|---|---|\n| Auth | IAM | API key |\n| Data location | Your AWS account | Anthropic servers |\n| Model IDs | `anthropic.claude-...` | `claude-...` |\n| Setup | More complex | Simple |\n| Compliance | HIPAA, SOC2 | Standard |"
+    }
+  ]
+}

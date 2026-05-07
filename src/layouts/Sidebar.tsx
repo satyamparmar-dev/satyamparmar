@@ -16,7 +16,6 @@ import {
   useTheme,
 } from '@mui/material';
 import DashboardIcon from '@mui/icons-material/Dashboard';
-import SchoolIcon from '@mui/icons-material/School';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import QuizIcon from '@mui/icons-material/Quiz';
 import MapIcon from '@mui/icons-material/Map';
@@ -29,10 +28,14 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
+import BusinessIcon from '@mui/icons-material/Business';
+import DataObjectIcon from '@mui/icons-material/DataObject';
+import HubIcon from '@mui/icons-material/Hub';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAppStore, selectCompletionRate } from '../store/useAppStore';
 import { getLevelColor } from '../utils/formatters';
 import { APP_DISPLAY_NAME } from '../constants/branding';
+import { CurriculumId } from '../types';
 
 const DRAWER_WIDTH = 280;
 
@@ -41,8 +44,11 @@ const navItems = [
   { path: '/progress', icon: <BarChartIcon />, label: 'Progress' },
   { path: '/scenarios', icon: <RecordVoiceOverIcon />, label: 'Scenarios' },
   { path: '/llm', icon: <AutoAwesomeIcon />, label: 'LLM & GenAI' },
+  { path: '/java-repo', icon: <DataObjectIcon />, label: 'Java' },
+  { path: '/kafka-repo', icon: <HubIcon />, label: 'Apache Kafka' },
   { path: '/blog', icon: <MenuBookIcon />, label: 'Topics & blog' },
   { path: '/roadmap', icon: <MapIcon />, label: 'Roadmap' },
+  { path: '/companies', icon: <BusinessIcon />, label: 'Companies' },
   { path: '/quiz', icon: <QuizIcon />, label: 'Quiz' },
   { path: '/bookmarks', icon: <BookmarkIcon />, label: 'Bookmarks' },
   { path: '/settings', icon: <SettingsIcon />, label: 'Settings' },
@@ -61,7 +67,10 @@ const Sidebar: React.FC<Props> = ({ open, onClose }) => {
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('md'));
 
-  const { curriculum, loadedPhases, progress } = useAppStore();
+  const {
+    curriculum, loadedPhases, progress,
+    activeCurriculum, setActiveCurriculum,
+  } = useAppStore();
   const completionRate = useAppStore(selectCompletionRate);
 
   const [expandedPhase, setExpandedPhase] = useState<string | null>(null);
@@ -93,7 +102,7 @@ const Sidebar: React.FC<Props> = ({ open, onClose }) => {
           {APP_DISPLAY_NAME}
         </Typography>
         <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)' }}>
-          Java · Fresher to Senior
+          {activeCurriculum === 'java' ? 'Java Curriculum' : 'AI / GenAI Curriculum'}
         </Typography>
         <Box mt={1.5}>
           <Box display="flex" justifyContent="space-between" mb={0.5}>
@@ -119,6 +128,44 @@ const Sidebar: React.FC<Props> = ({ open, onClose }) => {
           <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', mt: 0.5, display: 'block' }}>
             {progress.completedDays.length} / {curriculum?.totalDays ?? 90} days
           </Typography>
+        </Box>
+      </Box>
+
+      <Box sx={{ px: 1.5, py: 1 }}>
+        <Typography variant="overline" color="text.disabled" sx={{ px: 1, display: 'block', mb: 0.75 }}>
+          Curriculum
+        </Typography>
+        <Box display="flex" gap={1}>
+          {(['java', 'ai'] as CurriculumId[]).map((id) => {
+            const isActive = activeCurriculum === id;
+            const cfg = id === 'java'
+              ? { label: '☕ Java', color: '#f59e0b' }
+              : { label: '🤖 AI / GenAI', color: '#6366f1' };
+            return (
+              <Box
+                key={id}
+                onClick={() => setActiveCurriculum(id)}
+                sx={{
+                  flex: 1,
+                  py: 0.6,
+                  px: 0.5,
+                  borderRadius: 1.5,
+                  border: '1.5px solid',
+                  borderColor: isActive ? cfg.color : 'divider',
+                  bgcolor: isActive ? `${cfg.color}18` : 'transparent',
+                  color: isActive ? cfg.color : 'text.secondary',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  fontSize: '0.68rem',
+                  fontWeight: isActive ? 800 : 500,
+                  transition: 'all 0.18s ease',
+                  '&:hover': { borderColor: cfg.color, color: cfg.color },
+                }}
+              >
+                {cfg.label}
+              </Box>
+            );
+          })}
         </Box>
       </Box>
 
@@ -383,7 +430,7 @@ const Sidebar: React.FC<Props> = ({ open, onClose }) => {
       {/* Footer */}
       <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
         <Typography variant="caption" color="text.disabled" display="block" textAlign="center">
-          {APP_DISPLAY_NAME} v1.0 · 90 Days to Senior
+          {APP_DISPLAY_NAME} v1.0 · {curriculum?.totalDays ?? 90} days
         </Typography>
       </Box>
     </Box>

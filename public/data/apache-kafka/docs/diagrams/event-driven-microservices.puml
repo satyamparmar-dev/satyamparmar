@@ -1,0 +1,81 @@
+@startuml Event-Driven Microservices
+!theme plain
+skinparam backgroundColor #FFFFFF
+
+title Event-Driven Microservices Architecture
+
+package "Kafka Topics" {
+    component "order-created" as topic1
+    component "payment-processed" as topic2
+    component "inventory-reserved" as topic3
+    component "order-confirmed" as topic4
+}
+
+package "Microservices" {
+    component "Order Service" as orderSvc {
+        component "REST API" as orderAPI
+        component "Producer" as orderProd
+    }
+    
+    component "Payment Service" as paymentSvc {
+        component "Consumer" as paymentCons
+        component "Payment Logic" as paymentLogic
+        component "Producer" as paymentProd
+    }
+    
+    component "Inventory Service" as inventorySvc {
+        component "Consumer" as inventoryCons
+        component "Inventory Logic" as inventoryLogic
+        component "Producer" as inventoryProd
+    }
+    
+    component "Notification Service" as notifySvc {
+        component "Consumer" as notifyCons
+        component "Notification Logic" as notifyLogic
+    }
+}
+
+actor "Client" as client
+
+client -> orderAPI : POST /orders
+orderAPI -> orderProd : Create order event
+orderProd --> topic1 : Publish order-created
+
+topic1 -> paymentCons : Consume event
+paymentCons -> paymentLogic : Process payment
+paymentLogic -> paymentProd : Payment result
+paymentProd --> topic2 : Publish payment-processed
+
+topic1 -> inventoryCons : Consume event
+inventoryCons -> inventoryLogic : Reserve inventory
+inventoryLogic -> inventoryProd : Reservation result
+inventoryProd --> topic3 : Publish inventory-reserved
+
+topic2 -> notifyCons : Consume event
+notifyCons -> notifyLogic : Send notification
+
+topic3 -> notifyCons : Consume event
+
+note right of orderSvc
+  **Order Service:**
+  - Creates order
+  - Publishes order-created event
+  - Stateless, scalable
+end note
+
+note right of paymentSvc
+  **Payment Service:**
+  - Consumes order-created
+  - Processes payment
+  - Publishes payment-processed
+  - Independent scaling
+end note
+
+note right of topic1
+  **Event Topics:**
+  - Loose coupling
+  - Asynchronous communication
+  - Event sourcing support
+end note
+
+@enduml

@@ -4,6 +4,7 @@ import { useAppStore } from '../store/useAppStore';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import SearchModal from '../components/SearchModal';
+import { fetchCurriculum } from '../services/api';
 
 const DRAWER_WIDTH = 280;
 
@@ -12,7 +13,7 @@ interface Props {
 }
 
 const MainLayout: React.FC<Props> = ({ children }) => {
-  const { sidebarOpen, setSidebarOpen } = useAppStore();
+  const { sidebarOpen, setSidebarOpen, curriculum, activeCurriculum, setCurriculum } = useAppStore();
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('md'));
 
@@ -31,6 +32,13 @@ const MainLayout: React.FC<Props> = ({ children }) => {
   const handleMenuToggle = () => {
     setSidebarOpen(!sidebarOpen);
   };
+
+  useEffect(() => {
+    if (curriculum) return;
+    fetchCurriculum(activeCurriculum)
+      .then((c) => setCurriculum(c))
+      .catch(() => undefined);
+  }, [curriculum, activeCurriculum, setCurriculum]);
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>

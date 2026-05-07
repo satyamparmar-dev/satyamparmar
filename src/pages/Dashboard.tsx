@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Box, Grid, Typography, Card, CardContent, CardActionArea,
-  Button, Chip, LinearProgress, Tabs, Tab, Avatar, Paper,
+  Box, Grid, Typography, Card, CardContent,
+  Button, Chip, LinearProgress, Tabs, Tab,
+  alpha,
 } from '@mui/material';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import CodeIcon from '@mui/icons-material/Code';
+import CheckIcon from '@mui/icons-material/Check';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -18,7 +20,7 @@ import { useNavigate } from 'react-router-dom';
 import { format, subDays } from 'date-fns';
 import { useAppStore, selectCompletionRate } from '../store/useAppStore';
 import { fetchCurriculum, fetchPhaseWithCache } from '../services/api';
-import { Track } from '../types';
+import { CurriculumId, Track } from '../types';
 import { getGreeting, getStreakMessage, getLevelColor, getTrackColor, formatHours } from '../utils/formatters';
 import KPICard from '../components/KPICard';
 import LevelBadge from '../components/LevelBadge';
@@ -26,6 +28,178 @@ import TrackBanner from '../components/TrackBanner';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 const trackOptions: (Track | 'All')[] = ['All', 'Fresher', 'Mid-Level', 'Senior'];
+
+// ─── Curriculum Switcher Card ─────────────────────────────────────────────────
+const CURRICULUM_OPTIONS = [
+  {
+    id: 'java' as CurriculumId,
+    icon: <CodeIcon sx={{ fontSize: 28 }} />,
+    label: 'Java Track',
+    subtitle: '90-Day Java Engineer Path',
+    description: 'Fresher → Mid-Level → Senior',
+    tags: ['Spring Boot', 'Kafka', 'System Design'],
+    gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+    accentColor: '#f59e0b',
+    days: 90,
+  },
+  {
+    id: 'ai' as CurriculumId,
+    icon: <SmartToyIcon sx={{ fontSize: 28 }} />,
+    label: 'AI / GenAI Track',
+    subtitle: '90-Day AI Engineer Path',
+    description: 'Beginner → Developer → Expert',
+    tags: ['LLMs', 'Agents', 'RAG', 'MCP'],
+    gradient: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+    accentColor: '#6366f1',
+    days: 90,
+  },
+];
+
+interface CurriculumSwitcherProps {
+  active: CurriculumId;
+  onSwitch: (id: CurriculumId) => void;
+}
+
+const CurriculumSwitcher: React.FC<CurriculumSwitcherProps> = ({ active, onSwitch }) => (
+  <Box mb={3}>
+    <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" mb={1}>
+      Choose Your Curriculum
+    </Typography>
+    <Grid container spacing={2}>
+      {CURRICULUM_OPTIONS.map((opt) => {
+        const isActive = active === opt.id;
+        return (
+          <Grid item xs={12} sm={6} key={opt.id}>
+            <Box
+              onClick={() => onSwitch(opt.id)}
+              sx={{
+                position: 'relative',
+                borderRadius: 2.5,
+                border: '2px solid',
+                borderColor: isActive ? opt.accentColor : 'divider',
+                background: isActive
+                  ? alpha(opt.accentColor, 0.06)
+                  : 'background.paper',
+                cursor: 'pointer',
+                p: 2,
+                transition: 'all 0.2s ease',
+                overflow: 'hidden',
+                '&:hover': {
+                  borderColor: opt.accentColor,
+                  background: alpha(opt.accentColor, 0.04),
+                  transform: 'translateY(-2px)',
+                  boxShadow: `0 6px 20px ${alpha(opt.accentColor, 0.18)}`,
+                },
+              }}
+            >
+              {/* Active stripe accent at top */}
+              {isActive && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 0, left: 0, right: 0,
+                    height: 3,
+                    background: opt.gradient,
+                    borderRadius: '8px 8px 0 0',
+                  }}
+                />
+              )}
+
+              <Box display="flex" alignItems="flex-start" gap={1.5}>
+                {/* Icon bubble */}
+                <Box
+                  sx={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 2,
+                    background: isActive ? opt.gradient : alpha(opt.accentColor, 0.1),
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: isActive ? '#fff' : opt.accentColor,
+                    flexShrink: 0,
+                  }}
+                >
+                  {opt.icon}
+                </Box>
+
+                <Box flex={1} minWidth={0}>
+                  <Box display="flex" alignItems="center" gap={1} mb={0.25}>
+                    <Typography variant="body2" fontWeight={800} color="text.primary">
+                      {opt.label}
+                    </Typography>
+                    {isActive && (
+                      <Chip
+                        icon={<CheckIcon sx={{ fontSize: '11px !important' }} />}
+                        label="Active"
+                        size="small"
+                        sx={{
+                          height: 18,
+                          fontSize: '0.6rem',
+                          fontWeight: 700,
+                          bgcolor: alpha(opt.accentColor, 0.15),
+                          color: opt.accentColor,
+                          borderRadius: '6px',
+                          '& .MuiChip-icon': { color: opt.accentColor, ml: '4px' },
+                        }}
+                      />
+                    )}
+                  </Box>
+                  <Typography variant="caption" color="text.secondary" display="block" mb={0.75}>
+                    {opt.subtitle} · {opt.days} days
+                  </Typography>
+                  <Box display="flex" flexWrap="wrap" gap={0.5}>
+                    {opt.tags.map((tag) => (
+                      <Chip
+                        key={tag}
+                        label={tag}
+                        size="small"
+                        sx={{
+                          height: 16,
+                          fontSize: '0.55rem',
+                          fontWeight: 600,
+                          borderRadius: '4px',
+                          bgcolor: alpha(opt.accentColor, 0.08),
+                          color: isActive ? opt.accentColor : 'text.secondary',
+                        }}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+              </Box>
+
+              {/* Switch CTA — shown only on inactive card */}
+              {!isActive && (
+                <Box mt={1.5} display="flex" justifyContent="flex-end">
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={(e) => { e.stopPropagation(); onSwitch(opt.id); }}
+                    sx={{
+                      fontSize: '0.7rem',
+                      py: 0.35,
+                      px: 1.25,
+                      borderColor: opt.accentColor,
+                      color: opt.accentColor,
+                      fontWeight: 700,
+                      borderRadius: '8px',
+                      '&:hover': {
+                        bgcolor: alpha(opt.accentColor, 0.08),
+                        borderColor: opt.accentColor,
+                      },
+                    }}
+                  >
+                    Switch →
+                  </Button>
+                </Box>
+              )}
+            </Box>
+          </Grid>
+        );
+      })}
+    </Grid>
+  </Box>
+);
 
 // Build last 4 weeks study chart data
 const buildChartData = (completedDays: number[]) => {
@@ -42,7 +216,7 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const {
     curriculum, setCurriculum, loadPhase, loadedPhases,
-    progress, activeTrack, setActiveTrack, theme,
+    progress, activeTrack, setActiveTrack, activeCurriculum, setActiveCurriculum, theme,
   } = useAppStore();
   const completionRate = useAppStore(selectCompletionRate);
   const [loading, setLoading] = useState(!curriculum);
@@ -51,27 +225,27 @@ const Dashboard: React.FC = () => {
   // Load curriculum
   useEffect(() => {
     if (curriculum) { setLoading(false); return; }
-    fetchCurriculum()
+    fetchCurriculum(activeCurriculum)
       .then((c) => {
         setCurriculum(c);
         setLoading(false);
         // Preload first few phases
         c.phases.slice(0, 3).forEach((p) =>
-          fetchPhaseWithCache(p.file).then((d) => loadPhase(p.id, d))
+          fetchPhaseWithCache(p.file, activeCurriculum).then((d) => loadPhase(p.id, d))
         );
       })
       .catch(() => setLoading(false));
-  }, []);
+  }, [curriculum, activeCurriculum, setCurriculum, loadPhase]);
 
   // Load visible phases
   useEffect(() => {
     if (!curriculum) return;
     curriculum.phases.forEach((p) => {
       if (!loadedPhases[p.id]) {
-        fetchPhaseWithCache(p.file).then((d) => loadPhase(p.id, d));
+        fetchPhaseWithCache(p.file, activeCurriculum).then((d) => loadPhase(p.id, d));
       }
     });
-  }, [curriculum]);
+  }, [curriculum, loadedPhases, loadPhase, activeCurriculum]);
 
   if (loading) return <LoadingSpinner message="Loading curriculum..." fullPage />;
   if (!curriculum) return null;
@@ -131,6 +305,10 @@ const Dashboard: React.FC = () => {
           {getStreakMessage(progress.streak)} · Day {progress.currentDay} of {curriculum.totalDays}
         </Typography>
       </Box>
+
+      {/* Curriculum Switcher */}
+      <CurriculumSwitcher active={activeCurriculum} onSwitch={setActiveCurriculum} />
+
 
       {/* Track Selector */}
       <Box mb={3}>

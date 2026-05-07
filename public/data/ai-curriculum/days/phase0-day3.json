@@ -1,0 +1,162 @@
+{
+  "day": 3,
+  "phase": 0,
+  "title": "Working with APIs and JSON in Python",
+  "estimatedHours": 2,
+  "difficulty": "Beginner",
+  "level": "Beginner",
+  "track": "Fresher",
+  "tags": ["APIs", "JSON", "REST", "requests", "Phase 0"],
+  "prerequisites": ["Day 2 — Python Basics"],
+  "learningObjectives": [
+    "Explain REST API concepts: endpoints, methods, headers, body",
+    "Make GET and POST requests using the requests library",
+    "Parse and navigate nested JSON responses",
+    "Store API keys in .env files and load them safely",
+    "Handle common HTTP errors (401, 429, 500) gracefully",
+    "Build a reusable API client class"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "APIs Are the Interface to Every AI Service",
+      "content": "Every AI capability you will build — LLM text generation, image analysis, speech-to-text, vector search — is accessed through an API. Anthropic's Claude, OpenAI's GPT, Google's Gemini: they are all REST APIs over HTTPS.\n\nIf you cannot:\n- Make authenticated HTTP requests\n- Parse nested JSON responses\n- Handle rate limiting and errors\n- Keep API keys out of your source code\n\n...then you cannot build anything with AI APIs, regardless of how well you understand the models themselves.\n\nDay 3 gives you a production-grade foundation for all API work. These patterns will repeat in every single day from here forward."
+    },
+    {
+      "type": "theory",
+      "title": "REST APIs and JSON — Complete Reference",
+      "content": "### 1. What is a REST API?\n\nREST (Representational State Transfer) is a convention for building web APIs. Key concepts:\n\n- **Endpoint**: A URL that represents a resource. `https://api.anthropic.com/v1/messages`\n- **HTTP Method**: What action to perform\n  - `GET` — read data (no body)\n  - `POST` — create or trigger action (with body)\n  - `PUT/PATCH` — update data\n  - `DELETE` — remove data\n- **Headers**: Metadata sent with the request (auth, content type, API version)\n- **Body**: JSON payload sent with POST/PUT requests\n- **Response**: JSON payload with result + status code\n\n---\n\n### 2. HTTP Status Codes\n\n| Code | Meaning | What to do |\n|------|---------|------------|\n| 200 | OK | Success — parse the response |\n| 201 | Created | Resource created successfully |\n| 400 | Bad Request | Fix your request JSON or parameters |\n| 401 | Unauthorized | Check your API key |\n| 403 | Forbidden | Key valid but no permission for this resource |\n| 422 | Unprocessable Entity | Valid JSON but invalid field values |\n| 429 | Too Many Requests | Rate limited — wait and retry |\n| 500 | Internal Server Error | Their problem — retry with backoff |\n| 503 | Service Unavailable | Their problem — retry with backoff |\n\n---\n\n### 3. JSON — The Universal AI Data Format\n\nJSON (JavaScript Object Notation) is the data format for all AI APIs. Python maps it directly:\n\n| JSON | Python |\n|------|--------|\n| `object {}` | `dict` |\n| `array []` | `list` |\n| `string \"\"` | `str` |\n| `number` | `int` or `float` |\n| `true/false` | `True/False` |\n| `null` | `None` |\n\n```python\nimport json\n\n# Parse JSON string → Python dict\ndata = json.loads('{\"name\": \"Claude\", \"version\": 3}')\nprint(data[\"name\"])  # Claude\n\n# Python dict → JSON string\njson_str = json.dumps({\"temperature\": 0.7}, indent=2)\nprint(json_str)\n```\n\n---\n\n### 4. The requests Library\n\n```python\nimport requests\n\n# GET request\nresponse = requests.get(\n    url=\"https://api.example.com/models\",\n    headers={\"Authorization\": \"Bearer sk-...\"},\n    timeout=10  # Always set timeout!\n)\n\n# POST request (with JSON body)\nresponse = requests.post(\n    url=\"https://api.anthropic.com/v1/messages\",\n    headers={\n        \"x-api-key\": \"sk-ant-...\",\n        \"anthropic-version\": \"2023-06-01\",\n        \"content-type\": \"application/json\",\n    },\n    json={\"model\": \"claude-haiku-4-5-20251001\", \"max_tokens\": 256, \"messages\": [...]},\n    timeout=30\n)\n\n# Check status and parse\nif response.status_code == 200:\n    data = response.json()  # Parses JSON automatically\nelse:\n    print(f\"Error: {response.status_code} — {response.text}\")\n```\n\n---\n\n### 5. API Keys and .env Files\n\nNever put API keys in source code. Use environment variables:\n\n```bash\n# .env file (never commit this!)\nANTHROPIC_API_KEY=sk-ant-api03-...\nOPENAI_API_KEY=sk-...\n```\n\n```python\n# Load in Python\nfrom dotenv import load_dotenv\nimport os\n\nload_dotenv()  # Reads .env file\napi_key = os.getenv('ANTHROPIC_API_KEY')\nif not api_key:\n    raise ValueError(\"ANTHROPIC_API_KEY not set\")\n```\n\n```bash\n# .gitignore — must include:\n.env\n*.env\n```\n\n---\n\n### 6. Rate Limiting and Retry\n\nAll AI APIs have rate limits. When you hit them, you get a 429 with a `Retry-After` header:\n\n```python\nimport time\n\ndef call_with_retry(fn, max_retries=3):\n    for attempt in range(max_retries):\n        response = fn()\n        if response.status_code == 200:\n            return response\n        if response.status_code == 429:\n            wait = int(response.headers.get('Retry-After', 2 ** attempt))\n            print(f\"Rate limited. Waiting {wait}s...\")\n            time.sleep(wait)\n        elif response.status_code >= 500:\n            time.sleep(2 ** attempt)  # exponential backoff\n        else:\n            return response  # 4xx client error — don't retry\n    return None\n```"
+    },
+    {
+      "type": "code",
+      "title": "Production API Client",
+      "description": "A reusable API client with auth, retry, error handling, and .env support — the template for every AI API integration.",
+      "language": "python",
+      "filename": "api_client.py",
+      "level": "basic",
+      "code": "import os\nimport time\nimport json\nimport requests\nfrom dotenv import load_dotenv\n\nload_dotenv()\n\nclass AIApiClient:\n    \"\"\"Reusable API client with retry, timeout, and error handling.\"\"\"\n    \n    def __init__(self, base_url: str, api_key: str | None = None,\n                 extra_headers: dict | None = None):\n        self.base_url = base_url.rstrip('/')\n        self.session = requests.Session()\n        self.session.headers.update({\n            'Content-Type': 'application/json',\n            'Accept': 'application/json',\n            'User-Agent': 'AIApp/1.0',\n        })\n        if api_key:\n            self.session.headers['Authorization'] = f'Bearer {api_key}'\n        if extra_headers:\n            self.session.headers.update(extra_headers)\n    \n    def post(self, path: str, body: dict, timeout: int = 30,\n             max_retries: int = 3) -> dict | None:\n        url = f\"{self.base_url}/{path.lstrip('/')}\"\n        \n        for attempt in range(max_retries + 1):\n            try:\n                response = self.session.post(url, json=body, timeout=timeout)\n                \n                if response.status_code == 200:\n                    return response.json()\n                \n                # Client errors: fix your code, don't retry\n                if response.status_code in (400, 401, 403, 404, 422):\n                    error = response.json().get('error', {})\n                    print(f\"❌ {response.status_code}: {error.get('message', response.text)}\")\n                    return None\n                \n                # Rate limit: respect Retry-After header\n                if response.status_code == 429:\n                    wait = float(response.headers.get('Retry-After', 2 ** attempt))\n                    print(f\"⏳ Rate limited — waiting {wait:.0f}s (attempt {attempt+1})\")\n                    time.sleep(wait)\n                    continue\n                \n                # Server errors: retry with exponential backoff\n                if response.status_code >= 500:\n                    if attempt < max_retries:\n                        wait = 2 ** attempt\n                        print(f\"🔄 Server error {response.status_code} — retry in {wait}s\")\n                        time.sleep(wait)\n                        continue\n                \n                return None\n                \n            except requests.Timeout:\n                if attempt < max_retries:\n                    print(f\"⏱️  Timeout — retry {attempt+1}\")\n                    time.sleep(2 ** attempt)\n                else:\n                    print(\"❌ All retries exhausted (timeout)\")\n                    return None\n            except requests.ConnectionError as e:\n                print(f\"🔌 Connection error: {e}\")\n                return None\n        \n        return None\n\n\ndef demo_public_api():\n    \"\"\"Demo using httpbin.org — no API key needed.\"\"\"\n    client = AIApiClient(base_url=\"https://httpbin.org\")\n    \n    # Test POST with JSON body\n    result = client.post(\n        path=\"/post\",\n        body={\"model\": \"test\", \"messages\": [{\"role\": \"user\", \"content\": \"hello\"}]},\n    )\n    if result:\n        print(\"✅ POST success\")\n        print(f\"   Sent data: {json.dumps(result.get('json', {}), indent=2)[:200]}\")\n\n\ndef demo_anthropic_format():\n    \"\"\"Show how to call Anthropic with the correct headers.\"\"\"\n    api_key = os.getenv('ANTHROPIC_API_KEY')\n    if not api_key:\n        print(\"⚠️  No ANTHROPIC_API_KEY found — showing request structure only\")\n        print(\"Headers needed:\")\n        print(\"  x-api-key: sk-ant-...\")\n        print(\"  anthropic-version: 2023-06-01\")\n        print(\"  content-type: application/json\")\n        print(\"Body:\")\n        body = {\n            \"model\": \"claude-haiku-4-5-20251001\",\n            \"max_tokens\": 256,\n            \"messages\": [{\"role\": \"user\", \"content\": \"What is 2+2?\"}]\n        }\n        print(json.dumps(body, indent=2))\n        return\n    \n    client = AIApiClient(\n        base_url=\"https://api.anthropic.com\",\n        api_key=None,  # Anthropic uses x-api-key, not Bearer\n        extra_headers={\n            \"x-api-key\": api_key,\n            \"anthropic-version\": \"2023-06-01\",\n        }\n    )\n    result = client.post(\n        path=\"/v1/messages\",\n        body={\n            \"model\": \"claude-haiku-4-5-20251001\",\n            \"max_tokens\": 64,\n            \"messages\": [{\"role\": \"user\", \"content\": \"Say hello in 5 words\"}]\n        }\n    )\n    if result:\n        print(f\"Claude says: {result['content'][0]['text']}\")\n        print(f\"Tokens used: {result['usage']}\")\n\n\nif __name__ == '__main__':\n    print(\"Demo 1: Public API\")\n    demo_public_api()\n    print(\"\\nDemo 2: Anthropic API format\")\n    demo_anthropic_format()",
+      "output": "Demo 1: Public API\n✅ POST success\n   Sent data: {\n  \"messages\": [\n    {\n      \"content\": \"hello\",\n      \"role\": \"user\"\n    }\n  ],\n  \"model\": \"test\"\n}\n\nDemo 2: Anthropic API format\n⚠️  No ANTHROPIC_API_KEY found — showing request structure only\nHeaders needed:\n  x-api-key: sk-ant-...\n  anthropic-version: 2023-06-01\n  content-type: application/json"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common API Integration Pitfalls",
+      "items": [
+        "**Putting API keys in source code** — they will be leaked via git history, screenshots, or logs. Always use .env files with .gitignore.",
+        "**Not setting a timeout** — `requests.get(url)` without `timeout=` will hang forever on network failure. Always set `timeout=10` for reads, `timeout=30` for writes.",
+        "**Not handling 429 rate limit errors** — retrying immediately makes rate limiting worse. Read the `Retry-After` header and wait.",
+        "**Calling `response.json()` on error responses** — error bodies may not be valid JSON. Always check `response.status_code` first.",
+        "**Using the same requests.Session across threads** — Session is not thread-safe. Create one session per thread in concurrent code."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Weather + AI Insights Client",
+      "difficulty": "Beginner",
+      "problem": "Use the free Open-Meteo API (no key needed) to build a weather fetcher:\n\n1. Fetch current temperature, wind speed, and precipitation for London (lat=51.5085, lon=-0.1257)\n2. Parse the JSON response to extract just the current weather values\n3. Format the output as a neat string: `\"London: 14.2°C, Wind: 8.1 km/h, Rain: 0.0mm\"`\n4. Handle the case where the API is unreachable (return a default message)\n\nAPI endpoint: `https://api.open-meteo.com/v1/forecast`\nParams: `latitude=51.5085&longitude=-0.1257&current=temperature_2m,wind_speed_10m,precipitation`\n\n**Bonus**: Add a second city and display both side by side.",
+      "hints": [
+        "Use `requests.get(url, params=dict, timeout=10)` — params are URL query parameters",
+        "Response structure: `data['current']['temperature_2m']`",
+        "Wrap the call in try/except requests.exceptions.RequestException",
+        "No API key needed for Open-Meteo"
+      ],
+      "solution": "import requests\n\ndef get_weather(city: str, lat: float, lon: float) -> str:\n    try:\n        response = requests.get(\n            'https://api.open-meteo.com/v1/forecast',\n            params={\n                'latitude': lat, 'longitude': lon,\n                'current': 'temperature_2m,wind_speed_10m,precipitation',\n                'timezone': 'auto',\n            },\n            timeout=10\n        )\n        response.raise_for_status()\n        current = response.json()['current']\n        return (f\"{city}: {current['temperature_2m']}°C, \"\n                f\"Wind: {current['wind_speed_10m']} km/h, \"\n                f\"Rain: {current['precipitation']}mm\")\n    except requests.exceptions.RequestException as e:\n        return f\"{city}: weather unavailable ({e})\"\n\nprint(get_weather('London', 51.5085, -0.1257))\nprint(get_weather('Tokyo', 35.6762, 139.6503))"
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — APIs and JSON",
+      "conceptual": [
+        {
+          "question": "What is the difference between a 401 and a 403 HTTP response?",
+          "answer": "401 Unauthorized means authentication failed — the server doesn't know who you are (missing or invalid API key). 403 Forbidden means authentication succeeded but you lack permission for that resource — the server knows who you are but won't allow it. For AI APIs: 401 = bad or expired key; 403 = key is valid but doesn't have access to that specific model or tier."
+        },
+        {
+          "question": "Why should you never put API keys in source code?",
+          "answer": "Source code is version controlled. Git history is permanent — even if you remove the key in a later commit, it exists in history. GitHub scans for common API key patterns and notifies providers. Keys in source code can be exposed in screenshots, code reviews, CI logs, and error messages. The correct approach: environment variables loaded from .env files that are in .gitignore, or a secrets manager (AWS Secrets Manager, Azure Key Vault, HashiCorp Vault) in production."
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "What is the difference between `requests.get(url)` and using a `requests.Session()`?",
+          "answer": "A `Session` reuses the underlying TCP connection (HTTP keep-alive) across multiple requests to the same host, significantly reducing latency (50–200ms per request). It also shares headers, auth, and cookies across all requests so you don't repeat them. For a single API call, there's no difference. For calling the same AI API 100 times in a loop, Session is dramatically faster: `with requests.Session() as s: for _ in range(100): s.get(url, headers=headers)`"
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your team's AI pipeline is hitting OpenAI rate limits at 3 AM in production. Walk me through how you diagnose and fix this.",
+          "answer": "First, check what rate limit we're hitting: is it requests-per-minute (RPM), tokens-per-minute (TPM), or requests-per-day? Each has a different fix. Check the response: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `Retry-After` headers. If it's RPM: add a rate limiter (token bucket or sliding window) before calls. If it's TPM: reduce max_tokens or batch smaller. If it's daily: this is a capacity issue — upgrade your tier or add a queue with scheduled processing. Immediate fix: implement exponential backoff with jitter so all retries don't fire simultaneously. Long-term: add metrics tracking token usage per hour to catch trends before they become 3 AM pages."
+        }
+      ],
+      "wrongAnswers": [
+        "**Wrong:** 'I'll just set a long timeout like 300 seconds to avoid timeout errors.' — **Correction:** Long timeouts make your application feel hung to users. Better approach: use a 30s timeout, catch TimeoutError, and retry with exponential backoff. Show the user a loading state. A hung request is worse than a fast retry.",
+        "**Wrong:** 'JSON and Python dicts are the same thing.' — **Correction:** JSON is a text serialization format (a string). A Python dict is an in-memory data structure. `json.loads()` converts JSON string → Python dict; `json.dumps()` converts Python dict → JSON string. They map to each other cleanly but are not identical — JSON has no tuples, no sets, no datetime objects."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Quick MCQ — APIs and JSON",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "When an AI API returns HTTP 429, what should your code do?",
+          "options": {
+            "A": "Raise an exception and stop immediately",
+            "B": "Retry immediately with the same request",
+            "C": "Read the Retry-After header and wait that many seconds before retrying",
+            "D": "Switch to a different API endpoint"
+          },
+          "answer": "C",
+          "explanation": "429 = rate limit hit. The response includes a `Retry-After` header specifying how many seconds to wait. Retrying immediately makes the problem worse (more 429s). Wait the specified time, then retry."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the correct way to store an API key in a Python project?",
+          "options": {
+            "A": "Hardcode it as a constant: `API_KEY = 'sk-...'`",
+            "B": "Store in a .env file, load with dotenv, and add .env to .gitignore",
+            "C": "Store in a config.json file in the repo root",
+            "D": "Pass it as a command-line argument each time"
+          },
+          "answer": "B",
+          "explanation": ".env files hold secrets locally. `python-dotenv` loads them into `os.environ`. .gitignore prevents the file from being committed. This is the standard approach for development; production uses secrets managers."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "code",
+          "question": "What does `response.raise_for_status()` do?",
+          "options": {
+            "A": "Returns the status code as an integer",
+            "B": "Raises an HTTPError exception if status code is 4xx or 5xx",
+            "C": "Retries the request automatically",
+            "D": "Converts the response to JSON"
+          },
+          "answer": "B",
+          "explanation": "`raise_for_status()` is a convenience method that raises `requests.exceptions.HTTPError` for 4xx and 5xx responses. Without it, `requests` returns the error response silently and you must check `response.status_code` manually."
+        },
+        {
+          "id": 4,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is exponential backoff with jitter?",
+          "options": {
+            "A": "Increasing timeout duration with each retry",
+            "B": "Waiting 2^attempt seconds between retries, plus a small random delay to prevent all clients retrying simultaneously",
+            "C": "Reducing the request payload size on each retry",
+            "D": "Switching to a backup API endpoint on each retry"
+          },
+          "answer": "B",
+          "explanation": "Exponential backoff: wait = base × 2^attempt. Jitter: add random(0, 1) seconds. Without jitter, all rate-limited clients retry at the exact same time, causing a thundering herd that re-triggers the rate limit. Jitter spreads retries over time."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "title": "APIs & JSON — Quick Reference",
+      "content": "### HTTP Methods\n- `GET` = read (no body); `POST` = create/trigger (JSON body)\n- Always check `response.status_code` before calling `response.json()`\n\n### Status Codes\n| Code | Meaning | Action |\n|------|---------|--------|\n| 200 | OK | Parse response |\n| 401 | Bad API key | Fix the key |\n| 422 | Invalid params | Fix your request body |\n| 429 | Rate limited | Wait Retry-After seconds |\n| 500+ | Server error | Retry with backoff |\n\n### requests Essentials\n```python\nimport requests\n# GET\nr = requests.get(url, headers=h, params={'q': 'search'}, timeout=10)\n# POST\nr = requests.post(url, headers=h, json={'key': 'val'}, timeout=30)\n# Check + parse\nif r.status_code == 200:\n    data = r.json()\n```\n\n### API Key Safety\n```python\n# .env file:\nANTHROPIC_API_KEY=sk-ant-...\n# Python:\nfrom dotenv import load_dotenv; import os\nload_dotenv()\nkey = os.getenv('ANTHROPIC_API_KEY')\n# .gitignore: add .env\n```\n\n### Retry Pattern\n```python\nfor attempt in range(3):\n    r = requests.post(url, json=body, timeout=30)\n    if r.status_code == 200: return r.json()\n    if r.status_code == 429:\n        time.sleep(float(r.headers.get('Retry-After', 2**attempt)))\n    elif r.status_code >= 500:\n        time.sleep(2 ** attempt)\n    else:\n        break  # 4xx — don't retry\n```"
+    }
+  ]
+}

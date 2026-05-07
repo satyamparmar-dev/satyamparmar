@@ -1,0 +1,148 @@
+{
+  "day": 9,
+  "phase": 0,
+  "title": "Phase 0 Capstone — Multi-API Data Pipeline",
+  "estimatedHours": 3,
+  "difficulty": "Beginner",
+  "level": "Beginner",
+  "track": "Fresher",
+  "tags": ["Pipeline", "Capstone", "REST API", "pandas", "Error Handling", "Phase 0"],
+  "prerequisites": ["Days 1–8 — All Phase 0 content"],
+  "learningObjectives": [
+    "Build a multi-stage data pipeline that fetches, processes, and saves API data",
+    "Apply retry logic, session reuse, and timeout patterns in production code",
+    "Use a run_id for reproducible, traceable pipeline outputs",
+    "Validate data quality before expensive AI API calls",
+    "Log pipeline stages with counts, timings, and error rates",
+    "Structure Python code with separation between fetch, process, and save concerns"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "The Capstone: Every AI Feature Starts Here",
+      "content": "Every AI product you'll build follows the same pipeline:\n1. **Ingest** data from APIs, databases, or files\n2. **Validate** quality (missing values, schema, length)\n3. **Transform** into the format your AI model needs\n4. **Process** through the AI API (embed, generate, classify)\n5. **Store** results for downstream use\n6. **Monitor** success rates, costs, latency\n\nDay 9 is your first end-to-end implementation combining everything from Phase 0:\n- HTTP requests with retry logic (Day 3, 7)\n- JSON parsing (Day 3)\n- pandas data quality checks (Day 8)\n- Virtual environment and project structure (Day 4)\n- Cloud/API concepts (Day 5)\n\nThis capstone is also your first portfolio project. You can describe it in interviews: *'I built a production-grade data pipeline that fetches from multiple APIs, validates quality, and processes through an AI model.'*"
+    },
+    {
+      "type": "theory",
+      "title": "Production Data Pipeline Patterns",
+      "content": "### 1. The Separation of Concerns Pattern\n\nGood pipelines have clear module boundaries:\n\n```\nfetch_*()     → One function per API source; returns raw data\nprocess_*()   → Transform raw data into clean DataFrames\nenrich_*()    → Add computed fields, join with other data\nsave_*()      → Write outputs (CSV, JSON)\nrun_pipeline() → Orchestrates the flow with error handling\n```\n\nEach function is independently testable. You can replace the weather API with a database call without touching processing logic.\n\n---\n\n### 2. The Run ID Pattern\n\nEvery pipeline execution gets a unique `run_id` (typically a timestamp):\n\n```python\nrun_id = datetime.utcnow().strftime('%Y%m%d_%H%M%S')\n# Outputs: posts_20260101_101523.csv, summary_20260101_101523.json\n```\n\nBenefits:\n- Trace any output file back to the run that produced it\n- Compare results across runs (`posts_20260101` vs `posts_20260102`)\n- Rollback: if today's run produces bad data, keep yesterday's outputs\n\n---\n\n### 3. Idempotency and Checkpointing\n\n**Problem**: A pipeline processing 10,000 documents fails at document 5,000. You've already paid for 5,000 LLM API calls.\n\n**Solution — Idempotency**: Name output files by input ID. Before processing, check if the output file exists. If yes, skip.\n\n```python\ndef process_document(doc_id: str) -> None:\n    output_path = OUTPUT_DIR / f'{doc_id}.json'\n    if output_path.exists():\n        return  # Already processed — skip\n    result = call_llm_api(doc_id)\n    output_path.write_text(json.dumps(result))\n```\n\nThis makes pipeline restarts safe and cheap.\n\n---\n\n### 4. Logging Best Practices\n\nReplace `print()` with `logging` in production code:\n\n```python\nimport logging\nlogging.basicConfig(\n    level=logging.INFO,\n    format='%(asctime)s [%(levelname)s] %(message)s',\n    datefmt='%H:%M:%S'\n)\nlog = logging.getLogger(__name__)\n\nlog.info(f\"Pipeline start — run_id={run_id}\")\nlog.warning(f\"Quality: dropped {dropped} rows\")\nlog.error(f\"API call failed after {max_retries} retries\")\n```\n\n`logging` routes to files, Sentry, CloudWatch — `print()` doesn't.\n\n---\n\n### 5. Cost-Aware Processing\n\nBefore sending any data to an LLM:\n1. Estimate token count: `len(text.split()) / 0.75`\n2. Estimate cost: `tokens / 1_000_000 * price_per_million`\n3. Set a budget cap and abort if cost estimate exceeds it\n4. Log actual tokens from the API response after each call\n\n```python\nANTHROPIC_INPUT_PRICE = 3.00  # per million tokens, Sonnet\n\ndef estimate_cost_usd(texts: list[str]) -> float:\n    total_tokens = sum(len(t.split()) / 0.75 for t in texts)\n    return total_tokens / 1_000_000 * ANTHROPIC_INPUT_PRICE\n```"
+    },
+    {
+      "type": "code",
+      "title": "Phase 0 Capstone: Multi-API Data Pipeline",
+      "description": "Production-grade pipeline: fetch from public APIs, validate quality, process data, save structured outputs.",
+      "language": "python",
+      "filename": "capstone_pipeline.py",
+      "level": "intermediate",
+      "code": "#!/usr/bin/env python3\n\"\"\"Phase 0 Capstone: Multi-API Data Pipeline\"\"\"\nimport os\nimport json\nimport time\nimport random\nimport logging\nfrom datetime import datetime\nfrom pathlib import Path\nfrom typing import Optional\n\nimport requests\nimport pandas as pd\nfrom dotenv import load_dotenv\n\nload_dotenv()\n\n# ── Config ─────────────────────────────────────────\nOUTPUT_DIR = Path('pipeline_output')\nOUTPUT_DIR.mkdir(exist_ok=True)\n\nlogging.basicConfig(\n    level=logging.INFO,\n    format='%(asctime)s [%(levelname)s] %(message)s',\n    datefmt='%H:%M:%S'\n)\nlog = logging.getLogger(__name__)\n\n\n# ── HTTP Client ────────────────────────────────────\nclass APIClient:\n    \"\"\"HTTP client with retry, timeout, and session reuse.\"\"\"\n    \n    def __init__(self, base_url: str, headers: dict | None = None, max_retries: int = 3):\n        self.base_url = base_url.rstrip('/')\n        self.max_retries = max_retries\n        self.session = requests.Session()\n        self.session.headers.update(headers or {\n            'Accept': 'application/json',\n            'User-Agent': 'AI-Pipeline/1.0'\n        })\n    \n    def get(self, path: str, params: dict | None = None, timeout: int = 10) -> dict | None:\n        url = f\"{self.base_url}/{path.lstrip('/')}\"\n        for attempt in range(self.max_retries + 1):\n            try:\n                r = self.session.get(url, params=params, timeout=timeout)\n                if r.status_code == 200:\n                    return r.json()\n                if r.status_code in (400, 401, 403, 404):\n                    log.error(f\"Non-retryable {r.status_code} on {url}\")\n                    return None\n                if r.status_code == 429:\n                    wait = float(r.headers.get('Retry-After', 2 ** attempt))\n                    log.warning(f\"Rate limited — waiting {wait:.0f}s\")\n                    time.sleep(wait)\n                else:\n                    wait = 2 ** attempt + random.uniform(0, 0.5)\n                    log.warning(f\"Server error {r.status_code} — retry in {wait:.1f}s\")\n                    time.sleep(wait)\n            except requests.Timeout:\n                log.warning(f\"Timeout on {url} (attempt {attempt+1})\")\n                time.sleep(2 ** attempt)\n            except requests.ConnectionError as e:\n                log.error(f\"Connection failed: {e}\")\n                return None\n        log.error(f\"All retries exhausted for {url}\")\n        return None\n\n\n# ── Data Fetchers ──────────────────────────────────\n\ndef fetch_posts(limit: int = 10) -> list[dict]:\n    \"\"\"Fetch sample posts from JSONPlaceholder (public, no key needed).\"\"\"\n    log.info(f\"Fetching {limit} posts...\")\n    client = APIClient('https://jsonplaceholder.typicode.com')\n    return client.get('/posts', params={'_limit': limit}) or []\n\n\ndef fetch_weather(lat: float = 40.7128, lon: float = -74.0060) -> dict:\n    \"\"\"Fetch current weather from Open-Meteo (public, no key needed).\"\"\"\n    log.info(f\"Fetching weather for ({lat}, {lon})...\")\n    client = APIClient('https://api.open-meteo.com')\n    return client.get('/v1/forecast', params={\n        'latitude': lat, 'longitude': lon,\n        'current': 'temperature_2m,wind_speed_10m,precipitation',\n        'timezone': 'auto',\n    }) or {}\n\n\n# ── Processors ────────────────────────────────────\n\ndef process_posts(raw: list[dict]) -> pd.DataFrame:\n    \"\"\"Validate and enrich raw post data.\"\"\"\n    if not raw:\n        return pd.DataFrame()\n    \n    df = pd.DataFrame(raw).rename(columns={'id': 'post_id', 'userId': 'user_id'})\n    \n    # Quality checks\n    initial = len(df)\n    df = df[(df['title'].str.len() > 0) & (df['body'].str.len() > 0)].copy()\n    dropped = initial - len(df)\n    if dropped:\n        log.warning(f\"Dropped {dropped} rows with empty content\")\n    \n    # Enrichment\n    df['word_count'] = df['body'].str.split().str.len()\n    df['estimated_tokens'] = (df['word_count'] * 1.33).round(0).astype(int)\n    df['fits_in_4k_context'] = df['estimated_tokens'] < 4000\n    df['ingested_at'] = datetime.utcnow().isoformat()\n    \n    return df[['post_id', 'user_id', 'title', 'word_count', 'estimated_tokens', 'fits_in_4k_context', 'ingested_at']]\n\n\ndef process_weather(raw: dict) -> dict:\n    \"\"\"Extract key fields from weather response.\"\"\"\n    if not raw or 'current' not in raw:\n        return {}\n    c = raw['current']\n    return {\n        'temperature_c': c.get('temperature_2m'),\n        'wind_speed_kmh': c.get('wind_speed_10m'),\n        'precipitation_mm': c.get('precipitation'),\n        'timezone': raw.get('timezone', 'unknown'),\n        'fetched_at': datetime.utcnow().isoformat(),\n    }\n\n\n# ── Cost Estimation ────────────────────────────────\n\ndef estimate_llm_cost(texts: list[str], price_per_million: float = 3.0) -> dict:\n    \"\"\"Estimate cost before sending to LLM.\"\"\"\n    total_tokens = sum(len(t.split()) / 0.75 for t in texts)\n    cost = total_tokens / 1_000_000 * price_per_million\n    return {'estimated_tokens': round(total_tokens), 'estimated_cost_usd': round(cost, 6)}\n\n\n# ── Pipeline Orchestrator ──────────────────────────\n\ndef run_pipeline(post_limit: int = 8) -> dict | None:\n    run_id = datetime.utcnow().strftime('%Y%m%d_%H%M%S')\n    log.info(f\"=== Pipeline start — run_id={run_id} ===\")\n    start = time.time()\n    \n    # Step 1: Ingest\n    raw_posts = fetch_posts(limit=post_limit)\n    raw_weather = fetch_weather()\n    \n    # Step 2: Process\n    posts_df = process_posts(raw_posts)\n    weather = process_weather(raw_weather)\n    \n    if posts_df.empty:\n        log.error(\"No posts after processing — aborting\")\n        return None\n    \n    # Step 3: Cost estimate before (hypothetical) LLM processing\n    titles = posts_df['title'].tolist()\n    cost_est = estimate_llm_cost(titles)\n    log.info(f\"LLM cost estimate for {len(titles)} titles: {cost_est}\")\n    \n    # Step 4: Save outputs\n    csv_path = OUTPUT_DIR / f'posts_{run_id}.csv'\n    posts_df.to_csv(csv_path, index=False)\n    log.info(f\"Posts saved → {csv_path}\")\n    \n    duration = time.time() - start\n    summary = {\n        'run_id': run_id,\n        'duration_s': round(duration, 2),\n        'posts_processed': len(posts_df),\n        'avg_tokens': round(posts_df['estimated_tokens'].mean(), 1),\n        'max_tokens': int(posts_df['estimated_tokens'].max()),\n        'weather': weather,\n        'cost_estimate': cost_est,\n    }\n    \n    json_path = OUTPUT_DIR / f'summary_{run_id}.json'\n    json_path.write_text(json.dumps(summary, indent=2))\n    log.info(f\"Summary saved → {json_path}\")\n    \n    print(\"\\n\" + \"=\" * 50)\n    print(\"PIPELINE RESULTS\")\n    print(\"=\" * 50)\n    print(f\"Posts:       {len(posts_df)} processed\")\n    print(f\"Avg tokens:  {posts_df['estimated_tokens'].mean():.0f} per post\")\n    print(f\"All fit 4K:  {posts_df['fits_in_4k_context'].all()}\")\n    if weather:\n        print(f\"Weather:     {weather['temperature_c']}°C, {weather['wind_speed_kmh']} km/h wind\")\n    print(f\"Duration:    {duration:.2f}s\")\n    print(f\"\\nTop posts by word count:\")\n    print(posts_df.nlargest(3, 'word_count')[['post_id', 'title', 'word_count']].to_string(index=False))\n    \n    log.info(f\"=== Pipeline complete — {len(posts_df)} posts in {duration:.2f}s ===\")\n    return summary\n\n\nif __name__ == '__main__':\n    result = run_pipeline(post_limit=8)\n    if result:\n        print(f\"\\nSummary: {json.dumps({k: v for k, v in result.items() if k != 'weather'}, indent=2)}\")",
+      "output": "10:15:23 [INFO] === Pipeline start — run_id=20260101_101523 ===\n10:15:23 [INFO] Fetching 8 posts...\n10:15:24 [INFO] Fetching weather for (40.7128, -74.006)...\n10:15:24 [INFO] LLM cost estimate for 8 titles: {'estimated_tokens': 82, 'estimated_cost_usd': 0.000246}\n10:15:24 [INFO] Posts saved → pipeline_output/posts_20260101_101523.csv\n10:15:24 [INFO] Summary saved → pipeline_output/summary_20260101_101523.json\n\n==================================================\nPIPELINE RESULTS\n==================================================\nPosts:       8 processed\nAvg tokens:  59 per post\nAll fit 4K:  True\nWeather:     12.4°C, 8.2 km/h wind\nDuration:    0.94s\n\nTop posts by word count:\n post_id                     title  word_count\n       6  Accusamus eos facilis...          57\n       3  ea molestias quasi...            54\n       8  dolorem dolore est...            53"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Pipeline Pitfalls",
+      "items": [
+        "**Not implementing checkpointing** — if a 10,000-document pipeline fails at item 5,000, you re-process everything from the start and pay for 5,000 duplicate LLM calls.",
+        "**Using `print()` instead of `logging`** — print output can't be routed to files, CloudWatch, or Sentry. Use `logging` from day one for any code that runs in production.",
+        "**Not separating fetch/process/save** — mixing HTTP calls with data transformation makes both hard to test. A failing API call shouldn't crash your data processing logic.",
+        "**Not estimating cost before LLM calls** — a batch job that seems cheap at 100 docs can cost hundreds of dollars at 100,000 docs. Always compute and log cost estimates before running.",
+        "**Not using a run_id** — without run IDs, debugging 'why did yesterday's output differ?' is nearly impossible. Always timestamp your output files."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Phase 0 Final: Add AI Summarization",
+      "difficulty": "Beginner",
+      "problem": "Extend the capstone pipeline to add AI-generated summaries:\n\n1. Keep the JSONPlaceholder post fetching and processing from the capstone\n2. For each post body, call Claude Haiku (or mock it) to generate a 1-sentence summary\n3. Add the summary as a new column `ai_summary` in the DataFrame\n4. Track: total tokens used, total cost, and requests per second\n5. Save the enriched CSV with the `ai_summary` column\n6. Add a `--dry-run` flag (`sys.argv`) that prints what would be sent without calling the API\n\n**If you don't have an API key**: mock the AI call by returning the first 15 words of the body as the 'summary'.\n\nBonus: Add idempotency — skip posts whose summary output file already exists.",
+      "hints": [
+        "For the mock: `' '.join(body.split()[:15]) + '...'`",
+        "Track timing: `start = time.time()` before the batch, `elapsed = time.time() - start` after",
+        "RPS = `len(posts) / elapsed`",
+        "For --dry-run: `if '--dry-run' in sys.argv: print(body); continue`"
+      ],
+      "solution": "import sys, time, os, json\nimport pandas as pd\nfrom dotenv import load_dotenv\nload_dotenv()\n\nDRY_RUN = '--dry-run' in sys.argv\n\ndef summarize(text: str, api_key: str | None) -> str:\n    if not api_key or DRY_RUN:\n        if DRY_RUN:\n            print(f'[DRY RUN] Would summarize: {text[:60]}...')\n        return ' '.join(text.split()[:15]) + '...'  # mock\n    import requests\n    r = requests.post(\n        'https://api.anthropic.com/v1/messages',\n        headers={'x-api-key': api_key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json'},\n        json={'model': 'claude-haiku-4-5-20251001', 'max_tokens': 64,\n              'messages': [{'role': 'user', 'content': f'Summarize in one sentence: {text[:500]}'}]},\n        timeout=30\n    )\n    return r.json()['content'][0]['text'] if r.status_code == 200 else 'Error'\n\nimport requests\nposts = requests.get('https://jsonplaceholder.typicode.com/posts', params={'_limit': 5}).json()\ndf = pd.DataFrame(posts)\napi_key = os.getenv('ANTHROPIC_API_KEY')\n\nstart = time.time()\ndf['ai_summary'] = [summarize(row['body'], api_key) for _, row in df.iterrows()]\nelapsed = time.time() - start\n\nprint(f'Processed {len(df)} posts in {elapsed:.2f}s ({len(df)/elapsed:.1f} RPS)')\ndf[['id', 'title', 'ai_summary']].to_csv('enriched_posts.csv', index=False)\nprint('Saved to enriched_posts.csv')"
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Data Pipelines",
+      "conceptual": [
+        {
+          "question": "What is the difference between a data pipeline and an ETL process?",
+          "answer": "ETL (Extract, Transform, Load) is the classic data warehousing pattern: extract from source, transform to clean format, load into a database. Modern data pipelines are more flexible — they can be ELT (load first, transform later with SQL), streaming (continuous vs. batch), or event-driven. For AI, the pipeline adds a 5th step: 'embed' or 'generate' using a model. The same principles apply (separation of concerns, error handling, idempotency) but AI pipelines add token cost management and rate limiting."
+        },
+        {
+          "question": "What is idempotency in the context of a data pipeline and why is it important?",
+          "answer": "An idempotent pipeline produces the same result when run multiple times on the same input — re-running it doesn't create duplicates or change outcomes. Implementation: name output files by input ID and skip if they already exist. Importance: pipelines fail. Network timeouts, rate limits, server errors — at scale, something always fails. An idempotent pipeline can restart from any point without duplicating work or API costs. Without it, a crash at 80% means re-processing 100% and paying for 80% of LLM calls twice."
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Why use `logging.getLogger(__name__)` instead of just calling `logging.info()` directly?",
+          "answer": "`logging.getLogger(__name__)` creates a logger named after the current module (e.g., `pipeline.fetch`). This lets you: (1) Control logging levels per module — silence verbose library loggers, keep your own at DEBUG. (2) Add module names to log output for debugging. (3) Route different modules to different handlers (file, Sentry, CloudWatch). `logging.info()` uses the root logger, which doesn't give you this control."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your AI pipeline processes 10,000 documents per day. One morning it fails halfway through. What patterns ensure you don't reprocess the first 5,000 documents?",
+          "answer": "Idempotency pattern: name output files by document ID (`{doc_id}.json`). Before processing, check `if output_file.exists(): continue`. On restart, already-processed documents are skipped automatically.\n\nCheckpoint pattern: maintain a `checkpoint.json` with the last successfully processed ID. On restart, read checkpoint and skip documents with ID <= last processed.\n\nDatabase pattern: add a `status` column ('pending', 'processing', 'done', 'failed') to a jobs table. Update to 'done' after each successful process. Restart queries `WHERE status = 'pending'`.\n\nFor the failed documents: use a Dead Letter Queue — move failed items to a separate retry queue rather than blocking the main pipeline. This way 9,950 succeed and 50 get retried separately."
+        }
+      ],
+      "wrongAnswers": [
+        "**Wrong:** 'I can skip checkpointing for batch jobs that run in under an hour.' — **Correction:** Any job that calls LLM APIs can fail mid-run due to rate limits, network issues, or provider outages — regardless of duration. The cost of implementing checkpointing is 10 minutes; the cost of reprocessing 5,000 documents at $0.003 each is $15 + time.",
+        "**Wrong:** 'Logging is just fancy print statements — not worth the setup.' — **Correction:** Logging routes to files, CloudWatch, Sentry, and other systems. In production, you need to query logs from 3 days ago to debug an issue. `print()` output disappears after the process exits. Logging with timestamps and levels is the minimum for any production code."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Quick MCQ — Data Pipelines",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the purpose of a run_id in a data pipeline?",
+          "options": {
+            "A": "To limit the number of API calls per run",
+            "B": "To uniquely identify each pipeline execution for tracing, debugging, and reproducibility",
+            "C": "To authenticate with the API",
+            "D": "To set the random seed for reproducibility"
+          },
+          "answer": "B",
+          "explanation": "A run_id (typically a timestamp) links all outputs and logs from a single execution. This lets you debug 'why did this run produce different results?' by finding all files from that specific run_id."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "What is pipeline idempotency?",
+          "options": {
+            "A": "The pipeline runs faster on repeated execution",
+            "B": "Running the pipeline multiple times on the same input produces the same result without duplicating work",
+            "C": "The pipeline uses identical code in all environments",
+            "D": "The pipeline scales horizontally without code changes"
+          },
+          "answer": "B",
+          "explanation": "Idempotency means: run it once or run it 10 times — same result, no duplicates. Achieved by checking if output already exists before processing. Critical for pipelines that call expensive LLM APIs."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why use `requests.Session()` in a pipeline instead of `requests.get()` directly?",
+          "options": {
+            "A": "Session is faster for single requests",
+            "B": "Session reuses TCP connections and shares headers across multiple requests to the same host",
+            "C": "Session automatically handles authentication",
+            "D": "Session stores response data in memory for reuse"
+          },
+          "answer": "B",
+          "explanation": "TCP connection setup takes 50–200ms. Session reuses existing connections (HTTP keep-alive), reducing latency significantly for many requests to the same server. It also shares headers, avoiding repetition."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "title": "Data Pipeline — Production Checklist",
+      "content": "### Pipeline Design Principles\n1. Separate fetch / process / save into distinct functions\n2. Use `requests.Session()` for multiple calls to the same API\n3. Add `run_id` (timestamp) to all output files\n4. Log at the start and end of each stage with record counts\n5. Validate data quality before expensive AI API calls\n6. Implement idempotency: skip if output already exists\n7. Use exponential backoff with jitter for all retries\n8. Log cost estimates before LLM batch jobs\n\n### Directory Structure\n```\npipeline_output/\n├── posts_20260101_101523.csv\n├── summary_20260101_101523.json\n├── posts_20260102_083012.csv\n└── summary_20260102_083012.json\n```\n\n### Logging Setup\n```python\nimport logging\nlogging.basicConfig(\n    level=logging.INFO,\n    format='%(asctime)s [%(levelname)s] %(message)s'\n)\nlog = logging.getLogger(__name__)\n```\n\n### Cost Estimation Pattern\n```python\ndef estimate_cost(texts, price_per_m=3.0):\n    tokens = sum(len(t.split()) / 0.75 for t in texts)\n    return {'tokens': round(tokens), 'usd': round(tokens / 1e6 * price_per_m, 4)}\n\n# Always estimate before running\nest = estimate_cost(all_texts)\nlog.info(f\"Estimated: {est['tokens']} tokens, ${est['usd']}\")\nif est['usd'] > BUDGET_CAP:\n    raise ValueError(f\"Cost estimate ${est['usd']} exceeds budget\")\n```"
+    }
+  ]
+}

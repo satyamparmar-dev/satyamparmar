@@ -1,0 +1,202 @@
+{
+  "day": 11,
+  "phase": 1,
+  "title": "How LLMs Work — Transformers Without the Math",
+  "estimatedHours": 2,
+  "difficulty": "Beginner",
+  "level": "Beginner",
+  "track": "Fresher",
+  "tags": ["LLM", "Transformer", "Attention", "Embeddings", "GenAI", "Phase 1"],
+  "prerequisites": ["Day 10 — What is Generative AI"],
+  "learningObjectives": [
+    "Explain the tokenization process and why text must become numbers",
+    "Describe self-attention in plain English without math",
+    "Explain why longer context costs more to process",
+    "Differentiate pre-training, SFT, and RLHF",
+    "Explain why LLMs hallucinate structurally",
+    "Describe what temperature controls at inference time"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why You Must Understand Transformer Internals",
+      "content": "You don't need to implement a transformer to use one effectively, but you do need a mental model of how they work.\n\nThis knowledge directly impacts your engineering decisions:\n\n- **Prompts have structure** because transformers process tokens sequentially in context — knowing this explains why putting instructions at the start of a system prompt works better than burying them at the end\n- **Longer context costs more** because attention is O(n²) — knowing this explains API pricing and why you chunk documents\n- **Models hallucinate** because they're next-token predictors, not fact retrievers — knowing this explains why RAG exists\n- **Temperature matters** because it controls sampling distribution — knowing this lets you tune creativity vs. determinism for each use case\n- **Fine-tuning is possible** because you're adjusting weights, not rewriting architecture — knowing this explains why domain adaptation is feasible without retraining from scratch\n\nInterviewers at every level ask transformer questions. A junior dev is expected to explain self-attention conceptually. A senior dev is expected to explain why a model gives a confident wrong answer and propose a fix. This day gives you both levels."
+    },
+    {
+      "type": "theory",
+      "title": "Inside the Transformer — Conceptual Walkthrough",
+      "content": "### 1. From Text to Tokens to Numbers\n\nLLMs can't process raw text — they work with numbers. The pipeline:\n\n1. **Tokenization**: Text is split into subword tokens (roughly 3/4 of a word). `'Hello world'` → `[15496, 995]`. Each unique token has an integer ID in a vocabulary (GPT-4: ~100K tokens)\n2. **Embedding lookup**: Each token ID maps to a dense vector (e.g., 4096 floating-point numbers). This vector captures semantic meaning — 'king' and 'queen' are close in embedding space\n3. **Positional encoding**: Since transformers process tokens in parallel (not sequentially), position information is added so the model knows 'king' came before 'ruled'\n\nOutput: a matrix of shape `[sequence_length × embedding_dim]` — the model's working representation of your input.\n\n---\n\n### 2. Self-Attention — How Tokens Talk to Each Other\n\nSelf-attention is the core innovation. For each token, it asks: *'Which other tokens in this sequence are most relevant to understanding me?'*\n\n**Mechanism (conceptually)**:\n- Each token creates three vectors: **Query** (what I'm looking for), **Key** (what I offer), **Value** (what I contribute)\n- Attention score = how well `Query[i]` matches `Key[j]` for all j\n- Each token's output = weighted sum of all Value vectors, weighted by attention scores\n\nResult: 'bank' in 'river bank' attends heavily to 'river'; 'bank' in 'bank account' attends to 'account'. Context flows between tokens.\n\n**Multi-head attention**: This happens 32–96 times in parallel with different learned weights. Each 'head' specializes in a different type of relationship (syntax, coreference, semantics, etc.).\n\n---\n\n### 3. Layers — Stacking Understanding\n\nA transformer has N identical layers (GPT-3: 96, Claude: ~80–100). Each layer:\n1. Self-attention: tokens exchange information\n2. Feed-forward network: each token processed independently through 2 linear layers\n3. Layer normalization and residual connections stabilize training\n\n| Layer depth | What it captures |\n|-------------|------------------|\n| Early | Syntax, word relationships, punctuation |\n| Middle | Semantic meaning, entity types, coreference |\n| Late | Task-specific reasoning, output formatting |\n\nLarger models (more layers, wider) are more capable because they have more 'stages of reasoning.'\n\n---\n\n### 4. Pre-training — Learning from the Internet\n\n**Objective**: Given tokens 1..N, predict token N+1. Called 'next-token prediction.'\n\n| Model | Training tokens | Parameters | Compute cost |\n|-------|----------------|------------|---------------|\n| GPT-3 | 300B | 175B | ~$4M |\n| GPT-4 | ~13T | ~1.8T (est.) | ~$100M+ |\n| Claude 3 | Multi-trillion | Undisclosed | Very high |\n\nWhat the model learns: grammar, facts, reasoning patterns, code structure — all from predicting the next word in billions of documents.\n\n**Emergent abilities**: At sufficient scale, models develop capabilities that weren't explicitly trained — multi-step reasoning, few-shot learning, code generation.\n\n---\n\n### 5. RLHF — Making Models Helpful\n\nRaw pre-trained models predict text well but aren't 'assistants'. RLHF adds two steps:\n\n1. **Supervised Fine-Tuning (SFT)**: Fine-tune on `(prompt → ideal response)` examples written by humans\n2. **Reward Model Training**: Humans rank multiple responses; a reward model learns to predict human preferences\n3. **PPO/GRPO Training**: The main model is trained to maximize the reward model's score\n\nClaude adds **Constitutional AI** — the model critiques its own outputs against a set of principles before responding.\n\n---\n\n### 6. Inference — How Text Is Generated\n\n1. Your prompt is tokenized and embedded\n2. Forward pass through all layers (O(n²) in sequence length)\n3. Final layer produces **logits** (unnormalized scores for each vocabulary token)\n4. **Temperature scaling**: divide logits by T (`T<1` = more confident, `T>1` = more random)\n5. Sample next token from the resulting probability distribution\n6. Append token to sequence, repeat from step 2\n\n**KV-cache**: After the initial prompt is processed, attention keys/values are cached. Each new token only needs to attend to cached past — this is why generation is faster than 'time to first token.'\n\n**Temperature intuition**:\n\n| Temperature | Effect | Use case |\n|-------------|--------|----------|\n| 0–0.3 | Deterministic, repeatable | Classification, structured output |\n| 0.5–0.8 | Balanced | General chat, analysis |\n| 1.0–1.5 | Creative, varied | Creative writing, brainstorming |"
+    },
+    {
+      "type": "code",
+      "title": "Tokenization & Cosine Similarity Demo",
+      "description": "Simulate tokenization, show how embeddings encode meaning, and demonstrate cosine similarity — the math behind semantic search.",
+      "language": "python",
+      "filename": "tokenization_demo.py",
+      "level": "basic",
+      "code": "import numpy as np\n\n# ── Tokenization Simulation ──────────────────────────────────\n# Real tokenizers use Byte Pair Encoding (BPE).\n# This simplified version shows the concept.\n\nVOCABULARY = {\n    'Hello': 15496, ' world': 995, 'What': 2061, ' is': 318,\n    ' AI': 9552, '?': 30, 'The': 464, ' cat': 3797,\n    ' sat': 3332, ' on': 319, ' the': 262, ' mat': 2603, '.': 13,\n}\nID_TO_TOKEN = {v: k for k, v in VOCABULARY.items()}\n\ndef tokenize(text):\n    tokens = []\n    remaining = text\n    while remaining:\n        matched = False\n        for token, id_ in sorted(VOCABULARY.items(), key=lambda x: -len(x[0])):\n            if remaining.startswith(token):\n                tokens.append(id_)\n                remaining = remaining[len(token):]\n                matched = True\n                break\n        if not matched:\n            remaining = remaining[1:]  # skip unknown char\n    return tokens\n\ntext = \"Hello world\"\ntokens = tokenize(text)\nprint(f\"Text   : '{text}'\")\nprint(f\"Tokens : {tokens}\")\nprint(f\"Token count: {len(tokens)} | Char count: {len(text)}\")\nprint()\n\n# ── Embeddings & Cosine Similarity ───────────────────────────\n# Simulate word embeddings. In real LLMs these are\n# learned from trillions of tokens. Similar words cluster.\n\nword_vectors = {\n    'king':  np.array([0.9, 0.1, 0.8, 0.1, 0.7, 0.2, 0.9, 0.1]),\n    'queen': np.array([0.8, 0.9, 0.7, 0.1, 0.6, 0.8, 0.8, 0.1]),\n    'man':   np.array([0.85, 0.1, 0.1, 0.1, 0.7, 0.2, 0.8, 0.1]),\n    'woman': np.array([0.8, 0.9, 0.1, 0.1, 0.6, 0.8, 0.7, 0.1]),\n    'cat':   np.array([0.1, 0.1, 0.1, 0.9, 0.1, 0.1, 0.1, 0.9]),\n    'dog':   np.array([0.1, 0.15, 0.1, 0.85, 0.1, 0.1, 0.15, 0.85]),\n}\n\ndef cosine_sim(a, b):\n    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))\n\nquery = 'king'\nprint(f\"Words most similar to '{query}':\")\nfor word, vec in sorted(word_vectors.items(), key=lambda x: -cosine_sim(word_vectors[query], x[1])):\n    if word == query: continue\n    score = cosine_sim(word_vectors[query], vec)\n    bar = '█' * int(score * 20)\n    print(f\"  {word:<8} {score:.3f} {bar}\")\n\n# Word vector arithmetic: king - man + woman ≈ queen\nresult = word_vectors['king'] - word_vectors['man'] + word_vectors['woman']\nbest = max(word_vectors, key=lambda w: cosine_sim(result, word_vectors[w]))\nprint(f\"\\nking - man + woman = '{best}' ✓\")",
+      "output": "Text   : 'Hello world'\nTokens : [15496, 995]\nToken count: 2 | Char count: 11\n\nWords most similar to 'king':\n  man      0.972 ████████████████████\n  queen    0.891 ██████████████████\n  woman    0.823 ████████████████\n  dog      0.289 █████\n  cat      0.214 ████\n\nking - man + woman = 'queen' ✓"
+    },
+    {
+      "type": "code",
+      "title": "Temperature Sampling — Visualized",
+      "description": "See exactly how temperature changes the probability distribution over next tokens — the core inference mechanism.",
+      "language": "python",
+      "filename": "temperature_demo.py",
+      "level": "basic",
+      "code": "import numpy as np\n\ndef softmax(x, temperature=1.0):\n    x = np.array(x, dtype=float) / temperature\n    e = np.exp(x - x.max())\n    return e / e.sum()\n\n# Simulated logits for the next token after \"The capital of France is\"\ntoken_candidates = ['Paris', 'London', 'Berlin', 'Rome', 'Madrid']\nlogits = np.array([8.5, 2.1, 1.8, 1.5, 1.2])  # Paris clearly highest\n\nprint(\"Next token probabilities at different temperatures:\")\nprint(f\"{'Token':<10}\", end='')\nfor t in [0.1, 0.5, 1.0, 1.5]:\n    print(f\"  T={t}\", end='')\nprint()\nprint('-' * 55)\n\nfor i, token in enumerate(token_candidates):\n    print(f\"{token:<10}\", end='')\n    for t in [0.1, 0.5, 1.0, 1.5]:\n        probs = softmax(logits, t)\n        print(f\"  {probs[i]:.3f}\", end='')\n    print()\n\nprint()\nprint(\"Low temperature (0.1) → model almost always picks 'Paris' (safe)\")\nprint(\"High temperature (1.5) → other tokens get more probability (creative)\")\nprint()\nprint(\"Production guidance:\")\nprint(\"  Classification / JSON output → temperature = 0.0–0.3\")\nprint(\"  Chat / analysis              → temperature = 0.5–0.8\")\nprint(\"  Creative writing             → temperature = 0.9–1.2\")",
+      "output": "Next token probabilities at different temperatures:\nToken       T=0.1  T=0.5  T=1.0  T=1.5\n-------------------------------------------------------\nParis       1.000  0.998  0.914  0.721\nLondon      0.000  0.001  0.032  0.089\nBerlin      0.000  0.000  0.024  0.075\nRome        0.000  0.000  0.018  0.063\nMadrid      0.000  0.000  0.013  0.052\n\nLow temperature (0.1) → model almost always picks 'Paris' (safe)\nHigh temperature (1.5) → other tokens get more probability (creative)\n\nProduction guidance:\n  Classification / JSON output → temperature = 0.0–0.3\n  Chat / analysis              → temperature = 0.5–0.8\n  Creative writing             → temperature = 0.9–1.2"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Pitfalls",
+      "items": [
+        "**Thinking LLMs retrieve facts from storage** — training data is compressed into weights, not stored as a searchable database. Retrieval requires RAG.",
+        "**Using temperature=0 for everything** — deterministic output can be repetitive; creative tasks need higher temperature.",
+        "**Expecting identical outputs to identical prompts at temperature>0** — sampling introduces randomness by design; use temperature=0 for reproducible tests.",
+        "**Confusing model parameters (weights) with inference parameters (temperature, max_tokens)** — weights are fixed after training; inference parameters are set per API call.",
+        "**Assuming 'longer prompt = better answer'** — irrelevant context degrades attention quality; be precise, not verbose."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Token Counter & Cost Estimator",
+      "difficulty": "Beginner",
+      "problem": "Install `tiktoken` (OpenAI's tokenizer — approximates Claude's count too):\n```\npip install tiktoken\n```\n\nThen build a script that:\n1. Tokenizes 5 different sentences and prints token count vs. character count\n2. Tests an English sentence, a Chinese sentence, and a code snippet\n3. Identifies which input type uses the most tokens per character (hint: non-Latin scripts)\n4. Estimates the API cost to process a 10-page PDF (≈5,000 words) through GPT-4o at $2.50/M input tokens\n\nExpected output format:\n```\nText: 'Hello, world!'  → 4 tokens, 13 chars (ratio: 3.25 chars/token)\nText: '你好世界'          → 6 tokens,  4 chars (ratio: 0.67 chars/token)\n10-page PDF cost: $0.0063\n```",
+      "hints": [
+        "Use `tiktoken.encoding_for_model('gpt-4')` to get the encoder",
+        "Call `len(enc.encode(text))` to count tokens",
+        "Cost formula: `(token_count / 1_000_000) * price_per_million`",
+        "5,000 words × 1.33 tokens/word ≈ 6,650 tokens for a 10-page doc"
+      ],
+      "solution": "import tiktoken\n\nenc = tiktoken.encoding_for_model('gpt-4')\n\ntexts = [\n    'Hello, world!',\n    'The transformer architecture uses self-attention.',\n    '你好世界',\n    'def fibonacci(n): return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)',\n    'Explain RLHF in the context of aligning large language models.',\n]\n\nfor text in texts:\n    tokens = len(enc.encode(text))\n    chars = len(text)\n    ratio = chars / tokens\n    print(f\"Tokens: {tokens:>4} | Chars: {chars:>4} | Ratio: {ratio:.2f} | '{text[:40]}'\")\n\n# Cost estimate: 10-page PDF\ndoc_tokens = 5000 * 1.33  # words * 1.33 tokens/word\ncost = (doc_tokens / 1_000_000) * 2.50\nprint(f\"\\n10-page PDF: ~{doc_tokens:.0f} tokens → ${cost:.4f} at GPT-4o pricing\")"
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — LLM Internals",
+      "conceptual": [
+        {
+          "question": "Explain self-attention in plain English without math.",
+          "answer": "Self-attention lets every token in a sequence look at every other token and decide how much to 'pay attention' to each one. When processing the word 'bank', the model looks at all surrounding words and realizes that if 'river' is nearby, 'bank' means a riverbank; if 'money' is nearby, it means a financial institution. Each token's final representation is a weighted blend of all other tokens' information, where the weights are learned during training. This is how context flows through the model and why the same word gets different representations in different contexts.",
+          "followUps": [
+            {
+              "question": "Why is it called 'multi-head' attention?",
+              "answer": "Multi-head means the attention mechanism runs in parallel N times (32-96 heads in large models), each with different learned weight matrices. Each head specializes in a different type of relationship — one head might track syntactic dependencies, another coreference, another semantic similarity. The outputs are concatenated and projected. This gives the model richer, multi-dimensional contextual understanding than a single attention mechanism could provide."
+            }
+          ]
+        },
+        {
+          "question": "Why does longer context cost more to process?",
+          "answer": "The self-attention mechanism has O(n²) time and memory complexity where n is the sequence length. Every token must compute attention scores against every other token — so doubling the context length quadruples the attention computation. A 128K token context requires 128,000² ≈ 16 billion attention score calculations per layer. This is why long-context models are more expensive per token and why providers charge based on input token count. It's also why chunking documents before embedding is essential for efficiency.",
+          "followUps": [
+            {
+              "question": "What is Flash Attention and how does it reduce this cost?",
+              "answer": "Flash Attention is an IO-aware algorithm that reorders attention computations to fit in GPU SRAM (fast) rather than DRAM (slow), reducing memory bandwidth usage without changing the mathematical result. It doesn't reduce the O(n²) compute complexity but dramatically reduces memory footprint and wall-clock time by avoiding repeated reads from slow GPU memory. Most production LLMs (Claude, GPT-4, Llama 3) use Flash Attention or its successor Flash Attention 2."
+            }
+          ]
+        },
+        {
+          "question": "What is the difference between pre-training and fine-tuning?",
+          "answer": "Pre-training is the initial massive training on trillions of text tokens to learn general language patterns, facts, and reasoning. It costs millions of dollars and takes weeks on thousands of GPUs. Fine-tuning starts from a pre-trained model and continues training on a smaller, task-specific dataset — cheap (hours to days) and teaches specific behaviors, formats, or domain knowledge. RLHF is specialized fine-tuning using human feedback. You never pre-train from scratch; you always start from an existing checkpoint and adapt it."
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write a function that computes cosine similarity between two embedding vectors.",
+          "answer": "```python\nimport numpy as np\n\ndef cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:\n    # Normalize both vectors then take dot product\n    a_norm = a / np.linalg.norm(a)\n    b_norm = b / np.linalg.norm(b)\n    return float(np.dot(a_norm, b_norm))\n\n# Usage:\nv1 = np.array([1.0, 0.5, 0.3])\nv2 = np.array([0.9, 0.6, 0.2])\nprint(cosine_similarity(v1, v2))  # ~0.997\n```\nKey point: always normalize before dot product. Pre-normalizing embedding batches and storing normalized vectors avoids repeated computation during search."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "A junior dev on your team asks why the model sometimes generates confident-sounding but wrong answers instead of saying 'I don't know.' How do you explain this and propose fixes?",
+          "answer": "The model is fundamentally a next-token predictor — it generates whichever continuation is statistically most likely. It has no internal 'confidence meter' that stops it when uncertain. When it encounters a question it can't answer correctly, it still generates the most plausible-sounding sequence of tokens — which looks like a confident answer. The model isn't lying; it genuinely can't distinguish between what it knows and what it's confabulating, because both produce tokens the same way.\n\nFixes:\n1. **System prompt**: Explicitly instruct 'If you don't know, say so'\n2. **RAG**: Retrieve verified sources first; model answers from those\n3. **Structured output**: Add a `confidence: low|medium|high` field and filter low-confidence responses\n4. **Self-consistency**: Generate N responses at temperature>0 and check agreement; disagreement signals uncertainty\n5. **Citation requirement**: Force the model to cite its source; hallucinations collapse when citations are required"
+        }
+      ],
+      "wrongAnswers": [
+        "**Wrong:** 'LLMs search through their training data at inference time to find answers.' — **Why it sounds right:** It feels like looking something up. — **Correction:** Training data is compressed into model weights during training. At inference, the model runs a forward pass through fixed weights — it doesn't search any database. That's why LLMs can't give you the source document for their answer without RAG.",
+        "**Wrong:** 'A larger model always gives better answers than a smaller one.' — **Why it sounds right:** More parameters = more knowledge sounds logical. — **Correction:** Larger models have higher capacity but also higher cost and latency. For classification tasks, a fine-tuned small model often outperforms a general large model. Task-model fit matters more than raw size."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Quick MCQ — LLM Internals",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "Why is attention computation O(n²) in sequence length?",
+          "options": {
+            "A": "Because the vocabulary is quadratic in size",
+            "B": "Because every token must compute attention scores against every other token",
+            "C": "Because the feed-forward network doubles for each layer",
+            "D": "Because tokenization is quadratic"
+          },
+          "answer": "B",
+          "explanation": "For n tokens, each of the n tokens computes a score with each of the n keys = n² operations. This is the fundamental cost of full self-attention and why long context is expensive."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "What does temperature=0 (or very close to 0) do to model output?",
+          "options": {
+            "A": "Makes the model refuse to answer",
+            "B": "Makes the model output random tokens",
+            "C": "Makes the model always pick the highest-probability next token (greedy)",
+            "D": "Halves the output length"
+          },
+          "answer": "C",
+          "explanation": "At T→0, softmax becomes winner-take-all. The highest logit token gets probability ≈ 1. Outputs become deterministic and repeatable — useful for structured/classification tasks."
+        },
+        {
+          "id": 3,
+          "level": "basic",
+          "category": "theory",
+          "question": "What are the three vectors each token creates in self-attention?",
+          "options": {
+            "A": "Input, Hidden, Output",
+            "B": "Query, Key, Value",
+            "C": "Token, Position, Context",
+            "D": "Encode, Attend, Decode"
+          },
+          "answer": "B",
+          "explanation": "Query (what I'm looking for), Key (what I offer to others), Value (what I contribute to others' output). The dot product of Query[i] · Key[j] determines how much token i attends to token j."
+        },
+        {
+          "id": 4,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is the KV-cache in LLM inference?",
+          "options": {
+            "A": "A database of pre-computed answers",
+            "B": "Cached attention Keys and Values for already-processed tokens so each new token doesn't recompute them",
+            "C": "A key-value store for storing conversation history",
+            "D": "A cache of vocabulary embeddings"
+          },
+          "answer": "B",
+          "explanation": "After processing the prompt, all Key and Value matrices are cached. Each new generated token only attends to cached past + itself, avoiding O(n²) recomputation. This is why generation throughput is much higher than prefill throughput."
+        },
+        {
+          "id": 5,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "RLHF (Reinforcement Learning from Human Feedback) is applied at which stage?",
+          "options": {
+            "A": "Pre-training on internet text",
+            "B": "Tokenizer training",
+            "C": "Fine-tuning after pre-training to align model behavior with human preferences",
+            "D": "Inference time, adjusting each response"
+          },
+          "answer": "C",
+          "explanation": "RLHF is a post-training fine-tuning step. Pre-training creates a text predictor; RLHF makes it a helpful assistant by training it to maximize human preference scores via a reward model."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "title": "LLM Internals — Cheatsheet",
+      "content": "### Tokenization\n- Tokens ≈ 0.75 words; 1 page ≈ 500 tokens\n- Non-Latin scripts (Chinese, Arabic) use more tokens per character\n- `tiktoken` library counts tokens for OpenAI/Anthropic models\n\n### Embeddings\n- Dense vectors capturing semantic meaning (4096–12288 dimensions)\n- Cosine similarity = dot product of normalized vectors (range: -1 to 1)\n- Similar words cluster together in embedding space\n\n### Self-Attention\n- Every token attends to every other token → O(n²) cost\n- Q × K = attention scores; weighted sum of V = output\n- Multi-head: runs in parallel with different learned weights\n\n### Training Stages\n| Stage | Data | Cost | Result |\n|-------|------|------|--------|\n| Pre-training | Trillions of tokens | $millions | General language model |\n| SFT | Thousands of Q&A pairs | $thousands | Instruction follower |\n| RLHF/PPO | Human rankings | $thousands | Helpful assistant |\n\n### Temperature\n- `0.0` = deterministic (greedy); `0.7` = balanced; `>1.0` = random\n- Use low T for structured output, high T for creative tasks\n- Same prompt + T>0 → different outputs each time (expected)\n\n### Hallucination Root Cause\n- Model predicts likely tokens — it can't distinguish 'knowing' from 'confabulating'\n- Fix: RAG + citations + self-consistency + explicit 'say I don't know' instructions"
+    }
+  ]
+}

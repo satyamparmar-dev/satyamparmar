@@ -1,0 +1,72 @@
+@startuml Transaction Flow
+!theme plain
+skinparam backgroundColor #FFFFFF
+
+title Kafka Transactional Message Flow
+
+participant "Producer" as prod
+participant "Transaction Coordinator" as txCoord
+participant "Kafka Broker" as broker
+participant "Topic Partitions" as topics
+
+== Transaction Start ==
+prod -> txCoord: Init Transaction
+activate txCoord
+txCoord -> txCoord: Assign Transactional ID
+txCoord --> prod: Transaction ID
+deactivate txCoord
+
+== Transactional Writes ==
+prod -> prod: Begin Transaction
+activate prod
+
+prod -> broker: Send message 1 (transactional)
+activate broker
+broker -> topics: Write to partition (uncommitted)
+deactivate broker
+
+prod -> broker: Send message 2 (transactional)
+activate broker
+broker -> topics: Write to partition (uncommitted)
+deactivate broker
+
+== Transaction Commit ==
+prod -> txCoord: Commit Transaction
+activate txCoord
+txCoord -> broker: Commit all messages
+activate broker
+broker -> topics: Mark messages as committed
+broker -> topics: Make messages visible to consumers
+deactivate broker
+txCoord --> prod: Transaction committed
+deactivate txCoord
+deactivate prod
+
+== Transaction Abort ==
+alt Transaction Failure
+    prod -> txCoord: Abort Transaction
+    activate txCoord
+    txCoord -> broker: Rollback all messages
+    activate broker
+    broker -> topics: Remove uncommitted messages
+    deactivate broker
+    txCoord --> prod: Transaction aborted
+    deactivate txCoord
+end
+
+note right of prod
+  **Transactional Producer:**
+  - transactional.id required
+  - idempotence enabled
+  - acks=all
+  - Atomic writes across partitions
+end note
+
+note right of topics
+  **Consumer Isolation:**
+  - isolation.level=read_committed
+  - Only committed messages visible
+  - Exactly-once semantics
+end note
+
+@enduml

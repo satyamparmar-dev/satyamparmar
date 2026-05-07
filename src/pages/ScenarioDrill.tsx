@@ -59,7 +59,7 @@ function previewMarkdownSlice(md: string, maxChars: number): string {
 }
 
 const ScenarioDrill: React.FC = () => {
-  const { curriculum, setCurriculum } = useAppStore();
+  const { curriculum, setCurriculum, activeCurriculum } = useAppStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const [drill, setDrill] = useState<ScenarioDrillData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,10 +89,12 @@ const ScenarioDrill: React.FC = () => {
       try {
         let curr = curriculum;
         if (!curr) {
-          curr = await fetchCurriculum();
+          curr = await fetchCurriculum(activeCurriculum);
           if (!cancelled) setCurriculum(curr);
         }
-        const d = await fetchScenarioDrill();
+        const d = activeCurriculum === 'java'
+          ? await fetchScenarioDrill()
+          : { version: 1, days: [], interviewThemes: [] };
         if (cancelled) return;
         setDrill(d);
 
@@ -168,7 +170,7 @@ const ScenarioDrill: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeCurriculum]);
 
   const dayMap = useMemo(() => (drill ? bundleByDayMap(drill) : new Map()), [drill]);
 
@@ -276,6 +278,16 @@ const ScenarioDrill: React.FC = () => {
     return (
       <Box py={4}>
         <Alert severity="error">{error ?? 'Unable to load scenario drill.'}</Alert>
+      </Box>
+    );
+  }
+
+  if (activeCurriculum !== 'java') {
+    return (
+      <Box py={4}>
+        <Alert severity="info" sx={{ borderRadius: 2 }}>
+          Scenario interview drill is currently available for the Java curriculum only.
+        </Alert>
       </Box>
     );
   }

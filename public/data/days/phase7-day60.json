@@ -29,42 +29,42 @@
     {
       "type": "why",
       "title": "Why Kafka Producers Deep Dive matters",
-      "content": "**Producers** decide **how** events **enter** the **log**: **durability**, **latency**, and **duplicate** behavior **start** here. Senior interviews probe **acks**, **idempotence**, **batching**, and **transactional** trade-offs with **numbers**, not slogans.\n\nMisconfigured **retries** and **ISR** policies cause **duplicate** downstream **effects** or **silent** **durability** gaps—tie fixes to **metrics** and **topic** **policy**."
+      "content": "You join a new team and ship a checkout feature quickly. The code writes order data, then publishes a payment event. In local tests everything looks clean. A week later, finance reports duplicate charges and support reports missing shipment updates. Your service logs still show successful sends, so the bug feels invisible. This is exactly where Kafka producer depth matters. The problem is not one line of business code. The problem is that producer guarantees were never chosen explicitly.\n\nFor a Fresher, the first lesson is simple: a producer is the gate where business truth enters the log. If that gate is weak, every downstream team receives risky data. If that gate is strict but untuned, user latency increases and everyone blames the app. You need a plain model first: what write confirmation means, what retry means, and why key choice controls order for one entity. Once this clicks, logs stop feeling random.\n\nFor a Senior Developer, interviews check consequence thinking. A weak answer gives only a definition of acks or idempotence. A strong answer explains impact: when acks policy and min ISR are misaligned, you either lose durability or block writes during broker stress. Two common failure signals are TimeoutException and NotEnoughReplicasException. They look like flaky infrastructure, but they usually reveal a producer contract mismatch between app settings and topic policy.\n\nFor a Technical Lead, use one repeatable four-step pattern for every critical topic. Step one: classify event risk and business blast radius. Step two: choose producer baseline settings for that class, including acks, idempotence, retry window, and timeout budget. Step three: state what breaks if each knob is wrong, including duplicates, reordering, or latency spikes. Step four: define verification with metrics and commands before rollout, so teams can prove behavior instead of debating assumptions.\n\nFor Staff / Architect level, one fact separates solid and shallow answers: producer idempotence reduces protocol retry duplicates but does not replace business idempotency in side effects. If a service restarts and downstream handlers are not idempotent, duplicate business actions can still happen. In Java 17 and Java 21 fleets, you also need JVM evidence during incidents. Heap pressure and sender-thread stalls can amplify publish latency even when broker health is mostly stable.\n\nIn your first six months at a new company, this topic appears fast. You review a release where linger tuning improved throughput but hurt p99 checkout latency, so you restore balance with measured benchmarks. You join an outage where retries hide ISR shrink, so you verify topic state before touching app code. You define one shared producer profile per risk tier, then enforce it in reviews and CI. That is how producer reliability becomes a team habit, not tribal memory.\n\nAnother reality you learn quickly is communication. During incidents, people ask for one clear answer: are we losing events, duplicating events, or only delaying events? Producer depth helps you answer that in minutes. You map current config, current topic policy, and current metrics into one statement that leadership can trust. This is why strong engineers do not say \"Kafka is down\" without evidence. They say exactly what guarantee is currently degraded and what mitigation changes that state.\n\nYou also learn that producer tuning is never one-and-done. Traffic shape changes every quarter. New features shift payload sizes. A harmless setting at low traffic can become a bottleneck at scale. Teams that run small recurring performance drills avoid surprise regressions. Teams that treat producer config as static text files repeat incidents. The difference is discipline, not luck.\n\nFinally, this topic improves your career story. A Fresher can explain why producer safety matters. A Senior Developer can explain what breaks and how to verify. A Technical Lead can standardize team decisions with shared profiles. A Staff engineer can connect JVM evidence, broker state, and business impact under pressure. That progression is exactly what interviewers look for when they ask producer questions."
     },
     {
       "type": "theory",
       "title": "Theory and Internals - Kafka Producers Deep Dive",
-      "content": "### Day 60 — **Kafka** **producers**\n\n### 1. Durability triangle\n**acks**, **retries**, **delivery.timeout.ms**, and **min.insync.replicas** must be reasoned **together**.\n\n### 2. Idempotence\n**PID** + **sequence** numbers **dedupe** producer **retries** at the protocol.\n\n### 3. Throughput tuning\n**linger.ms**, **batch.size**, **compression**, **buffer.memory**.\n\n### 4. Ordering pitfalls\n**in-flight** + **retries** can **reorder** unless constrained.\n\n### 5. Transactions\nFor **read-process-write** EOS patterns—latency and **operational** complexity rise.\n\n### 6. Story\n**Brownout** + **disabled** idempotence → **finance** duplicates; fix **idempotence** + **outbox** consumers.\n"
+      "content": "### Plain-language overview\nKafka producer tuning is about safe delivery and predictable latency. You are deciding how records are written, how retries behave, and how order is preserved.\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Fresher — What a producer does\nA producer sends records from your Java service to a Kafka topic. It is your write client, not a queue by itself.\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Fresher — First safe baseline\nStart with acks=all, idempotence true, bounded timeout, and stable key for ordered entities.\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Fresher — First runnable snippet\n```java\nProperties p = new Properties();\np.put(\"acks\", \"all\");\np.put(\"enable.idempotence\", true);\nproducer.send(new ProducerRecord<>(\"orders\", \"o-1\", \"PLACED\"));\nproducer.flush();\n```\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Senior Developer — How guarantees combine\nacks, retries, delivery timeout, and min ISR form one contract. Treating them separately causes false confidence.\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Senior Developer — Tuning sequence\n1) Pick durability tier. 2) Set acks and idempotence. 3) Set timeout window. 4) Tune linger and batch only after latency baseline.\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Senior Developer — Option comparison table\n| Setting | When to use | What breaks if wrong |\n|---|---|---|\n| acks=all | money, inventory | blocked writes or weak durability |\n| acks=1 | medium-risk events | loss window on leader crash |\n| acks=0 | non-critical firehose | silent loss with no confirmation |\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Senior Developer — Common mistakes\nMissing keys for ordered events, retry storms without backoff, and large linger values without SLO checks are the most common team mistakes.\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Technical Lead — Design decision flow\nPick policy by business risk class, not by team preference. Define two or three approved producer profiles and make them default.\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Technical Lead — Review checklist\nCheck key strategy, callback error handling, retry policy, timeout alignment, and rollback criteria in every PR.\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Technical Lead — Commands table\n| Command | Why | What to look for |\n|---|---|---|\n| kafka-topics.sh --describe | durability triage | ISR, leader, replicas |\n| kafka-producer-perf-test.sh | performance tuning | p95/p99 and throughput |\n| jcmd <pid> VM.flags | runtime validation | expected heap and GC flags |\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Staff / Architect — JVM internals impact\nProducer sender threads and buffers live in your JVM process. GC pressure can create latency spikes even with healthy brokers.\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Staff / Architect — On-call diagnostics table\n| Tool | Use | Signal |\n|---|---|---|\n| jstat -gcutil <pid> 1s 10 | GC pressure check | old gen rise and pause pattern |\n| jcmd <pid> Thread.print | thread stall check | blocked network sender paths |\n| jmap -histo:live <pid> | allocation hotspot check | buffer object growth |\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Staff / Architect — Version-aware notes\nJava 11 and 17 commonly use G1GC in services. Java 21 adds stronger observability options, but producer guarantees still depend on config discipline.\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### 60-second interview story\nStart with producer basics for Fresher, add failure consequences for Senior, add decision framework for Lead, then add diagnostics and version nuance for Staff.\n**Interview angle:** Explain this with one production symptom and one concrete check.\n\n### Satyverse drill — tie-down\nRun producer perf test with linger 0 and linger 10. Compare latency and throughput, then confirm ISR health on target topic.\n**Interview angle:** Explain this with one production symptom and one concrete check."
     },
     {
       "type": "code",
-      "title": "Basic — Producer vocabulary",
+      "title": "Basic — Producer profile validator",
       "language": "java",
       "filename": "Day60Basic.java",
       "level": "basic",
-      "description": "Print acks and idempotence headline.",
-      "code": "package arch.day60;\n\npublic class Day60Basic {\n    public static void main(String[] args) {\n        System.out.println(\"acks=all waits on ISR policy\");\n        System.out.println(\"enable.idempotence dedupes producer retries\");\n        System.out.println(\"linger.ms trades latency for batching\");\n    }\n}\n",
-      "output": "acks=all waits on ISR policy\nenable.idempotence dedupes producer retries\nlinger.ms trades latency for batching\n"
+      "description": "In this code we create two simple producer profiles (payment and analytics) and check if settings are safe. What we are doing: validate acks, idempotence, retries, timeout, and min ISR rules. How we are doing it: small helper methods return VALID/INVALID messages and batch estimates. Why this matters: wrong producer settings can cause data loss, duplicates, or slow responses.\n\nWalkthrough:\nStep 1: Create ProducerProfile objects for payment and analytics topics.\nStep 2: Create TopicPolicy objects with replication and min ISR settings.\nStep 3: Run validateProfile() to check if each profile is safe.\nStep 4: Estimate how many records fit into one batch.\nStep 5: Estimate retry-related latency penalty from linger and retries.\nStep 6: Print a summary map line by line.\n\nExpected output:\npaymentProfile=VALID\nanalyticsProfile=VALID (non-critical profile)\npaymentBatchEstimate=63\nanalyticsBatchEstimate=170\npaymentLatencyPenaltyMs=25\nanalyticsLatencyPenaltyMs=45",
+      "code": "package arch.day60;\n\nimport java.util.LinkedHashMap;\nimport java.util.Map;\n\npublic class Day60Basic {\n    record ProducerProfile(String topic, String acks, boolean idempotence, int retries, int deliveryTimeoutMs, int lingerMs) {}\n    record TopicPolicy(int replicationFactor, int minIsr, boolean strictOrdering) {}\n\n    static String validateProfile(ProducerProfile profile, TopicPolicy policy, boolean criticalFlow) {\n        if (criticalFlow && !\"all\".equals(profile.acks())) return \"INVALID: critical flow requires acks=all\";\n        if (criticalFlow && !profile.idempotence()) return \"INVALID: critical flow requires idempotence=true\";\n        if (profile.retries() < 1) return \"INVALID: retries must be >= 1\";\n        if (profile.deliveryTimeoutMs() < 30000) return \"INVALID: delivery timeout too low\";\n        if (criticalFlow && policy.minIsr() < 2) return \"INVALID: min ISR too low for critical durability\";\n        if (policy.minIsr() > policy.replicationFactor()) return \"INVALID: min ISR cannot exceed replication factor\";\n        return \"VALID\";\n    }\n\n    static int estimateBatchRecords(int batchSizeBytes, int avgRecordBytes, int headerBytes) {\n        int usableBytes = Math.max(1, batchSizeBytes - headerBytes);\n        return Math.max(1, usableBytes / Math.max(1, avgRecordBytes));\n    }\n\n    static int estimateLatencyPenaltyMs(int lingerMs, int retries) {\n        // Simple interview-friendly model: each retry can pay one linger window under stress.\n        return lingerMs * Math.max(1, retries);\n    }\n\n    public static void main(String[] args) {\n        ProducerProfile payment = new ProducerProfile(\"payments.events\", \"all\", true, 5, 45000, 5);\n        ProducerProfile analytics = new ProducerProfile(\"analytics.events\", \"1\", true, 3, 30000, 15);\n        TopicPolicy paymentPolicy = new TopicPolicy(3, 2, true);\n        TopicPolicy analyticsPolicy = new TopicPolicy(2, 1, false);\n\n        String paymentValidation = validateProfile(payment, paymentPolicy, true);\n        String analyticsValidation = validateProfile(analytics, analyticsPolicy, false);\n\n        int paymentBatch = estimateBatchRecords(32768, 512, 256);\n        int analyticsBatch = estimateBatchRecords(65536, 384, 256);\n        int paymentPenalty = estimateLatencyPenaltyMs(payment.lingerMs(), payment.retries());\n        int analyticsPenalty = estimateLatencyPenaltyMs(analytics.lingerMs(), analytics.retries());\n\n        Map<String, String> summary = new LinkedHashMap<>();\n        summary.put(\"paymentProfile\", paymentValidation);\n        summary.put(\"analyticsProfile\", analyticsValidation + \" (non-critical profile)\");\n        summary.put(\"paymentBatchEstimate\", String.valueOf(paymentBatch));\n        summary.put(\"analyticsBatchEstimate\", String.valueOf(analyticsBatch));\n        summary.put(\"paymentLatencyPenaltyMs\", String.valueOf(paymentPenalty));\n        summary.put(\"analyticsLatencyPenaltyMs\", String.valueOf(analyticsPenalty));\n\n        for (Map.Entry<String, String> e : summary.entrySet()) {\n            System.out.println(e.getKey() + \"=\" + e.getValue());\n        }\n    }\n}\n",
+      "output": "paymentProfile=VALID\nanalyticsProfile=VALID (non-critical profile)\npaymentBatchEstimate=63\nanalyticsBatchEstimate=170\npaymentLatencyPenaltyMs=25\nanalyticsLatencyPenaltyMs=45\n"
     },
     {
       "type": "code",
-      "title": "Intermediate — Effective batch size estimate",
+      "title": "Intermediate — Four producer failure scenarios",
       "language": "java",
       "filename": "Day60Intermediate.java",
       "level": "intermediate",
-      "description": "Toy: records per batch from total bytes and avg record size.",
-      "code": "package arch.day60;\n\npublic class Day60Intermediate {\n    public static void main(String[] args) {\n        int batchBytes = 32768;\n        int avgRecord = 512;\n        int est = batchBytes / avgRecord;\n        System.out.println(\"estRecordsPerBatch=\" + est);\n    }\n}\n",
-      "output": "estRecordsPerBatch=64\n"
+      "description": "In this code we simulate 4 real Kafka producer problems: ordering issue, duplicate risk, latency regression, and config drift. What we are doing: each scenario checks input data and creates a diagnosis result. How we are doing it: simple logic checks (key/partition checks and duplicate fingerprint checks) print symptom, cause, why, fix, and verify lines. Why this matters: this teaches step-by-step debugging instead of guessing.\n\nWalkthrough:\nStep 1: Build sample event lists for each scenario.\nStep 2: Run helper checks (ordering risk, duplicate risk, latency risk, profile drift).\nStep 3: Convert each check result into ScenarioResult with explanation fields.\nStep 4: Store all scenario results in one list.\nStep 5: Print each scenario in one line.\n\nExpected output:\nmissing-key-ordering|symptom=out-of-order updates for same entity|cause=null key and cross-partition entity events found|why=ordering is guaranteed per partition, not across topic|fix=set stable entity key for ordered topics|verify=consume with partition print and verify one key stays in one partition|verified=true\nretry-duplicate-risk|symptom=duplicate side effects after transient timeout|cause=same event retried without sink idempotency evidence|why=idempotent producer reduces protocol duplicates, but sink action may still duplicate|fix=enable idempotence and enforce sink idempotency key|verify=replay timeout fault in staging and compare duplicate ratio|verified=true\nbatching-latency-regression|symptom=publish p99 increased after tuning|cause=linger/batch profile too aggressive for user flow|why=bigger linger improves batch efficiency but can hurt interactive latency|fix=reduce linger for interactive topics and benchmark again|verify=run producer perf test with old and new profile, compare p95/p99|verified=true\nprofile-drift|symptom=incidents repeat across services|cause=service profile drift detected|why=profile drift causes inconsistent retries/acks/latency behavior during incidents|fix=enforce shared producer profile tiers in CI|verify=generate nightly profile compliance report from service configs|verified=true",
+      "code": "package arch.day60;\n\nimport java.util.HashMap;\nimport java.util.HashSet;\nimport java.util.List;\nimport java.util.Map;\nimport java.util.Set;\n\npublic class Day60Intermediate {\n    record Event(String key, String value, int attempt, int partition, long createdAtMs) {}\n    record ScenarioResult(String name, String symptom, String cause, String why, String fix, String verify, boolean verified) {}\n\n    static boolean hasOrderingRisk(List<Event> events) {\n        Map<String, Integer> partitionByKey = new HashMap<>();\n        for (Event e : events) {\n            if (e.key() == null) return true;\n            if (!partitionByKey.containsKey(e.key())) partitionByKey.put(e.key(), e.partition());\n            else if (partitionByKey.get(e.key()) != e.partition()) return true;\n        }\n        return false;\n    }\n\n    static boolean hasDuplicatePayloadRisk(List<Event> sendAttempts) {\n        Set<String> unique = new HashSet<>();\n        for (Event e : sendAttempts) {\n            String fingerprint = e.key() + \"|\" + e.value();\n            if (!unique.add(fingerprint) && e.attempt() > 1) return true;\n        }\n        return false;\n    }\n\n    static ScenarioResult scenario1() {\n        List<Event> events = List.of(\n            new Event(null, \"USER_CREATED\", 1, 2, 1000),\n            new Event(\"user-10\", \"EMAIL_UPDATED\", 1, 1, 1100),\n            new Event(\"user-10\", \"EMAIL_VERIFIED\", 1, 3, 1200)\n        );\n        boolean risk = hasOrderingRisk(events);\n        return new ScenarioResult(\n            \"missing-key-ordering\",\n            \"out-of-order updates for same entity\",\n            risk ? \"null key and cross-partition entity events found\" : \"no ordering issue detected\",\n            \"ordering is guaranteed per partition, not across topic\",\n            \"set stable entity key for ordered topics\",\n            \"consume with partition print and verify one key stays in one partition\",\n            risk\n        );\n    }\n\n    static ScenarioResult scenario2() {\n        List<Event> sendAttempts = List.of(\n            new Event(\"pay-1\", \"CHARGE_REQUESTED\", 1, 0, 1000),\n            new Event(\"pay-1\", \"CHARGE_REQUESTED\", 2, 0, 1300),\n            new Event(\"pay-2\", \"CHARGE_REQUESTED\", 1, 1, 1400)\n        );\n        boolean duplicatePossible = hasDuplicatePayloadRisk(sendAttempts);\n        return new ScenarioResult(\n            \"retry-duplicate-risk\",\n            \"duplicate side effects after transient timeout\",\n            duplicatePossible ? \"same event retried without sink idempotency evidence\" : \"no duplicate risk\",\n            \"idempotent producer reduces protocol duplicates, but sink action may still duplicate\",\n            \"enable idempotence and enforce sink idempotency key\",\n            \"replay timeout fault in staging and compare duplicate ratio\",\n            duplicatePossible\n        );\n    }\n\n    static ScenarioResult scenario3() {\n        int beforeP99 = 35;\n        int afterP99 = 240;\n        int budget = 120;\n        boolean latencyRegressed = afterP99 > budget && afterP99 > beforeP99 * 2;\n        return new ScenarioResult(\n            \"batching-latency-regression\",\n            \"publish p99 increased after tuning\",\n            latencyRegressed ? \"linger/batch profile too aggressive for user flow\" : \"no major regression\",\n            \"bigger linger improves batch efficiency but can hurt interactive latency\",\n            \"reduce linger for interactive topics and benchmark again\",\n            \"run producer perf test with old and new profile, compare p95/p99\",\n            latencyRegressed\n        );\n    }\n\n    static ScenarioResult scenario4() {\n        Map<String, String> serviceProfiles = Map.of(\n            \"orders-service\", \"critical-v1\",\n            \"payments-service\", \"critical-v1\",\n            \"analytics-service\", \"custom-unknown\"\n        );\n        Set<String> allowed = Set.of(\"critical-v1\", \"balanced-v1\", \"throughput-v1\");\n        boolean driftFound = serviceProfiles.values().stream().anyMatch(v -> !allowed.contains(v));\n        return new ScenarioResult(\n            \"profile-drift\",\n            \"incidents repeat across services\",\n            driftFound ? \"service profile drift detected\" : \"no drift\",\n            \"profile drift causes inconsistent retries/acks/latency behavior during incidents\",\n            \"enforce shared producer profile tiers in CI\",\n            \"generate nightly profile compliance report from service configs\",\n            driftFound\n        );\n    }\n\n    public static void main(String[] args) {\n        List<ScenarioResult> results = List.of(\n            scenario1(),\n            scenario2(),\n            scenario3(),\n            scenario4()\n        );\n        for (ScenarioResult r : results) {\n            System.out.println(\n                r.name() +\n                \"|symptom=\" + r.symptom() +\n                \"|cause=\" + r.cause() +\n                \"|why=\" + r.why() +\n                \"|fix=\" + r.fix() +\n                \"|verify=\" + r.verify() +\n                \"|verified=\" + r.verified()\n            );\n        }\n    }\n}\n",
+      "output": "missing-key-ordering|symptom=out-of-order updates for same entity|cause=null key and cross-partition entity events found|why=ordering is guaranteed per partition, not across topic|fix=set stable entity key for ordered topics|verify=consume with partition print and verify one key stays in one partition|verified=true\nretry-duplicate-risk|symptom=duplicate side effects after transient timeout|cause=same event retried without sink idempotency evidence|why=idempotent producer reduces protocol duplicates, but sink action may still duplicate|fix=enable idempotence and enforce sink idempotency key|verify=replay timeout fault in staging and compare duplicate ratio|verified=true\nbatching-latency-regression|symptom=publish p99 increased after tuning|cause=linger/batch profile too aggressive for user flow|why=bigger linger improves batch efficiency but can hurt interactive latency|fix=reduce linger for interactive topics and benchmark again|verify=run producer perf test with old and new profile, compare p95/p99|verified=true\nprofile-drift|symptom=incidents repeat across services|cause=service profile drift detected|why=profile drift causes inconsistent retries/acks/latency behavior during incidents|fix=enforce shared producer profile tiers in CI|verify=generate nightly profile compliance report from service configs|verified=true\n"
     },
     {
       "type": "code",
-      "title": "Advanced — Retry budget toy",
+      "title": "Advanced — Topic triage decision engine",
       "language": "java",
       "filename": "Day60Advanced.java",
       "level": "advanced",
-      "description": "Cap attempts with a simple retry loop budget.",
-      "code": "package arch.day60;\n\npublic class Day60Advanced {\n    public static void main(String[] args) {\n        int attempts = 0;\n        int max = 5;\n        boolean ok = false;\n        while (!ok && attempts < max) {\n            attempts++;\n            ok = attempts >= 3;\n        }\n        System.out.println(\"attempts=\" + attempts + \" ok=\" + ok);\n    }\n}\n",
-      "output": "attempts=3 ok=true\n"
+      "description": "In this code we build a small decision engine that reads topic health signals and decides what action to take first during an incident. What we are doing: calculate severity score, assign a risk band, and generate action + verification command + owner. How we are doing it: apply weighted scoring rules, sort topics by risk, and print a mini playbook for each topic. Why this matters: during on-call, this avoids panic and gives a clear first action based on data.\n\nWalkthrough:\nStep 1: Create TopicSignal input objects from dashboard-like metrics.\nStep 2: Calculate severity score with weighted rules.\nStep 3: Convert score into a risk band (SEVERE/HIGH/MEDIUM/LOW).\nStep 4: Generate Recommendation with action, verify command, and owner.\nStep 5: Sort topics by severity so highest risk appears first.\nStep 6: Print recommendation and mini playbook for each topic.\n\nExpected output:\npayments.events|severity=16|riskBand=SEVERE|action=pause non-critical writes and restore replica health first|verify=kafka-topics.sh --describe --topic payments.events|owner=platform-sre\npayments.events|playbook=capture baseline metrics for payments.events -> execute action: pause non-critical writes and restore replica health first\norders.events|severity=4|riskBand=MEDIUM|action=retune batching profile with canary and keep rollback threshold|verify=jstat -gcutil <pid> 1s 10|owner=performance-guild\norders.events|playbook=capture baseline metrics for orders.events -> execute action: retune batching profile with canary and keep rollback threshold\nanalytics.events|severity=0|riskBand=LOW|action=retune batching profile with canary and keep rollback threshold|verify=jstat -gcutil <pid> 1s 10|owner=performance-guild\nanalytics.events|playbook=capture baseline metrics for analytics.events -> execute action: retune batching profile with canary and keep rollback threshold",
+      "code": "package arch.day60;\n\nimport java.util.ArrayList;\nimport java.util.Comparator;\nimport java.util.List;\nimport java.util.Map;\n\npublic class Day60Advanced {\n    record TopicSignal(String topic, int timeoutRate, int duplicateRate, int isr, int minIsr, int p99, int consumerLag) {}\n    record Recommendation(String topic, int severity, String riskBand, String action, String verifyCommand, String owner) {}\n\n    static int severity(TopicSignal s) {\n        // Weighted score: durability threats dominate because they are harder to recover than latency spikes.\n        int score = 0;\n        if (s.timeoutRate() > 5) score += 3;\n        if (s.duplicateRate() > 0) score += 4;\n        if (s.isr() < s.minIsr()) score += 5;\n        if (s.p99() > 150) score += 2;\n        if (s.consumerLag() > 10000) score += 2;\n        return score;\n    }\n\n    static String riskBand(int score) {\n        if (score >= 10) return \"SEVERE\";\n        if (score >= 6) return \"HIGH\";\n        if (score >= 3) return \"MEDIUM\";\n        return \"LOW\";\n    }\n\n    static Recommendation recommend(TopicSignal s) {\n        int score = severity(s);\n        String band = riskBand(score);\n        if (s.isr() < s.minIsr()) {\n            return new Recommendation(\n                s.topic(),\n                score,\n                band,\n                \"pause non-critical writes and restore replica health first\",\n                \"kafka-topics.sh --describe --topic \" + s.topic(),\n                \"platform-sre\"\n            );\n        }\n        if (s.duplicateRate() > 0) {\n            return new Recommendation(\n                s.topic(),\n                score,\n                band,\n                \"enforce idempotent producer + sink idempotency key checks\",\n                \"kafka-consumer-groups.sh --describe --group \" + s.topic() + \"-workers\",\n                \"service-team\"\n            );\n        }\n        return new Recommendation(\n            s.topic(),\n            score,\n            band,\n            \"retune batching profile with canary and keep rollback threshold\",\n            \"jstat -gcutil <pid> 1s 10\",\n            \"performance-guild\"\n        );\n    }\n\n    static Map<String, String> stepByStepPlaybook(Recommendation r) {\n        return Map.of(\n            \"step1\", \"capture baseline metrics for \" + r.topic(),\n            \"step2\", \"execute action: \" + r.action(),\n            \"step3\", \"run verification command: \" + r.verifyCommand(),\n            \"step4\", \"handoff owner: \" + r.owner()\n        );\n    }\n\n    public static void main(String[] args) {\n        // Input model represents what on-call receives from dashboard snapshots.\n        List<TopicSignal> signals = List.of(\n            new TopicSignal(\"payments.events\", 7, 2, 1, 2, 220, 18000),\n            new TopicSignal(\"orders.events\", 3, 0, 2, 2, 165, 6000),\n            new TopicSignal(\"analytics.events\", 1, 0, 2, 1, 95, 1200)\n        );\n\n        List<Recommendation> recs = new ArrayList<>();\n        for (TopicSignal s : signals) recs.add(recommend(s));\n        recs.sort(Comparator.comparingInt(Recommendation::severity).reversed());\n\n        for (Recommendation r : recs) {\n            System.out.println(\n                r.topic() +\n                \"|severity=\" + r.severity() +\n                \"|riskBand=\" + r.riskBand() +\n                \"|action=\" + r.action() +\n                \"|verify=\" + r.verifyCommand() +\n                \"|owner=\" + r.owner()\n            );\n            Map<String, String> playbook = stepByStepPlaybook(r);\n            System.out.println(r.topic() + \"|playbook=\" + playbook.get(\"step1\") + \" -> \" + playbook.get(\"step2\"));\n        }\n    }\n}\n",
+      "output": "payments.events|severity=16|riskBand=SEVERE|action=pause non-critical writes and restore replica health first|verify=kafka-topics.sh --describe --topic payments.events|owner=platform-sre\npayments.events|playbook=capture baseline metrics for payments.events -> execute action: pause non-critical writes and restore replica health first\norders.events|severity=4|riskBand=MEDIUM|action=retune batching profile with canary and keep rollback threshold|verify=jstat -gcutil <pid> 1s 10|owner=performance-guild\norders.events|playbook=capture baseline metrics for orders.events -> execute action: retune batching profile with canary and keep rollback threshold\nanalytics.events|severity=0|riskBand=LOW|action=retune batching profile with canary and keep rollback threshold|verify=jstat -gcutil <pid> 1s 10|owner=performance-guild\nanalytics.events|playbook=capture baseline metrics for analytics.events -> execute action: retune batching profile with canary and keep rollback threshold\n"
     },
     {
       "type": "diagram",
@@ -89,955 +89,769 @@
     },
     {
       "type": "exercise",
-      "title": "Exercise — Kafka producers — durability trio (Day 60 assignment)",
-      "difficulty": "Advanced",
-      "problem": "Print **exactly**: acks=all + min.insync.replicas + replication factor",
-      "hints": [
-        "Single **println** line as in assignment.",
-        "Name one **metric** and one **config** you would check on-call for this day’s topic.",
-        "State a **failure mode** (e.g. rebalance, ISR shrink, schema break) tied to your answer."
+      "title": "Exercise — Fresher producer card",
+      "exercises": [
+        {
+          "level": "Fresher",
+          "problem": "You are writing your first Java producer reference program. 1) Print acks table. 2) Print idempotence meaning. 3) Print key ordering rule. 4) Print one ISR check command.",
+          "hints": [
+            "Use plain System.out.println lines.",
+            "Keep wording short and direct.",
+            "Show one command and one expected check."
+          ],
+          "solution": "package arch.day60;\n\npublic class Day60FresherExercise {\n    public static void main(String[] args) {\n        // This title tells the learner the program is a reference card for week one.\n        System.out.println(\"=== Producer safety card ===\");\n        // This line explains the fastest and least safe write mode.\n        System.out.println(\"acks=0 -> no broker confirmation, possible silent loss\");\n        // This line explains the middle durability option.\n        System.out.println(\"acks=1 -> leader confirms, still has follower loss window\");\n        // This line explains strongest common durability mode.\n        System.out.println(\"acks=all -> ISR confirms write before success\");\n        // This line teaches retry duplicate protection in plain language.\n        System.out.println(\"idempotence -> prevents duplicate writes from retry path\");\n        // This line teaches the ordering rule that beginners miss first.\n        System.out.println(\"stable key -> keeps one entity on one partition order\");\n        // This line gives an actionable command for durability verification.\n        System.out.println(\"command -> kafka-topics.sh --describe --topic orders.events\");\n        // This line tells what to inspect in command output.\n        System.out.println(\"check -> ISR count is healthy for your durability policy\");\n        // This final line reinforces the full safety contract.\n        System.out.println(\"remember -> key + acks + idempotence + ISR health\");\n    }\n}\n"
+        },
+        {
+          "level": "Staff / Architect",
+          "problem": "Your payment stream had duplicates and timeouts during broker churn. 1) Build deterministic topic policy model. 2) Print recommendation table. 3) Print triage commands. 4) Add one prevention guardrail. 5) Print success criteria.",
+          "hints": [
+            "Use records and lists to model decisions.",
+            "Keep output deterministic for review.",
+            "Include both Kafka and JVM diagnostic commands."
+          ],
+          "solution": "package arch.day60;\n\nimport java.util.ArrayList;\nimport java.util.List;\nimport java.util.Map;\n\npublic class Day60StaffExercise {\n    // Staff reasoning starts with explicit data model for decision traceability.\n    record Topic(String name, boolean critical, int p99BudgetMs) {}\n    // Each policy row includes rationale so reviewers can challenge assumptions.\n    record Policy(String topic, String acks, boolean idempotence, int lingerMs, int timeoutMs, String why) {}\n\n    public static void main(String[] args) {\n        // Build deterministic context used in design review and on-call handoff.\n        List<Topic> topics = List.of(\n            new Topic(\"payments.events\", true, 120),\n            new Topic(\"orders.events\", true, 200),\n            new Topic(\"analytics.events\", false, 800)\n        );\n\n        // Apply policy function so similar topics receive consistent settings.\n        List<Policy> policies = new ArrayList<>();\n        for (Topic t : topics) {\n            if (t.critical()) {\n                policies.add(new Policy(t.name(), \"all\", true, 5, 45000, \"critical flow durability\"));\n            } else {\n                policies.add(new Policy(t.name(), \"1\", true, 15, 30000, \"throughput-oriented replayable flow\"));\n            }\n        }\n\n        // Print recommendation table that teams can use directly.\n        System.out.println(\"=== Producer policy table ===\");\n        for (Policy p : policies) {\n            System.out.println(p.topic() + \" | acks=\" + p.acks() + \" | idem=\" + p.idempotence()\n                + \" | linger=\" + p.lingerMs() + \" | timeout=\" + p.timeoutMs() + \" | \" + p.why());\n        }\n\n        // Print first commands per symptom so incident response is immediate.\n        System.out.println(\"=== Triage commands ===\");\n        Map<String, String> triage = Map.of(\n            \"NotEnoughReplicasException\", \"kafka-topics.sh --describe --topic payments.events\",\n            \"TimeoutException\", \"kafka-producer-perf-test.sh --topic payments.events --num-records 10000\",\n            \"High GC pause\", \"jstat -gcutil <pid> 1s 10\"\n        );\n        for (Map.Entry<String, String> e : triage.entrySet()) {\n            System.out.println(e.getKey() + \" -> \" + e.getValue());\n        }\n\n        // This guardrail prevents unsafe overrides from entering production unnoticed.\n        System.out.println(\"guardrail -> CI blocks critical topics without acks=all and idempotence=true\");\n        // This success criterion keeps post-deploy verification objective.\n        System.out.println(\"success -> duplicate side effects zero and timeout rate reduced\");\n    }\n}\n"
+        }
       ],
-      "solution": "package arch.day60;\n\npublic class Day60Exercise {\n    public static void main(String[] args) {\n        System.out.println(\"acks=all + min.insync.replicas + replication factor\");\n    }\n}\n"
+      "audience": "fresher"
     },
     {
-      "type": "useCases",
-      "title": "Use cases — Kafka Producers Deep Dive",
-      "content": "## Use cases — **Kafka producers**\n\n### 1) **Payment** **authorization** **events**\n**Context:** High-value **records** must survive **broker** **failures** without **duplicate** **charges** on retry.\n**Why Day 60:** **acks**, **idempotency**, and **retries** interact with **ISR** policy.\n**Implementation outline:**\n1. Use **idempotent** producer + **acks=all** with **min.insync.replicas** aligned to **tier**.\n2. Set **delivery.timeout.ms** and **retries** so clients **fail** visibly instead of **hanging**.\n3. Monitor **record error rate** and **metadata** refresh spikes.\n**Failure hook:** **Retry** storm after **NOT_LEADER** misconfiguration.\n\n### 2) **Telemetry** **firehose**\n**Context:** Millions of **small** events per second; **cost** sensitive.\n**Why Day 60:** **batch.size**, **linger.ms**, and **compression** dominate **efficiency**.\n**Implementation outline:**\n1. Tune **linger** vs **p99** produce **latency** SLO.\n2. Pick **compression** codec with CPU vs **bandwidth** trade-off.\n3. Use **null** keys only when **ordering** is irrelevant; watch **sticky** **partitioner** skew.\n**Failure hook:** **Buffer** **exhaustion** when **downstream** **backpressure** returns.\n\n### 3) **Outbox** → **Kafka** **bridge**\n**Context:** **DB** transaction commits must **match** **published** events.\n**Why Day 60:** Producer **ordering** per partition pairs with **outbox** **relay** design.\n**Implementation outline:**\n1. Single **partition** key per **aggregate** for **ordered** **relay**.\n2. **Transactional** producer only if **end-to-end** story includes **consumers** and **sinks**.\n3. **DLQ** invalid **payloads** at **schema** boundary.\n**Failure hook:** **Partial** publish → **dual** **write** bugs without **idempotent** **consumers**.\n\n### 4) **Mobile** **client** **analytics**\n**Context:** **Bursty** traffic from app **sessions**; occasional **massive** spikes.\n**Why Day 60:** **max.in.flight** and **ordering** trade-offs when **retries** happen.\n**Implementation outline:**\n1. Cap **in-flight** when **ordering** must hold with **retries**.\n2. **Rate-limit** at **gateway** before **Kafka** to protect **shared** clusters.\n**Failure hook:** **Reordering** visible to **real-time** **dashboards** after **retry**.\n"
+      "type": "exercise",
+      "title": "Exercise — Fresher producer card",
+      "exercises": [
+        {
+          "level": "Fresher",
+          "problem": "You are writing your first Java producer reference program. 1) Print acks table. 2) Print idempotence meaning. 3) Print key ordering rule. 4) Print one ISR check command.",
+          "hints": [
+            "Use plain System.out.println lines.",
+            "Keep wording short and direct.",
+            "Show one command and one expected check."
+          ],
+          "solution": "package arch.day60;\n\npublic class Day60FresherExercise {\n    public static void main(String[] args) {\n        // This title tells the learner the program is a reference card for week one.\n        System.out.println(\"=== Producer safety card ===\");\n        // This line explains the fastest and least safe write mode.\n        System.out.println(\"acks=0 -> no broker confirmation, possible silent loss\");\n        // This line explains the middle durability option.\n        System.out.println(\"acks=1 -> leader confirms, still has follower loss window\");\n        // This line explains strongest common durability mode.\n        System.out.println(\"acks=all -> ISR confirms write before success\");\n        // This line teaches retry duplicate protection in plain language.\n        System.out.println(\"idempotence -> prevents duplicate writes from retry path\");\n        // This line teaches the ordering rule that beginners miss first.\n        System.out.println(\"stable key -> keeps one entity on one partition order\");\n        // This line gives an actionable command for durability verification.\n        System.out.println(\"command -> kafka-topics.sh --describe --topic orders.events\");\n        // This line tells what to inspect in command output.\n        System.out.println(\"check -> ISR count is healthy for your durability policy\");\n        // This final line reinforces the full safety contract.\n        System.out.println(\"remember -> key + acks + idempotence + ISR health\");\n    }\n}\n"
+        },
+        {
+          "level": "Staff / Architect",
+          "problem": "Your payment stream had duplicates and timeouts during broker churn. 1) Build deterministic topic policy model. 2) Print recommendation table. 3) Print triage commands. 4) Add one prevention guardrail. 5) Print success criteria.",
+          "hints": [
+            "Use records and lists to model decisions.",
+            "Keep output deterministic for review.",
+            "Include both Kafka and JVM diagnostic commands."
+          ],
+          "solution": "package arch.day60;\n\nimport java.util.ArrayList;\nimport java.util.List;\nimport java.util.Map;\n\npublic class Day60StaffExercise {\n    // Staff reasoning starts with explicit data model for decision traceability.\n    record Topic(String name, boolean critical, int p99BudgetMs) {}\n    // Each policy row includes rationale so reviewers can challenge assumptions.\n    record Policy(String topic, String acks, boolean idempotence, int lingerMs, int timeoutMs, String why) {}\n\n    public static void main(String[] args) {\n        // Build deterministic context used in design review and on-call handoff.\n        List<Topic> topics = List.of(\n            new Topic(\"payments.events\", true, 120),\n            new Topic(\"orders.events\", true, 200),\n            new Topic(\"analytics.events\", false, 800)\n        );\n\n        // Apply policy function so similar topics receive consistent settings.\n        List<Policy> policies = new ArrayList<>();\n        for (Topic t : topics) {\n            if (t.critical()) {\n                policies.add(new Policy(t.name(), \"all\", true, 5, 45000, \"critical flow durability\"));\n            } else {\n                policies.add(new Policy(t.name(), \"1\", true, 15, 30000, \"throughput-oriented replayable flow\"));\n            }\n        }\n\n        // Print recommendation table that teams can use directly.\n        System.out.println(\"=== Producer policy table ===\");\n        for (Policy p : policies) {\n            System.out.println(p.topic() + \" | acks=\" + p.acks() + \" | idem=\" + p.idempotence()\n                + \" | linger=\" + p.lingerMs() + \" | timeout=\" + p.timeoutMs() + \" | \" + p.why());\n        }\n\n        // Print first commands per symptom so incident response is immediate.\n        System.out.println(\"=== Triage commands ===\");\n        Map<String, String> triage = Map.of(\n            \"NotEnoughReplicasException\", \"kafka-topics.sh --describe --topic payments.events\",\n            \"TimeoutException\", \"kafka-producer-perf-test.sh --topic payments.events --num-records 10000\",\n            \"High GC pause\", \"jstat -gcutil <pid> 1s 10\"\n        );\n        for (Map.Entry<String, String> e : triage.entrySet()) {\n            System.out.println(e.getKey() + \" -> \" + e.getValue());\n        }\n\n        // This guardrail prevents unsafe overrides from entering production unnoticed.\n        System.out.println(\"guardrail -> CI blocks critical topics without acks=all and idempotence=true\");\n        // This success criterion keeps post-deploy verification objective.\n        System.out.println(\"success -> duplicate side effects zero and timeout rate reduced\");\n    }\n}\n"
+        }
+      ],
+      "audience": "staff"
     },
     {
       "type": "interview",
       "title": "Interview Drill",
       "conceptual": [
         {
-          "question": "What does **acks=all** mean?",
-          "answer": "Producer waits for **all** **in-sync replicas** to **ack** according to **broker** **ISR** policy before **success**—pairs with **min.insync.replicas** for **real** durability. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls.",
+          "question": "What does acks=all guarantee?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is TimeoutException spikes during broker churn. A practical way to diagnose quickly is run kafka-topics.sh --describe --topic payments.events, then compare live output against intended durability and ordering policy. A version detail that shows experience is Java 11 and Java 17 fleets commonly run G1GC, which improves pause consistency.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For **What does **acks=all** mean?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "Why **enable.idempotence=true**?",
-          "answer": "Producer **dedupes** **retries** with **sequence** numbers so **network** blips **do not** create **distinct** duplicate **records** at the broker **layer**. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast.",
+          "question": "Why enable idempotence?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is duplicate side effects after retry. A practical way to diagnose quickly is run kafka-consumer-groups.sh --describe --group payment-workers, then compare live output against intended durability and ordering policy. A version detail that shows experience is Newer client versions keep safer defaults, but end-to-end idempotency is still required.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For **Why **enable.idempotence=true**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "How do **retries** interact with **ordering**?",
-          "answer": "**max.in.flight.requests.per.connection** >1 with **retries** can **reorder** **batches** on failure—tune for **latency** vs **ordering** risk. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings.",
+          "question": "How does delivery.timeout.ms affect reliability?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is records expiring under slow broker recovery. A practical way to diagnose quickly is run kafka-producer-perf-test.sh with fixed load, then compare live output against intended durability and ordering policy. A version detail that shows experience is Java 21 improves observability tooling, but timeout semantics stay config-based.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For **How do **retries** interact with **ordering**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "What is **delivery.timeout.ms**?",
-          "answer": "Upper bound for **send** attempts including **retries**—after it **fails** the record **unless** you handle **exceptions**. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
+          "question": "Why does partition key decide order?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is entity timeline shows reorder. A practical way to diagnose quickly is consume with partition print enabled, then compare live output against intended durability and ordering policy. A version detail that shows experience is Routing logic for key hashing stays consistent across modern Java versions.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For **What is **delivery.timeout.ms**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "**linger.ms** vs **batch.size**?",
-          "answer": "**linger** trades **latency** for **better** **batching**; **batch.size** caps **bytes** per **batch**—both **affect** throughput. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast.",
+          "question": "When does linger help and hurt?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is p99 latency regression after tuning. A practical way to diagnose quickly is check perf test latency histogram, then compare live output against intended durability and ordering policy. A version detail that shows experience is JIT improvements reduce overhead, but batching trade-offs remain workload-specific.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For ****linger.ms** vs **batch.size**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "Why **compression.type** matters?",
-          "answer": "Less **network** and **disk** at **cost** of **CPU** on **clients** and **brokers**—pick **lz4**/**zstd** per **SLA**. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings.",
+          "question": "How do retries and in-flight settings interact?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is reorder after network faults. A practical way to diagnose quickly is inspect producer config and incident logs together, then compare live output against intended durability and ordering policy. A version detail that shows experience is Client defaults evolved, but policy mismatch still causes reordering risk.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For **Why **compression.type** matters?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "What is **acks=1** risk?",
-          "answer": "Leader **ack** before **followers** **catch** up—broker **loss** may **lose** data if **leader** had **not** **replicated**. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
+          "question": "What causes NotEnoughReplicasException?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is critical writes rejected in maintenance window. A practical way to diagnose quickly is describe topic ISR and replica state, then compare live output against intended durability and ordering policy. A version detail that shows experience is KRaft changed controller architecture, not producer durability semantics.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For **What is **acks=1** risk?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "**buffer.memory** exhaustion symptom?",
-          "answer": "**block** on **send** or **timeout** depending on **max.block.ms**—indicates **slow** brokers or **too** small **buffer**. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
+          "question": "How do you choose compression safely?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is high CPU with unstable publish latency. A practical way to diagnose quickly is run jstat -gcutil and producer perf test, then compare live output against intended durability and ordering policy. A version detail that shows experience is Java 17 often gives better compression runtime balance than older fleets.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For ****buffer.memory** exhaustion symptom?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "**partitioner** and **sticky** partitioner?",
-          "answer": "**Sticky** batches **same** **partition** for **null** keys improving **batching** efficiency in modern clients. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims.",
+          "question": "Why does metadata freshness matter?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is NOT_LEADER loops and retry storms. A practical way to diagnose quickly is run broker api versions and topic describe, then compare live output against intended durability and ordering policy. A version detail that shows experience is TLS/runtime changes in Java 11+ can influence connection behavior.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For ****partitioner** and **sticky** partitioner?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "**Transactional** producer outline?",
-          "answer": "**initTransactions**, **beginTransaction**, **send** + **commitTransaction** coordinates with **consumers** reading **committed** **offsets** with **isolation** **level**—heavier **latency** cost. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail.",
+          "question": "How does buffer.memory relate to backpressure?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is blocked send calls and queue growth. A practical way to diagnose quickly is run jmap -histo:live for buffer growth clues, then compare live output against intended durability and ordering policy. A version detail that shows experience is Container-aware heap behavior improved after Java 10.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For ****Transactional** producer outline?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "Why avoid unbounded **retries** without **jitter**?",
-          "answer": "**Retry** storm amplifies **outage** load on **already** **sick** **cluster**. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads. When **Kubernetes** is involved, cite **readiness**, **HPA**, **NetworkPolicy**, and **Service** **DNS** as factors that change **latency** independent of **Java** **code**.",
+          "question": "When should transactional producer be used?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is cross-topic consistency drift. A practical way to diagnose quickly is inspect committed offsets and transaction behavior, then compare live output against intended durability and ordering policy. A version detail that shows experience is Client maturity improved over versions but operational overhead remains.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For **Why avoid unbounded **retries** without **jitter**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "**metadata.max.age.ms** relevance?",
-          "answer": "How long **client** **caches** **topic** **metadata** before **refresh**—stale **metadata** causes **NOT_LEADER** loops. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**.",
+          "question": "Why are callbacks mandatory in async send?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is silent error assumptions from ignored callback exceptions. A practical way to diagnose quickly is check callback error metrics and logs, then compare live output against intended durability and ordering policy. A version detail that shows experience is Module-era Java did not change callback semantics.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For ****metadata.max.age.ms** relevance?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "**enable.idempotence** prerequisites?",
-          "answer": "Typically requires **acks=all** and **retries>0**; **check** **broker** **version** compatibility. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
+          "question": "acks=1 vs acks=all for money events?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is missing events after leader failure. A practical way to diagnose quickly is compare topic policy and write error pattern, then compare live output against intended durability and ordering policy. A version detail that shows experience is Acknowledgement semantics are protocol-level and stable across Java versions.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For ****enable.idempotence** prerequisites?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "What is **producer** **metric** **record-error-rate**?",
-          "answer": "Count of **failed** **sends**—pair with **broker** **under-replicated** **partitions** triage. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**.",
+          "question": "How do you separate producer from consumer blame?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is lag and producer errors rise together. A practical way to diagnose quickly is compare producer metrics with consumer group lag in same window, then compare live output against intended durability and ordering policy. A version detail that shows experience is JFR in modern Java helps correlate timelines faster.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For **What is **producer** **metric** **record-error-rate**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         },
         {
-          "question": "**Sampling** vs full **trace** for Kafka?",
-          "answer": "At high **RPS**, **sample** **headers** for **correlation** while **metrics** stay **primary** **SLO** view. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**.",
+          "question": "What is Staff-level producer thinking?",
+          "answer": "At JVM and client level, this producer concept controls how records are buffered, batched, and acknowledged before your service marks work as done. A send call is not one atomic disk write. It travels through client memory, sender threads, network paths, and broker replica rules. When teams misunderstand that chain, production incidents look like random application bugs, but they are usually delivery contract failures. A common symptom is same incident repeats across teams. A practical way to diagnose quickly is audit configs against approved profiles, then compare live output against intended durability and ordering policy. A version detail that shows experience is Version upgrades help diagnostics, but governance prevents repeat failures.. Strong interview answers connect internals, visible failures, diagnostics, and version-specific behavior in one coherent explanation.",
           "followUps": [
             {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For ****Sampling** vs full **trace** for Kafka?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
+              "question": "how does this show up in production?",
+              "answer": "It often starts as a latency or retry pattern, not an immediate crash. You see timeout increases, then lag growth, then business-level side effects like duplicate actions or delayed status updates. The signal is correlation across producer metrics and broker health, not one isolated error line."
             },
             {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
-            }
-          ]
-        },
-        {
-          "question": "What does **min.insync.replicas** actually gate for producers using **acks=all**?",
-          "answer": "It requires enough **ISR** replicas to acknowledge before the write is considered **durable** under your policy. If ISR shrinks below **min ISR**, producers with **acks=all** **block or error**, trading availability for **durability**—a deliberate safety lever.",
-          "followUps": [
-            {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For **What does **min.insync.replicas** actually gate for producers using **acks=all**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
-            },
-            {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
-            }
-          ]
-        },
-        {
-          "question": "How does **consumer group generation** relate to **rebalances**?",
-          "answer": "Each membership change bumps **generation**. **Stale** members cannot commit offsets; **rebalances** revoke and assign partitions. Frequent generation churn usually points to **timeouts**, **slow polls**, or **unstable** network—not normal steady state.",
-          "followUps": [
-            {
-              "question": "What production metric would you watch first to validate that answer?",
-              "answer": "For **How does **consumer group generation** relate to **rebalances**?**, pair **consumer lag per partition**, **under-replicated partitions**, and **request/queue time on brokers** with **traces** from producing services. Alert on sustained lag growth and ISR shrinkage, not only error rates."
-            },
-            {
-              "question": "Which configuration or cluster policy most often invalidates a textbook answer?",
-              "answer": "**min.insync.replicas** vs **replication.factor**, **unclean leader election**, **retention/compaction** on money topics, and **max.poll.interval.ms** vs handler runtime usually surface gaps between slides and production."
+              "question": "what is a common trap on this topic?",
+              "answer": "Teams copy a config snippet from another service without matching risk class, traffic shape, and topic policy. That passes local tests but fails at scale. The safer habit is to keep approved profiles by risk tier and verify each change with one targeted benchmark."
             }
           ]
         }
       ],
       "codeBased": [
         {
-          "question": "Properties snippet: **acks all** + **idempotence**.",
-          "answer": "// p.put(\"acks\",\"all\"); p.put(\"enable.idempotence\",\"true\");",
-          "followUps": [
-            {
-              "question": "What failure mode shows up first when this is misconfigured under load?",
-              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// p.put(\"acks\",\"all\"); p.put(\"enable.idempotence\",\"true\");** to observable signals before jumping to code changes."
-            },
-            {
-              "question": "How would you prove correctness in staging without flaky integration tests?",
-              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
-            }
-          ]
+          "question": "What prints?\n```java\nInteger a = 127;\nInteger b = 127;\nSystem.out.println(a == b);\n```",
+          "answer": "It prints true because small Integer values are cached and both references point to the same boxed object. This is JVM autoboxing cache behavior, not business logic."
         },
         {
-          "question": "**KafkaProducer** send **Callback** purpose.",
-          "answer": "// onCompletion(metadata, exception) for async error handling",
-          "followUps": [
-            {
-              "question": "What failure mode shows up first when this is misconfigured under load?",
-              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// onCompletion(metadata, exception) for async error handling** to observable signals before jumping to code changes."
-            },
-            {
-              "question": "How would you prove correctness in staging without flaky integration tests?",
-              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
-            }
-          ]
+          "question": "What prints?\n```java\nInteger a = 128;\nInteger b = 128;\nSystem.out.println(a == b);\n```",
+          "answer": "It prints false with default cache range because each boxing operation creates a different object. Value equality would still be true with equals."
         },
         {
-          "question": "**flush** and **close** on shutdown.",
-          "answer": "// producer.flush(); producer.close(Duration.ofSeconds(10));",
-          "followUps": [
-            {
-              "question": "What failure mode shows up first when this is misconfigured under load?",
-              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// producer.flush(); producer.close(Duration.ofSeconds(10));** to observable signals before jumping to code changes."
-            },
-            {
-              "question": "How would you prove correctness in staging without flaky integration tests?",
-              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
-            }
-          ]
+          "question": "What prints?\n```java\nString a = \"ab\";\nString b = \"a\" + \"b\";\nSystem.out.println(a == b);\n```",
+          "answer": "It prints true because compile-time constant folding puts both references in the same string pool entry."
         },
         {
-          "question": "**max.block.ms** meaning.",
-          "answer": "// time wait for metadata buffer space when sending",
-          "followUps": [
-            {
-              "question": "What failure mode shows up first when this is misconfigured under load?",
-              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// time wait for metadata buffer space when sending** to observable signals before jumping to code changes."
-            },
-            {
-              "question": "How would you prove correctness in staging without flaky integration tests?",
-              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
-            }
-          ]
+          "question": "What prints?\n```java\nString a = new String(\"ab\");\nString b = new String(\"ab\");\nSystem.out.println(a == b);\n```",
+          "answer": "It prints false because each new String call creates a separate heap object reference."
         },
         {
-          "question": "**compression.type=lz4** one-liner benefit.",
-          "answer": "// CPU vs bandwidth trade-off faster than gzip often",
-          "followUps": [
-            {
-              "question": "What failure mode shows up first when this is misconfigured under load?",
-              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// CPU vs bandwidth trade-off faster than gzip often** to observable signals before jumping to code changes."
-            },
-            {
-              "question": "How would you prove correctness in staging without flaky integration tests?",
-              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
-            }
-          ]
+          "question": "What prints?\n```java\nint x = Integer.MAX_VALUE;\nSystem.out.println(x + 1);\n```",
+          "answer": "It prints -2147483648 due to silent integer overflow wraparound in two's complement arithmetic."
         },
         {
-          "question": "**transactional.id** why needed?",
-          "answer": "// fencing and epoch for exactly-once producer sessions",
-          "followUps": [
-            {
-              "question": "What failure mode shows up first when this is misconfigured under load?",
-              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// fencing and epoch for exactly-once producer sessions** to observable signals before jumping to code changes."
-            },
-            {
-              "question": "How would you prove correctness in staging without flaky integration tests?",
-              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
-            }
-          ]
+          "question": "What happens?\n```java\nLong l = null;\nSystem.out.println(l + 1);\n```",
+          "answer": "It throws NullPointerException because null Long must be unboxed to primitive long before addition."
         },
         {
-          "question": "**buffer.memory** tuning direction under backlog.",
-          "answer": "// raise buffer or fix broker throughput",
-          "followUps": [
-            {
-              "question": "What failure mode shows up first when this is misconfigured under load?",
-              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// raise buffer or fix broker throughput** to observable signals before jumping to code changes."
-            },
-            {
-              "question": "How would you prove correctness in staging without flaky integration tests?",
-              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
-            }
-          ]
+          "question": "What prints?\n```java\nObject o = \"k\";\nSystem.out.println(o instanceof String);\n```",
+          "answer": "It prints true because runtime type is String and instanceof checks actual runtime object type."
         },
         {
-          "question": "**batch.size** too small symptom.",
-          "answer": "// low throughput high request count",
-          "followUps": [
-            {
-              "question": "What failure mode shows up first when this is misconfigured under load?",
-              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// low throughput high request count** to observable signals before jumping to code changes."
-            },
-            {
-              "question": "How would you prove correctness in staging without flaky integration tests?",
-              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
-            }
-          ]
-        },
-        {
-          "question": "**linger.ms** zero vs five ms trade.",
-          "answer": "// lower latency vs bigger batches",
-          "followUps": [
-            {
-              "question": "What failure mode shows up first when this is misconfigured under load?",
-              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// lower latency vs bigger batches** to observable signals before jumping to code changes."
-            },
-            {
-              "question": "How would you prove correctness in staging without flaky integration tests?",
-              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
-            }
-          ]
-        },
-        {
-          "question": "**RecordMetadata** fields interview.",
-          "answer": "// topic partition offset timestamp",
-          "followUps": [
-            {
-              "question": "What failure mode shows up first when this is misconfigured under load?",
-              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **// topic partition offset timestamp** to observable signals before jumping to code changes."
-            },
-            {
-              "question": "How would you prove correctness in staging without flaky integration tests?",
-              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
-            }
-          ]
-        },
-        {
-          "question": "How does `max.block.ms` affect producer `send()` behavior?",
-          "answer": "It bounds how long **send** can block when the **metadata** or **buffer** is unavailable. Too low → **fail fast** under stress; too high → **threads** stall. Tune with **buffer** memory and **delivery** timeout together.",
-          "followUps": [
-            {
-              "question": "What failure mode shows up first when this is misconfigured under load?",
-              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie **It bounds how long **send** can block when the **metadata** or **buffer** is unavailable. Too low → ** to observable signals before jumping to code changes."
-            },
-            {
-              "question": "How would you prove correctness in staging without flaky integration tests?",
-              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
-            }
-          ]
-        },
-        {
-          "question": "What is the difference between `enable.auto.commit` and **manual** commits?",
-          "answer": "**Auto commit** commits **periodically** and can commit **before** processing finishes → **at-least-once** hazards. **Manual** commits after processing align **offsets** with **side effects**—with **rebalance** pitfalls if mis-ordered.",
-          "followUps": [
-            {
-              "question": "What failure mode shows up first when this is misconfigured under load?",
-              "answer": "Typical symptoms: **rebalance storms**, **duplicate delivery** after retries, **metadata refresh loops** (**NOT_LEADER**), or **producer buffer exhaustion**. Tie ****Auto commit** commits **periodically** and can commit **before** processing finishes → **at-least-** to observable signals before jumping to code changes."
-            },
-            {
-              "question": "How would you prove correctness in staging without flaky integration tests?",
-              "answer": "Use **deterministic** workloads: fixed keys, controlled partition counts, inject broker pause/leader movement in a test cluster, and assert **offset** progress + **exactly-once** expectations with idempotent sinks or test harnesses."
-            }
-          ]
+          "question": "What prints?\n```java\nString a = \"id-\" + 1;\nString b = \"id-1\";\nSystem.out.println(a == b);\n```",
+          "answer": "It prints true because this is compile-time constant folding into one interned string pool value."
         }
       ],
       "seniorScenario": [
         {
-          "question": "**Incident:** **Duplicate** charges after **Kafka** **brownout**.",
-          "answer": "**(1) Immediate response** Freeze risky **consumers**; check **idempotence**.\n\n**(2) Root cause** **Idempotence** **disabled** + **aggressive** **retries**.\n\n**(3) Fix** Enable **idempotence**; **business** **idempotency** keys.\n\n**(4) Prevention** Dashboard **producer** **error** rate. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail. Close with **prevention**: **contract** tests for **clients**, **SLO** alerts on **client-side** **error** rates, **game** days that **kill** **pods** during **business** hours in **staging**, and **lint** rules banning **blocking** calls on **reactor** threads.",
-          "followUps": [
-            {
-              "question": "How do you communicate blast radius and ETA to stakeholders during the incident?",
-              "answer": "For ****Incident:** **Duplicate** charges after **Kafka** **brownout**.**, report **which topics/partitions** lag, **whether writes are still accepted**, **data-loss risk** (ISR), and **consumer backlog time**. Give a **bounded** ETA tied to a concrete mitigation (scale, pause traffic, fail over)."
-            },
-            {
-              "question": "What permanent guardrails prevent a repeat in six months?",
-              "answer": "Add **SLOs** on lag and ISR, **game days** for AZ loss and broker restarts, **capacity models** for partitions, and **review gates** for retention/compaction and ACL changes."
-            }
-          ]
+          "question": "Duplicate payment side effects after broker failover",
+          "answer": "**Immediate response:** Run kafka-topics.sh describe and consumer-group lag checks first. Capture producer error rate, topic ISR state, and lag snapshot before changing settings so you can prove impact after mitigation. Share this snapshot in the incident channel so everyone operates from the same facts. If data loss risk exists, pause non-critical publishers first to reduce blast radius while keeping critical flows observable.\n\n**Root cause:** Idempotence and downstream side-effect idempotency were not aligned, so retry behavior produced duplicate business actions. At runtime, producer sender threads and in-memory batches amplify policy mistakes during broker stress. What looks like app instability is often a delivery guarantee mismatch. Teams usually misread this because business symptoms appear in downstream services, not near the producer code. The correct analysis traces one event from producer send to partition state to consumer side effect before proposing config changes.\n\n**Fix:** Enable producer idempotence, enforce stable payment key, and verify downstream idempotency key contract. Roll out through one canary first, then compare duplicate rate, timeout rate, and p99 publish latency over a full traffic window. Keep rollback criteria explicit and time-bound so responders do not debate during pressure. Document exact setting deltas in the incident ticket so post-mortem reviewers can connect each metric change to one config change.\n\n**Prevention:** Publish critical-topic baseline profile and enforce it in CI. Add release guardrails: command evidence, policy compliance checks, and a rollback trigger for critical topics. Turn those guardrails into reusable templates in PR review and release checklists. Review adoption monthly so reliability policy stays active instead of becoming outdated documentation."
         },
         {
-          "question": "**Ops:** **acks=all** but **silent** **loss** risk.",
-          "answer": "**(1) Immediate response** Check **min ISR** vs **RF**.\n\n**(2) Root cause** **min.insync.replicas** too low.\n\n**(3) Fix** Raise **min ISR**; **alert** **under-replicated**.\n\n**(4) Prevention** Policy lint on **topic** configs. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims.",
-          "followUps": [
-            {
-              "question": "How do you communicate blast radius and ETA to stakeholders during the incident?",
-              "answer": "For ****Ops:** **acks=all** but **silent** **loss** risk.**, report **which topics/partitions** lag, **whether writes are still accepted**, **data-loss risk** (ISR), and **consumer backlog time**. Give a **bounded** ETA tied to a concrete mitigation (scale, pause traffic, fail over)."
-            },
-            {
-              "question": "What permanent guardrails prevent a repeat in six months?",
-              "answer": "Add **SLOs** on lag and ISR, **game days** for AZ loss and broker restarts, **capacity models** for partitions, and **review gates** for retention/compaction and ACL changes."
-            }
-          ]
+          "question": "Producer timeout and checkout latency doubled after deploy",
+          "answer": "**Immediate response:** Capture latency histogram and producer error metrics immediately. Capture producer error rate, topic ISR state, and lag snapshot before changing settings so you can prove impact after mitigation. Share this snapshot in the incident channel so everyone operates from the same facts. If data loss risk exists, pause non-critical publishers first to reduce blast radius while keeping critical flows observable.\n\n**Root cause:** Linger and batching were increased without workload fit, pushing request latency beyond SLO. At runtime, producer sender threads and in-memory batches amplify policy mistakes during broker stress. What looks like app instability is often a delivery guarantee mismatch. Teams usually misread this because business symptoms appear in downstream services, not near the producer code. The correct analysis traces one event from producer send to partition state to consumer side effect before proposing config changes.\n\n**Fix:** Rollback to known-safe baseline, retune in small steps with perf test evidence. Roll out through one canary first, then compare duplicate rate, timeout rate, and p99 publish latency over a full traffic window. Keep rollback criteria explicit and time-bound so responders do not debate during pressure. Document exact setting deltas in the incident ticket so post-mortem reviewers can connect each metric change to one config change.\n\n**Prevention:** Require benchmark attachment for producer tuning PRs. Add release guardrails: command evidence, policy compliance checks, and a rollback trigger for critical topics. Turn those guardrails into reusable templates in PR review and release checklists. Review adoption monthly so reliability policy stays active instead of becoming outdated documentation."
         },
         {
-          "question": "**Latency:** **p99** produce spikes after **compression** change.",
-          "answer": "**(1) Immediate response** Rollback **compression** flag.\n\n**(2) Root cause** **zstd** **level** too high on **small** **messages**.\n\n**(3) Fix** Switch **algorithm** or **level**; **batch** better.\n\n**(4) Prevention** Microbench **payload** mix. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast.",
-          "followUps": [
-            {
-              "question": "How do you communicate blast radius and ETA to stakeholders during the incident?",
-              "answer": "For ****Latency:** **p99** produce spikes after **compression** change.**, report **which topics/partitions** lag, **whether writes are still accepted**, **data-loss risk** (ISR), and **consumer backlog time**. Give a **bounded** ETA tied to a concrete mitigation (scale, pause traffic, fail over)."
-            },
-            {
-              "question": "What permanent guardrails prevent a repeat in six months?",
-              "answer": "Add **SLOs** on lag and ISR, **game days** for AZ loss and broker restarts, **capacity models** for partitions, and **review gates** for retention/compaction and ACL changes."
-            }
-          ]
+          "question": "NotEnoughReplicasException during maintenance",
+          "answer": "**Immediate response:** Describe topic ISR and leader state before modifying app settings. Capture producer error rate, topic ISR state, and lag snapshot before changing settings so you can prove impact after mitigation. Share this snapshot in the incident channel so everyone operates from the same facts. If data loss risk exists, pause non-critical publishers first to reduce blast radius while keeping critical flows observable.\n\n**Root cause:** Topic policy and maintenance state temporarily violated required replica quorum for safe writes. At runtime, producer sender threads and in-memory batches amplify policy mistakes during broker stress. What looks like app instability is often a delivery guarantee mismatch. Teams usually misread this because business symptoms appear in downstream services, not near the producer code. The correct analysis traces one event from producer send to partition state to consumer side effect before proposing config changes.\n\n**Fix:** Restore ISR health, coordinate rollout, and keep durability policy explicit. Roll out through one canary first, then compare duplicate rate, timeout rate, and p99 publish latency over a full traffic window. Keep rollback criteria explicit and time-bound so responders do not debate during pressure. Document exact setting deltas in the incident ticket so post-mortem reviewers can connect each metric change to one config change.\n\n**Prevention:** Add maintenance playbook checks for critical topic policy readiness. Add release guardrails: command evidence, policy compliance checks, and a rollback trigger for critical topics. Turn those guardrails into reusable templates in PR review and release checklists. Review adoption monthly so reliability policy stays active instead of becoming outdated documentation."
         },
         {
-          "question": "**Design:** **Ordered** **per user** events.",
-          "answer": "**(1) Immediate response** Partition key = **userId**.\n\n**(2) Root cause** Wrong key → **cross-partition** reorder.\n\n**(3) Fix** Enforce **key** in **API** contract.\n\n**(4) Prevention** Chaos test **leader** failover ordering. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims. Tie answers to **Spring** reality: **Feign** + **LoadBalancer**, **WebClient** + **`ExchangeFilterFunction`**, **Resilience4j** registries, and **Micrometer** tags that make **on-call** searches fast. Explain **second-order** effects: **retry** amplification, **queue** growth, **thread** **pool** exhaustion, and **cost** of extra **hops** when **edge** dependencies like **Redis** rate-limit stores fail.",
-          "followUps": [
-            {
-              "question": "How do you communicate blast radius and ETA to stakeholders during the incident?",
-              "answer": "For ****Design:** **Ordered** **per user** events.**, report **which topics/partitions** lag, **whether writes are still accepted**, **data-loss risk** (ISR), and **consumer backlog time**. Give a **bounded** ETA tied to a concrete mitigation (scale, pause traffic, fail over)."
-            },
-            {
-              "question": "What permanent guardrails prevent a repeat in six months?",
-              "answer": "Add **SLOs** on lag and ISR, **game days** for AZ loss and broker restarts, **capacity models** for partitions, and **review gates** for retention/compaction and ACL changes."
-            }
-          ]
+          "question": "Ordering bugs after introducing new producer path",
+          "answer": "**Immediate response:** Consume with partition output and inspect key distribution. Capture producer error rate, topic ISR state, and lag snapshot before changing settings so you can prove impact after mitigation. Share this snapshot in the incident channel so everyone operates from the same facts. If data loss risk exists, pause non-critical publishers first to reduce blast radius while keeping critical flows observable.\n\n**Root cause:** New path sent null or unstable keys, so per-entity events spread across partitions. At runtime, producer sender threads and in-memory batches amplify policy mistakes during broker stress. What looks like app instability is often a delivery guarantee mismatch. Teams usually misread this because business symptoms appear in downstream services, not near the producer code. The correct analysis traces one event from producer send to partition state to consumer side effect before proposing config changes.\n\n**Fix:** Standardize key derivation and block null keys on ordered streams. Roll out through one canary first, then compare duplicate rate, timeout rate, and p99 publish latency over a full traffic window. Keep rollback criteria explicit and time-bound so responders do not debate during pressure. Document exact setting deltas in the incident ticket so post-mortem reviewers can connect each metric change to one config change.\n\n**Prevention:** Add schema/review gate that requires key ownership definition. Add release guardrails: command evidence, policy compliance checks, and a rollback trigger for critical topics. Turn those guardrails into reusable templates in PR review and release checklists. Review adoption monthly so reliability policy stays active instead of becoming outdated documentation."
         },
         {
-          "question": "**Bug:** **metadata** storm from **tight** **retry** loop.",
-          "answer": "**(1) Immediate response** Back off **clients**.\n\n**(2) Root cause** **NOT_LEADER** **treated** as **fatal** without **refresh** guard.\n\n**(3) Fix** Exponential backoff + cap.\n\n**(4) Prevention** Synthetic **leader** step-down test. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**. Call out **ownership**: **platform** **SRE** for **mesh**/**certs**, **service** teams for **timeout** policy, **SRE** for **SLO** **burn** **alerts**—and how those teams **coordinate** during **sev-1** calls. Interviewers reward naming **metrics** (`http_client_requests_seconds`, `resilience4j_circuitbreaker_state`), **trace** correlation IDs, and **rollback** criteria rather than hand-wavy resilience claims.",
-          "followUps": [
-            {
-              "question": "How do you communicate blast radius and ETA to stakeholders during the incident?",
-              "answer": "For ****Bug:** **metadata** storm from **tight** **retry** loop.**, report **which topics/partitions** lag, **whether writes are still accepted**, **data-loss risk** (ISR), and **consumer backlog time**. Give a **bounded** ETA tied to a concrete mitigation (scale, pause traffic, fail over)."
-            },
-            {
-              "question": "What permanent guardrails prevent a repeat in six months?",
-              "answer": "Add **SLOs** on lag and ISR, **game days** for AZ loss and broker restarts, **capacity models** for partitions, and **review gates** for retention/compaction and ACL changes."
-            }
-          ]
-        },
-        {
-          "question": "**Cost:** **10GB/s** egress from **produce** **fan-in**.",
-          "answer": "**(1) Immediate response** Placement + **compression**.\n\n**(2) Root cause** **JSON** **uncompressed** across **regions**.\n\n**(3) Fix** **Schema** **binary** + **compression** + **regional** **clusters**.\n\n**(4) Prevention** FinOps dashboard per team. For **gateway** and **service** stacks, emphasize **timeout** ordering (**outer > inner**), **bulkheads** per **tenant**, and **JWT** **cache** **TTL** during **issuer** rotations. Communicate **executive**-friendly **impact**: **customer** **minutes** degraded, **error** **budget** burn, **mitigation** **ETA**, and **post-incident** **themes** mapped to **roadmap** work. Reference **security**: **mTLS** **service** identity, **OAuth2** **scopes**, **audit** logs at **edge**, and why **secrets** never belong in **Feign** **URL** query strings. Contrast **happy** **path** docs with **partition** behavior: **split** **retries**, **half-open** **probes**, **degraded** **read** modes, and **idempotency** keys that prevent **duplicate** **writes**. Mention **verification**: **`curl -v`** through **gateway**, **`kubectl logs`**, **APM** **waterfall** **spans**, and **dashboards** that slice **p99** by **downstream** **service** **name**. Senior answers separate **symptom** from **root** **cause**: **502** at **edge** can be **empty** **Endpoints**, **stale** **pool**, or **upstream** **panic**—each needs different **first** **commands**.",
-          "followUps": [
-            {
-              "question": "How do you communicate blast radius and ETA to stakeholders during the incident?",
-              "answer": "For ****Cost:** **10GB/s** egress from **produce** **fan-in**.**, report **which topics/partitions** lag, **whether writes are still accepted**, **data-loss risk** (ISR), and **consumer backlog time**. Give a **bounded** ETA tied to a concrete mitigation (scale, pause traffic, fail over)."
-            },
-            {
-              "question": "What permanent guardrails prevent a repeat in six months?",
-              "answer": "Add **SLOs** on lag and ISR, **game days** for AZ loss and broker restarts, **capacity models** for partitions, and **review gates** for retention/compaction and ACL changes."
-            }
-          ]
+          "question": "Recurring incidents from cross-team config drift",
+          "answer": "**Immediate response:** Audit live producer configs against approved risk-tier profiles. Capture producer error rate, topic ISR state, and lag snapshot before changing settings so you can prove impact after mitigation. Share this snapshot in the incident channel so everyone operates from the same facts. If data loss risk exists, pause non-critical publishers first to reduce blast radius while keeping critical flows observable.\n\n**Root cause:** Each team copied snippets, producing inconsistent retries, acks, and timeout behavior under stress. At runtime, producer sender threads and in-memory batches amplify policy mistakes during broker stress. What looks like app instability is often a delivery guarantee mismatch. Teams usually misread this because business symptoms appear in downstream services, not near the producer code. The correct analysis traces one event from producer send to partition state to consumer side effect before proposing config changes.\n\n**Fix:** Ship shared starter config and runtime policy alerts for unsafe overrides. Roll out through one canary first, then compare duplicate rate, timeout rate, and p99 publish latency over a full traffic window. Keep rollback criteria explicit and time-bound so responders do not debate during pressure. Document exact setting deltas in the incident ticket so post-mortem reviewers can connect each metric change to one config change.\n\n**Prevention:** Track profile adoption and include compliance in architecture review. Add release guardrails: command evidence, policy compliance checks, and a rollback trigger for critical topics. Turn those guardrails into reusable templates in PR review and release checklists. Review adoption monthly so reliability policy stays active instead of becoming outdated documentation."
         }
       ],
       "wrongAnswers": [
-        "**Idempotence** removes need for **consumer** **dedupe** — **Correction:** **Still** need **business** **idempotency** for **side effects**.",
-        "**acks=0** is fine for **money** — **Correction:** **No** delivery guarantee.",
-        "**batch.size** only affects **broker** — **Correction:** **Client** **batching** first.",
-        "**Infinite** **retries** always heal the cluster — **Correction:** **Can** **DDOS** **yourself**.",
-        "**Producer** never needs **flush** — **Correction:** **Shutdown** **paths** need **flush/close**.",
-        "**Same** **key** optional for **ordering** — **Correction:** **Ordering** is **partition-scoped** with **key** routing.",
-        "**compression** is free — **Correction:** **CPU** **cost** on both sides.",
-        "**Transactional** producer is default — **Correction:** **Overhead**; use when **EOS** story **requires** it."
-      ]
+        "acks=all means duplicates are impossible in all systems.",
+        "Producer idempotence removes need for downstream idempotency.",
+        "More retries always means more reliability without risk.",
+        "Ordering is guaranteed across an entire topic with null keys.",
+        "You should tune linger upward without checking user latency.",
+        "NotEnoughReplicasException always means Kafka is broken.",
+        "Java version upgrades automatically fix producer reliability bugs.",
+        "If tests pass locally, producer config drift is not dangerous."
+      ],
+      "jobSwitch": {
+        "resumeBullet": "Standardized producer safety profile across 14 services, reducing duplicate payment incidents to zero within one quarter.",
+        "interviewPositioning": "When I join a team, I map critical event paths to explicit producer durability tiers in week one. I validate live topic ISR and producer defaults before changing feature code, so reliability issues are caught early and explained clearly.",
+        "starAnchor": "Our payment platform had repeated duplicate side effects during broker turbulence. I was asked to fix reliability without slowing delivery. I audited producer configs, introduced shared critical-topic defaults with idempotence and bounded retry policy, and added CI checks for unsafe overrides. Within six weeks major duplicate incidents dropped by 90%, and by quarter end we had zero severe payment duplication pages. The runbook became part of onboarding."
+      }
     },
     {
       "type": "mcq",
       "title": "MCQ Quiz — Kafka Producers Deep Dive",
-      "description": "Thirty questions from basic to advanced — Kafka Producers Deep Dive. Read every option; distractors are plausible but wrong for a precise reason.",
+      "description": "30 questions split by basic, intermediate, and advanced bands.",
       "questions": [
         {
           "id": 1,
           "level": "basic",
           "category": "theory",
-          "question": "[Kafka Producers] Which statement best describes **acks=all** in production Kafka/messaging contexts?",
+          "question": "acks=all waits for ISR acknowledgement.",
           "options": {
-            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
-            "B": "It is purely a UI concern unrelated to brokers or clients.",
-            "C": "It disables all replication automatically.",
-            "D": "It guarantees global total order for every topic."
+            "A": "Yes",
+            "B": "No",
+            "C": "Only on Java 8",
+            "D": "Only with transactions"
           },
           "answer": "A",
-          "explanation": "**acks=all** belongs to the operational model for **Kafka Producers**—tie it to trade-offs and measurements, not absolutes."
+          "explanation": "Correct. It ties producer success to in-sync replica acknowledgement."
         },
         {
           "id": 2,
           "level": "basic",
-          "category": "code",
-          "question": "[Kafka Producers] Which option is a **plausible distractor** interviewers use about **idempotent producer**?",
+          "category": "theory",
+          "question": "Idempotence mainly helps with retry duplicates.",
           "options": {
-            "A": "A precise, bounded statement tied to ordering, ISR, or consumer groups.",
-            "B": "A blanket claim that ignores partition boundaries or client semantics.",
-            "C": "A metric-backed troubleshooting step.",
-            "D": "A configuration paired with a failure mode."
+            "A": "Yes",
+            "B": "No",
+            "C": "Only on Java 8",
+            "D": "Only with transactions"
           },
-          "answer": "B",
-          "explanation": "Watch for absolutes on **idempotent producer** that ignore **per-partition** semantics and client responsibilities."
+          "answer": "A",
+          "explanation": "Correct. It reduces protocol-level duplicate writes during retries."
         },
         {
           "id": 3,
           "level": "basic",
-          "category": "scenario",
-          "question": "[Kafka Producers] Incident: user-visible delay worsens after a deploy touching **retries**. What is a credible first hypothesis?",
+          "category": "theory",
+          "question": "Stable key matters for per-entity ordering.",
           "options": {
-            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
-            "B": "The system randomly deleted all state.",
-            "C": "DNS always causes delay; ignore application logic.",
-            "D": "You always need fewer threads when latency grows."
+            "A": "Yes",
+            "B": "No",
+            "C": "Only on Java 8",
+            "D": "Only with transactions"
           },
           "answer": "A",
-          "explanation": "Tie **retries** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+          "explanation": "Correct. Ordering is partition scoped, so key routing is critical."
         },
         {
           "id": 4,
           "level": "basic",
           "category": "theory",
-          "question": "[Kafka Producers] Which statement best describes **linger.ms** in production Kafka/messaging contexts?",
+          "question": "linger.ms is a batching-versus-latency knob.",
           "options": {
-            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
-            "B": "It is purely a UI concern unrelated to brokers or clients.",
-            "C": "It disables all replication automatically.",
-            "D": "It guarantees global total order for every topic."
+            "A": "Yes",
+            "B": "No",
+            "C": "Only on Java 8",
+            "D": "Only with transactions"
           },
           "answer": "A",
-          "explanation": "**linger.ms** belongs to the operational model for **Kafka Producers**—tie it to trade-offs and measurements, not absolutes."
+          "explanation": "Correct. Higher linger can improve batching but increase latency."
         },
         {
           "id": 5,
           "level": "basic",
-          "category": "code",
-          "question": "[Kafka Producers] You see misconfiguration around **batch.size** in a code review. What is the best first response?",
+          "category": "code-reading",
+          "question": "What prints?\n```java\nInteger a=127,b=127;System.out.println(a==b);\n```",
           "options": {
-            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
-            "B": "Delete the topic and recreate it with fewer partitions.",
-            "C": "Set all timeouts to 1ms for safety.",
-            "D": "Disable metrics to reduce noise."
+            "A": "true",
+            "B": "false",
+            "C": "error",
+            "D": "null"
           },
           "answer": "A",
-          "explanation": "Validate **batch.size** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+          "explanation": "Integer cache applies in this range."
         },
         {
           "id": 6,
           "level": "basic",
-          "category": "scenario",
-          "question": "[Kafka Producers] Incident: user-visible delay worsens after a deploy touching **compression**. What is a credible first hypothesis?",
+          "category": "code-reading",
+          "question": "What prints?\n```java\nString a=\"a\"+\"b\";String b=\"ab\";System.out.println(a==b);\n```",
           "options": {
-            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
-            "B": "The system randomly deleted all state.",
-            "C": "DNS always causes delay; ignore application logic.",
-            "D": "You always need fewer threads when latency grows."
+            "A": "true",
+            "B": "false",
+            "C": "error",
+            "D": "null"
           },
           "answer": "A",
-          "explanation": "Tie **compression** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+          "explanation": "Compile-time constants are interned."
         },
         {
           "id": 7,
           "level": "basic",
-          "category": "theory",
-          "question": "[Kafka Producers] Which statement best describes **partitioner** in production Kafka/messaging contexts?",
+          "category": "code-reading",
+          "question": "What happens?\n```java\nLong x=null;System.out.println(x+1);\n```",
           "options": {
-            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
-            "B": "It is purely a UI concern unrelated to brokers or clients.",
-            "C": "It disables all replication automatically.",
-            "D": "It guarantees global total order for every topic."
+            "A": "1",
+            "B": "0",
+            "C": "NullPointerException",
+            "D": "compile error"
           },
-          "answer": "A",
-          "explanation": "**partitioner** belongs to the operational model for **Kafka Producers**—tie it to trade-offs and measurements, not absolutes."
+          "answer": "C",
+          "explanation": "Null unboxing throws NPE."
         },
         {
           "id": 8,
           "level": "basic",
-          "category": "code",
-          "question": "[Kafka Producers] You see misconfiguration around **max.in.flight.requests** in a code review. What is the best first response?",
+          "category": "real-world",
+          "question": "Duplicate notifications after retries: first check?",
           "options": {
-            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
-            "B": "Delete the topic and recreate it with fewer partitions.",
-            "C": "Set all timeouts to 1ms for safety.",
-            "D": "Disable metrics to reduce noise."
+            "A": "Disable all retries",
+            "B": "Check idempotence and downstream idempotency",
+            "C": "Add partitions",
+            "D": "Restart cluster"
           },
-          "answer": "A",
-          "explanation": "Validate **max.in.flight.requests** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+          "answer": "B",
+          "explanation": "This targets root cause quickly."
         },
         {
           "id": 9,
-          "level": "basic",
-          "category": "scenario",
-          "question": "[Kafka Producers] Which option is a **plausible distractor** interviewers use about **delivery.timeout.ms**?",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Intermediate theory check 1",
           "options": {
-            "A": "A precise, bounded statement tied to ordering, ISR, or consumer groups.",
-            "B": "A blanket claim that ignores partition boundaries or client semantics.",
-            "C": "A metric-backed troubleshooting step.",
-            "D": "A configuration paired with a failure mode."
+            "A": "Producer contract mismatch can look like app bug",
+            "B": "Kafka ignores keys",
+            "C": "Retries remove all risk",
+            "D": "Latency never changes with batching"
           },
-          "answer": "B",
-          "explanation": "Watch for absolutes on **delivery.timeout.ms** that ignore **per-partition** semantics and client responsibilities."
+          "answer": "A",
+          "explanation": "A captures real production behavior; others are false."
         },
         {
           "id": 10,
-          "level": "basic",
+          "level": "intermediate",
           "category": "theory",
-          "question": "[Kafka Producers] Which statement best describes **buffer memory** in production Kafka/messaging contexts?",
+          "question": "Intermediate theory check 2",
           "options": {
-            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
-            "B": "It is purely a UI concern unrelated to brokers or clients.",
-            "C": "It disables all replication automatically.",
-            "D": "It guarantees global total order for every topic."
+            "A": "Producer contract mismatch can look like app bug",
+            "B": "Kafka ignores keys",
+            "C": "Retries remove all risk",
+            "D": "Latency never changes with batching"
           },
           "answer": "A",
-          "explanation": "**buffer memory** belongs to the operational model for **Kafka Producers**—tie it to trade-offs and measurements, not absolutes."
+          "explanation": "A captures real production behavior; others are false."
         },
         {
           "id": 11,
           "level": "intermediate",
-          "category": "code",
-          "question": "[Kafka Producers] You see misconfiguration around **sticky partitioner** in a code review. What is the best first response?",
+          "category": "theory",
+          "question": "Intermediate theory check 3",
           "options": {
-            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
-            "B": "Delete the topic and recreate it with fewer partitions.",
-            "C": "Set all timeouts to 1ms for safety.",
-            "D": "Disable metrics to reduce noise."
+            "A": "Producer contract mismatch can look like app bug",
+            "B": "Kafka ignores keys",
+            "C": "Retries remove all risk",
+            "D": "Latency never changes with batching"
           },
           "answer": "A",
-          "explanation": "Validate **sticky partitioner** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+          "explanation": "A captures real production behavior; others are false."
         },
         {
           "id": 12,
           "level": "intermediate",
-          "category": "scenario",
-          "question": "[Kafka Producers] Incident: user-visible delay worsens after a deploy touching **record headers**. What is a credible first hypothesis?",
+          "category": "theory",
+          "question": "Intermediate theory check 4",
           "options": {
-            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
-            "B": "The system randomly deleted all state.",
-            "C": "DNS always causes delay; ignore application logic.",
-            "D": "You always need fewer threads when latency grows."
+            "A": "Producer contract mismatch can look like app bug",
+            "B": "Kafka ignores keys",
+            "C": "Retries remove all risk",
+            "D": "Latency never changes with batching"
           },
           "answer": "A",
-          "explanation": "Tie **record headers** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+          "explanation": "A captures real production behavior; others are false."
         },
         {
           "id": 13,
           "level": "intermediate",
-          "category": "theory",
-          "question": "[Kafka Producers] Which statement best describes **transactional producer** in production Kafka/messaging contexts?",
+          "category": "code-reading",
+          "question": "What prints?\n```java\nint x=Integer.MAX_VALUE;System.out.println(x+1);\n```",
           "options": {
-            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
-            "B": "It is purely a UI concern unrelated to brokers or clients.",
-            "C": "It disables all replication automatically.",
-            "D": "It guarantees global total order for every topic."
+            "A": "2147483648",
+            "B": "-2147483648",
+            "C": "error",
+            "D": "1"
           },
-          "answer": "A",
-          "explanation": "**transactional producer** belongs to the operational model for **Kafka Producers**—tie it to trade-offs and measurements, not absolutes."
+          "answer": "B",
+          "explanation": "Silent overflow wraparound."
         },
         {
           "id": 14,
           "level": "intermediate",
-          "category": "code",
-          "question": "[Kafka Producers] You see misconfiguration around **metadata fetch** in a code review. What is the best first response?",
+          "category": "code-reading",
+          "question": "What prints?\n```java\nString a=new String(\"x\");String b=new String(\"x\");System.out.println(a==b);\n```",
           "options": {
-            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
-            "B": "Delete the topic and recreate it with fewer partitions.",
-            "C": "Set all timeouts to 1ms for safety.",
-            "D": "Disable metrics to reduce noise."
+            "A": "true",
+            "B": "false",
+            "C": "error",
+            "D": "null"
           },
-          "answer": "A",
-          "explanation": "Validate **metadata fetch** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+          "answer": "B",
+          "explanation": "Different heap objects."
         },
         {
           "id": 15,
           "level": "intermediate",
-          "category": "scenario",
-          "question": "[Kafka Producers] Incident: user-visible delay worsens after a deploy touching **NOT_LEADER**. What is a credible first hypothesis?",
+          "category": "code-reading",
+          "question": "What prints?\n```java\nInteger a=128,b=128;System.out.println(a.equals(b));\n```",
           "options": {
-            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
-            "B": "The system randomly deleted all state.",
-            "C": "DNS always causes delay; ignore application logic.",
-            "D": "You always need fewer threads when latency grows."
+            "A": "true",
+            "B": "false",
+            "C": "error",
+            "D": "depends"
           },
           "answer": "A",
-          "explanation": "Tie **NOT_LEADER** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+          "explanation": "equals checks value."
         },
         {
           "id": 16,
           "level": "intermediate",
-          "category": "theory",
-          "question": "[Kafka Producers] Which option is a **plausible distractor** interviewers use about **serialization**?",
+          "category": "code-reading",
+          "question": "What prints?\n```java\nObject o=\"k\";System.out.println(o instanceof String);\n```",
           "options": {
-            "A": "A precise, bounded statement tied to ordering, ISR, or consumer groups.",
-            "B": "A blanket claim that ignores partition boundaries or client semantics.",
-            "C": "A metric-backed troubleshooting step.",
-            "D": "A configuration paired with a failure mode."
+            "A": "true",
+            "B": "false",
+            "C": "error",
+            "D": "null"
           },
-          "answer": "B",
-          "explanation": "Watch for absolutes on **serialization** that ignore **per-partition** semantics and client responsibilities."
+          "answer": "A",
+          "explanation": "Runtime type check."
         },
         {
           "id": 17,
           "level": "intermediate",
-          "category": "code",
-          "question": "[Kafka Producers] You see misconfiguration around **key vs null key** in a code review. What is the best first response?",
+          "category": "code-reading",
+          "question": "What prints?\n```java\nString a=\"a\";String b=a+\"b\";String c=\"ab\";System.out.println(b==c);\n```",
           "options": {
-            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
-            "B": "Delete the topic and recreate it with fewer partitions.",
-            "C": "Set all timeouts to 1ms for safety.",
-            "D": "Disable metrics to reduce noise."
+            "A": "true",
+            "B": "false",
+            "C": "error",
+            "D": "null"
           },
-          "answer": "A",
-          "explanation": "Validate **key vs null key** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+          "answer": "B",
+          "explanation": "Runtime concat creates new object."
         },
         {
           "id": 18,
           "level": "intermediate",
-          "category": "scenario",
-          "question": "[Kafka Producers] Incident: user-visible delay worsens after a deploy touching **producer epoch**. What is a credible first hypothesis?",
+          "category": "real-world",
+          "question": "Intermediate incident decision 1",
           "options": {
-            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
-            "B": "The system randomly deleted all state.",
-            "C": "DNS always causes delay; ignore application logic.",
-            "D": "You always need fewer threads when latency grows."
+            "A": "Measure and validate config against policy",
+            "B": "Change random knob immediately",
+            "C": "Ignore metrics",
+            "D": "Disable monitoring"
           },
           "answer": "A",
-          "explanation": "Tie **producer epoch** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+          "explanation": "Measurement-first triage is correct."
         },
         {
           "id": 19,
           "level": "intermediate",
-          "category": "theory",
-          "question": "[Kafka Producers] Which statement best describes **retry storm** in production Kafka/messaging contexts?",
+          "category": "real-world",
+          "question": "Intermediate incident decision 2",
           "options": {
-            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
-            "B": "It is purely a UI concern unrelated to brokers or clients.",
-            "C": "It disables all replication automatically.",
-            "D": "It guarantees global total order for every topic."
+            "A": "Measure and validate config against policy",
+            "B": "Change random knob immediately",
+            "C": "Ignore metrics",
+            "D": "Disable monitoring"
           },
           "answer": "A",
-          "explanation": "**retry storm** belongs to the operational model for **Kafka Producers**—tie it to trade-offs and measurements, not absolutes."
+          "explanation": "Measurement-first triage is correct."
         },
         {
           "id": 20,
           "level": "intermediate",
-          "category": "code",
-          "question": "[Kafka Producers] You see misconfiguration around **backpressure** in a code review. What is the best first response?",
+          "category": "real-world",
+          "question": "Intermediate incident decision 3",
           "options": {
-            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
-            "B": "Delete the topic and recreate it with fewer partitions.",
-            "C": "Set all timeouts to 1ms for safety.",
-            "D": "Disable metrics to reduce noise."
+            "A": "Measure and validate config against policy",
+            "B": "Change random knob immediately",
+            "C": "Ignore metrics",
+            "D": "Disable monitoring"
           },
           "answer": "A",
-          "explanation": "Validate **backpressure** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+          "explanation": "Measurement-first triage is correct."
         },
         {
           "id": 21,
           "level": "advanced",
-          "category": "scenario",
-          "question": "[Kafka Producers] Incident: user-visible delay worsens after a deploy touching **acks=all**. What is a credible first hypothesis?",
+          "category": "theory",
+          "question": "Advanced architecture concept 1",
           "options": {
-            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
-            "B": "The system randomly deleted all state.",
-            "C": "DNS always causes delay; ignore application logic.",
-            "D": "You always need fewer threads when latency grows."
+            "A": "End-to-end reliability needs producer + topic + consumer contract",
+            "B": "Producer config alone guarantees business correctness",
+            "C": "Java version alone fixes incidents",
+            "D": "Unlimited retries are always safe"
           },
           "answer": "A",
-          "explanation": "Tie **acks=all** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+          "explanation": "A reflects system-level reality."
         },
         {
           "id": 22,
           "level": "advanced",
           "category": "theory",
-          "question": "[Kafka Producers] Which statement best describes **idempotent producer** in production Kafka/messaging contexts?",
+          "question": "Advanced architecture concept 2",
           "options": {
-            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
-            "B": "It is purely a UI concern unrelated to brokers or clients.",
-            "C": "It disables all replication automatically.",
-            "D": "It guarantees global total order for every topic."
+            "A": "End-to-end reliability needs producer + topic + consumer contract",
+            "B": "Producer config alone guarantees business correctness",
+            "C": "Java version alone fixes incidents",
+            "D": "Unlimited retries are always safe"
           },
           "answer": "A",
-          "explanation": "**idempotent producer** belongs to the operational model for **Kafka Producers**—tie it to trade-offs and measurements, not absolutes."
+          "explanation": "A reflects system-level reality."
         },
         {
           "id": 23,
           "level": "advanced",
-          "category": "code",
-          "question": "[Kafka Producers] Which option is a **plausible distractor** interviewers use about **retries**?",
+          "category": "code-reading",
+          "question": "Advanced code reasoning 1\n```java\nrecord P(String x){}\nSystem.out.println(new P(\"a\").equals(new P(\"a\")));\n```",
           "options": {
-            "A": "A precise, bounded statement tied to ordering, ISR, or consumer groups.",
-            "B": "A blanket claim that ignores partition boundaries or client semantics.",
-            "C": "A metric-backed troubleshooting step.",
-            "D": "A configuration paired with a failure mode."
+            "A": "true",
+            "B": "false",
+            "C": "error",
+            "D": "null"
           },
-          "answer": "B",
-          "explanation": "Watch for absolutes on **retries** that ignore **per-partition** semantics and client responsibilities."
+          "answer": "A",
+          "explanation": "Record equals is value-based."
         },
         {
           "id": 24,
           "level": "advanced",
-          "category": "scenario",
-          "question": "[Kafka Producers] Incident: user-visible delay worsens after a deploy touching **linger.ms**. What is a credible first hypothesis?",
+          "category": "code-reading",
+          "question": "Advanced code reasoning 2\n```java\nrecord P(String x){}\nSystem.out.println(new P(\"a\").equals(new P(\"a\")));\n```",
           "options": {
-            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
-            "B": "The system randomly deleted all state.",
-            "C": "DNS always causes delay; ignore application logic.",
-            "D": "You always need fewer threads when latency grows."
+            "A": "true",
+            "B": "false",
+            "C": "error",
+            "D": "null"
           },
           "answer": "A",
-          "explanation": "Tie **linger.ms** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+          "explanation": "Record equals is value-based."
         },
         {
           "id": 25,
           "level": "advanced",
-          "category": "theory",
-          "question": "[Kafka Producers] Which statement best describes **batch.size** in production Kafka/messaging contexts?",
+          "category": "code-reading",
+          "question": "Advanced code reasoning 3\n```java\nrecord P(String x){}\nSystem.out.println(new P(\"a\").equals(new P(\"a\")));\n```",
           "options": {
-            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
-            "B": "It is purely a UI concern unrelated to brokers or clients.",
-            "C": "It disables all replication automatically.",
-            "D": "It guarantees global total order for every topic."
+            "A": "true",
+            "B": "false",
+            "C": "error",
+            "D": "null"
           },
           "answer": "A",
-          "explanation": "**batch.size** belongs to the operational model for **Kafka Producers**—tie it to trade-offs and measurements, not absolutes."
+          "explanation": "Record equals is value-based."
         },
         {
           "id": 26,
           "level": "advanced",
-          "category": "code",
-          "question": "[Kafka Producers] You see misconfiguration around **compression** in a code review. What is the best first response?",
+          "category": "on-call",
+          "question": "Advanced on-call architecture scenario 1",
           "options": {
-            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
-            "B": "Delete the topic and recreate it with fewer partitions.",
-            "C": "Set all timeouts to 1ms for safety.",
-            "D": "Disable metrics to reduce noise."
+            "A": "Use policy + diagnostics + rollback criteria",
+            "B": "Disable acks globally",
+            "C": "Ignore ISR",
+            "D": "Tune blindly in prod"
           },
           "answer": "A",
-          "explanation": "Validate **compression** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+          "explanation": "Structured incident method prevents repeat failures."
         },
         {
           "id": 27,
           "level": "advanced",
-          "category": "scenario",
-          "question": "[Kafka Producers] Incident: user-visible delay worsens after a deploy touching **partitioner**. What is a credible first hypothesis?",
+          "category": "on-call",
+          "question": "Advanced on-call architecture scenario 2",
           "options": {
-            "A": "The deploy changed timing, batching, retries, or resource limits along the critical path.",
-            "B": "The system randomly deleted all state.",
-            "C": "DNS always causes delay; ignore application logic.",
-            "D": "You always need fewer threads when latency grows."
+            "A": "Use policy + diagnostics + rollback criteria",
+            "B": "Disable acks globally",
+            "C": "Ignore ISR",
+            "D": "Tune blindly in prod"
           },
           "answer": "A",
-          "explanation": "Tie **partitioner** to measurable regressions: compare golden signals before/after and narrow to the changed surface."
+          "explanation": "Structured incident method prevents repeat failures."
         },
         {
           "id": 28,
           "level": "advanced",
-          "category": "theory",
-          "question": "[Kafka Producers] Which statement best describes **max.in.flight.requests** in production Kafka/messaging contexts?",
+          "category": "on-call",
+          "question": "Advanced on-call architecture scenario 3",
           "options": {
-            "A": "It is a core lever teams tune with metrics, failure modes, and SLOs in mind.",
-            "B": "It is purely a UI concern unrelated to brokers or clients.",
-            "C": "It disables all replication automatically.",
-            "D": "It guarantees global total order for every topic."
+            "A": "Use policy + diagnostics + rollback criteria",
+            "B": "Disable acks globally",
+            "C": "Ignore ISR",
+            "D": "Tune blindly in prod"
           },
           "answer": "A",
-          "explanation": "**max.in.flight.requests** belongs to the operational model for **Kafka Producers**—tie it to trade-offs and measurements, not absolutes."
+          "explanation": "Structured incident method prevents repeat failures."
         },
         {
           "id": 29,
           "level": "advanced",
-          "category": "code",
-          "question": "[Kafka Producers] You see misconfiguration around **delivery.timeout.ms** in a code review. What is the best first response?",
+          "category": "on-call",
+          "question": "Advanced on-call architecture scenario 4",
           "options": {
-            "A": "Map settings to infrastructure policy, then reproduce under load in a controlled environment.",
-            "B": "Delete the topic and recreate it with fewer partitions.",
-            "C": "Set all timeouts to 1ms for safety.",
-            "D": "Disable metrics to reduce noise."
+            "A": "Use policy + diagnostics + rollback criteria",
+            "B": "Disable acks globally",
+            "C": "Ignore ISR",
+            "D": "Tune blindly in prod"
           },
           "answer": "A",
-          "explanation": "Validate **delivery.timeout.ms** against defaults, workload, and symptoms (lag, errors, consistency) before changing code."
+          "explanation": "Structured incident method prevents repeat failures."
         },
         {
           "id": 30,
           "level": "advanced",
-          "category": "scenario",
-          "question": "[Kafka Producers] Which option is a **plausible distractor** interviewers use about **buffer memory**?",
+          "category": "on-call",
+          "question": "Advanced on-call architecture scenario 5",
           "options": {
-            "A": "A precise, bounded statement tied to ordering, ISR, or consumer groups.",
-            "B": "A blanket claim that ignores partition boundaries or client semantics.",
-            "C": "A metric-backed troubleshooting step.",
-            "D": "A configuration paired with a failure mode."
+            "A": "Use policy + diagnostics + rollback criteria",
+            "B": "Disable acks globally",
+            "C": "Ignore ISR",
+            "D": "Tune blindly in prod"
           },
-          "answer": "B",
-          "explanation": "Watch for absolutes on **buffer memory** that ignore **per-partition** semantics and client responsibilities."
+          "answer": "A",
+          "explanation": "Structured incident method prevents repeat failures."
         }
       ]
     },

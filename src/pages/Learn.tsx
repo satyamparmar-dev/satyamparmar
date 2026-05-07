@@ -5,6 +5,7 @@ import {
   TextField, Collapse, Alert, LinearProgress,
   List, ListItem, ListItemIcon, ListItemText, Divider,
   Accordion, AccordionSummary, AccordionDetails, Stack,
+  ToggleButton, ToggleButtonGroup,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -19,7 +20,7 @@ import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { fetchCurriculum, fetchPhaseWithCache, getScenarioDrillDaysWithContent, fetchAssignmentForDay } from '../services/api';
 import {
-  LessonDay, CodeSection, DiagramSection, AssignmentSection, InterviewQuestionItem, McqSection,
+  CurriculumId, LessonDay, CodeSection, DiagramSection, AssignmentSection, InterviewQuestionItem, McqSection,
 } from '../types';
 import { parseMarkdown } from '../utils/markdown';
 import CodeBlock from '../components/CodeBlock';
@@ -83,6 +84,7 @@ const Learn: React.FC = () => {
     curriculum, setCurriculum, loadedPhases, loadPhase,
     progress, markDayComplete, unmarkDayComplete,
     toggleBookmark, saveNote, setCurrentDay, currentSection, setCurrentSection,
+    activeCurriculum, setActiveCurriculum,
   } = useAppStore();
 
   const [dayData, setDayData] = useState<LessonDay | null>(null);
@@ -125,10 +127,14 @@ const Learn: React.FC = () => {
   const savedNote = progress.notes[String(dayNum)] ?? '';
 
   useEffect(() => {
+    if (activeCurriculum !== 'java') {
+      setScenarioDrillDays(new Set());
+      return;
+    }
     getScenarioDrillDaysWithContent()
       .then((s) => setScenarioDrillDays(s))
       .catch(() => setScenarioDrillDays(new Set()));
-  }, []);
+  }, [activeCurriculum]);
 
   useEffect(() => {
     setOpenExerciseHintKeys({});
@@ -144,7 +150,7 @@ const Learn: React.FC = () => {
     const load = async () => {
       let curr = curriculum;
       if (!curr) {
-        curr = await fetchCurriculum();
+        curr = await fetchCurriculum(activeCurriculum);
         setCurriculum(curr);
       }
 
@@ -158,7 +164,7 @@ const Learn: React.FC = () => {
 
       let phaseData = loadedPhases[phase.id];
       if (!phaseData) {
-        phaseData = await fetchPhaseWithCache(phase.file);
+        phaseData = await fetchPhaseWithCache(phase.file, activeCurriculum);
         loadPhase(phase.id, phaseData);
       }
 
@@ -167,12 +173,11 @@ const Learn: React.FC = () => {
         setDayData(day);
         setCurrentDay(dayNum);
         setNote(savedNote);
-        setShowExerciseHints(new Array(10).fill(false));
         setCheckedObjectives(new Array(day.learningObjectives.length).fill(false));
       }
 
       // Load assignment data in parallel (non-blocking)
-      fetchAssignmentForDay(dayNum)
+      fetchAssignmentForDay(dayNum, phase.number, activeCurriculum)
         .then((a) => setAssignmentData(a))
         .catch(() => setAssignmentData(null));
 
@@ -180,7 +185,7 @@ const Learn: React.FC = () => {
     };
 
     load().catch(() => setLoading(false));
-  }, [dayNum]);
+  }, [dayNum, activeCurriculum, curriculum, loadedPhases, loadPhase, savedNote, setCurriculum, setCurrentDay]);
 
   // Reading progress
   useEffect(() => {
@@ -276,6 +281,25 @@ const Learn: React.FC = () => {
 
       {/* Header */}
       <Box mb={3}>
+        <Box mb={1.5}>
+          <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" mb={0.75}>
+            Curriculum
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={activeCurriculum}
+            onChange={(_, value: CurriculumId | null) => {
+              if (!value) return;
+              setActiveCurriculum(value);
+              navigate('/learn/1');
+            }}
+          >
+            <ToggleButton value="java">Java Track</ToggleButton>
+            <ToggleButton value="ai">AI / GenAI Track</ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+
         <Box display="flex" alignItems="center" gap={1} mb={1.5} flexWrap="wrap">
           <Chip
             label={`Day ${dayNum}`}

@@ -1,0 +1,143 @@
+{
+  "day": 6,
+  "phase": 0,
+  "title": "Reading AI Documentation & Navigating GitHub",
+  "estimatedHours": 2,
+  "difficulty": "Beginner",
+  "level": "Beginner",
+  "track": "Fresher",
+  "tags": ["Documentation", "GitHub", "Research Skills", "SDK", "Phase 0"],
+  "prerequisites": ["Day 5 — Cloud Platforms"],
+  "learningObjectives": [
+    "Navigate an SDK reference doc to find a specific method and its parameters",
+    "Read a CHANGELOG and identify breaking changes from a version bump",
+    "Find working code examples in GitHub repositories",
+    "Use GitHub Issues and Discussions to debug integration problems",
+    "Apply the three-step debugging strategy for AI SDK errors",
+    "Explain semantic versioning and what MAJOR.MINOR.PATCH means"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Documentation Skills Separate Mid-Level from Senior Engineers",
+      "content": "Knowing how to call an API is table stakes. Knowing how to find the right API method, understand its constraints, identify when a version change broke your code, and navigate a GitHub repo to find working examples — that is the skill that makes engineers self-sufficient.\n\nIn AI engineering specifically:\n- Models get new capabilities every few months — keeping up requires reading changelogs\n- SDK breaking changes happen regularly (LangChain has multiple major versions)\n- GitHub Issues are often the only place undocumented behavior is explained\n- The official docs often lag behind the SDK release by days or weeks\n\nThis day gives you the research workflow that experienced AI engineers use every day."
+    },
+    {
+      "type": "theory",
+      "title": "Reading AI Docs and GitHub Like a Pro",
+      "content": "### 1. API Reference Structure\n\nEvery well-structured AI API reference has the same pattern:\n\n```\ndocs.anthropic.com/\n├── api-reference/           ← Endpoint specs (the ground truth)\n│   ├── messages             ← POST /v1/messages\n│   ├── models               ← GET /v1/models\n│   └── files                ← File handling\n├── guides/                  ← Concept explanations + tutorials\n│   ├── prompt-engineering\n│   ├── tool-use\n│   └── streaming\n├── sdk-reference/           ← Language-specific SDK docs\n│   ├── python\n│   └── typescript\n└── changelog/               ← Version history, breaking changes\n```\n\n**Reading order for a new feature**:\n1. Guides section — conceptual understanding\n2. API reference — exact parameters and types\n3. SDK reference — how to call it in Python\n4. Changelog — any recent changes that might affect you\n\n---\n\n### 2. Semantic Versioning — What Version Bumps Mean\n\nAll serious packages use `MAJOR.MINOR.PATCH`:\n\n| Version bump | Meaning | What to do |\n|---|---|---|\n| `1.2.3 → 1.2.4` | Patch: bug fix | Safe to upgrade, no code changes |\n| `1.2.3 → 1.3.0` | Minor: new feature, backwards compatible | Safe to upgrade, optional to use new feature |\n| `1.2.3 → 2.0.0` | Major: breaking change | Read migration guide before upgrading |\n\n```bash\n# Check what version you have\npip show anthropic\n\n# See what's available\npip index versions anthropic\n\n# Install specific version\npip install anthropic==0.25.0\n\n# Install latest\npip install anthropic --upgrade\n```\n\n---\n\n### 3. Reading a CHANGELOG\n\nCHANGELOGs are the most important doc for production maintenance. What to look for:\n\n```markdown\n## [0.30.0] - 2024-11-01\n### Breaking Changes\n- `client.messages.create()` now returns `Message` instead of `dict`  ← MUST update code\n- Removed deprecated `max_tokens_to_sample` parameter  ← Check if you use this\n\n### Added  \n- Extended thinking support via `thinking` parameter\n- Tool use streaming\n\n### Fixed\n- Rate limit retry logic now correctly reads Retry-After header\n```\n\nSearch for 'Breaking Changes' or 'BREAKING' before upgrading any AI SDK.\n\n---\n\n### 4. GitHub Navigation for AI Repos\n\n**Key locations in any AI library repo**:\n\n```\ngithub.com/anthropics/anthropic-sdk-python/\n├── src/anthropic/     ← Source code (read if docs unclear)\n├── examples/          ← Working code snippets\n├── tests/             ← Revealed actual expected behavior\n├── CHANGELOG.md       ← Version history\n├── README.md          ← Quick start\n└── pyproject.toml     ← Dependencies and version info\n```\n\n**GitHub Issues**: Search `is:issue label:bug` for known bugs. If your error appears in an issue, you'll find workarounds.\n\n**GitHub Discussions**: For usage questions that aren't bugs.\n\n---\n\n### 5. Three Strategies When You're Stuck\n\n**Strategy 1: Minimal Reproduction**\nStrip your code down to the smallest possible example that still shows the error. Remove all business logic. This often reveals the actual problem.\n\n**Strategy 2: Read the Source**\nIf the docs don't explain behavior, read the SDK source code. For the Anthropic Python SDK: `site-packages/anthropic/resources/messages.py`. Type signatures in source are always correct.\n\n**Strategy 3: Search Error Message**\nSearch GitHub Issues with the exact error message in quotes. Stack Overflow for common library errors. LLM tools for explanation (ironic but effective — describe the error to Claude).\n\n---\n\n### 6. Key AI Documentation Sites\n\n| Provider | Docs URL |\n|----------|----------|\n| Anthropic | docs.anthropic.com |\n| OpenAI | platform.openai.com/docs |\n| Google Gemini | ai.google.dev |\n| Hugging Face | huggingface.co/docs |\n| LangChain | python.langchain.com/docs |\n| LlamaIndex | docs.llamaindex.ai |\n| Mistral | docs.mistral.ai |"
+    },
+    {
+      "type": "code",
+      "title": "GitHub API Explorer",
+      "description": "Use the GitHub API to search for AI library examples programmatically — turns documentation hunting into automation.",
+      "language": "python",
+      "filename": "github_explorer.py",
+      "level": "basic",
+      "code": "import requests\nimport os\nfrom dotenv import load_dotenv\n\nload_dotenv()\n\ndef search_github_code(query: str, language: str = 'python', limit: int = 5) -> list[dict]:\n    \"\"\"\n    Search GitHub for code examples.\n    Uses the GitHub Search API — no token needed for low volume.\n    Add GITHUB_TOKEN to .env for higher rate limits.\n    \"\"\"\n    headers = {'Accept': 'application/vnd.github.v3+json'}\n    token = os.getenv('GITHUB_TOKEN')\n    if token:\n        headers['Authorization'] = f'token {token}'\n    \n    response = requests.get(\n        'https://api.github.com/search/code',\n        headers=headers,\n        params={'q': f'{query} language:{language}', 'per_page': limit},\n        timeout=10\n    )\n    \n    if response.status_code == 200:\n        items = response.json().get('items', [])\n        return [{\n            'repo': item['repository']['full_name'],\n            'file': item['path'],\n            'url': item['html_url'],\n        } for item in items]\n    elif response.status_code == 403:\n        print(f\"Rate limited — add GITHUB_TOKEN to .env for higher limits\")\n        return []\n    else:\n        print(f\"Error: {response.status_code}\")\n        return []\n\n\ndef get_latest_releases(owner: str, repo: str, limit: int = 3) -> list[dict]:\n    \"\"\"Get latest releases for an AI library to track version changes.\"\"\"\n    response = requests.get(\n        f'https://api.github.com/repos/{owner}/{repo}/releases',\n        params={'per_page': limit},\n        timeout=10\n    )\n    if response.status_code != 200:\n        return []\n    \n    releases = []\n    for r in response.json():\n        body = r.get('body', '')[:200].replace('\\n', ' ')  # First 200 chars\n        releases.append({\n            'version': r['tag_name'],\n            'date': r['published_at'][:10],\n            'breaking': 'breaking' in body.lower() or 'BREAKING' in body,\n            'preview': body,\n        })\n    return releases\n\n\nif __name__ == '__main__':\n    print(\"=\" * 55)\n    print(\"Latest Anthropic SDK Releases\")\n    print(\"=\" * 55)\n    \n    releases = get_latest_releases('anthropics', 'anthropic-sdk-python')\n    for r in releases:\n        breaking_flag = \" ⚠️ BREAKING\" if r['breaking'] else \"\"\n        print(f\"  {r['version']} ({r['date']}){breaking_flag}\")\n        print(f\"  → {r['preview'][:100]}...\")\n        print()\n    \n    print(\"=\" * 55)\n    print(\"Searching GitHub for anthropic streaming examples\")\n    print(\"=\" * 55)\n    \n    results = search_github_code('anthropic client.messages.stream', limit=3)\n    if results:\n        for r in results:\n            print(f\"  Repo: {r['repo']}\")\n            print(f\"  File: {r['file']}\")\n            print(f\"  URL:  {r['url']}\")\n            print()\n    else:\n        print(\"  No results (rate limited without GitHub token — add to .env)\")\n    \n    print(\"✅ Documentation exploration complete\")",
+      "output": "=======================================================\nLatest Anthropic SDK Releases\n=======================================================\n  v0.40.0 (2025-01-15)\n  → Added support for extended thinking, streaming improvements...\n\n  v0.39.0 (2025-01-08) ⚠️ BREAKING\n  → Breaking: MessageParam now uses TypedDict format. Migration guide...\n\n=======================================================\nSearching GitHub for anthropic streaming examples\n=======================================================\n  Repo: anthropics/anthropic-cookbook\n  File: examples/streaming_example.py\n  URL:  https://github.com/anthropics/anthropic-cookbook/blob/...\n\n✅ Documentation exploration complete"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Documentation Pitfalls",
+      "items": [
+        "**Trusting outdated Stack Overflow answers** — AI SDK APIs change rapidly. Always check the answer date and verify against the current SDK changelog. A 2023 answer for LangChain may be completely wrong for v0.3+.",
+        "**Skipping the CHANGELOG on upgrades** — running `pip install package --upgrade` without reading the changelog is how breaking changes silently destroy production. Always check before upgrading.",
+        "**Reading only the Getting Started guide** — quickstart examples often use simplified patterns unsuitable for production. Always find the full API reference for production code.",
+        "**Ignoring type hints in SDK source code** — when docs are unclear, the Python type annotations in the SDK source are always accurate. `Ctrl+Click` on a method in VS Code to jump to the definition.",
+        "**Not checking GitHub Issues before filing a bug** — 90% of integration problems have already been reported and answered. Search Issues before spending hours debugging."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Documentation Scavenger Hunt",
+      "difficulty": "Beginner",
+      "problem": "Complete this documentation research exercise:\n\n1. **Anthropic docs**: Find the maximum `max_tokens` value for Claude Haiku and write it down\n2. **OpenAI docs**: Find the name of the streaming event type for a completed delta\n3. **Anthropic SDK changelog**: Find the most recent version that had a breaking change and what it was\n4. **GitHub**: Find the `anthropic-cookbook` repository and name 3 example scripts in it\n5. **Semantic versioning**: If you're on `langchain==0.2.16` and the latest is `langchain==0.3.0`, what type of change is this and should you upgrade immediately in production?\n\nWrite your answers as a formatted report.",
+      "hints": [
+        "Anthropic model docs: docs.anthropic.com/claude/models-overview",
+        "Anthropic SDK GitHub: github.com/anthropics/anthropic-sdk-python",
+        "Anthropic cookbook: github.com/anthropics/anthropic-cookbook",
+        "Major version bump = breaking changes; read migration guide before upgrading in production"
+      ],
+      "solution": "Research Report:\n\n1. Claude Haiku max_tokens: 8,192 (check docs.anthropic.com/claude/models-overview for latest)\n\n2. OpenAI streaming completed event: 'chat.completion.chunk' with finish_reason='stop'\n\n3. Check github.com/anthropics/anthropic-sdk-python/blob/main/CHANGELOG.md\n   Example: v0.39.0 — Breaking: MessageParam TypedDict format change\n\n4. anthropic-cookbook examples (check repo for current list):\n   - tool_use/calculator_tool.py\n   - streaming/streaming_messages.py\n   - vision/image_analysis.py\n\n5. 0.2.16 → 0.3.0 is a MAJOR version bump (second number before dot is minor, but \n   first number = major). Read migration guide at python.langchain.com/docs/migration.\n   Do NOT upgrade in production without testing — breaking changes likely."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Documentation and Research",
+      "conceptual": [
+        {
+          "question": "How do you stay current with rapidly changing AI libraries like LangChain or Anthropic SDK?",
+          "answer": "Systematic approach: (1) Subscribe to GitHub releases for key repos (star + watch → releases only, not every commit). (2) Add important changelogs to a reading routine — check weekly. (3) Pin exact versions in requirements.txt so updates are deliberate. (4) When upgrading, always read the changelog section for breaking changes before running tests. (5) Follow official engineering blogs for major API changes (Anthropic blog, OpenAI announcements). (6) Join Discord communities (LangChain, Hugging Face) for real-time discussion."
+        },
+        {
+          "question": "What does semantic versioning tell you about whether it's safe to upgrade?",
+          "answer": "Semantic versioning: MAJOR.MINOR.PATCH. Patch (1.2.3 → 1.2.4): bug fix, backward compatible — safe to upgrade automatically. Minor (1.2.3 → 1.3.0): new features, backward compatible — safe to upgrade, read what's new. Major (1.2.3 → 2.0.0): breaking changes — requires reading migration guide and potentially updating code. In production AI apps: automate patch upgrades via Dependabot, manually review minor upgrades, treat major upgrades as a mini-project."
+        }
+      ],
+      "codeBased": [],
+      "seniorScenario": [
+        {
+          "question": "Your LangChain-based production app starts throwing `AttributeError: 'ChatOpenAI' has no attribute 'predict'` after a dependency update in CI. What do you do?",
+          "answer": "Immediate: revert the specific package version in requirements.txt to restore production. Then investigate: (1) Check which version CI upgraded to (`pip show langchain` in CI logs). (2) Go to LangChain CHANGELOG for that version — search for 'predict' or 'breaking'. (3) Check GitHub Issues for 'AttributeError predict' — likely a known issue. (4) LangChain 0.2→0.3 removed the `.predict()` method in favor of `.invoke()`. The fix: replace all `chain.predict(input=x)` with `chain.invoke({"input": x})`. (5) Write a regression test that calls the chain so this is caught in tests before hitting production. (6) Pin versions: `langchain==0.2.16` in requirements.txt; use Dependabot or renovate for controlled upgrades."
+        }
+      ],
+      "wrongAnswers": [
+        "**Wrong:** 'I use `pip install package --upgrade` in my requirements.txt so I always get the latest.' — **Correction:** This means any CI run can get a breaking major version change silently. Pin exact versions in requirements.txt (`package==1.2.3`), use Dependabot or renovate for automated PR-based upgrades with changelogs attached.",
+        "**Wrong:** 'The official docs are always up to date with the SDK.' — **Correction:** Documentation often lags behind releases by days or weeks. For the ground truth, read the SDK source code and CHANGELOG. Many behavior questions are answered faster by reading `tests/` in the SDK repo than reading tutorials."
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Quick MCQ — Documentation Skills",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "In semantic versioning, upgrading from `anthropic==0.25.0` to `anthropic==1.0.0` requires you to:",
+          "options": {
+            "A": "Nothing — it's a routine update",
+            "B": "Read the minor version changelog only",
+            "C": "Read the migration guide for breaking changes and update your code",
+            "D": "Reinstall Python"
+          },
+          "answer": "C",
+          "explanation": "Major version (1st number) bump = breaking changes. Code that worked on 0.25.0 may fail on 1.0.0 due to API changes, renamed methods, or changed return types. Always read the migration guide."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "When debugging an AI SDK error, which GitHub location is most likely to have the answer?",
+          "options": {
+            "A": "The repository's main README.md",
+            "B": "Issues with the exact error message searched",
+            "C": "The repository's wiki",
+            "D": "The GitHub Actions CI configuration"
+          },
+          "answer": "B",
+          "explanation": "GitHub Issues are where bugs and integration problems are reported and discussed. Searching Issues with your exact error message often reveals a known issue with a workaround, faster than any other resource."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Where is the most reliable source for exact parameter names and types for an AI SDK?",
+          "options": {
+            "A": "Stack Overflow answers",
+            "B": "YouTube tutorials",
+            "C": "The type annotations in the SDK source code",
+            "D": "The getting-started guide"
+          },
+          "answer": "C",
+          "explanation": "Type annotations in SDK source are always correct — they're what the code actually enforces. Docs can be outdated; tutorials can be wrong. In VS Code, Ctrl+Click any method to jump to its source definition."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "title": "Documentation & GitHub — Quick Reference",
+      "content": "### Key Documentation Sites\n| Provider | URL |\n|----------|-----|\n| Anthropic | docs.anthropic.com |\n| OpenAI | platform.openai.com/docs |\n| Google Gemini | ai.google.dev |\n| Hugging Face | huggingface.co/docs |\n| LangChain | python.langchain.com/docs |\n| LlamaIndex | docs.llamaindex.ai |\n\n### Reading an API Reference\n1. Find endpoint in API reference (not guides)\n2. Note required vs optional parameters\n3. Check return type and field names\n4. Look for error types and codes\n5. Check rate limits and quotas section\n\n### Semantic Versioning\n- `MAJOR.MINOR.PATCH`\n- Patch (1.2.3→1.2.4): bug fix, auto-upgrade safe\n- Minor (1.2.3→1.3.0): new feature, safe\n- Major (1.2.3→2.0.0): breaking — read migration guide\n\n### GitHub Repo Navigation\n```\nrepo/\n├── examples/     ← Working code snippets\n├── tests/        ← Actual expected behavior\n├── CHANGELOG.md  ← Breaking changes per version\n└── src/          ← Source truth for behavior\n```\n\n### Debugging Strategy\n1. Minimal reproduction (strip all business logic)\n2. Read SDK source (Ctrl+Click in VS Code)\n3. Search GitHub Issues with exact error message"
+    }
+  ]
+}
