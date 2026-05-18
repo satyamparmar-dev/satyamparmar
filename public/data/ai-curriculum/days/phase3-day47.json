@@ -1,0 +1,112 @@
+{
+  "day": 47,
+  "phase": 3,
+  "title": "Agent Memory Architecture",
+  "description": "Design and implement multi-tier memory systems for AI agents — episodic, semantic, procedural — with cross-session persistence and intelligent retrieval.",
+  "estimatedHours": 5,
+  "difficulty": "advanced",
+  "level": "advanced",
+  "track": "ai",
+  "tags": ["agent-memory", "episodic-memory", "semantic-memory", "procedural-memory", "vector-store", "persistence"],
+  "prerequisites": ["phase3-day37", "phase3-day30"],
+  "learningObjectives": [
+    "Distinguish episodic, semantic, and procedural memory types",
+    "Implement a multi-tier memory store with vector-based retrieval",
+    "Persist agent memory across sessions using serialization",
+    "Design memory consolidation and forgetting strategies",
+    "Integrate memory retrieval into agent decision loops"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Agent Memory Matters",
+      "content": "A stateless agent forgets every conversation the moment it ends. Users must re-explain context, agents repeat mistakes, and no learning compounds over time. Human experts accumulate years of episodic experiences (what happened), semantic knowledge (what things mean), and procedural skills (how to do things). Agents with structured memory can personalize responses, avoid known failure modes, reuse successful strategies, and improve continuously — the foundation of truly intelligent assistants."
+    },
+    {
+      "type": "theory",
+      "title": "Memory Taxonomy for Agents",
+      "content": "## Three Memory Types\n\n| Type | What it stores | Retrieval | Example |\n|------|---------------|-----------|--------|\n| **Episodic** | Past interactions, events, outcomes | Temporal + semantic similarity | 'User asked about X on Monday, I answered Y' |\n| **Semantic** | Facts, concepts, world knowledge | Semantic similarity | 'Python uses GIL for thread safety' |\n| **Procedural** | Successful action sequences, skills | Pattern matching on task type | 'To debug OOM: check heap dump → analyze GC logs → tune Xmx' |\n\n## Memory Lifecycle\n```\nEncoding → Storage → Consolidation → Retrieval → Forgetting\n```\n- **Encoding**: Convert interaction to memory entry with embedding\n- **Storage**: Persist in appropriate tier (hot/warm/cold)\n- **Consolidation**: Merge similar memories, extract patterns (run nightly)\n- **Retrieval**: Query by similarity + recency + importance score\n- **Forgetting**: TTL expiry or importance decay to prevent unbounded growth\n\n## Storage Tiers\n- **Working memory**: Current context window (fast, ephemeral, token-limited)\n- **Short-term**: Redis/in-process (last N sessions, fast retrieval)\n- **Long-term**: Vector DB (all-time, semantic search)\n- **Archival**: Cold storage / filesystem (compressed, slow)\n\n## Importance Scoring\nMemories should be ranked by:\n- **Recency**: Exponential decay — recent memories score higher\n- **Frequency**: How often was this memory retrieved?\n- **Outcome**: Did acting on this memory lead to success?\n- **Surprise**: High-information events score higher (unexpected outcomes)"
+    },
+    {
+      "type": "code",
+      "title": "Multi-Tier Agent Memory System",
+      "content": "```python\nimport json\nimport time\nimport uuid\nimport math\nfrom dataclasses import dataclass, field, asdict\nfrom typing import Any, Optional\nfrom pathlib import Path\nfrom openai import OpenAI\n\nclient = OpenAI()\n\n# ─── Memory Entry ────────────────────────────────────────────────────────────\n\n@dataclass\nclass MemoryEntry:\n    id: str = field(default_factory=lambda: str(uuid.uuid4()))\n    memory_type: str = 'episodic'          # episodic | semantic | procedural\n    content: str = ''\n    embedding: list[float] = field(default_factory=list)\n    metadata: dict = field(default_factory=dict)\n    created_at: float = field(default_factory=time.time)\n    last_accessed: float = field(default_factory=time.time)\n    access_count: int = 0\n    importance: float = 1.0\n    outcome_score: float = 0.5             # 0=bad, 1=great\n\n    def importance_score(self) -> float:\n        \"\"\"Composite score for retrieval ranking.\"\"\"\n        age_hours = (time.time() - self.created_at) / 3600\n        recency = math.exp(-0.1 * age_hours)       # decay over time\n        frequency = math.log1p(self.access_count) / 10\n        return (0.4 * recency +\n                0.3 * self.importance +\n                0.2 * self.outcome_score +\n                0.1 * frequency)\n\n    def touch(self):\n        self.last_accessed = time.time()\n        self.access_count += 1\n\n\n# ─── Embedding Helper ─────────────────────────────────────────────────────────\n\ndef embed(text: str) -> list[float]:\n    resp = client.embeddings.create(\n        model='text-embedding-3-small',\n        input=text[:8000]\n    )\n    return resp.data[0].embedding\n\n\ndef cosine_similarity(a: list[float], b: list[float]) -> float:\n    dot = sum(x * y for x, y in zip(a, b))\n    mag_a = math.sqrt(sum(x**2 for x in a))\n    mag_b = math.sqrt(sum(x**2 for x in b))\n    return dot / (mag_a * mag_b + 1e-9)\n\n\n# ─── Memory Store ─────────────────────────────────────────────────────────────\n\nclass AgentMemoryStore:\n    def __init__(self, persist_path: str = 'agent_memory.json',\n                 max_entries: int = 1000):\n        self.persist_path = Path(persist_path)\n        self.max_entries = max_entries\n        self.memories: dict[str, MemoryEntry] = {}\n        self._load()\n\n    # ── CRUD ────────────────────────────────────────────────────────────────\n\n    def add(self, content: str, memory_type: str = 'episodic',\n            metadata: dict = None, importance: float = 1.0,\n            outcome_score: float = 0.5) -> MemoryEntry:\n        entry = MemoryEntry(\n            content=content,\n            memory_type=memory_type,\n            embedding=embed(content),\n            metadata=metadata or {},\n            importance=importance,\n            outcome_score=outcome_score,\n        )\n        self.memories[entry.id] = entry\n        self._maybe_prune()\n        self._save()\n        return entry\n\n    def retrieve(\n        self,\n        query: str,\n        memory_type: Optional[str] = None,\n        top_k: int = 5,\n        min_similarity: float = 0.65,\n    ) -> list[tuple[MemoryEntry, float]]:\n        query_emb = embed(query)\n        results = []\n        for mem in self.memories.values():\n            if memory_type and mem.memory_type != memory_type:\n                continue\n            if not mem.embedding:\n                continue\n            sim = cosine_similarity(query_emb, mem.embedding)\n            if sim >= min_similarity:\n                combined = 0.7 * sim + 0.3 * mem.importance_score()\n                results.append((mem, combined))\n        results.sort(key=lambda x: x[1], reverse=True)\n        # mark as accessed\n        for mem, _ in results[:top_k]:\n            mem.touch()\n        self._save()\n        return results[:top_k]\n\n    def update_outcome(self, memory_id: str, outcome_score: float):\n        if memory_id in self.memories:\n            self.memories[memory_id].outcome_score = max(0.0, min(1.0, outcome_score))\n            self._save()\n\n    # ── Pruning ─────────────────────────────────────────────────────────────\n\n    def _maybe_prune(self):\n        if len(self.memories) <= self.max_entries:\n            return\n        # Remove lowest-importance memories\n        scored = sorted(\n            self.memories.items(),\n            key=lambda kv: kv[1].importance_score()\n        )\n        to_remove = len(self.memories) - self.max_entries\n        for mem_id, _ in scored[:to_remove]:\n            del self.memories[mem_id]\n\n    # ── Persistence ─────────────────────────────────────────────────────────\n\n    def _save(self):\n        data = {mid: asdict(m) for mid, m in self.memories.items()}\n        self.persist_path.write_text(json.dumps(data, indent=2))\n\n    def _load(self):\n        if not self.persist_path.exists():\n            return\n        data = json.loads(self.persist_path.read_text())\n        for mid, d in data.items():\n            self.memories[mid] = MemoryEntry(**d)\n\n    def stats(self) -> dict:\n        by_type: dict[str, int] = {}\n        for m in self.memories.values():\n            by_type[m.memory_type] = by_type.get(m.memory_type, 0) + 1\n        return {\n            'total': len(self.memories),\n            'by_type': by_type,\n            'avg_importance': sum(\n                m.importance_score() for m in self.memories.values()\n            ) / max(len(self.memories), 1)\n        }\n\n\n# ─── Memory-Augmented Agent ───────────────────────────────────────────────────\n\nclass MemoryAugmentedAgent:\n    def __init__(self, memory_store: AgentMemoryStore):\n        self.memory = memory_store\n        self.history: list[dict] = []    # working memory (current session)\n\n    def chat(self, user_message: str) -> str:\n        # 1. Retrieve relevant past memories\n        memories = self.memory.retrieve(user_message, top_k=3)\n        memory_context = self._format_memories(memories)\n\n        # 2. Build prompt with memory context\n        system = (\n            'You are a helpful assistant with persistent memory.\\n\\n'\n            f'RELEVANT MEMORIES:\\n{memory_context}\\n\\n'\n            'Use these memories to give personalised, consistent answers. '\n            'When you learn something new about the user, note it explicitly.'\n        )\n\n        self.history.append({'role': 'user', 'content': user_message})\n        messages = [{'role': 'system', 'content': system}] + self.history[-10:]\n\n        resp = client.chat.completions.create(\n            model='gpt-4o-mini',\n            messages=messages,\n        )\n        assistant_reply = resp.choices[0].message.content\n        self.history.append({'role': 'assistant', 'content': assistant_reply})\n\n        # 3. Store this interaction as episodic memory\n        self.memory.add(\n            content=f'User: {user_message}\\nAssistant: {assistant_reply}',\n            memory_type='episodic',\n            metadata={'session_turn': len(self.history) // 2},\n        )\n\n        return assistant_reply\n\n    def learn_fact(self, fact: str, importance: float = 1.5):\n        \"\"\"Explicitly store a semantic memory.\"\"\"\n        self.memory.add(\n            content=fact,\n            memory_type='semantic',\n            importance=importance,\n        )\n\n    def learn_procedure(self, task_description: str, steps: list[str],\n                        outcome_score: float = 1.0):\n        \"\"\"Store a successful action sequence.\"\"\"\n        content = (\n            f'Task: {task_description}\\n'\n            f'Steps:\\n' + '\\n'.join(f'{i+1}. {s}' for i, s in enumerate(steps))\n        )\n        self.memory.add(\n            content=content,\n            memory_type='procedural',\n            outcome_score=outcome_score,\n            importance=1.2,\n        )\n\n    def _format_memories(self, memories: list[tuple[MemoryEntry, float]]) -> str:\n        if not memories:\n            return '(no relevant memories)'\n        lines = []\n        for mem, score in memories:\n            tag = f'[{mem.memory_type.upper()}|score={score:.2f}]'\n            lines.append(f'{tag} {mem.content[:300]}')\n        return '\\n'.join(lines)\n\n\n# ─── Demo ─────────────────────────────────────────────────────────────────────\n\ndef demo():\n    store = AgentMemoryStore('demo_memory.json')\n    agent = MemoryAugmentedAgent(store)\n\n    # Seed some procedural memory\n    agent.learn_procedure(\n        task_description='Debug Java OutOfMemoryError',\n        steps=[\n            'Add -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/dump.hprof',\n            'Reproduce the OOM in staging',\n            'Open heap dump with Eclipse MAT',\n            'Run Leak Suspects report',\n            'Fix the retention path shown in dominator tree',\n        ],\n        outcome_score=0.95,\n    )\n\n    # Seed a user fact\n    agent.learn_fact('User is a senior Java engineer working on a fintech platform.')\n\n    # Simulate conversation\n    reply = agent.chat('I keep seeing OOM errors in production. Where do I start?')\n    print('Agent:', reply)\n    print('\\nMemory stats:', store.stats())\n\n\nif __name__ == '__main__':\n    demo()\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Memory Implementation Mistakes",
+      "content": "**1. Storing everything verbatim** — Conversations contain noise (greetings, filler). Store synthesized summaries, not raw transcripts. Run a compression pass every N turns.\n\n**2. Retrieving too many memories** — Flooding the context window with 20 memories defeats the purpose. Keep top_k ≤ 5 and enforce a strict character budget per memory.\n\n**3. No outcome feedback loop** — Memories without quality signals are indistinguishable from bad advice. Always track whether the agent's response led to user satisfaction and update `outcome_score`.\n\n**4. Single-dimensional retrieval** — Pure cosine similarity misses recent but semantically distant memories. Blend similarity (0.7) with temporal recency and access frequency (0.3).\n\n**5. Unbounded growth** — Without pruning, memory stores bloat. Implement importance-based eviction: keep top 80% by score, prune the rest when hitting `max_entries`.\n\n**6. No memory type separation** — Episodic, semantic, and procedural memories have different retrieval patterns. Querying all types together muddies results; filter by type when task type is known.\n\n**7. Forgetting forgetting** — Real agents need to unlearn stale facts (user changed jobs, API was deprecated). Add TTL to semantic memories and an explicit `invalidate(memory_id)` method."
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Memory Consolidation Pipeline",
+      "content": "**Task:** Extend `AgentMemoryStore` with a `consolidate()` method that:\n1. Groups episodic memories by day\n2. Calls an LLM to summarize each day's episodes into one semantic memory\n3. Deletes the raw episodic entries older than 7 days\n4. Stores the summary as a high-importance semantic memory\n\n**Bonus:** Add a `reflection()` method that retrieves all procedural memories, identifies the 3 most successful patterns, and writes a combined 'best practices' memory entry.\n\n**Deliverable:** A script that seeds 10 fake episodic memories, runs `consolidate()`, and prints the before/after memory stats."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Agent Memory",
+      "content": "## Conceptual\n**Q: What is the difference between episodic and semantic memory in agents?**\nA: Episodic memory stores specific past events with context (who, what, when). Semantic memory stores general facts and concepts without temporal anchoring. Agents use episodic memory to recall 'what happened last time' and semantic memory to recall 'what is generally true about X'.\n\n## Code-Based\n**Q: A memory retrieval function returns cosine similarity 0.89 but the retrieved memory is clearly irrelevant. What could explain this?**\nA: The embedding model collapsed semantically different texts to similar vectors — common with short or generic phrases. Fixes: use a stronger embedding model, require both high similarity AND high importance score, add keyword pre-filters, or require user-id metadata match to avoid cross-user contamination.\n\n## Senior Scenario\n**Q: You're building an agent for a support platform. After 6 months, the memory store has 500k entries and retrieval latency is 4 seconds. How do you fix this?**\nA: Multi-phase approach: (1) Move from in-process cosine scan to a vector database (Pinecone/Weaviate/pgvector) with approximate nearest neighbour indexing — retrieval drops to <50ms. (2) Add a two-stage filter: first filter by user_id + memory_type metadata, then do vector search on the subset. (3) Run nightly consolidation to compress episodic → semantic, reducing total count. (4) Implement TTL-based expiry for memories older than 90 days with outcome_score < 0.4.\n\n## Wrong Answers to Avoid\n- 'Just store the entire chat history' — context window fills up; no semantic retrieval possible\n- 'Memory is only needed for long conversations' — cross-session memory provides compounding value from the first session\n- 'Cosine similarity alone is sufficient' — ignores recency, quality, and user-specificity signals"
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ — Agent Memory",
+      "questions": [
+        {
+          "question": "Which memory type is best for storing 'the step-by-step process that worked last time to fix a deadlock'?",
+          "options": [
+            "Episodic memory",
+            "Semantic memory",
+            "Procedural memory",
+            "Working memory"
+          ],
+          "correctIndex": 2,
+          "explanation": "Procedural memory stores successful action sequences and skills — reusable how-to knowledge. Episodic stores specific events, semantic stores facts, working memory is the transient context window."
+        },
+        {
+          "question": "An agent's memory store has 10,000 entries and retrieval is slow. What is the best first optimization?",
+          "options": [
+            "Reduce top_k from 10 to 3",
+            "Switch to a vector database with ANN indexing",
+            "Increase the similarity threshold to 0.95",
+            "Delete all memories older than 30 days"
+          ],
+          "correctIndex": 1,
+          "explanation": "In-process cosine scan is O(n) and doesn't scale. A vector database with approximate nearest neighbour (ANN) indexing brings retrieval to sub-50ms regardless of scale. The other options help marginally but don't address the root bottleneck."
+        },
+        {
+          "question": "What does the `outcome_score` field in a MemoryEntry represent?",
+          "options": [
+            "The cosine similarity when the memory was retrieved",
+            "Whether the action taken based on this memory led to a good result",
+            "The confidence of the LLM when generating the memory content",
+            "The importance the user assigned to this interaction"
+          ],
+          "correctIndex": 1,
+          "explanation": "outcome_score closes the feedback loop — it tracks whether acting on a memory led to a positive outcome. High-outcome memories are preferred during retrieval, letting the agent learn from success."
+        },
+        {
+          "question": "Which consolidation strategy is most effective for controlling memory store growth?",
+          "options": [
+            "Delete all memories older than 24 hours",
+            "Summarize groups of episodic memories into single semantic entries",
+            "Reduce the embedding dimension to save space",
+            "Only store memories with similarity > 0.9 to existing entries"
+          ],
+          "correctIndex": 1,
+          "explanation": "Summarisation-based consolidation preserves information while dramatically reducing entry count. Raw deletion loses information; embedding compression doesn't reduce entry count; deduplication by similarity would block storage of genuinely different memories."
+        },
+        {
+          "question": "A user-specific memory is retrieved during another user's session due to high semantic similarity. What is the root cause?",
+          "options": [
+            "The embedding model has low dimensionality",
+            "Missing user_id metadata filtering before vector search",
+            "The min_similarity threshold is too low",
+            "Procedural memory should not be retrieved with semantic search"
+          ],
+          "correctIndex": 1,
+          "explanation": "Without filtering by user_id (or session scope) before vector search, all users' memories compete in the same retrieval pool. Always apply hard metadata filters (user_id, tenant_id) before or during ANN search — never rely on similarity alone for access control."
+        }
+      ]
+    }
+  ]
+}
