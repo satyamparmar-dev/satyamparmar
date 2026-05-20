@@ -1,0 +1,107 @@
+{
+  "day": 54,
+  "phase": 4,
+  "title": "Hierarchical Agent Systems",
+  "description": "Design and implement manager/sub-agent trees where high-level planners delegate to specialist workers, with recursive task decomposition and result aggregation.",
+  "estimatedHours": 5,
+  "difficulty": "advanced",
+  "level": "advanced",
+  "track": "ai",
+  "tags": ["hierarchical-agents", "manager-agent", "delegation", "task-decomposition", "recursive-planning", "aggregation"],
+  "prerequisites": ["phase4-day52", "phase3-day38"],
+  "learningObjectives": [
+    "Implement a manager agent that decomposes tasks and delegates to sub-agents",
+    "Build recursive agent trees where sub-agents can spawn their own workers",
+    "Aggregate and synthesize results from parallel sub-agents",
+    "Handle delegation failures with retry and escalation patterns",
+    "Control recursion depth to prevent infinite agent spawning"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Hierarchical Agents Scale Better",
+      "content": "Flat orchestrator/worker systems work for tasks decomposable into a fixed set of known subtasks. But real-world problems are recursive — analysing a codebase requires analysing each module, which requires analysing each file, which requires analysing each function. A hierarchical agent system mirrors this structure: a top-level manager delegates to module managers, each of which delegates to file agents, with each layer making decisions appropriate to its scope. This scales with task complexity without requiring the top-level orchestrator to know every leaf-level detail."
+    },
+    {
+      "type": "theory",
+      "title": "Hierarchical Agent Architecture Patterns",
+      "content": "## Tree Structure\n```\n            CEO Agent (top-level goal)\n           /         \\         \\\n    Research Mgr  Analysis Mgr  Write Mgr\n       /   \\         /   \\         |\n    Web  DB  Stats  ML   NLP    Draft  Edit\n    Agent Agent Agent Agent Agent Agent  Agent\n```\n\n## Key Design Principles\n\n**1. Each manager does two things only:**\n- Decompose its task into subtasks\n- Aggregate its sub-agents' results\n\n**2. Recursion depth control**\nWithout a depth limit, a manager can spawn managers that spawn managers indefinitely.\n```python\nMAX_DEPTH = 3  # leaf agents must act, not delegate further\n```\n\n**3. Context scope**\nEach level only sees what it needs:\n- CEO agent: full high-level goal\n- Module manager: module-level context only\n- Leaf agent: single file / single function\n\n**4. Aggregation strategies**\n| Strategy | When to use |\n|----------|-------------|\n| Concatenate | Independent sub-results (research sections) |\n| Synthesise (LLM) | Results need merging into coherent narrative |\n| Vote | Multiple agents answer same question; take majority |\n| Criticise & revise | One agent produces, another reviews and revises |\n| Max/Min | Numeric results (risk scores, latency estimates) |\n\n## Failure Escalation\n```\nLeaf fails → retry (max 2)  → escalate to manager\nManager fails → try alternative decomposition → escalate to CEO\nCEO fails → return partial results with confidence score\n```\n\n## Cost Control in Hierarchies\nEach delegation hop costs tokens (task description passed down, result passed up). Deep trees multiply costs multiplicatively. Strategies:\n- Cache sub-agent results by task fingerprint\n- Limit delegation to tasks above a complexity threshold\n- Budget tokens per level: CEO gets 4K, managers get 2K, leaves get 1K"
+    },
+    {
+      "type": "code",
+      "title": "Recursive Hierarchical Agent System",
+      "content": "```python\nimport json\nimport asyncio\nimport logging\nfrom dataclasses import dataclass, field\nfrom typing import Optional\nfrom openai import AsyncOpenAI\n\nlogging.basicConfig(level=logging.INFO)\nlogger = logging.getLogger('hierarchical-agent')\nclient = AsyncOpenAI()\n\nMAX_DEPTH = 3\n\n\n# ─── Task / Result Types ──────────────────────────────────────────────────────\n\n@dataclass\nclass Task:\n    id: str\n    description: str\n    context: str = ''\n    depth: int = 0\n    parent_id: Optional[str] = None\n\n@dataclass\nclass TaskResult:\n    task_id: str\n    content: str\n    success: bool = True\n    error: Optional[str] = None\n    sub_results: list['TaskResult'] = field(default_factory=list)\n    agent_name: str = ''\n\n\n# ─── LLM Helpers ──────────────────────────────────────────────────────────────\n\nasync def llm_json(prompt: str, system: str) -> dict:\n    resp = await client.chat.completions.create(\n        model='gpt-4o-mini',\n        messages=[{'role': 'system', 'content': system},\n                  {'role': 'user', 'content': prompt}],\n        response_format={'type': 'json_object'},\n        temperature=0.0,\n    )\n    return json.loads(resp.choices[0].message.content)\n\nasync def llm_text(prompt: str, system: str, temperature: float = 0.3) -> str:\n    resp = await client.chat.completions.create(\n        model='gpt-4o-mini',\n        messages=[{'role': 'system', 'content': system},\n                  {'role': 'user', 'content': prompt}],\n        temperature=temperature,\n    )\n    return resp.choices[0].message.content\n\n\n# ─── Base Agent ───────────────────────────────────────────────────────────────\n\nclass HierarchicalAgent:\n    def __init__(self, name: str, role_description: str):\n        self.name = name\n        self.role = role_description\n\n    async def execute(self, task: Task) -> TaskResult:\n        \"\"\"\n        At each level: decide whether to delegate or act directly.\n        Delegate if the task is complex AND depth allows.\n        Act directly if at max depth or the task is simple enough.\n        \"\"\"\n        logger.info(\n            f'[{self.name}] depth={task.depth} task={task.description[:60]}'\n        )\n\n        if task.depth >= MAX_DEPTH:\n            return await self._act(task)\n\n        complexity = await self._assess_complexity(task)\n        if complexity['should_delegate'] and complexity['subtasks']:\n            return await self._delegate(task, complexity['subtasks'])\n        else:\n            return await self._act(task)\n\n    async def _assess_complexity(\n        self, task: Task\n    ) -> dict:\n        \"\"\"Decide whether to delegate and into what subtasks.\"\"\"\n        result = await llm_json(\n            prompt=(\n                f'Task: {task.description}\\n'\n                f'Context: {task.context[:500]}\\n'\n                f'Current depth: {task.depth}/{MAX_DEPTH}'\n            ),\n            system=(\n                'You are a task planner. Assess whether this task should be split '\n                'into subtasks. Return JSON: '\n                '{\"should_delegate\": bool, \"reason\": str, \"subtasks\": [str]}. '\n                'If should_delegate is true, provide 2-4 specific subtasks. '\n                'Only delegate if the task has clearly separable independent parts.'\n            ),\n        )\n        return result\n\n    async def _delegate(\n        self, task: Task, subtask_descriptions: list[str]\n    ) -> TaskResult:\n        \"\"\"Spawn sub-agents and aggregate their results.\"\"\"\n        logger.info(\n            f'[{self.name}] delegating into {len(subtask_descriptions)} subtasks'\n        )\n\n        subtasks = [\n            Task(\n                id=f'{task.id}-sub{i}',\n                description=desc,\n                context=task.description,  # parent task provides context\n                depth=task.depth + 1,\n                parent_id=task.id,\n            )\n            for i, desc in enumerate(subtask_descriptions)\n        ]\n\n        # Spawn sub-agents in parallel\n        sub_agent_tasks = [\n            asyncio.create_task(\n                HierarchicalAgent(\n                    name=f'{self.name}.sub{i}',\n                    role_description=self.role,\n                ).execute(st)\n            )\n            for i, st in enumerate(subtasks)\n        ]\n\n        sub_results = await asyncio.gather(*sub_agent_tasks, return_exceptions=True)\n\n        # Convert exceptions to error TaskResults\n        processed: list[TaskResult] = []\n        for i, r in enumerate(sub_results):\n            if isinstance(r, Exception):\n                processed.append(TaskResult(\n                    task_id=subtasks[i].id,\n                    content='',\n                    success=False,\n                    error=str(r),\n                    agent_name=f'{self.name}.sub{i}',\n                ))\n            else:\n                processed.append(r)\n\n        # Aggregate\n        aggregated = await self._aggregate(task, processed)\n        return TaskResult(\n            task_id=task.id,\n            content=aggregated,\n            sub_results=processed,\n            agent_name=self.name,\n        )\n\n    async def _act(self, task: Task) -> TaskResult:\n        \"\"\"Directly execute the task without further delegation.\"\"\"\n        try:\n            content = await llm_text(\n                prompt=(\n                    f'Task: {task.description}\\n'\n                    f'Context: {task.context[:600]}'\n                ),\n                system=(\n                    f'You are a {self.role}. '\n                    'Complete the given task directly and concisely. '\n                    'Provide a focused, factual response.'\n                ),\n            )\n            return TaskResult(\n                task_id=task.id,\n                content=content,\n                success=True,\n                agent_name=self.name,\n            )\n        except Exception as e:\n            logger.error(f'[{self.name}] act failed: {e}')\n            return TaskResult(\n                task_id=task.id,\n                content='',\n                success=False,\n                error=str(e),\n                agent_name=self.name,\n            )\n\n    async def _aggregate(self, task: Task, results: list[TaskResult]) -> str:\n        \"\"\"Synthesise sub-agent results into a coherent answer.\"\"\"\n        successful = [r for r in results if r.success and r.content]\n        failed = [r for r in results if not r.success]\n\n        if not successful:\n            return f'All sub-tasks failed. Errors: {[r.error for r in failed]}'\n\n        combined = '\\n\\n'.join(\n            f'Sub-task result:\\n{r.content}' for r in successful\n        )\n        failure_note = (\n            f'\\n\\nNote: {len(failed)} sub-task(s) failed and were excluded.'\n            if failed else ''\n        )\n\n        return await llm_text(\n            prompt=(\n                f'Original task: {task.description}\\n\\n'\n                f'Sub-task results to synthesise:\\n{combined}'\n                f'{failure_note}'\n            ),\n            system=(\n                'You are a synthesis expert. Combine the sub-task results into '\n                'a single comprehensive, coherent answer to the original task. '\n                'Do not repeat yourself; integrate all results smoothly.'\n            ),\n            temperature=0.4,\n        )\n\n\n# ─── Result Visualiser ────────────────────────────────────────────────────────\n\ndef print_tree(result: TaskResult, indent: int = 0):\n    prefix = '  ' * indent\n    status = 'OK' if result.success else 'FAIL'\n    print(f'{prefix}[{status}] {result.agent_name}: {result.content[:80]}...')\n    for sub in result.sub_results:\n        print_tree(sub, indent + 1)\n\n\n# ─── Demo ─────────────────────────────────────────────────────────────────────\n\nasync def main():\n    root_agent = HierarchicalAgent(\n        name='root',\n        role_description='senior software architect',\n    )\n    task = Task(\n        id='root-1',\n        description=(\n            'Analyse the architectural trade-offs of migrating a monolithic '\n            'Java Spring Boot application to microservices, covering: '\n            'data management, service communication, deployment complexity, '\n            'and team organisation.'\n        ),\n    )\n    result = await root_agent.execute(task)\n\n    print('\\n=== Agent Execution Tree ===')\n    print_tree(result)\n    print('\\n=== Final Answer ===')\n    print(result.content)\n\n\nif __name__ == '__main__':\n    asyncio.run(main())\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Hierarchical Agent Pitfalls",
+      "content": "**1. No recursion depth limit** — Without `MAX_DEPTH`, a manager can delegate to managers that delegate to managers indefinitely. Always enforce a hard depth limit and make leaf agents act rather than delegate when the limit is hit.\n\n**2. Context explosion** — Each delegation level copies the task description down the tree. With 4 levels and 3 subtasks per level, the leaf agents may receive enormous context. Trim context at each level to the most relevant summary.\n\n**3. Aggregation becoming a bottleneck** — If every level's synthesis is a long LLM call, a 4-level tree with 3 branches each makes 40+ LLM calls just for aggregation. Use direct concatenation for independent results; only use LLM synthesis when integration is needed.\n\n**4. Ignoring partial failures** — If 1 of 4 sub-agents fails and you discard all results, you waste the 3 successful outputs. Aggregate partial results and note which sub-tasks failed in the output.\n\n**5. Over-delegating simple tasks** — Asking an LLM 'should I delegate?' for a one-sentence task adds latency and cost. Set a complexity heuristic (word count, keyword presence) to bypass the assessment for obviously simple tasks.\n\n**6. No task ID propagation** — Without parent_id and correlation tracking, debugging which sub-agent produced which result in a 50-node tree is nearly impossible. Always propagate task_id down and include it in all log messages.\n\n**7. Spawning unbounded parallelism** — If a manager decomposes into 100 subtasks and spawns them all simultaneously, you'll hit rate limits and context limits. Cap parallel workers with a semaphore: `asyncio.Semaphore(max_parallel=10)`."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Hierarchical Agents",
+      "content": "## Conceptual\n**Q: Why is a flat orchestrator worse than a hierarchical agent tree for complex tasks?**\nA: A flat orchestrator must know all possible subtasks upfront — it cannot adapt to emergent complexity. A hierarchical system is recursive: each manager handles only what it knows, delegating unknown or complex sub-problems to specialists. This scales with complexity (deep trees for complex tasks, shallow for simple ones) and keeps each agent's context focused.\n\n## Code-Based\n**Q: A root agent decomposes a task into 5 sub-agents, and each sub-agent decomposes into 3 more. How many LLM calls are made for aggregation alone in a 3-level tree?**\nA: Level 3 (leaves): 5 × 3 = 15 nodes act (no aggregation). Level 2 managers: 5 nodes each aggregate 3 results = 5 LLM calls. Level 1 root: 1 aggregation call. Total aggregation calls: 6. Plus assessment calls (5 + 1 = 6) and act calls (15). Total ≈ 27 LLM calls for a 3-level tree with 5×3 branching. This is why depth and branching factor must be controlled.\n\n## Senior Scenario\n**Q: Your hierarchical agent is taking 45 seconds to complete a task. Users expect <10 seconds. How do you diagnose and fix this?**\nA: (1) Add timing logs per agent node — identify which level is slowest. (2) Check whether assessment calls are being made for trivially simple leaf tasks — skip assessment with a complexity heuristic. (3) Check aggregation — are 5-level-deep synthesis calls each taking 5s? Switch to concatenation with a single top-level synthesis. (4) Check parallelism — are sub-agents running sequentially? Verify `asyncio.gather` is being used, not sequential `await`. (5) Check rate limiting — are requests queuing? Add `asyncio.Semaphore` and switch to a higher rate-limit tier.\n\n## Wrong Answers to Avoid\n- 'Add more sub-agents to speed it up' — more agents add more LLM calls and can increase latency\n- 'Hierarchical agents are always better than flat ones' — for simple tasks, flat orchestrators have lower overhead\n- 'Sub-agents share the parent's context window' — each agent call is a separate LLM request with its own context"
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ — Hierarchical Agent Systems",
+      "questions": [
+        {
+          "question": "What should a leaf agent do when it reaches the MAX_DEPTH limit?",
+          "options": [
+            "Raise an exception and abort the task",
+            "Act directly without further delegation, even if the task seems complex",
+            "Return an empty result and wait for the parent to retry",
+            "Spawn one more level of agents as an exception"
+          ],
+          "correctIndex": 1,
+          "explanation": "MAX_DEPTH is a hard guard against infinite recursion. At the leaf level, agents must act — this is the base case of the recursion. The agent may produce a less optimal answer for complex leaf tasks, but this is acceptable compared to unbounded spawning."
+        },
+        {
+          "question": "A manager agent receives results from 5 sub-agents but 2 of them failed. What is the best aggregation strategy?",
+          "options": [
+            "Abort and return an error since the task is incomplete",
+            "Aggregate the 3 successful results and note the 2 failures in the output",
+            "Re-run all 5 sub-agents from the beginning",
+            "Use only the first successful result and discard the others"
+          ],
+          "correctIndex": 1,
+          "explanation": "Partial results are almost always more valuable than no result. Aggregate what succeeded, note what failed, and let the caller decide whether the partial result is sufficient. This maximises system usefulness under failure conditions."
+        },
+        {
+          "question": "Why is `asyncio.Semaphore` important when a manager spawns many parallel sub-agents?",
+          "options": [
+            "It encrypts messages between parent and child agents",
+            "It limits concurrent LLM API calls to prevent rate limiting",
+            "It ensures sub-agents execute in the correct order",
+            "It prevents memory leaks in long-running agent trees"
+          ],
+          "correctIndex": 1,
+          "explanation": "Spawning 50 sub-agents simultaneously fires 50 concurrent LLM API calls, which almost certainly hits rate limits (429 errors) and may exhaust the event loop. A Semaphore caps active calls, preventing cascading failures while still enabling parallelism."
+        },
+        {
+          "question": "Which aggregation strategy is most appropriate when 4 agents independently answer the same factual question?",
+          "options": [
+            "Concatenate all 4 answers",
+            "Take the longest answer",
+            "Vote and present the majority answer, noting disagreements",
+            "Always use the first agent's answer"
+          ],
+          "correctIndex": 2,
+          "explanation": "Voting on independent same-question answers increases confidence in the correct answer and surfaces disagreements that warrant attention. It replicates the peer review process — majority agreement strengthens confidence."
+        },
+        {
+          "question": "What is the primary risk of passing the full parent task description to every child agent?",
+          "options": [
+            "Child agents will refuse to process sub-tasks",
+            "Context grows with each level, bloating token usage and diluting focus",
+            "The task_id will be duplicated across all children",
+            "The LLM cannot distinguish parent from child instructions"
+          ],
+          "correctIndex": 1,
+          "explanation": "Each delegation level that copies the full parent context adds tokens to every child call. In a 4-level tree with large tasks, this multiplies token usage dramatically and dilutes child agent focus. Pass only the minimal context each child needs."
+        }
+      ]
+    }
+  ]
+}

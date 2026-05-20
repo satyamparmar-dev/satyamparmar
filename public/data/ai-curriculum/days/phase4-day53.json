@@ -1,0 +1,107 @@
+{
+  "day": 53,
+  "phase": 4,
+  "title": "Agent Communication Protocols",
+  "description": "Design robust inter-agent communication — shared state stores, event-driven messaging, structured handoffs, and versioned message schemas for evolving agent systems.",
+  "estimatedHours": 4,
+  "difficulty": "advanced",
+  "level": "advanced",
+  "track": "ai",
+  "tags": ["agent-communication", "message-schema", "shared-state", "event-driven", "handoff", "protocol"],
+  "prerequisites": ["phase4-day52"],
+  "learningObjectives": [
+    "Design typed, versioned message schemas for inter-agent communication",
+    "Implement shared blackboard state with optimistic locking",
+    "Build event-driven agent workflows using pub/sub patterns",
+    "Handle structured agent handoffs with context preservation",
+    "Version message protocols for backward-compatible agent upgrades"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Communication Protocol Design Matters",
+      "content": "In a multi-agent system, agents are the units of deployment and the message schema is the API contract between them. A poorly designed message (missing fields, untyped payloads, no versioning) causes the same bugs as a poorly designed REST API — silent data loss, backward incompatibility on upgrade, and untraceable errors. Treating inter-agent messages as first-class contracts — with schemas, versions, and validation — makes systems maintainable as the agent roster evolves."
+    },
+    {
+      "type": "theory",
+      "title": "Communication Patterns for Multi-Agent Systems",
+      "content": "## Pattern 1 — Direct Messaging (Request/Reply)\nBest for: orchestrator/worker patterns where results must flow back.\n```\nOrch → [task msg] → Worker → [result msg] → Orch\n```\nPros: Simple, traceable. Cons: Orchestrator becomes a bottleneck.\n\n## Pattern 2 — Shared Blackboard\nAgents read/write a shared context store. Any agent can observe changes.\n```\n        ┌─────────────┐\nAgent A →│             │← Agent C reads\nAgent B →│  Blackboard │\n          └─────────────┘\n```\nPros: Decoupled producers and consumers. Cons: Needs optimistic locking to prevent overwrites.\n\n## Pattern 3 — Event-Driven (Pub/Sub)\nAgents publish events; interested agents subscribe. No direct coupling.\n```\nResearch Agent → publishes 'research.complete' event\nCritic Agent   ← subscribes to 'research.complete'\nWriter Agent   ← subscribes to 'research.complete' + 'critique.complete'\n```\nPros: Highly decoupled; easy to add new agents. Cons: Harder to trace execution flow.\n\n## Pattern 4 — Structured Handoff\nAgent passes a typed context object when handing work to the next agent:\n```python\n@dataclass\nclass HandoffContext:\n    task_id: str\n    original_question: str\n    completed_by: list[str]   # agents that have processed this\n    artifacts: dict           # named results from each agent\n    next_agent: str\n    metadata: dict\n```\nEnsures all downstream agents have the full context without re-querying earlier agents.\n\n## Message Schema Versioning\n```python\n@dataclass\nclass VersionedMessage:\n    schema_version: str = '1.0'\n    # ... fields ...\n\n    def upgrade(self) -> 'VersionedMessage':\n        \"\"\"Migrate v1.0 → v1.1 — add default for new required fields.\"\"\"\n        if self.schema_version == '1.0':\n            # Add fields introduced in v1.1\n            if not hasattr(self, 'priority'):\n                object.__setattr__(self, 'priority', 'normal')\n            self.schema_version = '1.1'\n        return self\n```\nForward compatibility: new agents ignore unknown fields. Backward compatibility: old agents receive defaults for new fields."
+    },
+    {
+      "type": "code",
+      "title": "Blackboard + Event-Driven Agent Communication",
+      "content": "```python\nimport json\nimport time\nimport uuid\nimport asyncio\nimport logging\nfrom dataclasses import dataclass, field, asdict\nfrom typing import Any, Callable, Optional\nfrom openai import AsyncOpenAI\n\nlogging.basicConfig(level=logging.INFO)\nlogger = logging.getLogger('agent-comms')\nclient = AsyncOpenAI()\n\n\n# ─── Shared Blackboard ────────────────────────────────────────────────────────\n\n@dataclass\nclass BlackboardEntry:\n    key: str\n    value: Any\n    written_by: str\n    version: int = 1\n    timestamp: float = field(default_factory=time.time)\n\n\nclass Blackboard:\n    \"\"\"\n    Shared context store with optimistic locking.\n    In production, back this with Redis + WATCH/MULTI/EXEC.\n    \"\"\"\n    def __init__(self):\n        self._store: dict[str, BlackboardEntry] = {}\n        self._lock = asyncio.Lock()\n        self._write_log: list[dict] = []\n\n    async def write(self, key: str, value: Any, author: str,\n                    expected_version: Optional[int] = None) -> int:\n        async with self._lock:\n            existing = self._store.get(key)\n            if existing and expected_version is not None:\n                if existing.version != expected_version:\n                    raise ValueError(\n                        f'Optimistic lock conflict on \"{key}\": '\n                        f'expected v{expected_version}, got v{existing.version}'\n                    )\n            new_version = (existing.version + 1) if existing else 1\n            entry = BlackboardEntry(\n                key=key, value=value, written_by=author, version=new_version\n            )\n            self._store[key] = entry\n            self._write_log.append({'key': key, 'by': author, 'version': new_version})\n            logger.debug(f'Blackboard[{key}] v{new_version} written by {author}')\n            return new_version\n\n    def read(self, key: str) -> Optional[BlackboardEntry]:\n        return self._store.get(key)\n\n    def read_value(self, key: str, default: Any = None) -> Any:\n        entry = self._store.get(key)\n        return entry.value if entry else default\n\n    def snapshot(self) -> dict:\n        return {k: {'value': e.value, 'by': e.written_by, 'v': e.version}\n                for k, e in self._store.items()}\n\n\n# ─── Event Bus (Pub/Sub) ──────────────────────────────────────────────────────\n\nEventHandler = Callable[[str, dict], None]\n\n\nclass EventBus:\n    def __init__(self):\n        self._subscribers: dict[str, list[asyncio.Queue]] = {}\n        self._event_log: list[dict] = []\n\n    def subscribe(self, event_type: str) -> asyncio.Queue:\n        q: asyncio.Queue = asyncio.Queue()\n        self._subscribers.setdefault(event_type, []).append(q)\n        return q\n\n    async def publish(self, event_type: str, payload: dict, source: str = ''):\n        event = {\n            'id': str(uuid.uuid4()),\n            'type': event_type,\n            'source': source,\n            'payload': payload,\n            'timestamp': time.time(),\n        }\n        self._event_log.append(event)\n        logger.info(f'EVENT {event_type} from {source}')\n        for q in self._subscribers.get(event_type, []):\n            await q.put(event)\n\n    def log_summary(self) -> dict:\n        counts: dict[str, int] = {}\n        for e in self._event_log:\n            counts[e['type']] = counts.get(e['type'], 0) + 1\n        return counts\n\n\n# ─── Structured Handoff ───────────────────────────────────────────────────────\n\n@dataclass\nclass HandoffContext:\n    task_id: str = field(default_factory=lambda: str(uuid.uuid4()))\n    original_question: str = ''\n    completed_by: list[str] = field(default_factory=list)\n    artifacts: dict[str, str] = field(default_factory=dict)\n    next_agent: str = ''\n    priority: str = 'normal'        # normal | high | urgent\n    schema_version: str = '1.1'\n\n    def hand_to(self, agent: str) -> 'HandoffContext':\n        return HandoffContext(\n            task_id=self.task_id,\n            original_question=self.original_question,\n            completed_by=self.completed_by + [self.next_agent or 'origin'],\n            artifacts=dict(self.artifacts),\n            next_agent=agent,\n            priority=self.priority,\n        )\n\n\n# ─── Agent Base with Blackboard + Events ──────────────────────────────────────\n\nclass EventDrivenAgent:\n    def __init__(self, name: str, board: Blackboard, events: EventBus):\n        self.name = name\n        self.board = board\n        self.events = events\n\n    async def llm(self, prompt: str, system: str = '') -> str:\n        messages = []\n        if system:\n            messages.append({'role': 'system', 'content': system})\n        messages.append({'role': 'user', 'content': prompt})\n        resp = await client.chat.completions.create(\n            model='gpt-4o-mini', messages=messages, temperature=0.3\n        )\n        return resp.choices[0].message.content\n\n\nclass ResearchAgent(EventDrivenAgent):\n    async def run(self, question_queue: asyncio.Queue):\n        while True:\n            ctx: HandoffContext = await question_queue.get()\n            logger.info(f'[{self.name}] researching: {ctx.original_question[:50]}')\n\n            research = await self.llm(\n                prompt=f'Provide 3 concise facts about: {ctx.original_question}',\n                system='You are a research expert. Be factual and concise.',\n            )\n\n            # Write to blackboard\n            await self.board.write(\n                key=f'{ctx.task_id}:research',\n                value=research,\n                author=self.name,\n            )\n\n            # Publish event to trigger downstream agents\n            next_ctx = ctx.hand_to('critic')\n            next_ctx.artifacts['research'] = research\n            await self.events.publish(\n                event_type='research.complete',\n                payload=asdict(next_ctx),\n                source=self.name,\n            )\n\n\nclass CriticAgent(EventDrivenAgent):\n    async def run(self):\n        queue = self.events.subscribe('research.complete')\n        while True:\n            event = await queue.get()\n            ctx = HandoffContext(**event['payload'])\n            research = ctx.artifacts.get('research', '')\n            logger.info(f'[{self.name}] critiquing task {ctx.task_id[:8]}')\n\n            critique = await self.llm(\n                prompt=f'Identify weaknesses in this research:\\n{research}',\n                system='You are a critical reviewer. Be specific and brief.',\n            )\n\n            await self.board.write(\n                key=f'{ctx.task_id}:critique',\n                value=critique,\n                author=self.name,\n            )\n\n            next_ctx = ctx.hand_to('writer')\n            next_ctx.artifacts['critique'] = critique\n            await self.events.publish(\n                event_type='critique.complete',\n                payload=asdict(next_ctx),\n                source=self.name,\n            )\n\n\nclass WriterAgent(EventDrivenAgent):\n    def __init__(self, name: str, board: Blackboard, events: EventBus,\n                 result_queue: asyncio.Queue):\n        super().__init__(name, board, events)\n        self.result_queue = result_queue\n\n    async def run(self):\n        queue = self.events.subscribe('critique.complete')\n        while True:\n            event = await queue.get()\n            ctx = HandoffContext(**event['payload'])\n            logger.info(f'[{self.name}] writing answer for task {ctx.task_id[:8]}')\n\n            answer = await self.llm(\n                prompt=(\n                    f'Question: {ctx.original_question}\\n\\n'\n                    f'Research: {ctx.artifacts.get(\"research\", \"\")}\\n\\n'\n                    f'Critique to address: {ctx.artifacts.get(\"critique\", \"\")}\\n\\n'\n                    'Write a final, comprehensive answer.'\n                ),\n                system='You are a clear technical writer.',\n            )\n\n            await self.board.write(\n                key=f'{ctx.task_id}:answer',\n                value=answer,\n                author=self.name,\n            )\n\n            await self.result_queue.put({\n                'task_id': ctx.task_id,\n                'answer': answer,\n                'blackboard': self.board.snapshot(),\n            })\n\n\n# ─── Coordinator ──────────────────────────────────────────────────────────────\n\nasync def run_event_driven_pipeline(question: str) -> dict:\n    board = Blackboard()\n    events = EventBus()\n    result_queue: asyncio.Queue = asyncio.Queue()\n\n    ctx = HandoffContext(original_question=question)\n    question_queue: asyncio.Queue = asyncio.Queue()\n    await question_queue.put(ctx)\n\n    researcher = ResearchAgent('researcher', board, events)\n    critic = CriticAgent('critic', board, events)\n    writer = WriterAgent('writer', board, events, result_queue)\n\n    # Run agents concurrently; each self-triggers via events\n    research_task = asyncio.create_task(researcher.run(question_queue))\n    critic_task = asyncio.create_task(critic.run())\n    writer_task = asyncio.create_task(writer.run())\n\n    result = await asyncio.wait_for(result_queue.get(), timeout=60.0)\n\n    # Cancel long-running agents\n    for t in [research_task, critic_task, writer_task]:\n        t.cancel()\n\n    result['event_summary'] = events.log_summary()\n    return result\n\n\nif __name__ == '__main__':\n    out = asyncio.run(\n        run_event_driven_pipeline(\n            'What are the key differences between SQL and NoSQL databases '\n            'for high-throughput write workloads?'\n        )\n    )\n    print('\\n=== Answer ===\\n', out['answer'])\n    print('\\nEvents fired:', out['event_summary'])\n    print('Blackboard keys:', list(out['blackboard'].keys()))\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Communication Protocol Pitfalls",
+      "content": "**1. Untyped payloads** — Using raw `dict` without schema validation means typos in field names silently pass through and produce wrong behaviour downstream. Use `dataclass` or Pydantic for all inter-agent messages.\n\n**2. No optimistic locking on blackboard** — Two agents writing the same key simultaneously produce a last-write-wins race condition. Always include an `expected_version` check; in production, use Redis WATCH/MULTI/EXEC.\n\n**3. Event subscriber created after publish** — If a subscriber registers after an event fires, it misses the event entirely. Ensure all subscribers register before any events are published, or use an event store that replays missed events.\n\n**4. Blackboard holding full raw text** — Storing multi-megabyte LLM outputs in the blackboard bloats memory and slows snapshots. Store summaries or references (e.g., S3 object keys); keep full content in object storage.\n\n**5. No schema version on messages** — When you add a new field to `HandoffContext`, agents deployed on the old schema crash on deserialization. Always include `schema_version` and implement an `upgrade()` migration path.\n\n**6. Silent event subscriber failure** — If a subscriber's processing raises an exception, the event is consumed from the queue but never processed. Wrap subscriber loops in try/except; on failure, re-queue the event with an error counter, or publish a 'processing.failed' event.\n\n**7. Cancelling tasks before result is written** — Cancelling agent tasks immediately after the result_queue is populated may interrupt the blackboard write. Cancel only after confirming the result is fully persisted."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Agent Communication",
+      "content": "## Conceptual\n**Q: What is the difference between a message bus and a shared blackboard for multi-agent coordination?**\nA: A message bus routes point-to-point or pub/sub messages between agents — it's push-based and ephemeral (messages are consumed). A blackboard is a shared persistent state store — it's pull-based and durable (any agent can read any key at any time). Message buses are better for event notification; blackboards are better for shared context that multiple agents need to reference at different times.\n\n## Code-Based\n**Q: Two agents both need to update the same blackboard key simultaneously. How do you prevent data loss?**\nA: Use optimistic locking: each agent reads the current version, passes `expected_version` in the write call, and the blackboard raises an error if the version has changed since the read. The failed writer re-reads the current value, merges its changes, and retries. In Redis, implement this with WATCH → GET → MULTI → SET → EXEC.\n\n## Senior Scenario\n**Q: You upgrade the CriticAgent to add a `severity_scores` field to HandoffContext. Old WriterAgent instances are still running. How do you avoid a breaking change?**\nA: Forward-compatible message design: (1) set `severity_scores` default to `None` so old writers silently ignore it; (2) increment `schema_version` to '1.2'; (3) in WriterAgent, check `if ctx.schema_version >= '1.2' and ctx.severity_scores` before using the field; (4) deploy new CriticAgent first (it writes the new field), then deploy new WriterAgent (it reads it) — no downtime, no breakage.\n\n## Wrong Answers to Avoid\n- 'Just use global variables for agent state' — not thread-safe, not cross-process, not scalable\n- 'Events are guaranteed to be delivered in order' — async queues give no ordering guarantee without explicit sequence numbers\n- 'Schema versioning is only needed for external APIs' — internal agent messages evolve too; treat them as APIs"
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ — Agent Communication Protocols",
+      "questions": [
+        {
+          "question": "What is the purpose of optimistic locking on a shared blackboard?",
+          "options": [
+            "To prevent agents from reading stale data",
+            "To detect and reject concurrent writes that would overwrite another agent's update",
+            "To compress blackboard data for faster reads",
+            "To limit the number of agents that can subscribe to events"
+          ],
+          "correctIndex": 1,
+          "explanation": "Optimistic locking uses version numbers: a writer reads the current version, then writes only if the version hasn't changed. If another agent wrote in between, the write fails — the caller must re-read, merge, and retry. This prevents last-write-wins data loss."
+        },
+        {
+          "question": "An event-driven agent subscribes to 'research.complete' but the event fires before the subscription is registered. What happens?",
+          "options": [
+            "The event is buffered and delivered when the subscriber registers",
+            "The subscriber misses the event and never processes it",
+            "The event bus automatically re-publishes the event every 5 seconds",
+            "The publisher waits until at least one subscriber is registered"
+          ],
+          "correctIndex": 1,
+          "explanation": "Standard pub/sub queues deliver events to subscribers that exist at publish time. Late subscribers miss earlier events. Solutions: register all subscribers before any publishers start, or use an event store that replays history to new subscribers (e.g., Kafka consumer groups)."
+        },
+        {
+          "question": "Which HandoffContext field is most critical for preventing data duplication in a retry scenario?",
+          "options": [
+            "priority",
+            "schema_version",
+            "task_id",
+            "completed_by"
+          ],
+          "correctIndex": 2,
+          "explanation": "task_id provides idempotency — if the same task is retried (network timeout, crash recovery), agents can check if they've already processed this task_id and skip re-processing. Without it, retries cause duplicate work or duplicate results."
+        },
+        {
+          "question": "Why should the blackboard store summaries or object references rather than full LLM outputs?",
+          "options": [
+            "The blackboard schema does not support string values",
+            "Full outputs bloat memory, slow snapshots, and make diffing versions impractical",
+            "LLM outputs are confidential and cannot be stored in shared state",
+            "Summaries are always more accurate than full outputs"
+          ],
+          "correctIndex": 1,
+          "explanation": "Full LLM outputs can be thousands of tokens (kilobytes). Storing them in the blackboard bloats snapshots, slows all reads of the full state, and makes network transfer expensive. Store a key to object storage (S3/GCS) and let agents fetch the full content only when needed."
+        },
+        {
+          "question": "A CriticAgent adds a new `severity` field to HandoffContext. How do you prevent breaking running WriterAgent instances that don't know about this field?",
+          "options": [
+            "Stop all WriterAgent instances before deploying the CriticAgent update",
+            "Set a default value for `severity` so old Writers can deserialize it without error",
+            "Use a different message type name for the updated context",
+            "Require all agents to be updated simultaneously"
+          ],
+          "correctIndex": 1,
+          "explanation": "Forward-compatible schema design: new fields have defaults so old consumers can deserialize and ignore them without crashing. This enables rolling deployments where new producers and old consumers run simultaneously during the upgrade window."
+        }
+      ]
+    }
+  ]
+}

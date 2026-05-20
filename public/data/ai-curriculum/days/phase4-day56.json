@@ -1,0 +1,107 @@
+{
+  "day": 56,
+  "phase": 4,
+  "title": "LangGraph — State Machines for Agents",
+  "description": "Build stateful agentic workflows using LangGraph — directed graphs with typed state, conditional routing, cycles, and human-in-the-loop interrupts.",
+  "estimatedHours": 5,
+  "difficulty": "advanced",
+  "level": "advanced",
+  "track": "ai",
+  "tags": ["langgraph", "state-machine", "graph", "conditional-edges", "checkpointing", "human-in-the-loop"],
+  "prerequisites": ["phase4-day52", "phase3-day38"],
+  "learningObjectives": [
+    "Define LangGraph StateGraph with typed state schemas",
+    "Add nodes, edges, and conditional routing functions",
+    "Implement cycles in the graph for iterative agent loops",
+    "Use LangGraph's built-in checkpointer for state persistence",
+    "Add human-in-the-loop interrupt points for approval workflows"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why LangGraph Over Custom Agent Loops",
+      "content": "Custom agent loops written in Python are hard to visualise, hard to add branching to, and hard to checkpoint mid-execution. LangGraph provides a graph abstraction where nodes are agent steps, edges define transitions, and conditional edges encode routing logic. The graph is inspectable (visualise as a diagram), pausable (interrupt at any node), and persistent (serialize state between steps). For complex multi-step agents with branching logic, LangGraph eliminates the boilerplate of building these capabilities from scratch."
+    },
+    {
+      "type": "theory",
+      "title": "LangGraph Core Concepts",
+      "content": "## Building Blocks\n\n| Concept | Description |\n|---------|------------|\n| `StateGraph` | The graph object; accepts a state schema |\n| `State` | TypedDict or dataclass shared across all nodes |\n| `Node` | Function `(state) → dict` that returns state updates |\n| `Edge` | Unconditional transition between two nodes |\n| `Conditional Edge` | Routes to different nodes based on state |\n| `Checkpointer` | Persists state after each node execution |\n| `Interrupt` | Pauses graph at a node; waits for human input |\n\n## State Update Semantics\nNodes return a dict of state fields to update. Keys not included are unchanged (merge, not replace):\n```python\n# Only 'messages' is updated; 'plan' stays as-is\ndef research_node(state: AgentState) -> dict:\n    return {'messages': state['messages'] + [new_msg]}\n```\n\n## Conditional Routing\n```python\ndef should_continue(state: AgentState) -> str:\n    if state['error']:\n        return 'handle_error'\n    if state['confidence'] >= 0.8:\n        return 'write_answer'\n    return 'search_more'       # loop back\n```\n\n## Graph Lifecycle\n```\ncompile() → app\napp.invoke(initial_state)        # synchronous\nawait app.ainvoke(initial_state) # async\napp.stream(initial_state)        # stream events\n```\n\n## Checkpointing\n```python\nfrom langgraph.checkpoint.memory import MemorySaver\n\ncheckpointer = MemorySaver()\napp = graph.compile(checkpointer=checkpointer)\n# Resume with same thread_id:\napp.invoke(state, config={'configurable': {'thread_id': 'session-123'}})\n```\n\n## Human-in-the-Loop\n```python\n# Interrupt before 'approve' node, wait for human\ngraph.compile(\n    checkpointer=checkpointer,\n    interrupt_before=['approve']\n)\n# Later, resume with human input:\napp.invoke(None, config={'configurable': {'thread_id': 'x'}})\n```"
+    },
+    {
+      "type": "code",
+      "title": "LangGraph Research Agent with Cycles and Interrupts",
+      "content": "```python\n# pip install langgraph langchain-openai\n\nimport operator\nfrom typing import TypedDict, Annotated, Literal\nfrom langchain_openai import ChatOpenAI\nfrom langchain_core.messages import HumanMessage, AIMessage, SystemMessage\nfrom langgraph.graph import StateGraph, END\nfrom langgraph.checkpoint.memory import MemorySaver\n\nllm = ChatOpenAI(model='gpt-4o-mini', temperature=0.3)\n\n\n# ─── State Schema ─────────────────────────────────────────────────────────────\n\nclass ResearchState(TypedDict):\n    question: str\n    research_notes: Annotated[list[str], operator.add]  # append-only\n    search_count: int\n    confidence: float\n    final_answer: str\n    needs_human_review: bool\n    human_feedback: str\n\n\n# ─── Nodes ────────────────────────────────────────────────────────────────────\n\ndef planner_node(state: ResearchState) -> dict:\n    \"\"\"Decide what to research next based on current notes.\"\"\"\n    existing = '\\n'.join(state['research_notes'][-3:]) if state['research_notes'] else 'None'\n    response = llm.invoke([\n        SystemMessage(content='You are a research planner. Decide what to research next.'),\n        HumanMessage(content=(\n            f'Question: {state[\"question\"]}\\n'\n            f'Research so far: {existing}\\n'\n            'What specific aspect should we research next? Be concise (1 sentence).'\n        )),\n    ])\n    return {'research_notes': [f'PLAN: {response.content}']}\n\n\ndef search_node(state: ResearchState) -> dict:\n    \"\"\"Simulate a web search (replace with real search API).\"\"\"\n    last_plan = next(\n        (n for n in reversed(state['research_notes']) if n.startswith('PLAN:')),\n        state['question']\n    )\n    # Simulate search result\n    response = llm.invoke([\n        SystemMessage(content='You are a research engine. Provide 2-3 factual findings.'),\n        HumanMessage(content=f'Research: {last_plan}'),\n    ])\n    new_count = state['search_count'] + 1\n    return {\n        'research_notes': [f'FINDING [{new_count}]: {response.content[:400]}'],\n        'search_count': new_count,\n    }\n\n\ndef evaluate_node(state: ResearchState) -> dict:\n    \"\"\"Assess whether we have enough information to answer confidently.\"\"\"\n    findings = [n for n in state['research_notes'] if n.startswith('FINDING')]\n    if not findings:\n        return {'confidence': 0.0}\n\n    response = llm.invoke([\n        SystemMessage(content=(\n            'Rate research completeness as JSON: {\"confidence\": float 0-1, \"gaps\": [str]}. '\n            'confidence=1.0 means the question can be fully answered.'\n        )),\n        HumanMessage(content=(\n            f'Question: {state[\"question\"]}\\n'\n            f'Findings:\\n' + '\\n'.join(findings[-4:])\n        )),\n    ])\n    import json, re\n    m = re.search(r'\\{.*?\\}', response.content, re.DOTALL)\n    parsed = json.loads(m.group()) if m else {'confidence': 0.5}\n    confidence = float(parsed.get('confidence', 0.5))\n\n    # Flag for human review if very low confidence after many searches\n    needs_review = state['search_count'] >= 3 and confidence < 0.5\n    return {'confidence': confidence, 'needs_human_review': needs_review}\n\n\ndef write_answer_node(state: ResearchState) -> dict:\n    \"\"\"Synthesise findings into a final answer.\"\"\"\n    findings = '\\n'.join(\n        n for n in state['research_notes'] if n.startswith('FINDING')\n    )\n    human_note = (\n        f'\\nHuman feedback incorporated: {state[\"human_feedback\"]}'\n        if state.get('human_feedback') else ''\n    )\n    response = llm.invoke([\n        SystemMessage(content='You are a technical writer. Write a comprehensive answer.'),\n        HumanMessage(content=(\n            f'Question: {state[\"question\"]}\\n\\n'\n            f'Research findings:\\n{findings}'\n            f'{human_note}'\n        )),\n    ])\n    return {'final_answer': response.content}\n\n\ndef human_review_node(state: ResearchState) -> dict:\n    \"\"\"\n    This node is an interrupt point — LangGraph pauses here\n    and waits for the graph to be re-invoked with human input.\n    \"\"\"\n    # When the graph is interrupted here, the caller provides\n    # human_feedback before resuming. This node itself just returns\n    # the state unchanged — the human input was injected externally.\n    return {}\n\n\n# ─── Routing Functions ────────────────────────────────────────────────────────\n\ndef route_after_evaluate(\n    state: ResearchState,\n) -> Literal['human_review', 'write_answer', 'planner']:\n    if state['needs_human_review']:\n        return 'human_review'\n    if state['confidence'] >= 0.75:\n        return 'write_answer'\n    if state['search_count'] >= 5:   # hard stop\n        return 'write_answer'\n    return 'planner'                 # loop back for more research\n\n\ndef route_after_human(\n    state: ResearchState,\n) -> Literal['write_answer', 'planner']:\n    if state.get('human_feedback'):\n        return 'write_answer'   # human gave direction — answer now\n    return 'planner'            # no feedback — keep researching\n\n\n# ─── Build Graph ──────────────────────────────────────────────────────────────\n\ndef build_research_graph(with_interrupt: bool = False) -> object:\n    graph = StateGraph(ResearchState)\n\n    # Add nodes\n    graph.add_node('planner', planner_node)\n    graph.add_node('search', search_node)\n    graph.add_node('evaluate', evaluate_node)\n    graph.add_node('write_answer', write_answer_node)\n    graph.add_node('human_review', human_review_node)\n\n    # Define edges\n    graph.set_entry_point('planner')\n    graph.add_edge('planner', 'search')\n    graph.add_edge('search', 'evaluate')\n    graph.add_conditional_edges('evaluate', route_after_evaluate)\n    graph.add_conditional_edges('human_review', route_after_human)\n    graph.add_edge('write_answer', END)\n\n    checkpointer = MemorySaver()\n    interrupt_before = ['human_review'] if with_interrupt else []\n    return graph.compile(checkpointer=checkpointer, interrupt_before=interrupt_before)\n\n\n# ─── Demo — Basic Run (no interrupt) ─────────────────────────────────────────\n\nif __name__ == '__main__':\n    app = build_research_graph(with_interrupt=False)\n\n    initial_state: ResearchState = {\n        'question': 'What are the key trade-offs of using Apache Kafka vs Redis Streams?',\n        'research_notes': [],\n        'search_count': 0,\n        'confidence': 0.0,\n        'final_answer': '',\n        'needs_human_review': False,\n        'human_feedback': '',\n    }\n\n    config = {'configurable': {'thread_id': 'demo-run-1'}}\n    result = app.invoke(initial_state, config=config)\n    print('=== Final Answer ===\\n', result['final_answer'])\n    print(f'Searches: {result[\"search_count\"]} | Confidence: {result[\"confidence\"]:.2f}')\n\n    # ── Human-in-the-loop demo ────────────────────────────────────────────────\n    print('\\n=== Human-in-the-loop demo ===')\n    app_with_interrupt = build_research_graph(with_interrupt=True)\n    # Force low confidence to trigger human review\n    interrupt_state: ResearchState = {\n        **initial_state,\n        'search_count': 3,           # triggers human review check\n        'question': 'A highly ambiguous research question with no clear answer.',\n    }\n    config2 = {'configurable': {'thread_id': 'interrupt-demo-1'}}\n\n    # Run until interrupt\n    result_partial = app_with_interrupt.invoke(interrupt_state, config=config2)\n    print('Graph paused for human review.')\n    print('Current notes:', result_partial.get('research_notes', [])[-1] if result_partial.get('research_notes') else 'none')\n\n    # Human provides feedback and resumes\n    resume_state = {'human_feedback': 'Focus on scalability and throughput comparisons only.'}\n    final_result = app_with_interrupt.invoke(resume_state, config=config2)\n    print('Final answer after human input:', final_result.get('final_answer', '')[:200])\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "LangGraph Pitfalls",
+      "content": "**1. Mutable state in nodes** — Never mutate `state` in place inside a node. Always return a new dict with updated values. LangGraph merges your returned dict into the state; in-place mutation bypasses this and breaks checkpointing.\n\n**2. Infinite loops without a termination condition** — A conditional edge that always returns the same looping node (e.g., always routes back to 'planner') will run indefinitely. Always add a hard counter-based exit: `if state['search_count'] >= 5: return 'write_answer'`.\n\n**3. Missing `Annotated[list, operator.add]` for accumulating lists** — Without the reducer annotation, LangGraph replaces the list on each update rather than appending. Use `Annotated[list[str], operator.add]` for fields where nodes should accumulate values.\n\n**4. Resuming with wrong thread_id** — Every `app.invoke()` call with a different `thread_id` starts a fresh graph, ignoring the checkpoint. Always use the same thread_id to resume interrupted sessions.\n\n**5. Not handling interrupt resume correctly** — After an interrupt, resume by calling `app.invoke(None, config=...)` or passing only the updated fields. Passing the full initial state again restarts the graph from the beginning.\n\n**6. Expensive operations in every node** — If 'planner' calls an LLM and then 'search' calls an LLM and then 'evaluate' calls an LLM, a 5-loop graph makes 15+ LLM calls. Profile node costs and batch where possible.\n\n**7. No state validation between nodes** — If 'write_answer' assumes `research_notes` is non-empty but the graph reaches it after zero searches, the node fails silently. Add guard conditions at the start of each node."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — LangGraph",
+      "content": "## Conceptual\n**Q: How does LangGraph's state update model differ from a traditional function call?**\nA: Traditional functions take inputs and return outputs; the caller manages state. LangGraph nodes take the full state and return only the fields they update — LangGraph merges this into the existing state. Accumulating fields use reducer annotations (e.g., `operator.add` for lists). This merge-based model enables multiple nodes to update different parts of the state without interfering.\n\n## Code-Based\n**Q: A LangGraph node returns `{'messages': [new_msg]}`. After 3 loops, only the last message is in state. What's wrong?**\nA: The state field should be annotated with `Annotated[list[Message], operator.add]` to enable accumulation. Without the reducer, each node return replaces the entire `messages` list with just the new message. Add the annotation and messages will accumulate across iterations.\n\n## Senior Scenario\n**Q: You deploy a LangGraph agent for a financial approval workflow. Mid-execution, the user closes the browser and reconnects 2 hours later. How does the agent resume correctly?**\nA: LangGraph's checkpointer (e.g., `SqliteSaver` or `RedisSaver` in production) persists state after every node execution. When the user reconnects, the frontend provides the same `thread_id`; `app.invoke(None, config={'configurable': {'thread_id': X}})` resumes from the last checkpoint. The agent continues from where it was interrupted without re-running completed steps.\n\n## Wrong Answers to Avoid\n- 'Nodes communicate by calling each other directly' — nodes are independent; all communication is through the state dict\n- 'Conditional edges replace the previous edge' — conditional edges are added alongside direct edges; they don't remove other connections\n- 'Human-in-the-loop requires a separate thread' — LangGraph handles this natively with `interrupt_before`; no manual threading required"
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ — LangGraph",
+      "questions": [
+        {
+          "question": "What annotation is required for a LangGraph state field that should accumulate values across multiple node executions?",
+          "options": [
+            "list[str]",
+            "Annotated[list[str], operator.add]",
+            "Accumulating[list[str]]",
+            "MutableList[str]"
+          ],
+          "correctIndex": 1,
+          "explanation": "Without a reducer, LangGraph replaces the field on each node update. `Annotated[list[str], operator.add]` tells LangGraph to use the `+` operator when merging — effectively appending new values instead of replacing the list."
+        },
+        {
+          "question": "A conditional edge function returns the string 'write_answer'. What does LangGraph do with this?",
+          "options": [
+            "It calls the write_answer Python function directly",
+            "It routes the graph to the node named 'write_answer'",
+            "It sets the state field 'write_answer' to True",
+            "It ends the graph and returns the state"
+          ],
+          "correctIndex": 1,
+          "explanation": "Conditional edge functions return a string matching a node name (or END). LangGraph uses this to determine the next node to execute. The string is a routing key, not a function call."
+        },
+        {
+          "question": "How does LangGraph handle human-in-the-loop interrupts?",
+          "options": [
+            "The graph blocks on a threading.Event until input is received",
+            "The graph pauses at the interrupt_before node, serialises state, and waits to be re-invoked",
+            "A background worker polls for human input every 5 seconds",
+            "The human_review node calls input() to receive console input"
+          ],
+          "correctIndex": 1,
+          "explanation": "LangGraph interrupt_before causes the graph to stop before the specified node, save its state via the checkpointer, and return control to the caller. The caller collects human input, updates the state, and calls app.invoke() again with the same thread_id to resume."
+        },
+        {
+          "question": "What is the correct way to prevent an infinite loop in a cyclic LangGraph?",
+          "options": [
+            "Use graph.set_max_iterations() to cap the number of cycles",
+            "Add a counter field to state and route to END when the counter exceeds a threshold",
+            "LangGraph automatically detects infinite loops and stops after 10 iterations",
+            "Use a direct edge from the looping node to END"
+          ],
+          "correctIndex": 1,
+          "explanation": "LangGraph does not automatically detect infinite loops. You must add a counter to state (e.g., search_count), increment it in the looping node, and add a conditional edge that routes to a terminal node when the count exceeds the limit."
+        },
+        {
+          "question": "Which checkpointer is appropriate for a production LangGraph deployment that serves multiple concurrent users?",
+          "options": [
+            "MemorySaver — fastest and simplest",
+            "A persistent store like SqliteSaver or a Redis-backed checkpointer",
+            "FileSaver — writes each state to a local JSON file",
+            "No checkpointer is needed if the graph has no interrupts"
+          ],
+          "correctIndex": 1,
+          "explanation": "MemorySaver is lost on process restart and is not safe for concurrent processes (multiple workers). Production deployments need a persistent, shared store (Postgres/SQLite/Redis) so any worker can resume any thread_id."
+        }
+      ]
+    }
+  ]
+}

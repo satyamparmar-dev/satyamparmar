@@ -1,0 +1,107 @@
+{
+  "day": 52,
+  "phase": 4,
+  "title": "Multi-Agent Systems — Fundamentals",
+  "description": "Understand why single agents hit limits and how multi-agent architectures overcome them — covering orchestrator/worker patterns, agent roles, and communication topologies.",
+  "estimatedHours": 4,
+  "difficulty": "advanced",
+  "level": "advanced",
+  "track": "ai",
+  "tags": ["multi-agent", "orchestrator", "worker", "agent-roles", "communication", "coordination"],
+  "prerequisites": ["phase3-day37", "phase3-day39", "phase3-day51"],
+  "learningObjectives": [
+    "Explain why single agents fail at parallelism, specialisation, and scale",
+    "Define the orchestrator/worker pattern and when to apply it",
+    "Implement a basic multi-agent pipeline with typed message passing",
+    "Compare network topologies: hierarchical, peer-to-peer, broadcast",
+    "Handle agent failures and partial results in a coordinator"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Single Agents Are Not Enough",
+      "content": "A single agent operates sequentially — it cannot research and write simultaneously, cannot specialise deeply in multiple domains at once, and runs into context window limits on long tasks. Multi-agent systems overcome these limits by decomposing work across specialised agents running in parallel. A research agent, a critic agent, and a writer agent working together can produce higher-quality output faster than one general agent doing everything serially. The architectural shift also improves reliability: when one agent fails, others can continue or retry, instead of the whole task collapsing."
+    },
+    {
+      "type": "theory",
+      "title": "Multi-Agent Architecture Patterns",
+      "content": "## Core Roles\n| Role | Responsibility | Example |\n|------|---------------|--------|\n| **Orchestrator** | Decomposes task, routes sub-tasks, aggregates results | Project manager agent |\n| **Worker / Specialist** | Executes one well-defined sub-task | Search agent, code agent, critic agent |\n| **Critic / Reviewer** | Evaluates another agent's output | QA agent, fact-checker |\n| **Aggregator** | Merges results from multiple workers into a coherent whole | Synthesis agent |\n\n## Network Topologies\n```\nHierarchical          Peer-to-Peer           Pipeline\n\n    Orch                A ─── B             A → B → C → D\n   / | \\               |\\   /|\n  W1 W2 W3             | \\ / |              Each agent passes\n                        C─X─D              output to the next\n                       Each agent\n                       can message any\n                       other\n```\n\n**Hierarchical** — Best for task decomposition. Clear authority; simple to reason about; orchestrator is a single point of failure.\n\n**Peer-to-Peer** — Best for negotiation and consensus. No bottleneck; harder to debug; risk of message storms.\n\n**Pipeline** — Best for sequential processing (extract → transform → validate → store). Each stage is a specialist; easy to swap stages.\n\n## Message Design\nMessages between agents must be typed and versioned:\n```python\n@dataclass\nclass AgentMessage:\n    id: str              # for deduplication\n    sender: str          # agent name\n    recipient: str       # agent name or 'broadcast'\n    type: str            # 'task' | 'result' | 'error' | 'status'\n    payload: dict        # task-specific data\n    correlation_id: str  # links replies to original task\n    timestamp: float\n```\n\n## Failure Handling Strategies\n- **Retry**: re-run failed agent up to N times\n- **Fallback**: if worker A fails, try worker B (same role)\n- **Partial result**: collect whatever completed successfully, skip failures\n- **Compensation**: undo completed steps if a downstream agent fails"
+    },
+    {
+      "type": "code",
+      "title": "Orchestrator / Worker Multi-Agent Framework",
+      "content": "```python\nimport json\nimport time\nimport uuid\nimport asyncio\nimport logging\nfrom dataclasses import dataclass, field\nfrom typing import Any, Optional, Callable, Awaitable\nfrom openai import AsyncOpenAI\n\nlogging.basicConfig(level=logging.INFO)\nlogger = logging.getLogger('multi-agent')\n\nclient = AsyncOpenAI()\n\n\n# ─── Message Bus ──────────────────────────────────────────────────────────────\n\n@dataclass\nclass AgentMessage:\n    id: str = field(default_factory=lambda: str(uuid.uuid4()))\n    sender: str = ''\n    recipient: str = ''\n    type: str = 'task'          # task | result | error | status\n    payload: dict = field(default_factory=dict)\n    correlation_id: str = ''\n    timestamp: float = field(default_factory=time.time)\n\n\nclass MessageBus:\n    \"\"\"In-process async message bus — replace with Redis pub/sub in production.\"\"\"\n    def __init__(self):\n        self._queues: dict[str, asyncio.Queue] = {}\n        self._message_log: list[AgentMessage] = []\n\n    def register(self, agent_name: str):\n        self._queues[agent_name] = asyncio.Queue()\n\n    async def send(self, msg: AgentMessage):\n        self._message_log.append(msg)\n        logger.debug(f'{msg.sender} → {msg.recipient}: {msg.type} {list(msg.payload.keys())}')\n        q = self._queues.get(msg.recipient)\n        if q is None:\n            raise KeyError(f'Unknown agent: {msg.recipient}')\n        await q.put(msg)\n\n    async def receive(self, agent_name: str, timeout: float = 30.0) -> AgentMessage:\n        q = self._queues[agent_name]\n        return await asyncio.wait_for(q.get(), timeout=timeout)\n\n    def log_summary(self) -> dict:\n        by_type: dict[str, int] = {}\n        for m in self._message_log:\n            by_type[m.type] = by_type.get(m.type, 0) + 1\n        return {'total_messages': len(self._message_log), 'by_type': by_type}\n\n\n# ─── Base Agent ───────────────────────────────────────────────────────────────\n\nclass BaseAgent:\n    def __init__(self, name: str, bus: MessageBus):\n        self.name = name\n        self.bus = bus\n        self.bus.register(name)\n\n    async def send(self, recipient: str, msg_type: str,\n                   payload: dict, correlation_id: str = '') -> str:\n        msg = AgentMessage(\n            sender=self.name,\n            recipient=recipient,\n            type=msg_type,\n            payload=payload,\n            correlation_id=correlation_id,\n        )\n        await self.bus.send(msg)\n        return msg.id\n\n    async def recv(self, timeout: float = 30.0) -> AgentMessage:\n        return await self.bus.receive(self.name, timeout=timeout)\n\n    async def llm(self, messages: list[dict], temperature: float = 0.3) -> str:\n        resp = await client.chat.completions.create(\n            model='gpt-4o-mini',\n            messages=messages,\n            temperature=temperature,\n        )\n        return resp.choices[0].message.content\n\n    async def run(self):\n        \"\"\"Override in subclasses — process messages until STOP received.\"\"\"\n        raise NotImplementedError\n\n\n# ─── Specialist Workers ───────────────────────────────────────────────────────\n\nclass ResearchAgent(BaseAgent):\n    async def run(self):\n        while True:\n            msg = await self.recv()\n            if msg.payload.get('command') == 'STOP':\n                break\n            topic = msg.payload.get('topic', '')\n            logger.info(f'[{self.name}] researching: {topic}')\n            result = await self.llm([\n                {'role': 'system', 'content': 'You are a concise research assistant. Summarise key facts.'},\n                {'role': 'user', 'content': f'Provide 3 key facts about: {topic}'},\n            ])\n            await self.send(\n                recipient=msg.sender,\n                msg_type='result',\n                payload={'research': result, 'topic': topic},\n                correlation_id=msg.id,\n            )\n\n\nclass CriticAgent(BaseAgent):\n    async def run(self):\n        while True:\n            msg = await self.recv()\n            if msg.payload.get('command') == 'STOP':\n                break\n            content = msg.payload.get('content', '')\n            logger.info(f'[{self.name}] critiquing content ({len(content)} chars)')\n            critique = await self.llm([\n                {'role': 'system', 'content': (\n                    'You are a critical reviewer. Identify factual gaps, '\n                    'logical flaws, or missing perspectives. Be concise.'\n                )},\n                {'role': 'user', 'content': f'Critique this:\\n{content}'},\n            ])\n            await self.send(\n                recipient=msg.sender,\n                msg_type='result',\n                payload={'critique': critique},\n                correlation_id=msg.id,\n            )\n\n\nclass WriterAgent(BaseAgent):\n    async def run(self):\n        while True:\n            msg = await self.recv()\n            if msg.payload.get('command') == 'STOP':\n                break\n            research = msg.payload.get('research', '')\n            critique = msg.payload.get('critique', '')\n            question = msg.payload.get('question', '')\n            logger.info(f'[{self.name}] writing final answer')\n            answer = await self.llm([\n                {'role': 'system', 'content': 'You are a clear technical writer.'},\n                {'role': 'user', 'content': (\n                    f'Question: {question}\\n\\n'\n                    f'Research findings:\\n{research}\\n\\n'\n                    f'Critique to address:\\n{critique}\\n\\n'\n                    'Write a comprehensive, accurate answer addressing the critique.'\n                )},\n            ], temperature=0.5)\n            await self.send(\n                recipient=msg.sender,\n                msg_type='result',\n                payload={'answer': answer},\n                correlation_id=msg.id,\n            )\n\n\n# ─── Orchestrator ─────────────────────────────────────────────────────────────\n\nclass OrchestratorAgent(BaseAgent):\n    def __init__(self, name: str, bus: MessageBus,\n                 researcher: str, critic: str, writer: str):\n        super().__init__(name, bus)\n        self.researcher = researcher\n        self.critic = critic\n        self.writer = writer\n\n    async def answer(self, question: str) -> str:\n        logger.info(f'[{self.name}] orchestrating question: {question[:60]}')\n\n        # 1. Send research task\n        r_id = await self.send(self.researcher, 'task', {'topic': question})\n\n        # 2. Collect research result\n        research_msg = await self.recv()\n        research = research_msg.payload.get('research', '')\n\n        # 3. Send critique task (in parallel with could also send to writer)\n        await self.send(self.critic, 'task', {'content': research})\n\n        # 4. Collect critique\n        critique_msg = await self.recv()\n        critique = critique_msg.payload.get('critique', '')\n\n        # 5. Send write task\n        await self.send(self.writer, 'task', {\n            'question': question,\n            'research': research,\n            'critique': critique,\n        })\n\n        # 6. Collect final answer\n        answer_msg = await self.recv()\n        answer = answer_msg.payload.get('answer', 'No answer produced.')\n\n        # 7. Stop workers\n        for worker in [self.researcher, self.critic, self.writer]:\n            await self.send(worker, 'task', {'command': 'STOP'})\n\n        return answer\n\n\n# ─── Runner ───────────────────────────────────────────────────────────────────\n\nasync def run_multi_agent(question: str) -> str:\n    bus = MessageBus()\n    orchestrator = OrchestratorAgent('orch', bus, 'researcher', 'critic', 'writer')\n    researcher = ResearchAgent('researcher', bus)\n    critic = CriticAgent('critic', bus)\n    writer = WriterAgent('writer', bus)\n\n    # Run all agents concurrently\n    answer_task = asyncio.create_task(orchestrator.answer(question))\n    worker_tasks = [\n        asyncio.create_task(researcher.run()),\n        asyncio.create_task(critic.run()),\n        asyncio.create_task(writer.run()),\n    ]\n\n    answer = await answer_task\n    await asyncio.gather(*worker_tasks)\n\n    logger.info(f'Bus summary: {bus.log_summary()}')\n    return answer\n\n\nif __name__ == '__main__':\n    result = asyncio.run(\n        run_multi_agent('What are the trade-offs of eventual consistency in distributed databases?')\n    )\n    print('\\n=== Final Answer ===\\n', result)\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Multi-Agent Mistakes",
+      "content": "**1. Shared mutable state** — Multiple agents writing to the same in-memory dict without locking causes race conditions. Use a message bus or an external store (Redis) as the single source of truth.\n\n**2. Missing correlation IDs** — When the orchestrator sends tasks to multiple workers and collects results, without correlation IDs there's no way to match replies to requests. Always link result messages back to the originating task ID.\n\n**3. No timeout on `recv()`** — If a worker crashes silently, the orchestrator waits forever. Always set a timeout on message receipt and handle `asyncio.TimeoutError` with a retry or fallback.\n\n**4. Circular message routing** — In peer-to-peer topologies, Agent A asks B, B asks C, C asks A — deadlock. Design message flow as a DAG; never allow cycles without explicit loop detection.\n\n**5. Over-decomposition** — Breaking a 3-sentence task into 8 agent hops adds latency and cost without benefit. Apply multi-agent only when parallelism, specialisation, or context limits justify the overhead.\n\n**6. Ignoring partial failures** — If the critic agent fails, the orchestrator should still proceed with uncritiqued research rather than aborting the entire pipeline. Design explicit fallback paths for each worker role.\n\n**7. No message log** — Without a message log, debugging multi-agent interactions is nearly impossible. Persist every message with sender, recipient, type, and payload to a structured log."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Multi-Agent Fundamentals",
+      "content": "## Conceptual\n**Q: When should you use multiple agents instead of one agent with more tools?**\nA: Use multiple agents when: (1) subtasks benefit from parallel execution; (2) subtasks require different system prompts or personas (researcher vs critic); (3) the combined context of all subtasks exceeds one agent's context window; (4) you want independent verification (critic agent reviewing another agent's output). One agent with more tools is preferable for simple sequential tasks where parallelism adds no benefit.\n\n## Code-Based\n**Q: An orchestrator sends tasks to 3 workers and awaits results. Two workers respond but the third never does. How do you fix this without blocking forever?**\nA: Add `asyncio.wait_for(q.get(), timeout=30.0)` in the `recv()` method. On `TimeoutError`, the orchestrator can: retry the task with the same worker, route to a backup worker, or proceed with partial results from the two successful workers. Log the timeout event as an error for alerting.\n\n## Senior Scenario\n**Q: You're designing a multi-agent customer support system. A research agent looks up account data, a policy agent checks entitlements, and a writer agent composes the response. How do you ensure no PII leaks between agents?**\nA: (1) Each agent runs in its own process/container with no shared memory; (2) The message bus carries only the minimum data each agent needs — the writer receives a summary, not raw account records; (3) Apply PII masking on every outbound message before it enters the bus; (4) The orchestrator acts as a data minimisation layer, stripping fields not needed by each recipient worker.\n\n## Wrong Answers to Avoid\n- 'Use more agents for every task' — latency and cost increase with each agent hop\n- 'Agents can share a Python dict for coordination' — not thread-safe; not cross-process\n- 'Message order is guaranteed' — async queues guarantee delivery, not order; always use correlation IDs"
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ — Multi-Agent Fundamentals",
+      "questions": [
+        {
+          "question": "What is the primary role of a correlation_id in multi-agent message passing?",
+          "options": [
+            "To encrypt the message payload",
+            "To match result messages back to the task that triggered them",
+            "To prioritise messages in the queue",
+            "To identify which agent framework generated the message"
+          ],
+          "correctIndex": 1,
+          "explanation": "When an orchestrator sends multiple tasks in parallel and collects results asynchronously, correlation_id links each result back to its originating request. Without it, results from different tasks are indistinguishable."
+        },
+        {
+          "question": "Which topology is best suited for a pipeline where raw data flows through extraction, transformation, validation, and storage stages?",
+          "options": [
+            "Peer-to-peer",
+            "Hierarchical",
+            "Pipeline (chain)",
+            "Broadcast"
+          ],
+          "correctIndex": 2,
+          "explanation": "A pipeline topology maps directly to sequential processing stages. Each agent's output becomes the next agent's input, making it easy to swap, test, and monitor individual stages."
+        },
+        {
+          "question": "An orchestrator sends tasks to 5 worker agents. Worker 3 crashes. What is the correct failure handling strategy?",
+          "options": [
+            "Abort the entire task and return an error",
+            "Wait indefinitely for worker 3 to recover",
+            "Apply a timeout, then proceed with results from the 4 successful workers or retry with a fallback",
+            "Restart all 5 workers from the beginning"
+          ],
+          "correctIndex": 2,
+          "explanation": "Partial result tolerance maximises system availability. A timeout detects the failure; proceeding with successful results (or a fallback worker) keeps the system useful. Aborting everything makes the multi-agent system less reliable than a single agent."
+        },
+        {
+          "question": "Why should agents in a multi-agent system never share an in-process Python dict for state?",
+          "options": [
+            "Python dicts cannot store agent messages",
+            "Shared mutable state without locking causes race conditions and is not safe across processes",
+            "Dicts are too slow for inter-agent communication",
+            "Multi-agent frameworks do not support Python dicts"
+          ],
+          "correctIndex": 1,
+          "explanation": "In-process shared mutable state requires locks (GIL or explicit) and is impossible to share across separate processes or containers. An external message bus or datastore (Redis) is the correct coordination mechanism."
+        },
+        {
+          "question": "When does adding more agents to a system NOT improve performance?",
+          "options": [
+            "When tasks can be parallelised",
+            "When tasks are strictly sequential and each step depends on the previous result",
+            "When agents require different system prompts",
+            "When the context window limit is being hit"
+          ],
+          "correctIndex": 1,
+          "explanation": "Parallelism requires independent tasks. If step B must wait for step A's output, adding agents only adds message-passing overhead. Multi-agent helps most when subtasks are independent or need specialised personas."
+        }
+      ]
+    }
+  ]
+}

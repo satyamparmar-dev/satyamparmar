@@ -1,0 +1,107 @@
+{
+  "day": 57,
+  "phase": 4,
+  "title": "LangGraph Advanced — Subgraphs, Parallel Nodes & Streaming",
+  "description": "Master advanced LangGraph patterns: composable subgraphs, parallel node execution with Send, streaming intermediate results, and multi-agent graph composition.",
+  "estimatedHours": 5,
+  "difficulty": "advanced",
+  "level": "advanced",
+  "track": "ai",
+  "tags": ["langgraph", "subgraphs", "parallel", "streaming", "send", "multi-agent-graph"],
+  "prerequisites": ["phase4-day56"],
+  "learningObjectives": [
+    "Compose complex graphs from reusable subgraphs",
+    "Execute multiple graph nodes in parallel using the Send API",
+    "Stream intermediate node outputs to the client in real time",
+    "Connect multiple LangGraph agents as nodes in a parent graph",
+    "Debug graph execution with LangGraph's event stream"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Advanced LangGraph Patterns Matter",
+      "content": "Simple linear graphs handle straightforward workflows. Real production agents need: parallel tool calls (don't run searches sequentially when they're independent), composable sub-workflows (reuse a 'research' subgraph in multiple parent graphs), streaming (show progress to the user rather than a long blank wait), and multi-agent composition (connect specialised LangGraph agents as nodes in a routing graph). These patterns are the difference between a prototype and a production-grade agentic system."
+    },
+    {
+      "type": "theory",
+      "title": "Advanced LangGraph Concepts",
+      "content": "## Subgraphs\nA compiled LangGraph app can be used as a node in a parent graph:\n```python\nsub_app = subgraph.compile()          # compile the subgraph\nparent.add_node('research', sub_app)  # use as a node\n```\nThe subgraph's state schema must be compatible (same keys, or mapped via a state transform).\n\n## Parallel Execution with Send\nThe `Send` API lets a node dynamically fan out to multiple parallel node invocations:\n```python\nfrom langgraph.constants import Send\n\ndef fan_out_node(state: State) -> list[Send]:\n    # Returns a list of Send objects — each runs a node with its own state\n    return [\n        Send('worker_node', {'task': t, 'shared': state['shared']})\n        for t in state['tasks']\n    ]\n```\nAll `Send` targets run in parallel; their results are merged back into the parent state.\n\n## Streaming\nLangGraph supports three streaming modes:\n```python\n# values: emit full state after each node\nfor chunk in app.stream(state, stream_mode='values'):\n    print(chunk)\n\n# updates: emit only the diff after each node\nfor chunk in app.stream(state, stream_mode='updates'):\n    print(chunk)   # {'node_name': {updated_keys}}\n\n# debug: emit all events including tool calls\nfor event in app.stream(state, stream_mode='debug'):\n    print(event)\n```\n\n## LLM Token Streaming\nFor streaming individual LLM tokens within a node:\n```python\nasync for chunk in llm.astream(messages):\n    token = chunk.content\n    # yield token to SSE / WebSocket\n```\n\n## Multi-Agent Graph Composition\nConnect LangGraph agents as nodes in a supervisor graph:\n```python\nsupervisor.add_node('researcher', researcher_app)  # another compiled graph\nsupervisor.add_node('writer', writer_app)\nsupervisor.add_conditional_edges('router', route_to_agent)\n```\nThe supervisor routes based on the task type; each agent graph handles its speciality."
+    },
+    {
+      "type": "code",
+      "title": "Parallel Fan-Out, Subgraphs, and Streaming",
+      "content": "```python\n# pip install langgraph langchain-openai\n\nimport asyncio\nimport operator\nfrom typing import TypedDict, Annotated, Literal\nfrom langchain_openai import ChatOpenAI\nfrom langchain_core.messages import HumanMessage, SystemMessage\nfrom langgraph.graph import StateGraph, END\nfrom langgraph.constants import Send\nfrom langgraph.checkpoint.memory import MemorySaver\n\nllm = ChatOpenAI(model='gpt-4o-mini', temperature=0.3)\n\n\n# ════════════════════════════════════════════════════════════════\n# PART 1 — Parallel Fan-Out with Send\n# ════════════════════════════════════════════════════════════════\n\nclass ParallelState(TypedDict):\n    question: str\n    sub_queries: list[str]\n    findings: Annotated[list[str], operator.add]  # accumulate from parallel workers\n    final_answer: str\n\n\ndef decompose_node(state: ParallelState) -> dict:\n    \"\"\"Break the question into independent sub-queries.\"\"\"\n    resp = llm.invoke([\n        SystemMessage(content='Break the question into 3 independent sub-questions. Return as numbered list.'),\n        HumanMessage(content=state['question']),\n    ])\n    lines = [l.strip() for l in resp.content.split('\\n') if l.strip() and l[0].isdigit()]\n    sub_queries = [l.split('.', 1)[-1].strip() for l in lines[:3]]\n    return {'sub_queries': sub_queries or [state['question']]}\n\n\ndef fan_out_node(state: ParallelState) -> list[Send]:\n    \"\"\"Return Send for each sub-query — they execute in parallel.\"\"\"\n    return [\n        Send('worker', {'query': q, 'question': state['question'], 'findings': []})\n        for q in state['sub_queries']\n    ]\n\n\nclass WorkerState(TypedDict):\n    question: str\n    query: str\n    findings: Annotated[list[str], operator.add]\n\n\ndef worker_node(state: WorkerState) -> dict:\n    \"\"\"Each worker independently researches one sub-query.\"\"\"\n    resp = llm.invoke([\n        SystemMessage(content='You are a research assistant. Provide 2 key facts.'),\n        HumanMessage(content=f'Research: {state[\"query\"]}'),\n    ])\n    return {'findings': [f'[{state[\"query\"][:40]}]: {resp.content[:300]}']}\n\n\ndef synthesise_node(state: ParallelState) -> dict:\n    findings_text = '\\n'.join(state['findings'])\n    resp = llm.invoke([\n        SystemMessage(content='Synthesise these research findings into a comprehensive answer.'),\n        HumanMessage(content=f'Question: {state[\"question\"]}\\n\\nFindings:\\n{findings_text}'),\n    ])\n    return {'final_answer': resp.content}\n\n\ndef build_parallel_graph() -> object:\n    g = StateGraph(ParallelState)\n    g.add_node('decompose', decompose_node)\n    g.add_node('fan_out', fan_out_node)        # returns list[Send]\n    g.add_node('worker', worker_node)\n    g.add_node('synthesise', synthesise_node)\n\n    g.set_entry_point('decompose')\n    g.add_edge('decompose', 'fan_out')\n    # fan_out sends to 'worker' dynamically; after all workers complete, go to synthesise\n    g.add_edge('worker', 'synthesise')\n    g.add_edge('synthesise', END)\n    return g.compile()\n\n\n# ════════════════════════════════════════════════════════════════\n# PART 2 — Subgraph Composition\n# ════════════════════════════════════════════════════════════════\n\n# Sub-graph: research module\nclass ResearchSubState(TypedDict):\n    topic: str\n    summary: str\n\ndef research_sub_node(state: ResearchSubState) -> dict:\n    resp = llm.invoke([\n        SystemMessage(content='Provide a concise 3-sentence summary.'),\n        HumanMessage(content=f'Topic: {state[\"topic\"]}'),\n    ])\n    return {'summary': resp.content}\n\ndef build_research_subgraph() -> object:\n    g = StateGraph(ResearchSubState)\n    g.add_node('research', research_sub_node)\n    g.set_entry_point('research')\n    g.add_edge('research', END)\n    return g.compile()\n\n\n# Parent graph that uses the research subgraph\nclass ParentState(TypedDict):\n    question: str\n    topic: str\n    summary: str    # written by subgraph\n    final: str\n\ndef extract_topic_node(state: ParentState) -> dict:\n    resp = llm.invoke([\n        HumanMessage(content=f'Extract the main topic from: {state[\"question\"]}. Reply with just the topic (5 words max).'),\n    ])\n    return {'topic': resp.content.strip()}\n\ndef wrap_answer_node(state: ParentState) -> dict:\n    resp = llm.invoke([\n        HumanMessage(content=(\n            f'Question: {state[\"question\"]}\\n'\n            f'Research summary: {state[\"summary\"]}\\n'\n            'Write a direct answer in 2-3 sentences.'\n        )),\n    ])\n    return {'final': resp.content}\n\ndef build_parent_graph(research_sub: object) -> object:\n    g = StateGraph(ParentState)\n    g.add_node('extract_topic', extract_topic_node)\n    g.add_node('research_sub', research_sub)   # ← compiled subgraph as node\n    g.add_node('wrap_answer', wrap_answer_node)\n\n    g.set_entry_point('extract_topic')\n    g.add_edge('extract_topic', 'research_sub')\n    g.add_edge('research_sub', 'wrap_answer')\n    g.add_edge('wrap_answer', END)\n    return g.compile()\n\n\n# ════════════════════════════════════════════════════════════════\n# PART 3 — Streaming Demo\n# ════════════════════════════════════════════════════════════════\n\nasync def streaming_demo(question: str):\n    app = build_parallel_graph()\n    initial = {\n        'question': question,\n        'sub_queries': [],\n        'findings': [],\n        'final_answer': '',\n    }\n    print('Streaming node updates:')\n    async for chunk in app.astream(initial, stream_mode='updates'):\n        for node_name, updates in chunk.items():\n            # Show what each node produced\n            keys = list(updates.keys())\n            print(f'  [{node_name}] updated: {keys}')\n            if 'final_answer' in updates:\n                print(f'  ANSWER: {updates[\"final_answer\"][:200]}')\n\n\n# ─── Demo ─────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    question = 'What are the key differences between Kafka, RabbitMQ, and Redis Streams?'\n\n    # Test parallel fan-out\n    print('=== Parallel Fan-Out Graph ===')\n    parallel_app = build_parallel_graph()\n    result = parallel_app.invoke({\n        'question': question,\n        'sub_queries': [],\n        'findings': [],\n        'final_answer': '',\n    })\n    print(f'Findings gathered: {len(result[\"findings\"])}')\n    print('Answer:', result['final_answer'][:300])\n\n    # Test subgraph composition\n    print('\\n=== Subgraph Composition ===')\n    sub = build_research_subgraph()\n    parent_app = build_parent_graph(sub)\n    parent_result = parent_app.invoke({\n        'question': question,\n        'topic': '',\n        'summary': '',\n        'final': '',\n    })\n    print('Topic:', parent_result['topic'])\n    print('Final:', parent_result['final'][:300])\n\n    # Test streaming\n    print('\\n=== Streaming ===')\n    asyncio.run(streaming_demo(question))\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Advanced LangGraph Pitfalls",
+      "content": "**1. State schema mismatch between parent and subgraph** — If the parent state has a key `topic` but the subgraph state uses `research_topic`, the subgraph silently receives `None`. Map keys explicitly or use compatible field names. Add type validation at the subgraph entry node.\n\n**2. Send fan-out with mutable shared state** — If multiple Send workers all read-write the same state key without the `operator.add` reducer, the last write wins and earlier worker results are lost. Always use `Annotated[list[T], operator.add]` for accumulated results.\n\n**3. Streaming blocking on slow nodes** — If 'synthesise' takes 10 seconds, streaming mode emits nothing for 10 seconds. Stream LLM tokens within nodes using `async for chunk in llm.astream(msgs)` to give real-time feedback during the slow step.\n\n**4. Subgraph state leaking into parent** — Keys in the subgraph state that share names with the parent will overwrite the parent's values when the subgraph returns. Use distinct namespaces for subgraph-internal state, or define explicit output transformations.\n\n**5. Send returning zero items** — If `fan_out_node` returns an empty list (no sub-queries), the graph has no path forward and hangs. Always validate the fan-out list is non-empty; add a fallback edge.\n\n**6. Not awaiting async subgraphs** — Using `app.invoke()` (sync) inside an async graph node blocks the event loop. Use `await app.ainvoke()` when the parent graph is async.\n\n**7. Streaming in debug mode for production** — `stream_mode='debug'` emits all internal events including intermediate LLM tokens and tool args — potentially PII. Use `stream_mode='updates'` in production and filter out sensitive fields before forwarding to clients."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Advanced LangGraph",
+      "content": "## Conceptual\n**Q: What is the difference between LangGraph's `Send` API and standard parallel execution with `asyncio.gather`?**\nA: `asyncio.gather` runs coroutines concurrently but outside the graph's state management — results must be manually merged and won't be checkpointed. `Send` is LangGraph-native: each Send invocation runs a graph node in parallel, state is merged via reducers, and every intermediate state is checkpointed. `Send` also allows the number of parallel workers to be determined dynamically at runtime based on current state.\n\n## Code-Based\n**Q: A subgraph node returns `{'summary': 'text'}` but the parent state field is also named `summary`. After the subgraph runs, the parent's `summary` has the right value. Why does this work?**\nA: LangGraph merges the subgraph's output into the parent state using the matching key names. Since both use `summary`, the subgraph's return value directly updates the parent's `summary` field. This is by design for simple key-compatible states; for complex cases, use explicit state transform functions to map subgraph output to parent keys.\n\n## Senior Scenario\n**Q: You need to stream agent progress to a web UI in real time — showing which step is running, partial LLM output, and final answer. How do you implement this end-to-end?**\nA: (1) Use `app.astream(state, stream_mode='updates')` in the backend FastAPI endpoint; (2) For each chunk, extract the node name and updated keys and push to the client via SSE (`text/event-stream`) or WebSocket; (3) Within LLM nodes, use `async for chunk in llm.astream(msgs)` and yield each token as an SSE event; (4) On the frontend, consume the SSE stream and update UI state progressively — show node names as 'thinking: research → evaluate → writing answer'.\n\n## Wrong Answers to Avoid\n- 'Send runs sequentially, one at a time' — Send runs all targets in parallel within the graph executor\n- 'Subgraphs have access to the full parent state' — subgraphs only see their own state schema; keys must be mapped explicitly\n- 'stream_mode=debug is safe for production' — debug mode exposes all internal events including potentially sensitive intermediate data"
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ — Advanced LangGraph",
+      "questions": [
+        {
+          "question": "What does the `Send` API return from a node function?",
+          "options": [
+            "A dict of state updates",
+            "A list of Send objects specifying which nodes to run in parallel with what state",
+            "A string indicating the next node name",
+            "An asyncio coroutine for each parallel worker"
+          ],
+          "correctIndex": 1,
+          "explanation": "A node using the Send API returns `list[Send]` instead of a state dict. Each Send specifies a target node name and the state to pass to it. LangGraph executes all Sends in parallel and merges results via reducers."
+        },
+        {
+          "question": "In stream_mode='updates', what does each emitted chunk contain?",
+          "options": [
+            "The full graph state after every node",
+            "A dict mapping node name to the state fields that node updated",
+            "A single token from the LLM's response",
+            "The list of all edges traversed so far"
+          ],
+          "correctIndex": 1,
+          "explanation": "stream_mode='updates' emits deltas — only what changed after each node execution. This is more efficient than stream_mode='values' (full state) and easier to process on the client side."
+        },
+        {
+          "question": "A subgraph uses key 'result' but the parent state uses key 'output'. When the subgraph finishes, 'output' in parent state is None. How do you fix this?",
+          "options": [
+            "Rename the subgraph key to 'output'",
+            "Add a wrapper node that reads 'result' from the subgraph output and writes it to 'output'",
+            "Pass output_key='output' to graph.compile()",
+            "Use Annotated[str, 'output'] in the subgraph state"
+          ],
+          "correctIndex": 0,
+          "explanation": "The simplest fix is to align the key names — rename 'result' to 'output' in the subgraph's state schema. Alternatively, add an explicit transform node, but key alignment is cleaner and less error-prone."
+        },
+        {
+          "question": "What happens if a Send fan-out node returns an empty list?",
+          "options": [
+            "LangGraph routes to the default edge",
+            "The graph has no path forward from that node and execution stalls",
+            "LangGraph automatically skips to the next node after the workers",
+            "The graph raises a GraphCompilationError"
+          ],
+          "correctIndex": 1,
+          "explanation": "Send-based fan-out requires at least one Send in the returned list. An empty list leaves the graph with no active branches, and execution halts. Always validate the list before returning, and add a fallback edge for the empty case."
+        },
+        {
+          "question": "Why should you use `await app.ainvoke()` instead of `app.invoke()` inside an async LangGraph node?",
+          "options": [
+            "ainvoke() is only available in async graphs",
+            "invoke() blocks the event loop, preventing other async tasks from running",
+            "ainvoke() uses a cheaper model by default",
+            "invoke() does not support subgraphs"
+          ],
+          "correctIndex": 1,
+          "explanation": "Calling the synchronous `invoke()` inside an async context blocks the event loop for the duration of the graph execution — starving other concurrent tasks. Always use `await app.ainvoke()` in async contexts to keep the event loop responsive."
+        }
+      ]
+    }
+  ]
+}

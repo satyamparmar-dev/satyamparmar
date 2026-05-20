@@ -1,0 +1,107 @@
+{
+  "day": 59,
+  "phase": 4,
+  "title": "Multi-Agent RAG Systems",
+  "description": "Build distributed retrieval-augmented generation systems where specialist agents handle different data sources, query routing, result fusion, and answer synthesis.",
+  "estimatedHours": 5,
+  "difficulty": "advanced",
+  "level": "advanced",
+  "track": "ai",
+  "tags": ["multi-agent-rag", "distributed-retrieval", "query-routing", "result-fusion", "specialist-agents"],
+  "prerequisites": ["phase4-day52", "phase2-day22", "phase2-day36"],
+  "learningObjectives": [
+    "Design a query router that dispatches to specialist retrieval agents",
+    "Implement parallel retrieval from heterogeneous data sources",
+    "Fuse results from multiple retrievers with deduplication and ranking",
+    "Build an answer synthesis agent that cites sources with provenance",
+    "Evaluate multi-agent RAG quality vs single-retriever baseline"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Multi-Agent RAG Beats Single-Retriever RAG",
+      "content": "A single RAG pipeline queries one vector store with one embedding model. Real enterprise questions cross data silos: product documentation, Slack threads, Jira tickets, SQL databases, and code repositories each require specialised retrieval strategies. A multi-agent RAG system routes each part of the query to the best retriever, runs them in parallel, fuses and deduplicates results, and synthesises a grounded answer with clear source attribution. The result: higher recall, better source diversity, and answers that don't miss critical information sitting in a different silo."
+    },
+    {
+      "type": "theory",
+      "title": "Multi-Agent RAG Architecture",
+      "content": "## System Overview\n```\n           Query\n             │\n      ┌──────▼──────┐\n      │   Router    │  ← classifies query intent\n      └──┬───┬───┬──┘\n         │   │   │\n   ┌─────▼─┐ │ ┌─▼──────┐\n   │ Doc   │ │ │ Code   │\n   │ Agent │ │ │ Agent  │\n   └─────┬─┘ │ └─┬──────┘\n         │   │   │\n      ┌──▼───▼───▼──┐\n      │ SQL  Agent  │  (optional: structured data)\n      └─────────────┘\n             │\n      ┌──────▼──────┐\n      │   Fusion    │  ← deduplicate, rank, score\n      └──────┬──────┘\n             │\n      ┌──────▼──────┐\n      │  Synthesis  │  ← grounded answer with citations\n      └─────────────┘\n```\n\n## Router Design\nThe router classifies query intent and determines which retrieval agents to activate:\n- **Keyword-based**: fast, zero LLM cost, lower accuracy\n- **LLM-based**: classifies intent, selects agents, optionally rewrites sub-queries per agent\n- **Always-all**: route to all agents, let fusion handle relevance — highest recall, highest cost\n\n## Specialist Retrieval Agents\n| Agent | Data Source | Retrieval Method |\n|-------|------------|------------------|\n| Doc Agent | PDF, Markdown docs | Dense vector search |\n| Code Agent | Git repos | BM25 + code embeddings |\n| SQL Agent | Relational DB | Text-to-SQL |\n| Slack/Email Agent | Message history | Keyword + semantic |\n| Web Agent | Live web | Search API |\n\n## Result Fusion Strategies\n- **Reciprocal Rank Fusion (RRF)**: position-based scoring across retrievers — no score normalisation needed\n- **Score normalisation**: min-max normalise each retriever's scores, then merge\n- **Deduplication**: remove near-duplicate chunks (cosine similarity > 0.95)\n\n## Reciprocal Rank Fusion Formula\n```\nRRF_score(d) = Σ 1 / (k + rank(d, retriever))\n```\nWhere k=60 is a smoothing constant. Higher score = more relevant across all retrievers.\n\n## Provenance Tracking\nEvery chunk must carry its source so the synthesiser can generate citations:\n```python\n@dataclass\nclass RetrievedChunk:\n    content: str\n    source: str        # filename, URL, Jira ticket\n    retriever: str     # which agent retrieved this\n    score: float\n    rrf_score: float   # after fusion\n```"
+    },
+    {
+      "type": "code",
+      "title": "Multi-Agent RAG with Query Routing and Result Fusion",
+      "content": "```python\nimport json\nimport math\nimport asyncio\nimport logging\nfrom dataclasses import dataclass, field\nfrom typing import Optional\nfrom openai import AsyncOpenAI\n\nlogging.basicConfig(level=logging.INFO)\nlogger = logging.getLogger('multi-rag')\nclient = AsyncOpenAI()\n\n\n# ─── Data Model ───────────────────────────────────────────────────────────────\n\n@dataclass\nclass RetrievedChunk:\n    content: str\n    source: str\n    retriever: str\n    score: float = 1.0\n    rrf_score: float = 0.0\n\n    def citation(self) -> str:\n        return f'[{self.retriever}: {self.source}]'\n\n\n# ─── Simulated Retrievers (replace with real implementations) ─────────────────\n\nasync def retrieve_docs(query: str, top_k: int = 3) -> list[RetrievedChunk]:\n    \"\"\"Stub for a documentation vector store retriever.\"\"\"\n    await asyncio.sleep(0.1)  # simulate async I/O\n    return [\n        RetrievedChunk(\n            content=f'[DOC] {query}: Documentation states that this feature requires version 2.0+.',\n            source='docs/api-reference.md',\n            retriever='doc_agent',\n            score=0.92 - i * 0.05,\n        )\n        for i in range(top_k)\n    ]\n\n\nasync def retrieve_code(query: str, top_k: int = 3) -> list[RetrievedChunk]:\n    \"\"\"Stub for a code repository retriever.\"\"\"\n    await asyncio.sleep(0.15)\n    return [\n        RetrievedChunk(\n            content=f'[CODE] Example implementation of {query}: def handle_{i}(params): ...',\n            source=f'src/handlers/handler_{i}.py',\n            retriever='code_agent',\n            score=0.88 - i * 0.07,\n        )\n        for i in range(top_k)\n    ]\n\n\nasync def retrieve_tickets(query: str, top_k: int = 3) -> list[RetrievedChunk]:\n    \"\"\"Stub for a Jira/ticket retriever.\"\"\"\n    await asyncio.sleep(0.08)\n    return [\n        RetrievedChunk(\n            content=f'[TICKET] JIRA-{1000+i}: Related issue about {query} — resolved in v2.1.',\n            source=f'JIRA-{1000+i}',\n            retriever='ticket_agent',\n            score=0.75 - i * 0.08,\n        )\n        for i in range(top_k)\n    ]\n\n\nRETRIEVERS = {\n    'doc_agent': retrieve_docs,\n    'code_agent': retrieve_code,\n    'ticket_agent': retrieve_tickets,\n}\n\n\n# ─── Query Router ─────────────────────────────────────────────────────────────\n\nasync def route_query(query: str) -> dict:\n    \"\"\"\n    Classify query intent and determine which agents to activate.\n    Returns agent names and optionally rewritten sub-queries per agent.\n    \"\"\"\n    result = json.loads(\n        (await client.chat.completions.create(\n            model='gpt-4o-mini',\n            messages=[\n                {'role': 'system', 'content': (\n                    'You are a query router for a multi-source RAG system. '\n                    'Available agents: doc_agent (documentation), '\n                    'code_agent (source code examples), ticket_agent (bug reports/issues). '\n                    'Return JSON: {\"agents\": [str], \"sub_queries\": {agent: query_string}}. '\n                    'Select only the agents relevant to the query. '\n                    'Rewrite the sub-query per agent for best retrieval precision.'\n                )},\n                {'role': 'user', 'content': query},\n            ],\n            response_format={'type': 'json_object'},\n            temperature=0.0,\n        )).choices[0].message.content\n    )\n    logger.info(f'Router selected agents: {result.get(\"agents\", [])}')\n    return result\n\n\n# ─── Reciprocal Rank Fusion ───────────────────────────────────────────────────\n\ndef reciprocal_rank_fusion(\n    retriever_results: dict[str, list[RetrievedChunk]],\n    k: int = 60,\n    top_n: int = 8,\n) -> list[RetrievedChunk]:\n    \"\"\"\n    Merge results from multiple retrievers using RRF scoring.\n    Deduplicates by source.\n    \"\"\"\n    rrf_scores: dict[str, float] = {}\n    chunk_map: dict[str, RetrievedChunk] = {}\n\n    for retriever_name, chunks in retriever_results.items():\n        for rank, chunk in enumerate(chunks):\n            key = f'{chunk.retriever}:{chunk.source}'\n            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (k + rank + 1)\n            chunk_map[key] = chunk\n\n    # Assign RRF scores and sort\n    for key, chunk in chunk_map.items():\n        chunk.rrf_score = rrf_scores[key]\n\n    # Deduplicate by content similarity (simplified: by source key)\n    ranked = sorted(chunk_map.values(), key=lambda c: c.rrf_score, reverse=True)\n    return ranked[:top_n]\n\n\n# ─── Answer Synthesis ─────────────────────────────────────────────────────────\n\nasync def synthesise_answer(\n    query: str,\n    chunks: list[RetrievedChunk],\n) -> dict:\n    context = '\\n\\n'.join(\n        f'{c.citation()}\\n{c.content[:400]}'\n        for c in chunks[:6]\n    )\n    response = await client.chat.completions.create(\n        model='gpt-4o-mini',\n        messages=[\n            {'role': 'system', 'content': (\n                'You are a helpful assistant that answers questions using ONLY '\n                'the provided context. Cite your sources inline using the '\n                '[AGENT: SOURCE] format shown in the context. '\n                'If the context is insufficient, say so explicitly.'\n            )},\n            {'role': 'user', 'content': (\n                f'Question: {query}\\n\\nContext:\\n{context}'\n            )},\n        ],\n        temperature=0.2,\n    )\n    answer = response.choices[0].message.content\n    sources_used = list({c.citation() for c in chunks[:6]})\n    return {\n        'answer': answer,\n        'sources': sources_used,\n        'chunks_used': len(chunks[:6]),\n        'retrievers_consulted': list(set(c.retriever for c in chunks)),\n    }\n\n\n# ─── Multi-Agent RAG Pipeline ─────────────────────────────────────────────────\n\nasync def multi_agent_rag(query: str, top_k_per_agent: int = 3) -> dict:\n    # 1. Route\n    routing = await route_query(query)\n    selected_agents = routing.get('agents', list(RETRIEVERS.keys()))\n    sub_queries = routing.get('sub_queries', {})\n\n    # 2. Retrieve in parallel from all selected agents\n    retrieval_tasks = {\n        agent: RETRIEVERS[agent](\n            sub_queries.get(agent, query),  # use sub-query if provided\n            top_k_per_agent\n        )\n        for agent in selected_agents\n        if agent in RETRIEVERS\n    }\n    results = await asyncio.gather(*retrieval_tasks.values())\n    retriever_results = dict(zip(retrieval_tasks.keys(), results))\n\n    logger.info(\n        f'Retrieved: ' +\n        ', '.join(f'{k}={len(v)}' for k, v in retriever_results.items())\n    )\n\n    # 3. Fuse\n    fused = reciprocal_rank_fusion(retriever_results, top_n=8)\n    logger.info(f'Fused to {len(fused)} unique chunks')\n\n    # 4. Synthesise\n    synthesis = await synthesise_answer(query, fused)\n    synthesis['routing'] = {'agents': selected_agents, 'sub_queries': sub_queries}\n    return synthesis\n\n\n# ─── Evaluation: Multi-Agent vs Single-Agent ──────────────────────────────────\n\nasync def single_agent_rag_baseline(query: str) -> dict:\n    \"\"\"Baseline: only use doc_agent, no routing.\"\"\"\n    chunks = await retrieve_docs(query, top_k=5)\n    return await synthesise_answer(query, chunks)\n\n\nasync def evaluate_comparison(query: str) -> None:\n    print(f'Query: {query}\\n')\n\n    single, multi = await asyncio.gather(\n        single_agent_rag_baseline(query),\n        multi_agent_rag(query),\n    )\n\n    print('=== Single-Agent RAG ===')\n    print(f'Retrievers: {single.get(\"retrievers_consulted\")}')\n    print(f'Sources: {single.get(\"sources\")}')\n    print(single['answer'][:300])\n\n    print('\\n=== Multi-Agent RAG ===')\n    print(f'Retrievers: {multi.get(\"retrievers_consulted\")}')\n    print(f'Sources: {multi.get(\"sources\")}')\n    print(f'Routing: {multi.get(\"routing\")}')\n    print(multi['answer'][:300])\n\n\nif __name__ == '__main__':\n    asyncio.run(evaluate_comparison(\n        'How do I implement rate limiting in the payment service? '\n        'Are there any known bugs in the current version?'\n    ))\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Multi-Agent RAG Pitfalls",
+      "content": "**1. Router hallucinating agent names** — If the router LLM generates an agent name not in your registry, that retrieval silently fails. Always validate router output against the known agent registry and fall back to all-agents retrieval on invalid output.\n\n**2. No deduplication before synthesis** — If doc_agent and code_agent return chunks from the same source, the synthesiser sees duplicated content and may over-weight that source. Deduplicate by source URL/path before passing to the synthesiser.\n\n**3. Score normalisation across heterogeneous retrievers** — BM25 scores (0-∞) and cosine similarity scores (0-1) are not comparable. Use RRF which only depends on rank position, not raw scores — it's normalisation-free.\n\n**4. Context window overflow in synthesis** — 6 retrievers × 5 chunks each = 30 chunks. Passing all 30 to the synthesiser exceeds the context window. Always cap the number of chunks post-fusion (top_n=8 maximum) and truncate each chunk's content.\n\n**5. Missing source attribution in synthesis** — Without source citation in the prompt, the synthesiser may blend information from multiple sources without attribution. Enforce citation format in the system prompt and verify citations appear in the final answer.\n\n**6. Routing always selecting all agents** — If the router defaults to all agents for every query, you lose the performance benefit of routing. Monitor routing decisions; if all-agents is chosen >80% of the time, the router needs better few-shot examples.\n\n**7. Not measuring retrieval recall** — You can't improve what you don't measure. Track: what % of ground-truth relevant chunks were retrieved, and which retriever found them. This guides where to invest in retrieval quality improvements."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Multi-Agent RAG",
+      "content": "## Conceptual\n**Q: Why is Reciprocal Rank Fusion preferred over score-based fusion for multi-retriever systems?**\nA: Different retrievers produce scores on incompatible scales — BM25 scores can be 0-50 while cosine similarity is 0-1. Normalising across these requires knowing the score distribution, which varies by query. RRF uses only rank position (1st, 2nd, 3rd result), which is scale-invariant and works identically regardless of the retriever's scoring method. It also naturally down-weights results that only appear in one retriever.\n\n## Code-Based\n**Q: The query router selects `code_agent` and `doc_agent` but not `ticket_agent`. The answer is missing a critical known bug from Jira. How do you fix this?**\nA: Two approaches: (1) Improve router accuracy — add few-shot examples showing queries about 'bugs', 'errors', 'issues', 'known problems' routing to `ticket_agent`; (2) Always include `ticket_agent` for any question containing failure-related keywords (a keyword pre-filter before the LLM router); (3) Run `ticket_agent` in parallel regardless of routing for low-cost supplemental retrieval, but give its results lower RRF weight.\n\n## Senior Scenario\n**Q: Multi-agent RAG latency is 3 seconds due to parallel retrieval. Users want <1 second. How do you optimise?**\nA: (1) Move vector stores to in-memory (Qdrant in-memory, FAISS) for <50ms retrieval; (2) Add a semantic cache — identical/near-identical queries return cached answers in <100ms; (3) Use streaming synthesis — start streaming the answer token-by-token while still retrieving (prefetch the first 2 retrievers and start synthesis; add remaining retrieval asynchronously); (4) Reduce top_k from 5 to 3 per agent; (5) Add a query complexity classifier — simple factual queries skip retrieval and use the LLM directly.\n\n## Wrong Answers to Avoid\n- 'Run retrievers sequentially to avoid rate limits' — sequential retrieval multiplies latency; parallel is essential\n- 'Pass all chunks to the synthesiser' — context window limits and cost require post-fusion ranking and truncation\n- 'Score fusion is better than RRF because it uses more information' — incompatible score scales make direct score fusion unreliable across heterogeneous retrievers"
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ — Multi-Agent RAG",
+      "questions": [
+        {
+          "question": "What is the primary advantage of Reciprocal Rank Fusion over score-based fusion?",
+          "options": [
+            "RRF is faster to compute than score normalisation",
+            "RRF is scale-invariant and works across retrievers with incompatible scoring methods",
+            "RRF always selects the highest-scoring chunk from the best retriever",
+            "RRF automatically deduplicates identical content from different sources"
+          ],
+          "correctIndex": 1,
+          "explanation": "RRF only uses rank positions (1st, 2nd, 3rd result) — not raw scores. This makes it scale-invariant: a BM25 score of 42 and a cosine score of 0.91 are both treated as 'rank 1 from their respective retriever.' No normalisation required."
+        },
+        {
+          "question": "A multi-agent RAG system routes a query to 4 agents, each returning 5 chunks. How many chunks should be passed to the synthesis LLM?",
+          "options": [
+            "All 20 — more context produces better answers",
+            "5-8 top-ranked chunks after RRF fusion and deduplication",
+            "Only the top chunk from each agent (4 total)",
+            "10 — exactly half the total"
+          ],
+          "correctIndex": 1,
+          "explanation": "20 chunks would overflow most context windows and cause the synthesis LLM to lose focus. The optimal range is 5-8 post-fusion chunks, truncated to ~400 chars each. RRF fusion identifies the most relevant cross-retriever chunks for this selection."
+        },
+        {
+          "question": "The query router returns agent name 'knowledge_base_agent' which is not in your RETRIEVERS dict. What should happen?",
+          "options": [
+            "The pipeline raises a KeyError and aborts",
+            "The system logs a warning and falls back to routing to all known agents",
+            "The unknown agent is created dynamically with default settings",
+            "The query is returned unanswered with an error message"
+          ],
+          "correctIndex": 1,
+          "explanation": "LLM routers occasionally hallucinate names. A robust pipeline validates router output against the known registry and gracefully falls back (all-agents retrieval) rather than crashing. The fallback should be logged as a routing quality signal."
+        },
+        {
+          "question": "Which approach reduces multi-agent RAG latency most effectively?",
+          "options": [
+            "Running all retrieval agents sequentially to avoid API conflicts",
+            "Running all retrieval agents in parallel with asyncio.gather",
+            "Reducing the number of chunks per retriever from 5 to 4",
+            "Using a smaller synthesis model"
+          ],
+          "correctIndex": 1,
+          "explanation": "Sequential retrieval multiplies latency (3 agents × 200ms each = 600ms). Parallel retrieval via asyncio.gather means total time ≈ the slowest single agent (200ms). This is the single highest-impact latency optimisation in multi-agent retrieval systems."
+        },
+        {
+          "question": "Why must every retrieved chunk carry a `source` and `retriever` field?",
+          "options": [
+            "For deduplication by source key in the fusion step",
+            "For inline citations in the synthesised answer so users can verify claims",
+            "For compliance with data residency requirements",
+            "Both the first and second options"
+          ],
+          "correctIndex": 3,
+          "explanation": "Source tracking serves two purposes: (1) deduplication during RRF — same source from two retrievers is merged into one result; (2) citations in the final answer — users and auditors need to verify claims against their origin. Both are critical in production RAG systems."
+        }
+      ]
+    }
+  ]
+}

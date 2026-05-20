@@ -1,0 +1,107 @@
+{
+  "day": 58,
+  "phase": 4,
+  "title": "CrewAI — Role-Based Multi-Agent Teams",
+  "description": "Build structured multi-agent teams with CrewAI — defining agent roles, backstories, tasks, and process flows that mirror real organisational structures.",
+  "estimatedHours": 4,
+  "difficulty": "advanced",
+  "level": "advanced",
+  "track": "ai",
+  "tags": ["crewai", "role-based-agents", "agent-teams", "tasks", "process", "multi-agent-framework"],
+  "prerequisites": ["phase4-day52", "phase4-day54"],
+  "learningObjectives": [
+    "Define CrewAI agents with roles, goals, and backstories",
+    "Create Tasks with descriptions, expected outputs, and agent assignments",
+    "Run crews in sequential and hierarchical process modes",
+    "Pass context between tasks using task dependencies",
+    "Add custom tools to CrewAI agents"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why CrewAI for Team-Based Agent Workflows",
+      "content": "CrewAI abstracts the scaffolding of multi-agent systems into three clean primitives: Agents (who), Tasks (what), and Crews (how they collaborate). The role/goal/backstory model produces more consistent agent behaviour than generic system prompts because the model has rich context for why it exists in the team. CrewAI is particularly effective for replicating real-world team workflows — content teams, research teams, software engineering squads — where human roles map naturally to agent roles."
+    },
+    {
+      "type": "theory",
+      "title": "CrewAI Core Concepts",
+      "content": "## Three Primitives\n\n### Agent\n```python\nAgent(\n    role='Senior Research Analyst',\n    goal='Uncover cutting-edge trends in AI and data science',\n    backstory='Expert researcher with 15 years in tech journalism...',\n    tools=[search_tool, web_scraper],\n    llm=ChatOpenAI(model='gpt-4o-mini'),\n    verbose=True,\n    allow_delegation=False,  # can this agent delegate to others?\n    max_iter=5,\n)\n```\n\n### Task\n```python\nTask(\n    description='Research the latest AI trends in Q1 2025.',\n    expected_output='A bullet-point list of 5 trends with supporting evidence.',\n    agent=researcher,          # assigned agent\n    context=[previous_task],   # tasks whose output this depends on\n)\n```\n\n### Crew\n```python\nCrew(\n    agents=[researcher, analyst, writer],\n    tasks=[research_task, analysis_task, writing_task],\n    process=Process.sequential,   # or Process.hierarchical\n    verbose=True,\n)\nresult = crew.kickoff()\n```\n\n## Process Modes\n| Mode | Description | When to use |\n|------|-------------|-------------|\n| `Process.sequential` | Tasks run in order; each output feeds the next | Linear pipelines |\n| `Process.hierarchical` | A manager agent decomposes and assigns tasks | Complex, adaptive workflows |\n\n## Task Context\nTasks can declare dependencies on prior tasks:\n```python\nanalysis_task = Task(\n    description='Analyse the research findings.',\n    context=[research_task],  # research_task output is injected into this task's context\n    ...)\n```\n\n## Custom Tools\nCrewAI tools use LangChain's `@tool` decorator or `BaseTool`:\n```python\nfrom crewai_tools import tool\n\n@tool('Search knowledge base')\ndef search_kb(query: str) -> str:\n    '''Search internal documentation for the given query.'''\n    return f'Found: relevant docs about {query}'\n```\n\n## Memory and Caching\n```python\nCrew(\n    memory=True,           # enable long-term memory across tasks\n    cache=True,            # cache tool call results\n    ...)\n```"
+    },
+    {
+      "type": "code",
+      "title": "CrewAI Research and Writing Team",
+      "content": "```python\n# pip install crewai crewai-tools langchain-openai\n\nfrom crewai import Agent, Task, Crew, Process\nfrom crewai.tools import tool\nfrom langchain_openai import ChatOpenAI\n\nllm = ChatOpenAI(model='gpt-4o-mini', temperature=0.3)\n\n\n# ─── Custom Tools ─────────────────────────────────────────────────────────────\n\n@tool('Web Research Tool')\ndef web_research(query: str) -> str:\n    '''Search the web for information about a given topic.\n    Returns a summary of the top search results.\n    '''\n    # Replace with real search API (Tavily, Serper, Brave)\n    return (\n        f'Research results for \"{query}\":\\n'\n        f'1. Key finding: {query} has significant implications for distributed systems.\\n'\n        f'2. Industry adoption is growing at 40% YoY.\\n'\n        f'3. Major players include AWS, Google, and Confluent.'\n    )\n\n\n@tool('Technical Validator')\ndef validate_technical_claim(claim: str) -> str:\n    '''Validate whether a technical claim is accurate and well-supported.\n    Returns VALID, QUESTIONABLE, or INVALID with explanation.\n    '''\n    # Simplified validation\n    if any(word in claim.lower() for word in ['always', 'never', 'impossible']):\n        return f'QUESTIONABLE: Absolute claims require careful qualification. Claim: \"{claim}\"'\n    return f'VALID: Claim appears technically sound. Claim: \"{claim}\"'\n\n\n# ─── Agents ───────────────────────────────────────────────────────────────────\n\nresearcher = Agent(\n    role='Senior Technical Researcher',\n    goal=(\n        'Gather comprehensive, accurate, and up-to-date technical information '\n        'from reliable sources. Always cite your sources and flag uncertainty.'\n    ),\n    backstory=(\n        'You are a veteran technical researcher with 12 years experience in '\n        'software engineering and distributed systems. You have a nose for '\n        'distinguishing hype from substance and always verify claims.'\n    ),\n    tools=[web_research],\n    llm=llm,\n    verbose=True,\n    allow_delegation=False,\n    max_iter=4,\n)\n\nanalyst = Agent(\n    role='Technical Analyst',\n    goal=(\n        'Analyse research findings, identify patterns and contradictions, '\n        'and produce structured insights with clear trade-off analysis.'\n    ),\n    backstory=(\n        'You are a pragmatic systems architect who has designed large-scale '\n        'distributed systems for Fortune 500 companies. You think in terms of '\n        'trade-offs: latency vs throughput, consistency vs availability, '\n        'simplicity vs flexibility.'\n    ),\n    tools=[validate_technical_claim],\n    llm=llm,\n    verbose=True,\n    allow_delegation=False,\n    max_iter=3,\n)\n\nwriter = Agent(\n    role='Senior Technical Writer',\n    goal=(\n        'Transform technical research and analysis into clear, engaging, '\n        'and accurate documentation that engineers at all levels can understand.'\n    ),\n    backstory=(\n        'You have written documentation for major open-source projects and '\n        'technical blogs read by hundreds of thousands of developers. '\n        'You balance technical accuracy with readability.'\n    ),\n    tools=[],          # Writer does not need external tools\n    llm=llm,\n    verbose=True,\n    allow_delegation=False,\n)\n\nreviewer = Agent(\n    role='Quality Reviewer',\n    goal=(\n        'Ensure the final document is technically accurate, well-structured, '\n        'free of jargon, and suitable for the target audience.'\n    ),\n    backstory=(\n        'You are an editorial director who has reviewed thousands of technical '\n        'articles. You catch factual errors, structural issues, and inconsistencies '\n        'that others miss.'\n    ),\n    tools=[validate_technical_claim],\n    llm=llm,\n    verbose=True,\n    allow_delegation=False,\n)\n\n\n# ─── Tasks ────────────────────────────────────────────────────────────────────\n\ndef build_crew(topic: str) -> Crew:\n    research_task = Task(\n        description=(\n            f'Research the following topic thoroughly: {topic}\\n\\n'\n            'Gather information from multiple angles:\\n'\n            '1. What is it and how does it work?\\n'\n            '2. What are the key use cases?\\n'\n            '3. What are the known limitations and pitfalls?\\n'\n            '4. How does it compare to alternatives?'\n        ),\n        expected_output=(\n            'A structured research report with:\\n'\n            '- Overview section (3-5 sentences)\\n'\n            '- 3 key use cases with examples\\n'\n            '- 3-5 known limitations\\n'\n            '- Comparison table with 2 alternatives'\n        ),\n        agent=researcher,\n    )\n\n    analysis_task = Task(\n        description=(\n            'Analyse the research findings and produce a trade-off analysis.\\n'\n            'Validate the key technical claims using the Technical Validator tool.\\n'\n            'Identify: (1) strongest arguments for adoption, '\n            '(2) strongest arguments against, (3) when it is the right choice.'\n        ),\n        expected_output=(\n            'A trade-off analysis document with:\\n'\n            '- Decision framework (when to use / when not to use)\\n'\n            '- Validated technical claims (mark as VALID/QUESTIONABLE/INVALID)\\n'\n            '- Recommendation with conditions'\n        ),\n        agent=analyst,\n        context=[research_task],   # analysis gets research output as context\n    )\n\n    writing_task = Task(\n        description=(\n            f'Write a comprehensive technical article about: {topic}\\n\\n'\n            'The article should:\\n'\n            '1. Target senior engineers making architectural decisions\\n'\n            '2. Include a summary box at the top\\n'\n            '3. Use the research and analysis provided\\n'\n            '4. End with clear recommendations'\n        ),\n        expected_output=(\n            'A 600-800 word technical article with:\\n'\n            '- TL;DR summary box\\n'\n            '- Introduction\\n'\n            '- Technical deep-dive\\n'\n            '- Trade-off analysis\\n'\n            '- Recommendations\\n'\n            '- Key takeaways'\n        ),\n        agent=writer,\n        context=[research_task, analysis_task],  # gets both outputs\n    )\n\n    review_task = Task(\n        description=(\n            'Review the technical article for:\\n'\n            '1. Technical accuracy (validate key claims)\\n'\n            '2. Structural clarity (logical flow)\\n'\n            '3. Completeness (does it answer the original question?)\\n'\n            '4. Provide a final revised version if needed, or APPROVED if it passes.'\n        ),\n        expected_output=(\n            'Either:\\n'\n            '- APPROVED: [reason why it meets quality bar]\\n'\n            '- REVISED: [complete revised article with changes marked]'\n        ),\n        agent=reviewer,\n        context=[writing_task],\n    )\n\n    return Crew(\n        agents=[researcher, analyst, writer, reviewer],\n        tasks=[research_task, analysis_task, writing_task, review_task],\n        process=Process.sequential,\n        verbose=True,\n        memory=False,       # enable for cross-session memory\n        cache=True,         # cache tool results\n    )\n\n\n# ─── Run ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    topic = 'Apache Kafka vs Redis Streams for real-time event processing in 2025'\n    crew = build_crew(topic)\n\n    print(f'Kicking off crew for: {topic}\\n')\n    result = crew.kickoff()\n\n    print('\\n=== Final Output ===')\n    print(result.raw if hasattr(result, 'raw') else str(result))\n\n\n# ─── Hierarchical Process Example ─────────────────────────────────────────────\n\ndef build_hierarchical_crew(topic: str) -> Crew:\n    \"\"\"Manager agent dynamically assigns tasks to workers.\"\"\"\n    manager = Agent(\n        role='Engineering Manager',\n        goal='Coordinate the team to produce the highest-quality technical output.',\n        backstory='Experienced engineering manager who knows each team member\\'s strengths.',\n        llm=llm,\n        allow_delegation=True,   # manager CAN delegate\n    )\n\n    general_task = Task(\n        description=f'Produce a comprehensive technical analysis of: {topic}',\n        expected_output='A complete technical report covering research, analysis, and recommendations.',\n        agent=manager,  # manager decides how to split work\n    )\n\n    return Crew(\n        agents=[manager, researcher, analyst, writer],\n        tasks=[general_task],\n        process=Process.hierarchical,\n        manager_llm=llm,\n        verbose=True,\n    )\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "CrewAI Pitfalls",
+      "content": "**1. Vague agent backstories** — Generic backstories like 'you are an AI assistant' produce generic output. Detailed backstories ('15 years in fintech, specialises in payment systems') produce domain-specific, higher-quality answers aligned with the role.\n\n**2. Missing expected_output in Task** — Without a clear expected_output, the agent produces whatever format feels right — inconsistent across runs. Always specify the exact structure (bullet list, table, word count) the next task depends on.\n\n**3. Over-delegating in hierarchical mode** — If `allow_delegation=True` on all agents, they all try to delegate to each other, creating circular delegation chains. Only the manager agent should have `allow_delegation=True`.\n\n**4. Task context creating a bottleneck** — If every task has `context=[all_previous_tasks]`, context windows explode and cost skyrockets. Pass only the directly relevant preceding task as context for each task.\n\n**5. Ignoring `max_iter`** — Without a max_iter limit on agents, they may loop through tool calls indefinitely trying to get a perfect result. Set `max_iter=3-5` for worker agents; only the manager may need more.\n\n**6. Memory=True without a persistent backend** — CrewAI's memory=True uses in-memory storage by default — lost on restart. In production, configure a persistent vector store as the memory backend.\n\n**7. No tool error handling** — If a custom tool throws an exception, the agent may hallucinate a result rather than surfacing the error. Tools should always return a structured error string ('Error: database unavailable — try again in 30s') rather than raising exceptions."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — CrewAI",
+      "content": "## Conceptual\n**Q: What is the purpose of an agent's `backstory` in CrewAI and how does it differ from `goal`?**\nA: `goal` defines what the agent is trying to achieve — its objective for the current crew run. `backstory` provides persistent persona context — who the agent is, their expertise, how they approach problems. The backstory anchors the agent's tone, depth, and perspective across all its tasks; the goal directs its specific effort. Together they produce more consistent, role-appropriate output than a generic system prompt.\n\n## Code-Based\n**Q: Task B depends on Task A's output. Task A produces a 4,000-word report. Task B only needs the executive summary. How do you prevent token waste?**\nA: Two approaches: (1) Design Task A's `expected_output` to always include an 'Executive Summary' section that Task B can directly use, then in Task B's description say 'use the Executive Summary from the context'; (2) Add an intermediate 'Summariser' task between A and B that reduces the output to ≤500 words before it's passed to B. Never pass raw full-length reports as context when only a fraction is needed.\n\n## Senior Scenario\n**Q: You need to build a CrewAI system that generates technical blog posts on demand. The CEO wants to approve each post before publication. How do you implement this approval gate?**\nA: Model it as a human-in-the-loop task: (1) after the writer and reviewer complete their tasks, introduce an 'Approval' task with a special `human_input=True` flag (or implement a webhook callback); (2) the crew pauses and sends the draft to a review URL; (3) when the CEO approves (or requests changes), the crew resumes with the feedback as input to a revision task. CrewAI supports `human_input=True` on tasks natively for this pattern.\n\n## Wrong Answers to Avoid\n- 'Agents share memory automatically within a Crew' — memory is off by default and must be explicitly enabled\n- 'allow_delegation=True on all agents enables better coordination' — it creates circular delegation chains; only managers should delegate\n- 'Task expected_output is optional' — without it, agent output format is unpredictable across runs"
+    },
+    {
+      "type": "mcq",
+      "title": "MCQ — CrewAI",
+      "questions": [
+        {
+          "question": "In CrewAI's Process.sequential mode, how does one task receive the output of the previous task?",
+          "options": [
+            "By calling agent.get_output() at the start of each task",
+            "By listing the previous task in the current task's context parameter",
+            "Automatically — all agents share a single context window",
+            "By writing to a shared file that the next agent reads"
+          ],
+          "correctIndex": 1,
+          "explanation": "Task context=[previous_task] tells CrewAI to inject the previous task's output into the current task's context. Without this, tasks are independent and have no knowledge of prior results."
+        },
+        {
+          "question": "What is the risk of setting allow_delegation=True on every agent in a hierarchical crew?",
+          "options": [
+            "Agents run in parallel instead of sequentially",
+            "Circular delegation loops where agents keep passing tasks to each other",
+            "The crew processes tasks in reverse order",
+            "Memory usage increases exponentially"
+          ],
+          "correctIndex": 1,
+          "explanation": "When every agent can delegate, Agent A may delegate to B, B may delegate back to A, creating an infinite delegation loop. Only the designated manager agent should have allow_delegation=True; worker agents should always execute directly."
+        },
+        {
+          "question": "How should a CrewAI custom tool handle a database connection failure?",
+          "options": [
+            "Raise a Python exception so the agent knows something went wrong",
+            "Return a structured error string so the agent can report the issue and retry",
+            "Return an empty string and let the agent infer failure from missing data",
+            "Call sys.exit() to halt the crew immediately"
+          ],
+          "correctIndex": 1,
+          "explanation": "CrewAI agents expect tool results as strings. A structured error string ('Error: DB unavailable, retry in 30s') lets the agent incorporate the failure into its reasoning and either retry or report the limitation. Raising an exception bypasses the agent's error handling logic."
+        },
+        {
+          "question": "Which process mode should you use when the task decomposition is unknown upfront and depends on the complexity of the input?",
+          "options": [
+            "Process.sequential — always reliable",
+            "Process.hierarchical — manager agent dynamically assigns subtasks",
+            "Process.parallel — all tasks run simultaneously",
+            "Process.adaptive — adjusts based on token count"
+          ],
+          "correctIndex": 1,
+          "explanation": "Process.hierarchical lets a manager agent inspect the input and dynamically decide how to decompose and assign tasks. This is essential when the right decomposition is data-dependent and cannot be predetermined at crew definition time."
+        },
+        {
+          "question": "What is the primary benefit of specifying a detailed expected_output for each CrewAI Task?",
+          "options": [
+            "It reduces LLM API costs by truncating responses",
+            "It ensures consistent output structure that downstream tasks can reliably parse",
+            "It allows tasks to run in parallel without coordination",
+            "It prevents the agent from using tools during that task"
+          ],
+          "correctIndex": 1,
+          "explanation": "Without expected_output, agent responses vary in format across runs — sometimes bullet lists, sometimes prose, sometimes JSON. Downstream tasks that depend on parsing a specific structure will silently receive malformed input. Detailed expected_output specifications ensure structural consistency."
+        }
+      ]
+    }
+  ]
+}
