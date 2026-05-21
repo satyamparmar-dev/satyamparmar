@@ -1,0 +1,108 @@
+{
+  "day": 70,
+  "phase": 5,
+  "title": "RAG Evaluation with RAGAS",
+  "description": "Systematically evaluate Retrieval-Augmented Generation systems using RAGAS metrics: faithfulness, answer relevancy, context precision, and context recall — with manual implementations for deep understanding.",
+  "type": "lesson",
+  "estimatedHours": 4,
+  "difficulty": "advanced",
+  "level": "senior",
+  "track": "ai-engineering",
+  "tags": ["rag", "evaluation", "ragas", "faithfulness", "retrieval", "metrics"],
+  "prerequisites": ["phase5-day64", "phase5-day65"],
+  "learningObjectives": [
+    "Compute faithfulness by decomposing claims and verifying against retrieved context",
+    "Measure answer relevancy via question regeneration similarity",
+    "Calculate context precision as a ranked precision metric",
+    "Compute context recall via claim coverage of ground truth",
+    "Build an end-to-end RAG evaluation suite with pass/fail gates"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why RAG Needs Dedicated Evaluation",
+      "content": "Generic text quality metrics (BLEU, ROUGE) miss the two failure modes unique to RAG: hallucination (answer contradicts retrieved context) and retrieval failure (relevant documents not retrieved). RAGAS defines four orthogonal metrics that decompose RAG quality into retrieval and generation sub-problems, enabling targeted debugging — if faithfulness drops but context recall is high, the generator is hallucinating; if context recall drops, fix the retriever."
+    },
+    {
+      "type": "theory",
+      "title": "RAGAS Metric Definitions",
+      "content": "**1. Faithfulness**\nMeasures whether the answer is factually grounded in the retrieved context.\n- Step 1: Decompose answer into atomic claims (e.g., 'Paris is in France', 'Eiffel Tower is 330 m tall')\n- Step 2: Verify each claim against the context using an LLM judge\n- Score = supported_claims / total_claims\n- Range: 0 (hallucinated) → 1 (fully grounded)\n\n**2. Answer Relevancy**\nMeasures whether the answer addresses the actual question.\n- Step 1: Generate N synthetic questions from the answer alone\n- Step 2: Compute cosine similarity of each synthetic question to the original question\n- Score = mean cosine similarity across N questions\n- Range: 0 (off-topic) → 1 (directly answers the question)\n\n**3. Context Precision**\nMeasures whether retrieved chunks are relevant (retrieval precision).\n- For each retrieved chunk: LLM judge marks it relevant (1) or not (0)\n- Score = Σ(precision@k × rel_k) / total_relevant (weighted by rank)\n- Range: 0 → 1; penalises putting irrelevant chunks first\n\n**4. Context Recall**\nMeasures whether the retrieved context covers the ground-truth answer claims.\n- Decompose ground-truth answer into claims\n- Check each claim: can it be inferred from retrieved context?\n- Score = attributable_claims / total_ground_truth_claims\n\n**Interpretation Matrix:**\n```\nHigh Faithfulness + High Context Recall → Good overall\nLow Faithfulness + High Context Recall → Generator hallucinates\nHigh Faithfulness + Low Context Recall → Retriever misses docs\nLow Faithfulness + Low Context Recall → Both components broken\n```"
+    },
+    {
+      "type": "code",
+      "title": "RAGAS Metrics — Manual Implementation",
+      "content": "```python\nimport math\nimport re\nfrom dataclasses import dataclass\nfrom typing import Callable\n\n\n# ── Data structures ───────────────────────────────────────────────────────────\n@dataclass\nclass RAGSample:\n    question: str\n    answer: str             # generated answer\n    contexts: list[str]     # retrieved chunks (ordered by rank)\n    ground_truth: str = ''  # reference answer for recall\n\n\n@dataclass\nclass RAGASResult:\n    faithfulness: float\n    answer_relevancy: float\n    context_precision: float\n    context_recall: float\n\n    @property\n    def ragas_score(self) -> float:\n        \"\"\"Harmonic mean of all four metrics.\"\"\"\n        vals = [self.faithfulness, self.answer_relevancy,\n                self.context_precision, self.context_recall]\n        if any(v == 0 for v in vals):\n            return 0.0\n        return len(vals) / sum(1 / v for v in vals)\n\n    def __str__(self):\n        return (\n            f'Faithfulness:      {self.faithfulness:.3f}\\n'\n            f'Answer Relevancy:  {self.answer_relevancy:.3f}\\n'\n            f'Context Precision: {self.context_precision:.3f}\\n'\n            f'Context Recall:    {self.context_recall:.3f}\\n'\n            f'RAGAS Score:       {self.ragas_score:.3f}'\n        )\n\n\n# ── Claim extraction (simplified: split on sentence boundaries) ───────────────\ndef extract_claims(text: str) -> list[str]:\n    \"\"\"Split text into atomic claims at sentence boundaries.\"\"\"\n    sentences = re.split(r'(?<=[.!?])\\s+', text.strip())\n    return [s.strip() for s in sentences if len(s.strip()) > 10]\n\n\n# ── Token overlap helper (used as embedding proxy) ────────────────────────────\ndef _token_overlap(a: str, b: str) -> float:\n    \"\"\"Jaccard similarity of word sets — proxy for cosine similarity.\"\"\"\n    a_tokens = set(re.findall(r'\\w+', a.lower()))\n    b_tokens = set(re.findall(r'\\w+', b.lower()))\n    if not a_tokens or not b_tokens:\n        return 0.0\n    return len(a_tokens & b_tokens) / len(a_tokens | b_tokens)\n\n\n# ── Faithfulness ──────────────────────────────────────────────────────────────\ndef faithfulness(\n    sample: RAGSample,\n    claim_verifier: Callable[[str, str], bool] | None = None,\n) -> float:\n    \"\"\"\n    Score = supported_claims / total_claims.\n    `claim_verifier(claim, context)` returns True if context supports the claim.\n    Default: token overlap > 0.15.\n    \"\"\"\n    if claim_verifier is None:\n        def claim_verifier(claim: str, context: str) -> bool:\n            return _token_overlap(claim, context) > 0.15\n\n    claims = extract_claims(sample.answer)\n    if not claims:\n        return 1.0\n\n    full_context = '\\n'.join(sample.contexts)\n    supported = sum(1 for c in claims if claim_verifier(c, full_context))\n    return supported / len(claims)\n\n\n# ── Answer Relevancy ──────────────────────────────────────────────────────────\ndef answer_relevancy(\n    sample: RAGSample,\n    question_generator: Callable[[str], list[str]] | None = None,\n    n_questions: int = 3,\n) -> float:\n    \"\"\"\n    Score = mean cosine_similarity(generated_question_i, original_question).\n    Default generator: extract first N sentences as synthetic questions.\n    \"\"\"\n    if question_generator is None:\n        def question_generator(answer: str) -> list[str]:\n            # Simple heuristic: rephrase first sentence as a question\n            claims = extract_claims(answer)[:n_questions]\n            return [f'What is described by: {c[:80]}?' for c in claims]\n\n    synthetic_qs = question_generator(sample.answer)[:n_questions]\n    if not synthetic_qs:\n        return 0.0\n\n    similarities = [_token_overlap(q, sample.question) for q in synthetic_qs]\n    return sum(similarities) / len(similarities)\n\n\n# ── Context Precision ─────────────────────────────────────────────────────────\ndef context_precision(\n    sample: RAGSample,\n    relevance_judge: Callable[[str, str, str], bool] | None = None,\n) -> float:\n    \"\"\"\n    Weighted precision: penalises irrelevant chunks ranked high.\n    `relevance_judge(question, context_chunk, answer)` returns True if relevant.\n    \"\"\"\n    if relevance_judge is None:\n        def relevance_judge(question: str, chunk: str, answer: str) -> bool:\n            return _token_overlap(question, chunk) > 0.1 or _token_overlap(answer, chunk) > 0.15\n\n    if not sample.contexts:\n        return 0.0\n\n    relevances = [\n        1 if relevance_judge(sample.question, chunk, sample.answer) else 0\n        for chunk in sample.contexts\n    ]\n    total_relevant = sum(relevances)\n    if total_relevant == 0:\n        return 0.0\n\n    # Weighted precision: sum of precision@k for each relevant chunk / total_relevant\n    weighted_sum = 0.0\n    relevant_seen = 0\n    for k, rel in enumerate(relevances, start=1):\n        if rel:\n            relevant_seen += 1\n            weighted_sum += relevant_seen / k\n\n    return weighted_sum / total_relevant\n\n\n# ── Context Recall ────────────────────────────────────────────────────────────\ndef context_recall(\n    sample: RAGSample,\n    claim_verifier: Callable[[str, str], bool] | None = None,\n) -> float:\n    \"\"\"\n    Score = ground_truth_claims_covered / total_ground_truth_claims.\n    Requires sample.ground_truth to be set.\n    \"\"\"\n    if not sample.ground_truth:\n        raise ValueError('context_recall requires sample.ground_truth')\n\n    if claim_verifier is None:\n        def claim_verifier(claim: str, context: str) -> bool:\n            return _token_overlap(claim, context) > 0.15\n\n    gt_claims = extract_claims(sample.ground_truth)\n    if not gt_claims:\n        return 1.0\n\n    full_context = '\\n'.join(sample.contexts)\n    covered = sum(1 for c in gt_claims if claim_verifier(c, full_context))\n    return covered / len(gt_claims)\n\n\n# ── End-to-end evaluator ──────────────────────────────────────────────────────\nclass RAGEvaluator:\n    THRESHOLDS = {\n        'faithfulness': 0.8,\n        'answer_relevancy': 0.7,\n        'context_precision': 0.7,\n        'context_recall': 0.7,\n    }\n\n    def evaluate(self, sample: RAGSample) -> RAGASResult:\n        return RAGASResult(\n            faithfulness=faithfulness(sample),\n            answer_relevancy=answer_relevancy(sample),\n            context_precision=context_precision(sample),\n            context_recall=context_recall(sample),\n        )\n\n    def evaluate_dataset(self, samples: list[RAGSample]) -> dict:\n        results = [self.evaluate(s) for s in samples]\n        mean = lambda attr: sum(getattr(r, attr) for r in results) / len(results)\n        metrics = {\n            'faithfulness': round(mean('faithfulness'), 3),\n            'answer_relevancy': round(mean('answer_relevancy'), 3),\n            'context_precision': round(mean('context_precision'), 3),\n            'context_recall': round(mean('context_recall'), 3),\n            'ragas_score': round(sum(r.ragas_score for r in results) / len(results), 3),\n            'n_samples': len(samples),\n        }\n        metrics['failing_metrics'] = [\n            m for m, v in metrics.items()\n            if m in self.THRESHOLDS and v < self.THRESHOLDS[m]\n        ]\n        return metrics\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    sample = RAGSample(\n        question='What causes the sky to appear blue?',\n        answer=(\n            'The sky appears blue because of Rayleigh scattering. '\n            'Shorter wavelengths of light scatter more than longer ones. '\n            'Blue light has a shorter wavelength than red light.'\n        ),\n        contexts=[\n            'Rayleigh scattering causes shorter wavelengths of visible light to scatter '\n            'more than longer wavelengths when interacting with atmospheric molecules.',\n            'The wavelength of blue light is approximately 450 nm, while red light is 700 nm.',\n            'Clouds appear white because they scatter all wavelengths equally.',\n        ],\n        ground_truth=(\n            'Rayleigh scattering causes blue light to scatter more than red light. '\n            'This makes the sky appear blue.'\n        ),\n    )\n\n    evaluator = RAGEvaluator()\n    result = evaluator.evaluate(sample)\n    print(result)\n    print()\n\n    # Dataset evaluation\n    report = evaluator.evaluate_dataset([sample, sample])  # duplicate for demo\n    print('Dataset report:', report)\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common RAG Evaluation Mistakes",
+      "content": "**1. Using BLEU/ROUGE instead of faithfulness**\nBLEU measures n-gram overlap with a reference, not whether the answer contradicts the retrieved context. A perfectly faithful answer with different wording scores low on BLEU.\n\n**2. Evaluating only end-to-end quality**\nIf the RAG score drops, you don't know if retrieval or generation caused it. Always break down faithfulness (generation) vs context recall (retrieval) separately.\n\n**3. Using ground-truth answers as retrieved context**\nThis inflates all metrics. Retrieved contexts must come from the actual retrieval pipeline, not the evaluation dataset's reference documents.\n\n**4. Ignoring context ordering in precision**\nContext precision rewards retrievers that rank relevant documents first. Treating all retrieved chunks as equally important misses this signal.\n\n**5. Small evaluation datasets**\nRAGAS scores are noisy on <50 samples. Variance from a single bad response can shift faithfulness by 0.05. Use ≥100 samples for production evaluation.\n\n**6. Not updating eval datasets after domain changes**\nGolden Q&A pairs become stale when the knowledge base updates. Evaluation scores stay high even when new information is not retrievable."
+    },
+    {
+      "type": "exercise",
+      "title": "Build a RAG Evaluation Pipeline with Real Retriever",
+      "content": "**Task:** Evaluate a simple TF-IDF retriever using RAGAS metrics.\n\n**Requirements:**\n1. Implement a `TFIDFRetriever` with 20+ documents from a chosen topic\n2. Generate 10 QA pairs with ground truth answers\n3. For each Q: retrieve top-3 chunks, generate answer (mock or real LLM)\n4. Compute all four RAGAS metrics using the implementations above\n5. Print a report with per-metric scores and `failing_metrics`\n6. Identify which metric is lowest and propose one concrete fix\n\n**Expected insight:** If context_recall is low, the TF-IDF retriever fails on paraphrased questions. Fix: add BM25 or embedding retrieval."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — RAG Evaluation",
+      "content": "**Conceptual:**\nQ: What does a faithfulness score of 0.6 tell you about a RAG system?\nA: 40% of the answer's atomic claims cannot be verified from the retrieved context, meaning the LLM is hallucinating those facts rather than grounding them in the retrieved documents.\n\n**Code-based:**\nQ: Implement context precision for 4 retrieved chunks with relevance labels [1,0,1,0].\nA: Relevant at rank 1: precision@1=1/1=1. Relevant at rank 3: precision@3=2/3=0.67. Weighted sum = (1+0.67)/2 = 0.83. Context precision = 0.83.\n\n**Senior scenario:**\nQ: A RAG system has faithfulness=0.95 but context_recall=0.45. What is the bottleneck and how do you fix it?\nA: The generator is faithful to whatever it retrieves, but the retriever misses 55% of relevant documents (context_recall=0.45). Fix retrieval: (1) Switch from TF-IDF to hybrid BM25+embeddings. (2) Add query expansion or HyDE (hypothetical document embeddings). (3) Increase top-k retrieval and add re-ranking. (4) Check chunk size — too large or too small chunks hurt recall.\n\n**Wrong answer to avoid:**\nQ: How is context precision different from context recall?\nBad: 'Precision measures accuracy, recall measures coverage' — too vague. Correct: precision measures whether retrieved chunks are relevant (and rewards ranking relevant chunks first); recall measures whether the retrieved context covers all claims in the ground-truth answer."
+    },
+    {
+      "type": "mcq",
+      "title": "RAG Evaluation Quiz",
+      "questions": [
+        {
+          "q": "A RAG answer scores faithfulness=0.4, context_recall=0.9. What is the likely root cause?",
+          "options": [
+            "The retriever misses relevant documents",
+            "The generator hallucinates facts not in the retrieved context",
+            "The question is ambiguous",
+            "The context chunks are too short"
+          ],
+          "answer": 1,
+          "explanation": "High context_recall means the retriever found relevant documents. Low faithfulness means the generator is not using those documents faithfully — it hallucinates."
+        },
+        {
+          "q": "Context precision penalises retrievers that:",
+          "options": [
+            "Return too few results",
+            "Return relevant documents at low ranks (bottom of the list)",
+            "Return irrelevant documents at high ranks (top of the list)",
+            "Use embedding-based similarity"
+          ],
+          "answer": 2,
+          "explanation": "Context precision is a weighted precision that rewards relevant documents ranked first. Irrelevant chunks at high ranks reduce the weighted precision score."
+        },
+        {
+          "q": "Answer relevancy is computed by:",
+          "options": [
+            "Comparing the answer to the ground truth with ROUGE-L",
+            "Generating synthetic questions from the answer and measuring similarity to the original question",
+            "Counting how many retrieved chunks the answer references",
+            "Measuring the cosine similarity of answer and question embeddings"
+          ],
+          "answer": 1,
+          "explanation": "Answer relevancy generates N synthetic questions from the answer, then measures how similar those are to the original question. High similarity means the answer addresses the question."
+        },
+        {
+          "q": "RAGAS score is the harmonic mean of all four metrics. Why harmonic mean instead of arithmetic mean?",
+          "options": [
+            "Harmonic mean is easier to compute",
+            "Harmonic mean penalises any single very low metric, preventing good scores from masking one failing component",
+            "Arithmetic mean would exceed 1.0",
+            "Harmonic mean is used by convention in information retrieval"
+          ],
+          "answer": 1,
+          "explanation": "Harmonic mean is pulled strongly toward the lowest value. A system with 3 excellent metrics and one at 0.1 gets a RAGAS score close to 0.1, correctly flagging the failure."
+        },
+        {
+          "q": "Which RAGAS metric requires a ground-truth reference answer in the evaluation dataset?",
+          "options": ["Faithfulness", "Answer Relevancy", "Context Precision", "Context Recall"],
+          "answer": 3,
+          "explanation": "Context recall measures whether retrieved context covers the ground-truth answer's claims. Without ground truth, there are no reference claims to check coverage against."
+        }
+      ]
+    }
+  ]
+}

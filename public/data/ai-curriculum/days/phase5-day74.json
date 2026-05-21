@@ -1,0 +1,113 @@
+{
+  "day": 74,
+  "phase": 5,
+  "title": "MLOps for LLMs",
+  "description": "Apply MLOps practices to LLM systems: prompt versioning CI/CD, model deployment pipelines, shadow testing, canary deployments, rollback automation, and SLA monitoring for production LLM services.",
+  "type": "lesson",
+  "estimatedHours": 4,
+  "difficulty": "advanced",
+  "level": "senior",
+  "track": "ai-engineering",
+  "tags": ["mlops", "ci-cd", "deployment", "canary", "shadow-testing", "slo", "prompt-ops"],
+  "prerequisites": ["phase5-day69", "phase5-day73"],
+  "learningObjectives": [
+    "Design CI/CD pipelines for LLM prompt and model changes",
+    "Implement shadow testing to safely validate model changes",
+    "Build canary deployment with automated quality gates",
+    "Define SLOs for LLM services and implement SLI tracking",
+    "Automate rollback on quality or reliability degradation"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why LLM Systems Need Specialised MLOps",
+      "content": "Traditional software CI/CD deploys deterministic code; LLM deployments are non-deterministic — a model update or prompt change that passes unit tests can still degrade user experience in subtle ways only visible at scale. LLMOps extends DevOps with: shadow testing (compare old vs new model without user impact), canary rollouts gated by quality metrics, prompt regression suites in CI, and rollback triggers based on qualitative drift — not just service errors. Without these, prompt and model changes become high-risk events that teams fear to ship."
+    },
+    {
+      "type": "theory",
+      "title": "LLMOps Pipeline Components",
+      "content": "**1. Prompt CI/CD**\n- Every prompt change triggers: regression tests → quality gate → staging deploy → canary → full rollout\n- Regression suite runs against golden Q&A dataset (see Day 69)\n- Quality gate: regression_rate < 5%, mean quality score ≥ baseline - 0.02\n- Automated rollback if quality drops in canary\n\n**2. Model Upgrade Pipeline**\nWhen the LLM provider releases a new model version:\n1. **Shadow mode**: Route 10% of production traffic to new model; log both responses; do NOT show new response to user\n2. **Offline eval**: Run full eval suite on shadow-captured inputs\n3. **Canary**: Route 5% of users to new model; monitor quality + latency + cost\n4. **Graduated rollout**: 5% → 20% → 50% → 100%, gated by SLI check\n5. **Rollback trigger**: Automated if error_rate > 1% or quality_score < threshold\n\n**3. SLO/SLI Framework**\n- **SLO** (Service Level Objective): e.g., P95 latency ≤ 2000 ms, availability ≥ 99.5%, quality_score ≥ 0.75\n- **SLI** (Service Level Indicator): measured P95, error_count/total, mean LLM-as-judge score\n- **Error budget**: % of time SLO can be violated before freeze on non-critical changes\n- Alert when: error_budget_remaining < 20%\n\n**4. Deployment Artifacts**\n- Prompt: YAML in git (versioned, reviewable)\n- Model config: model_id, temperature, max_tokens, top_p — frozen at deploy time\n- Evaluation dataset: versioned JSON golden cases\n- Docker image: application code + dependencies\n\n**5. Observability Requirements**\n- Structured JSONL logs: request_id, model_version, prompt_version, latency_ms, input_tokens, output_tokens, cost, quality_score (sampled)\n- Metrics: P50/P95/P99 latency, throughput (req/s), error_rate, cost/hour\n- Alerts: PagerDuty/Slack on SLO breach"
+    },
+    {
+      "type": "code",
+      "title": "Shadow Tester, Canary Gate & Deployment Pipeline",
+      "content": "```python\nimport asyncio\nimport hashlib\nimport json\nimport random\nimport time\nfrom dataclasses import dataclass, field, asdict\nfrom typing import Callable, Any\n\n\n# ── Deployment config ─────────────────────────────────────────────────────────\n@dataclass\nclass DeploymentConfig:\n    model_id: str\n    prompt_version: str\n    temperature: float = 0.7\n    max_tokens: int = 1024\n    deployed_at: float = field(default_factory=time.time)\n    description: str = ''\n\n    def fingerprint(self) -> str:\n        raw = f'{self.model_id}:{self.prompt_version}:{self.temperature}:{self.max_tokens}'\n        return hashlib.sha256(raw.encode()).hexdigest()[:12]\n\n\n# ── Shadow tester ─────────────────────────────────────────────────────────────\n@dataclass\nclass ShadowResult:\n    request_id: str\n    production_response: str\n    shadow_response: str\n    production_latency_ms: float\n    shadow_latency_ms: float\n    quality_delta: float  # shadow_quality - production_quality; + means shadow better\n\n\nclass ShadowTester:\n    \"\"\"\n    Routes `shadow_pct` % of traffic to both production and shadow model.\n    Logs comparison results without showing shadow response to user.\n    \"\"\"\n\n    def __init__(self, shadow_pct: float = 10.0):\n        self._shadow_pct = shadow_pct\n        self._results: list[ShadowResult] = []\n\n    def should_shadow(self, request_id: str) -> bool:\n        bucket = int(hashlib.md5(request_id.encode()).hexdigest()[:4], 16) % 100\n        return bucket < self._shadow_pct\n\n    async def run(self,\n                  request_id: str,\n                  prompt: str,\n                  prod_fn: Callable[[str], tuple[str, float]],\n                  shadow_fn: Callable[[str], tuple[str, float]],\n                  judge_fn: Callable[[str, str], float] | None = None) -> str:\n        \"\"\"\n        Always returns production response.\n        If shadowing, runs shadow concurrently and logs delta.\n        \"\"\"\n        prod_start = time.perf_counter()\n        prod_resp, prod_cost = prod_fn(prompt)\n        prod_latency = (time.perf_counter() - prod_start) * 1000\n\n        if self.should_shadow(request_id):\n            asyncio.create_task(\n                self._shadow_call(request_id, prompt, prod_resp, prod_latency, shadow_fn, judge_fn)\n            )\n\n        return prod_resp\n\n    async def _shadow_call(self, request_id, prompt, prod_resp, prod_latency,\n                           shadow_fn, judge_fn):\n        shadow_start = time.perf_counter()\n        try:\n            shadow_resp, _ = shadow_fn(prompt)\n            shadow_latency = (time.perf_counter() - shadow_start) * 1000\n\n            if judge_fn:\n                prod_q = judge_fn(prompt, prod_resp)\n                shadow_q = judge_fn(prompt, shadow_resp)\n                delta = shadow_q - prod_q\n            else:\n                delta = (len(shadow_resp) - len(prod_resp)) / max(len(prod_resp), 1)\n\n            self._results.append(ShadowResult(\n                request_id=request_id,\n                production_response=prod_resp[:100],\n                shadow_response=shadow_resp[:100],\n                production_latency_ms=prod_latency,\n                shadow_latency_ms=shadow_latency,\n                quality_delta=delta,\n            ))\n        except Exception:\n            pass  # shadow errors never affect production\n\n    def report(self) -> dict:\n        if not self._results:\n            return {'status': 'no_shadow_results'}\n        deltas = [r.quality_delta for r in self._results]\n        latency_delta = [(r.shadow_latency_ms - r.production_latency_ms) for r in self._results]\n        return {\n            'shadow_requests': len(self._results),\n            'mean_quality_delta': round(sum(deltas) / len(deltas), 4),\n            'mean_latency_delta_ms': round(sum(latency_delta) / len(latency_delta), 1),\n            'shadow_better_pct': round(sum(1 for d in deltas if d > 0) / len(deltas) * 100, 1),\n            'recommendation': 'promote' if sum(deltas) / len(deltas) > 0.02 else 'hold',\n        }\n\n\n# ── SLI/SLO tracker ───────────────────────────────────────────────────────────\n@dataclass\nclass SLO:\n    name: str\n    target: float       # e.g., 0.95 for 95% of requests meet the criterion\n    window_minutes: int = 60\n\n\nclass SLITracker:\n    \"\"\"\n    Tracks SLI measurements and computes error budget consumption.\n    \"\"\"\n\n    def __init__(self, slos: list[SLO]):\n        self._slos = {s.name: s for s in slos}\n        self._measurements: dict[str, list[tuple[float, bool]]] = {s.name: [] for s in slos}\n\n    def record(self, slo_name: str, met: bool) -> None:\n        \"\"\"Record whether an individual request met the SLO criterion.\"\"\"\n        self._measurements[slo_name].append((time.time(), met))\n\n    def _window_measurements(self, slo_name: str) -> list[bool]:\n        slo = self._slos[slo_name]\n        cutoff = time.time() - slo.window_minutes * 60\n        return [met for ts, met in self._measurements[slo_name] if ts >= cutoff]\n\n    def sli(self, slo_name: str) -> float:\n        \"\"\"Current SLI (proportion of requests meeting the criterion).\"\"\"\n        window = self._window_measurements(slo_name)\n        return sum(window) / len(window) if window else 1.0\n\n    def error_budget_remaining(self, slo_name: str) -> float:\n        \"\"\"Fraction of error budget remaining (0.0 = exhausted).\"\"\"\n        slo = self._slos[slo_name]\n        sli = self.sli(slo_name)\n        allowed_failure_rate = 1 - slo.target\n        actual_failure_rate = 1 - sli\n        if allowed_failure_rate == 0:\n            return 0.0 if actual_failure_rate > 0 else 1.0\n        return max(0.0, 1 - actual_failure_rate / allowed_failure_rate)\n\n    def report(self) -> dict:\n        out = {}\n        for name in self._slos:\n            sli_val = self.sli(name)\n            budget = self.error_budget_remaining(name)\n            out[name] = {\n                'sli': round(sli_val, 4),\n                'slo_target': self._slos[name].target,\n                'meeting_slo': sli_val >= self._slos[name].target,\n                'error_budget_remaining': round(budget, 3),\n                'alert': budget < 0.2,\n            }\n        return out\n\n\n# ── Canary deployment gate ────────────────────────────────────────────────────\nclass CanaryGate:\n    \"\"\"\n    Manages staged rollout: 5 → 20 → 50 → 100 %.\n    Advances stage if SLIs are healthy; rolls back if degraded.\n    \"\"\"\n    STAGES = [5, 20, 50, 100]\n\n    def __init__(self, sli_tracker: SLITracker,\n                 quality_threshold: float = 0.75,\n                 error_rate_threshold: float = 0.01):\n        self._tracker = sli_tracker\n        self._quality_t = quality_threshold\n        self._error_t = error_rate_threshold\n        self._stage_idx = 0\n        self._rolled_back = False\n\n    @property\n    def current_pct(self) -> int:\n        return self.STAGES[self._stage_idx]\n\n    def should_receive_canary(self, user_id: str) -> bool:\n        if self._rolled_back:\n            return False\n        bucket = int(hashlib.md5(user_id.encode()).hexdigest()[:4], 16) % 100\n        return bucket < self.current_pct\n\n    def evaluate(self) -> dict:\n        \"\"\"Check SLIs and decide to advance, hold, or rollback.\"\"\"\n        report = self._tracker.report()\n        latency_ok = report.get('latency_p95', {}).get('meeting_slo', True)\n        quality_ok = report.get('quality', {}).get('meeting_slo', True)\n        error_ok = report.get('error_rate', {}).get('meeting_slo', True)\n\n        if not (latency_ok and quality_ok and error_ok):\n            self._rolled_back = True\n            return {'action': 'rollback', 'stage': self.current_pct, 'report': report}\n\n        if self._stage_idx < len(self.STAGES) - 1:\n            self._stage_idx += 1\n            return {'action': 'advance', 'new_stage': self.current_pct, 'report': report}\n\n        return {'action': 'complete', 'stage': 100, 'report': report}\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    random.seed(42)\n\n    # SLO/SLI demo\n    tracker = SLITracker([\n        SLO('latency_p95', target=0.95),  # 95% of requests under P95 threshold\n        SLO('quality', target=0.80),\n        SLO('error_rate', target=0.99),   # 99% requests succeed\n    ])\n\n    # Simulate 200 requests\n    for _ in range(200):\n        tracker.record('latency_p95', random.random() > 0.06)  # 94% meet target\n        tracker.record('quality', random.random() > 0.15)      # 85% meet quality\n        tracker.record('error_rate', random.random() > 0.005)  # 99.5% succeed\n\n    print('SLI/SLO report:')\n    for name, data in tracker.report().items():\n        status = 'OK' if data['meeting_slo'] else 'BREACH'\n        print(f'  [{status}] {name}: SLI={data[\"sli\"]:.3f} | budget_left={data[\"error_budget_remaining\"]:.2f} | alert={data[\"alert\"]}')\n\n    # Canary gate demo\n    gate = CanaryGate(tracker)\n    print(f'\\nCanary: current stage = {gate.current_pct}%')\n    result = gate.evaluate()\n    print(f'Canary evaluation: {result[\"action\"]} → {gate.current_pct}%')\n\n    # Deployment config fingerprint\n    config = DeploymentConfig(model_id='gpt-4o', prompt_version='2.1.0', temperature=0.3)\n    print(f'\\nDeployment fingerprint: {config.fingerprint()}')\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common LLMOps Mistakes",
+      "content": "**1. Skipping shadow testing for model upgrades**\nDeploying a new model version directly to production without shadow testing is high risk. Even 'backward-compatible' model updates can subtly change output tone, format, or accuracy.\n\n**2. Using only error_rate as the rollback trigger**\nLLM model degradation often does not cause HTTP errors — it causes quality degradation that is silent from an infra perspective. Add quality_score SLO alongside error_rate.\n\n**3. Canary rollout without minimum soak time**\nAdvancing from 5% to 100% in minutes gives insufficient time to detect rare failure modes. Minimum 24 h at each stage for daily-pattern coverage.\n\n**4. Not version-pinning the eval dataset**\nIf golden cases are updated at the same time as a model change, you cannot compare results to previous runs. Freeze eval datasets and version them alongside model configs.\n\n**5. Treating shadow results as ground truth**\nShadow results compare two models on production traffic — not on labelled ground truth. A shadow model that writes longer responses is not necessarily better. Always combine shadow comparison with LLM-as-judge or human eval.\n\n**6. Forgetting to propagate deployment metadata in logs**\nLogs must carry `model_id`, `prompt_version`, and `deployment_fingerprint` on every request. Without this, correlating a quality drop with the specific change that caused it is impossible."
+    },
+    {
+      "type": "exercise",
+      "title": "Build an LLMOps Deployment Pipeline",
+      "content": "**Task:** Implement an end-to-end LLMOps pipeline with shadow testing and canary rollout.\n\n**Requirements:**\n1. `DeploymentRegistry` stores current production and canary configs\n2. `ShadowTester` with 10% shadow rate; use LLM-as-judge (mock) for quality delta\n3. `SLITracker` tracks P95 latency SLO and quality SLO\n4. `CanaryGate` with 5→20→50→100% stages, evaluated every 100 requests\n5. On rollback trigger: revert `DeploymentRegistry` to previous production config\n6. Log every request to JSONL with: request_id, model_version, prompt_version, latency_ms, is_canary, is_shadow\n\n**Bonus:** Add a `POST /deploy/promote` endpoint that kicks off the canary pipeline and reports progress via SSE."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — MLOps for LLMs",
+      "content": "**Conceptual:**\nQ: What is shadow testing in the context of LLM deployment, and why is it preferable to A/B testing for initial validation?\nA: Shadow testing routes a percentage of production traffic to the new model and logs both responses, but only serves the production response to users. This means zero user impact during validation. A/B testing serves both variants to users, which risks degrading experience for the treatment group if the new model underperforms.\n\n**Code-based:**\nQ: Your SLO for quality is 80% of requests scoring ≥ 0.7 from LLM-as-judge. After a canary at 5% traffic, SLI is 0.73. Should you advance to 20%?\nA: No. SLI=0.73 < SLO target=0.80, so the canary is failing the quality SLO. Trigger rollback, investigate why the new model underperforms on the canary traffic subset.\n\n**Senior scenario:**\nQ: Your team wants to deploy a new GPT-4o version (0613 → 1106). How do you structure the pipeline to detect regressions before they affect all users?\nA: (1) Run offline regression suite on the new model using the frozen golden Q&A dataset. (2) Shadow test at 10% of traffic for 48 h to collect quality delta data. (3) If shadow report shows mean_quality_delta > -0.02 and no latency regression, start canary at 5%. (4) Evaluate SLIs at each canary stage (5→20→50→100%) with 24 h soak minimum. (5) Automated rollback if quality SLO breaches. (6) Each step's logs carry model_version for correlation.\n\n**Wrong answer to avoid:**\nQ: What triggers an automated rollback in a canary deployment?\nBad: 'When the HTTP error rate exceeds 1%' — too narrow. Correct: rollback should be triggered by any SLO breach: error rate, latency P95, AND quality score — since LLM quality degradation is silent from an infrastructure perspective."
+    },
+    {
+      "type": "mcq",
+      "title": "MLOps for LLMs Quiz",
+      "questions": [
+        {
+          "q": "Shadow testing differs from A/B testing in that:",
+          "options": [
+            "Shadow testing uses more traffic",
+            "Shadow testing shows shadow responses to a subset of users",
+            "Shadow testing logs both responses but only serves the production response to users",
+            "Shadow testing requires a control group"
+          ],
+          "answer": 2,
+          "explanation": "Shadow testing captures shadow model outputs for comparison without exposing them to users, making it zero-risk for user experience during validation."
+        },
+        {
+          "q": "An error budget remaining of 0.05 (5%) means:",
+          "options": [
+            "The service has been meeting SLOs 95% of the time",
+            "The service has consumed 95% of its allowed failure allowance for the window",
+            "5% of requests are failing",
+            "The SLO target is set at 95%"
+          ],
+          "answer": 1,
+          "explanation": "5% budget remaining means 95% has been consumed. The service is close to SLO breach; non-critical deployments should freeze until budget recovers."
+        },
+        {
+          "q": "Why is 24-hour minimum soak time recommended at each canary stage?",
+          "options": [
+            "To reduce API costs",
+            "To ensure traffic patterns from different times of day (morning rush, overnight batch jobs) are covered",
+            "To satisfy regulatory requirements",
+            "To allow cache warm-up"
+          ],
+          "answer": 1,
+          "explanation": "Traffic patterns, user types, and query distributions vary by time of day. 24 h ensures the canary experiences the full daily pattern, catching failures that only appear at off-peak or peak hours."
+        },
+        {
+          "q": "Every LLM request log must include model_id and prompt_version because:",
+          "options": [
+            "It reduces log storage costs",
+            "It enables tracing a quality regression to the exact model and prompt change that caused it",
+            "It satisfies GDPR logging requirements",
+            "It improves query latency"
+          ],
+          "answer": 1,
+          "explanation": "Without deployment metadata in logs, correlating a quality incident to a specific change is manual and error-prone. Structured logs with model_version and prompt_version make root-cause analysis immediate."
+        },
+        {
+          "q": "A canary gate should roll back when which condition is met?",
+          "options": [
+            "User complaints exceed 5 in the canary period",
+            "Any SLO — error rate, latency P95, or quality score — is breached",
+            "The shadow report shows negative quality delta",
+            "The new model costs more per request"
+          ],
+          "answer": 1,
+          "explanation": "Automated rollback should trigger on any SLO breach. Quality degradation is especially important for LLMs since it doesn't cause HTTP errors that traditional alerting catches."
+        }
+      ]
+    }
+  ]
+}

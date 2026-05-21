@@ -1,0 +1,103 @@
+{
+  "day": 69,
+  "phase": 5,
+  "title": "Prompt Engineering at Scale",
+  "description": "Manage prompts as versioned software artifacts: registries, A/B testing, rollout strategies, automated regression testing, and prompt performance analytics for production LLM systems.",
+  "type": "lesson",
+  "estimatedHours": 4,
+  "difficulty": "advanced",
+  "level": "senior",
+  "track": "ai-engineering",
+  "tags": ["prompt-engineering", "versioning", "ab-testing", "prompt-ops", "regression"],
+  "prerequisites": ["phase5-day68"],
+  "learningObjectives": [
+    "Design a versioned prompt registry with rollback capability",
+    "Implement A/B testing with statistical significance testing",
+    "Build automated prompt regression pipelines",
+    "Apply prompt templating with variable injection and validation",
+    "Measure prompt performance metrics in production"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Prompt Management Becomes Critical at Scale",
+      "content": "At prototype stage, prompts live in code comments or sticky notes. At production scale with thousands of daily users, an unversioned prompt change silently degrades output quality, breaks edge cases, or violates safety policies with no rollback path. PromptOps treats prompts as first-class software artifacts: versioned, tested, and deployed with the same rigour as code. Teams that invest in prompt infrastructure reduce regression incidents by 60-80% and accelerate prompt iteration velocity."
+    },
+    {
+      "type": "theory",
+      "title": "Prompt Registry, Versioning & A/B Testing",
+      "content": "**1. Prompt as Artifact**\nA prompt has: `name`, `version` (semver), `template` (Jinja2/f-string), `variables` (typed), `metadata` (author, date, description), `test_cases`.\n\n**2. Versioning Scheme**\n- Major: changes expected output structure (breaking)\n- Minor: improves quality without structural change\n- Patch: typo fixes, minor wording\n\n**3. Prompt Registry**\nCentral store (YAML/JSON/DB) keyed by `name:version`. Supports:\n- `get(name, version='latest')` — resolves alias\n- `promote(name, from_version, to_version='production')` — atomic swap\n- `rollback(name)` — restore previous production version\n\n**4. A/B Testing Framework**\n- Assign users to buckets deterministically: `bucket = hash(user_id + experiment_id) % 100`\n- Collect metrics per bucket: task_success, user_rating, cost, latency\n- Significance test: two-proportion z-test for binary outcomes, t-test for continuous\n- Rollout strategy: 5% → 20% → 50% → 100% gated by metric thresholds\n\n**5. Automated Regression Suite**\nFor each prompt change, run golden test cases:\n- Compare output against reference (ROUGE-L, keyword presence)\n- Flag regressions with configurable thresholds\n- Gate deployment if regression_rate > 5%\n\n**6. Prompt Analytics**\nTrack per-version: mean quality score, cost/request, latency, error rate. Dashboard enables data-driven rollback decisions."
+    },
+    {
+      "type": "code",
+      "title": "Prompt Registry, A/B Router & Regression Runner",
+      "content": "```python\nimport hashlib\nimport json\nimport math\nimport re\nimport time\nfrom dataclasses import dataclass, field\nfrom typing import Any\n\n\n# ── Prompt template with variable validation ─────────────────────────────────\n@dataclass\nclass PromptTemplate:\n    name: str\n    version: str  # semver: '1.2.3'\n    template: str  # uses {variable} placeholders\n    variables: list[str]  # required variable names\n    description: str = ''\n    author: str = ''\n    created_at: float = field(default_factory=time.time)\n\n    def render(self, **kwargs) -> str:\n        missing = [v for v in self.variables if v not in kwargs]\n        if missing:\n            raise ValueError(f'Missing variables: {missing}')\n        extra = [k for k in kwargs if k not in self.variables]\n        if extra:\n            raise ValueError(f'Unexpected variables: {extra}')\n        return self.template.format(**kwargs)\n\n    def _parse_variables(self) -> list[str]:\n        return re.findall(r'\\{(\\w+)\\}', self.template)\n\n\n# ── Prompt registry ───────────────────────────────────────────────────────────\nclass PromptRegistry:\n    \"\"\"\n    In-memory registry; in production, back with Redis or a DB.\n    Tracks production alias and version history.\n    \"\"\"\n\n    def __init__(self):\n        self._store: dict[str, dict[str, PromptTemplate]] = {}  # name → version → template\n        self._production: dict[str, str] = {}  # name → version\n        self._history: dict[str, list[str]] = {}  # name → ordered versions\n\n    def register(self, prompt: PromptTemplate) -> None:\n        self._store.setdefault(prompt.name, {})\n        self._store[prompt.name][prompt.version] = prompt\n        self._history.setdefault(prompt.name, [])\n        if prompt.version not in self._history[prompt.name]:\n            self._history[prompt.name].append(prompt.version)\n        # First registration auto-promotes to production\n        if prompt.name not in self._production:\n            self._production[prompt.name] = prompt.version\n\n    def get(self, name: str, version: str = 'production') -> PromptTemplate:\n        if version == 'production':\n            version = self._production.get(name, 'latest')\n        if version == 'latest':\n            versions = self._history.get(name, [])\n            if not versions:\n                raise KeyError(f'No versions for prompt: {name}')\n            version = versions[-1]\n        try:\n            return self._store[name][version]\n        except KeyError:\n            raise KeyError(f'Prompt not found: {name}@{version}')\n\n    def promote(self, name: str, version: str) -> None:\n        \"\"\"Set version as production.\"\"\"\n        if name not in self._store or version not in self._store[name]:\n            raise KeyError(f'Cannot promote unknown prompt: {name}@{version}')\n        self._production[name] = version\n\n    def rollback(self, name: str) -> str:\n        \"\"\"Roll back to previous production version.\"\"\"\n        history = self._history.get(name, [])\n        current = self._production.get(name)\n        if current not in history or history.index(current) == 0:\n            raise ValueError(f'No previous version to roll back to for {name}')\n        prev_idx = history.index(current) - 1\n        prev_version = history[prev_idx]\n        self._production[name] = prev_version\n        return prev_version\n\n    def list_versions(self, name: str) -> list[str]:\n        return self._history.get(name, [])\n\n\n# ── A/B experiment router ─────────────────────────────────────────────────────\n@dataclass\nclass Experiment:\n    experiment_id: str\n    prompt_name: str\n    control_version: str   # bucket 0..49\n    treatment_version: str # bucket 50..99\n    traffic_pct: float = 50.0  # % of users in experiment\n\n\nclass ABRouter:\n    \"\"\"\n    Deterministically routes user to control or treatment.\n    Bucket = hash(user_id + experiment_id) % 100.\n    \"\"\"\n\n    def __init__(self, registry: PromptRegistry):\n        self._registry = registry\n        self._experiments: dict[str, Experiment] = {}\n        self._results: dict[str, dict[str, list[float]]] = {}  # exp_id → bucket → metrics\n\n    def add_experiment(self, exp: Experiment) -> None:\n        self._experiments[exp.experiment_id] = exp\n        self._results[exp.experiment_id] = {'control': [], 'treatment': []}\n\n    def route(self, experiment_id: str, user_id: str) -> tuple[str, PromptTemplate]:\n        \"\"\"Returns (bucket_name, prompt_template).\"\"\"\n        exp = self._experiments[experiment_id]\n        bucket = self._bucket(user_id, experiment_id)\n        if bucket < exp.traffic_pct:\n            if bucket < exp.traffic_pct / 2:\n                return 'control', self._registry.get(exp.prompt_name, exp.control_version)\n            else:\n                return 'treatment', self._registry.get(exp.prompt_name, exp.treatment_version)\n        # Outside experiment — serve production\n        return 'production', self._registry.get(exp.prompt_name)\n\n    def record(self, experiment_id: str, bucket: str, metric: float) -> None:\n        self._results[experiment_id][bucket].append(metric)\n\n    def analyse(self, experiment_id: str) -> dict:\n        data = self._results[experiment_id]\n        control = data['control']\n        treatment = data['treatment']\n        if len(control) < 30 or len(treatment) < 30:\n            return {'status': 'insufficient_data', 'n_control': len(control), 'n_treatment': len(treatment)}\n\n        mean_c = sum(control) / len(control)\n        mean_t = sum(treatment) / len(treatment)\n        lift = (mean_t - mean_c) / mean_c if mean_c else 0.0\n\n        # Two-sample z-test (continuous metric)\n        var_c = sum((x - mean_c) ** 2 for x in control) / len(control)\n        var_t = sum((x - mean_t) ** 2 for x in treatment) / len(treatment)\n        se = math.sqrt(var_c / len(control) + var_t / len(treatment))\n        z = (mean_t - mean_c) / se if se else 0.0\n        # p < 0.05 ↔ |z| > 1.96\n        significant = abs(z) > 1.96\n\n        return {\n            'status': 'complete',\n            'mean_control': round(mean_c, 4),\n            'mean_treatment': round(mean_t, 4),\n            'lift': round(lift, 4),\n            'z_score': round(z, 3),\n            'significant': significant,\n            'winner': 'treatment' if significant and lift > 0 else ('control' if significant else 'no_winner'),\n        }\n\n    @staticmethod\n    def _bucket(user_id: str, experiment_id: str) -> int:\n        h = hashlib.md5(f'{user_id}:{experiment_id}'.encode()).hexdigest()\n        return int(h[:8], 16) % 100\n\n\n# ── Prompt regression runner ──────────────────────────────────────────────────\n@dataclass\nclass GoldenCase:\n    input_vars: dict[str, Any]\n    required_keywords: list[str]  # all must appear in output\n    forbidden_keywords: list[str] = field(default_factory=list)\n    min_length: int = 50\n\n\nclass PromptRegressionRunner:\n    \"\"\"Runs golden cases against a prompt version using a mock LLM.\"\"\"\n\n    def __init__(self, llm_fn):\n        self._llm = llm_fn  # fn(prompt_text) -> str\n\n    def run(self, template: PromptTemplate, cases: list[GoldenCase]) -> dict:\n        passed = 0\n        failures = []\n        for i, case in enumerate(cases):\n            prompt_text = template.render(**case.input_vars)\n            output = self._llm(prompt_text)\n            ok, reason = self._check(output, case)\n            if ok:\n                passed += 1\n            else:\n                failures.append({'case': i, 'reason': reason, 'output_snippet': output[:100]})\n\n        regression_rate = (len(cases) - passed) / len(cases) if cases else 0.0\n        return {\n            'version': template.version,\n            'total': len(cases),\n            'passed': passed,\n            'failed': len(failures),\n            'regression_rate': round(regression_rate, 3),\n            'deployable': regression_rate <= 0.05,  # gate: max 5% failures\n            'failures': failures,\n        }\n\n    @staticmethod\n    def _check(output: str, case: GoldenCase) -> tuple[bool, str]:\n        lower = output.lower()\n        for kw in case.required_keywords:\n            if kw.lower() not in lower:\n                return False, f'Missing required keyword: {kw}'\n        for kw in case.forbidden_keywords:\n            if kw.lower() in lower:\n                return False, f'Forbidden keyword present: {kw}'\n        if len(output) < case.min_length:\n            return False, f'Output too short: {len(output)} < {case.min_length}'\n        return True, 'ok'\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    registry = PromptRegistry()\n\n    v1 = PromptTemplate(\n        name='summariser',\n        version='1.0.0',\n        template='Summarise this text in {style} style:\\n\\n{text}',\n        variables=['style', 'text'],\n        description='Basic summariser',\n        author='alice',\n    )\n    v2 = PromptTemplate(\n        name='summariser',\n        version='1.1.0',\n        template=('You are an expert editor. Summarise the following text in a {style} style.'\n                  ' Be concise and capture key points.\\n\\nText: {text}\\n\\nSummary:'),\n        variables=['style', 'text'],\n        description='Improved summariser with persona',\n        author='alice',\n    )\n\n    registry.register(v1)\n    registry.register(v2)\n    print('Production version:', registry.get('summariser', 'production').version)  # 1.0.0\n\n    # Regression test v2 before promoting\n    cases = [\n        GoldenCase(\n            input_vars={'style': 'bullet points', 'text': 'The sky is blue because of Rayleigh scattering.'},\n            required_keywords=['rayleigh', 'scatter'],\n            min_length=30,\n        ),\n    ]\n\n    def mock_llm(prompt: str) -> str:\n        return 'The sky appears blue due to Rayleigh scattering of sunlight by atmospheric particles.'\n\n    runner = PromptRegressionRunner(mock_llm)\n    result = runner.run(v2, cases)\n    print('Regression result:', result)\n\n    if result['deployable']:\n        registry.promote('summariser', '1.1.0')\n        print('Promoted to production:', registry.get('summariser', 'production').version)\n\n    # Rollback demo\n    prev = registry.rollback('summariser')\n    print('Rolled back to:', prev)\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Prompt Management Mistakes",
+      "content": "**1. Prompt strings in source code without versioning**\nChanging a prompt string inline has no audit trail, no rollback, and no way to correlate quality changes with prompt changes. Always use a registry.\n\n**2. Running A/B tests without statistical significance**\nDeclaring a winner after 10 samples is noise. Require n≥30 per bucket and |z| > 1.96 before drawing conclusions.\n\n**3. Not testing prompts against adversarial inputs**\nGolden cases with clean inputs pass, but production users send misspellings, code, other languages. Include adversarial cases in the regression suite.\n\n**4. Ignoring variable validation**\nMissing or extra variables in `template.format(**kwargs)` raise `KeyError` or silently inject unexpected text. Validate at registry registration time.\n\n**5. Treating prompt version as independent from model version**\nA prompt optimised for GPT-4 may regress on GPT-4o or Claude. Store model name alongside prompt version; test the combination.\n\n**6. Big-bang prompt rollouts**\nDeploying a new prompt to 100% of users immediately has no safety net. Use staged rollout: 5% → 20% → 50% → 100% with automated metric gates."
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Prompt CI Pipeline",
+      "content": "**Task:** Implement a prompt CI pipeline that runs on every prompt change.\n\n**Requirements:**\n1. `PromptRegistry` backed by a JSON file (load on start, save on register/promote)\n2. `RegressionRunner` with at least 5 golden cases per prompt\n3. CLI command: `python prompt_ci.py test --name summariser --version 1.2.0` — exits with code 1 if regression_rate > 5%\n4. CLI command: `python prompt_ci.py promote --name summariser --version 1.2.0` — only runs after test passes\n5. CLI command: `python prompt_ci.py rollback --name summariser` — restores previous production version\n\n**Bonus:** Add a `diff` command that shows template differences between two versions using `difflib.unified_diff`."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Prompt Engineering at Scale",
+      "content": "**Conceptual:**\nQ: Why should prompts be versioned separately from application code?\nA: Prompt changes affect model behaviour independently of code changes. A code deployment may be stable while a prompt change degrades output quality. Separate versioning enables targeted rollback, attribution of quality regressions, and independent A/B testing.\n\n**Code-based:**\nQ: You change a prompt template and want to ensure it doesn't regress. What does your test pipeline look like?\nA: (1) Add new version to registry. (2) Render template with each golden case's variables. (3) Call LLM (or mock). (4) Check required keywords present, forbidden absent, min length met. (5) Gate promotion if failure rate > 5%. (6) Run in CI before merging.\n\n**Senior scenario:**\nQ: Your team deploys a new prompt that improves average quality score but your P99 latency jumps from 2 s to 12 s. What happened and how do you fix it?\nA: The new prompt likely added verbose instructions that significantly increased output token count, inflating generation time for long-tail requests. Fix: (1) Add `max_tokens` cap in the prompt config. (2) Add length distribution to regression suite. (3) Roll back to previous version while investigating. (4) Rewrite prompt to be more concise while preserving quality.\n\n**Wrong answer to avoid:**\nQ: How do you decide when an A/B test winner is statistically significant?\nBad: 'When treatment looks better than control in the dashboard' — visual inspection ignores sample size. Correct: require |z| > 1.96 (p < 0.05) and n ≥ 30 per bucket."
+    },
+    {
+      "type": "mcq",
+      "title": "Prompt Engineering at Scale Quiz",
+      "questions": [
+        {
+          "q": "Which versioning component should be bumped when a prompt change breaks the expected output structure?",
+          "options": ["Patch (x.y.Z)", "Minor (x.Y.z)", "Major (X.y.z)", "Pre-release tag"],
+          "answer": 2,
+          "explanation": "Structural breaking changes increment the major version, signalling downstream consumers that parsing/processing logic may need updating."
+        },
+        {
+          "q": "A deterministic A/B bucket assignment uses `hash(user_id + experiment_id) % 100`. Why include `experiment_id` in the hash?",
+          "options": [
+            "To ensure different users get different buckets",
+            "To ensure the same user gets different buckets across different experiments",
+            "To improve hash distribution quality",
+            "To encrypt user identity"
+          ],
+          "answer": 1,
+          "explanation": "Without the experiment_id, a user always lands in the same numeric bucket across all experiments, creating correlation between experiment assignments."
+        },
+        {
+          "q": "Your prompt regression suite has 100 golden cases. After a prompt change, 6 fail. Should you deploy?",
+          "options": [
+            "Yes, 94% pass rate is excellent",
+            "No, failure rate is 6% which exceeds the 5% gate",
+            "Yes, if the 6 failures are for edge cases",
+            "Only if the failures are on low-traffic inputs"
+          ],
+          "answer": 1,
+          "explanation": "A 6% regression rate exceeds the 5% deployment gate. Fix the prompt to pass all or reduce failures below threshold before promoting."
+        },
+        {
+          "q": "When running a prompt A/B test, what is the minimum recommended sample size per bucket before declaring a winner?",
+          "options": ["5", "15", "30", "500"],
+          "answer": 2,
+          "explanation": "n≥30 per bucket is the minimum for the central limit theorem to apply, enabling valid z-test or t-test significance calculations."
+        },
+        {
+          "q": "A prompt optimised for GPT-4 is deployed to Claude 3 Opus without retesting. What risk does this introduce?",
+          "options": [
+            "Higher API costs",
+            "Silent quality regression because prompt phrasing may not transfer across model families",
+            "Slower response time",
+            "Incompatible JSON output format"
+          ],
+          "answer": 1,
+          "explanation": "Different model families respond differently to the same phrasing, few-shot examples, and instruction styles. Always re-validate prompts when switching models."
+        }
+      ]
+    }
+  ]
+}

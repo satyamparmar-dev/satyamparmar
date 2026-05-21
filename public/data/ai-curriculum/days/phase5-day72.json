@@ -1,0 +1,113 @@
+{
+  "day": 72,
+  "phase": 5,
+  "title": "Data Flywheel & Continuous Improvement",
+  "description": "Build self-improving LLM systems through structured feedback collection, dataset curation pipelines, retraining triggers, and human-in-the-loop annotation workflows.",
+  "type": "lesson",
+  "estimatedHours": 4,
+  "difficulty": "advanced",
+  "level": "senior",
+  "track": "ai-engineering",
+  "tags": ["data-flywheel", "rlhf", "feedback", "annotation", "fine-tuning", "continuous-learning"],
+  "prerequisites": ["phase5-day71"],
+  "learningObjectives": [
+    "Design implicit and explicit feedback collection pipelines",
+    "Build dataset curation with deduplication and quality filtering",
+    "Implement retraining triggers based on quality drift metrics",
+    "Structure human annotation workflows for preference labelling",
+    "Track flywheel metrics: data volume growth, model improvement rate"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why the Data Flywheel Determines Long-Term Competitiveness",
+      "content": "The best foundation model is a commodity advantage that erodes as competitors access the same APIs. The lasting moat is proprietary interaction data: user corrections, thumbs-up/down signals, and edited outputs that capture domain-specific preferences. GPT-3 → ChatGPT's success was not just RLHF — it was the scale of human preference data collected from millions of interactions. Teams that build systematic feedback loops compound quality improvements while competitors restart from scratch each iteration."
+    },
+    {
+      "type": "theory",
+      "title": "Feedback Collection, Curation & Retraining Pipeline",
+      "content": "**1. Feedback Signal Types**\n- Explicit: thumbs up/down, star ratings, 'regenerate' clicks, user edits to output\n- Implicit: copy-to-clipboard (positive), session abandonment (negative), follow-up 'that's wrong' (negative), downstream task completion (positive)\n- Preference pairs: (prompt, chosen_response, rejected_response) — the RLHF format\n\n**2. Data Collection Infrastructure**\n- Event schema: `{event_id, user_id, session_id, prompt, response, feedback_type, feedback_value, timestamp}`\n- Append-only log (Kafka / S3 + Parquet)\n- Privacy: anonymise/hash user_id before storing in training data\n\n**3. Dataset Curation Pipeline**\n- **Deduplication**: exact hash + MinHash LSH for near-duplicate removal (duplicates bias training)\n- **Quality Filtering**: remove feedback where response length < 20 tokens, remove conflicting labels (same prompt, different labels from same user session)\n- **Balanced Sampling**: ensure positive/negative ratio; oversample rare categories\n- **Validation Split**: 80/10/10 train/val/test; stratify by feedback type\n\n**4. Retraining Triggers**\n- Quality drift: QualityDriftDetector (Day 66) alerts → trigger eval run → if still below threshold → queue fine-tuning job\n- Data volume: retrain when N new preference pairs accumulated (e.g., N=10,000)\n- Scheduled: weekly fine-tuning run on accumulated data regardless of drift\n- Manual: safety incident or domain expansion triggers immediate retraining\n\n**5. RLHF / DPO Overview**\n- RLHF: Train reward model on preference pairs → PPO optimise generation policy\n- DPO (Direct Preference Optimisation): Skip reward model; directly optimise policy using Bradley-Terry model on preference pairs — simpler, often better\n- SFT first: always fine-tune on positive examples before preference optimisation\n\n**6. Flywheel Metrics**\n- New feedback events/day (volume growth)\n- Dataset quality score (mean preference agreement rate)\n- Model improvement rate (eval score delta per training run)\n- Time-to-improvement (days from incident to fixed model deployed)"
+    },
+    {
+      "type": "code",
+      "title": "Feedback Collector, Curator & Trigger",
+      "content": "```python\nimport hashlib\nimport json\nimport random\nimport time\nfrom collections import defaultdict\nfrom dataclasses import dataclass, field, asdict\nfrom enum import Enum\nfrom typing import Any\n\n\n# ── Feedback event schema ─────────────────────────────────────────────────────\nclass FeedbackType(Enum):\n    THUMBS_UP = 'thumbs_up'\n    THUMBS_DOWN = 'thumbs_down'\n    EDITED = 'edited'           # user edited the output\n    COPIED = 'copied'           # implicit positive\n    REGENERATED = 'regenerated' # implicit negative\n    PREFERENCE = 'preference'   # chosen vs rejected pair\n\n\n@dataclass\nclass FeedbackEvent:\n    event_id: str\n    session_id: str\n    prompt: str\n    response: str\n    feedback_type: FeedbackType\n    feedback_value: Any = None  # rating, edited_text, chosen/rejected label\n    model_version: str = 'v1'\n    timestamp: float = field(default_factory=time.time)\n\n    def _anon_session_id(self) -> str:\n        return hashlib.sha256(self.session_id.encode()).hexdigest()[:12]\n\n    def to_training_record(self) -> dict | None:\n        \"\"\"Convert to training-ready format. Returns None if not suitable.\"\"\"\n        anon_id = self._anon_session_id()\n        base = {'session': anon_id, 'prompt': self.prompt, 'response': self.response,\n                'model_version': self.model_version}\n        if self.feedback_type in (FeedbackType.THUMBS_UP, FeedbackType.COPIED):\n            return {**base, 'label': 'positive'}\n        if self.feedback_type in (FeedbackType.THUMBS_DOWN, FeedbackType.REGENERATED):\n            return {**base, 'label': 'negative'}\n        if self.feedback_type == FeedbackType.EDITED and self.feedback_value:\n            return {**base, 'label': 'edited', 'corrected_response': self.feedback_value}\n        if self.feedback_type == FeedbackType.PREFERENCE and self.feedback_value:\n            return {**base, 'chosen': self.feedback_value.get('chosen', ''),\n                    'rejected': self.feedback_value.get('rejected', '')}\n        return None\n\n\n# ── In-memory feedback store (use Kafka/S3 in production) ─────────────────────\nclass FeedbackStore:\n    def __init__(self):\n        self._events: list[FeedbackEvent] = []\n        self._seen_hashes: set[str] = set()\n\n    def record(self, event: FeedbackEvent) -> bool:\n        \"\"\"Returns False if duplicate event (same prompt+response+type).\"\"\"\n        key = hashlib.md5(f'{event.prompt}{event.response}{event.feedback_type}'.encode()).hexdigest()\n        if key in self._seen_hashes:\n            return False\n        self._seen_hashes.add(key)\n        self._events.append(event)\n        return True\n\n    def get_since(self, since_ts: float) -> list[FeedbackEvent]:\n        return [e for e in self._events if e.timestamp >= since_ts]\n\n    def count(self) -> int:\n        return len(self._events)\n\n\n# ── Dataset curator ───────────────────────────────────────────────────────────\nclass DatasetCurator:\n    \"\"\"\n    Transforms raw feedback events into a clean training dataset.\n    Applies: deduplication, quality filtering, balanced sampling.\n    \"\"\"\n\n    MIN_RESPONSE_TOKENS = 20  # approx word count\n    MAX_IMBALANCE_RATIO = 3.0  # max positive:negative ratio\n\n    def curate(self, events: list[FeedbackEvent]) -> dict:\n        records = []\n        for e in events:\n            rec = e.to_training_record()\n            if rec:\n                records.append(rec)\n\n        # Step 1: Deduplicate by prompt+response hash\n        seen = set()\n        deduped = []\n        for r in records:\n            h = hashlib.md5(f'{r[\"prompt\"]}{r[\"response\"]}'.encode()).hexdigest()\n            if h not in seen:\n                seen.add(h)\n                deduped.append(r)\n\n        # Step 2: Quality filter — minimum response length\n        quality = [r for r in deduped if len(r.get('response', '').split()) >= self.MIN_RESPONSE_TOKENS]\n\n        # Step 3: Balance positive/negative\n        positives = [r for r in quality if r.get('label') == 'positive']\n        negatives = [r for r in quality if r.get('label') == 'negative']\n        others = [r for r in quality if r.get('label') not in ('positive', 'negative')]\n\n        if positives and negatives:\n            ratio = len(positives) / max(len(negatives), 1)\n            if ratio > self.MAX_IMBALANCE_RATIO:\n                # Undersample positives\n                target = int(len(negatives) * self.MAX_IMBALANCE_RATIO)\n                positives = random.sample(positives, min(target, len(positives)))\n            elif (1 / ratio) > self.MAX_IMBALANCE_RATIO:\n                target = int(len(positives) * self.MAX_IMBALANCE_RATIO)\n                negatives = random.sample(negatives, min(target, len(negatives)))\n\n        balanced = positives + negatives + others\n        random.shuffle(balanced)\n\n        # Step 4: Train/val/test split\n        n = len(balanced)\n        train_end = int(n * 0.8)\n        val_end = int(n * 0.9)\n        splits = {\n            'train': balanced[:train_end],\n            'val': balanced[train_end:val_end],\n            'test': balanced[val_end:],\n        }\n\n        return {\n            'total_raw': len(events),\n            'after_dedup': len(deduped),\n            'after_quality': len(quality),\n            'after_balance': n,\n            'splits': {k: len(v) for k, v in splits.items()},\n            'dataset': splits,\n        }\n\n\n# ── Retraining trigger ────────────────────────────────────────────────────────\n@dataclass\nclass RetrainingTrigger:\n    volume_threshold: int = 10_000     # retrain after N new events\n    quality_drift_threshold: float = 0.05  # retrain if eval drops > 5%\n    schedule_interval_days: float = 7  # weekly scheduled retrain\n    last_retrain_ts: float = field(default_factory=time.time)\n    last_eval_score: float = 0.8\n    events_since_last: int = 0\n\n    def should_retrain(self, current_eval_score: float, new_events: int) -> tuple[bool, str]:\n        self.events_since_last += new_events\n        reasons = []\n\n        # Volume trigger\n        if self.events_since_last >= self.volume_threshold:\n            reasons.append(f'volume_threshold_reached ({self.events_since_last} events)')\n\n        # Quality drift trigger\n        drift = self.last_eval_score - current_eval_score\n        if drift > self.quality_drift_threshold:\n            reasons.append(f'quality_drift ({drift:.3f} > {self.quality_drift_threshold})')\n\n        # Schedule trigger\n        days_since = (time.time() - self.last_retrain_ts) / 86400\n        if days_since >= self.schedule_interval_days:\n            reasons.append(f'scheduled ({days_since:.1f} days since last retrain)')\n\n        should = bool(reasons)\n        return should, '; '.join(reasons) if reasons else 'no trigger'\n\n    def mark_retrained(self, new_eval_score: float) -> None:\n        self.last_retrain_ts = time.time()\n        self.last_eval_score = new_eval_score\n        self.events_since_last = 0\n\n\n# ── Flywheel metrics tracker ──────────────────────────────────────────────────\nclass FlywheelMetrics:\n    def __init__(self):\n        self._daily_counts: dict[str, int] = defaultdict(int)  # date → count\n        self._eval_history: list[tuple[float, float]] = []  # (timestamp, score)\n\n    def record_feedback(self, n: int = 1) -> None:\n        today = time.strftime('%Y-%m-%d')\n        self._daily_counts[today] += n\n\n    def record_eval(self, score: float) -> None:\n        self._eval_history.append((time.time(), score))\n\n    def growth_rate(self, days: int = 7) -> float:\n        \"\"\"Average new feedback events per day over last N days.\"\"\"\n        total = sum(list(self._daily_counts.values())[-days:])\n        return total / days\n\n    def improvement_rate(self) -> float:\n        \"\"\"Eval score delta between last two training runs.\"\"\"\n        if len(self._eval_history) < 2:\n            return 0.0\n        return self._eval_history[-1][1] - self._eval_history[-2][1]\n\n    def report(self) -> dict:\n        return {\n            'total_feedback_events': sum(self._daily_counts.values()),\n            'daily_growth_rate': round(self.growth_rate(), 1),\n            'model_improvement_rate': round(self.improvement_rate(), 4),\n            'eval_runs': len(self._eval_history),\n        }\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    random.seed(42)\n    store = FeedbackStore()\n    curator = DatasetCurator()\n    trigger = RetrainingTrigger(volume_threshold=5, schedule_interval_days=30)\n    metrics = FlywheelMetrics()\n\n    # Simulate feedback collection\n    for i in range(20):\n        event = FeedbackEvent(\n            event_id=f'evt_{i}',\n            session_id=f'sess_{i % 5}',\n            prompt=f'Question {i}: explain topic {i % 3}',\n            response=f'Answer {i}: ' + 'This is a detailed response about the topic. ' * 5,\n            feedback_type=random.choice(list(FeedbackType)[:4]),\n        )\n        if store.record(event):\n            metrics.record_feedback()\n\n    # Curate dataset\n    all_events = store.get_since(0)\n    curation_report = curator.curate(all_events)\n    print('Curation report:')\n    for k, v in curation_report.items():\n        if k != 'dataset':\n            print(f'  {k}: {v}')\n\n    # Check retraining trigger\n    metrics.record_eval(0.82)\n    should, reason = trigger.should_retrain(current_eval_score=0.75, new_events=5)\n    print(f'\\nShould retrain: {should} — {reason}')\n\n    if should:\n        trigger.mark_retrained(new_eval_score=0.84)\n        metrics.record_eval(0.84)\n\n    print('Flywheel metrics:', metrics.report())\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Data Flywheel Mistakes",
+      "content": "**1. Not anonymising feedback data before training**\nUser session IDs and prompt content may contain PII. Hash session IDs and apply PII redaction before storing training records. GDPR's right-to-erasure requires deletion capability.\n\n**2. Training on unfiltered thumbs-down signals**\nA thumbs-down may mean 'I disagree with the correct answer' not 'the answer is wrong'. Use negative feedback as a signal to collect annotation, not as a direct training label.\n\n**3. Dataset imbalance causing mode collapse**\nIf 95% of feedback is positive (users only rate responses they like), the fine-tuned model learns to produce verbose, overly agreeable text. Balance positive/negative samples before training.\n\n**4. Retraining too frequently on noisy data**\nRetraining weekly on 500 new events causes oscillation. Wait for statistical significance — typically 5,000-10,000 new preference pairs — before fine-tuning.\n\n**5. No holdout test set across runs**\nIf test data comes from the same time window as training data, it reflects the same distribution drift. Keep a fixed out-of-time test set to compare all model versions.\n\n**6. Ignoring the annotation agreement rate**\nIf two annotators agree on a preference only 60% of the time (kappa < 0.4), the labels are too noisy for training. Improve annotation guidelines or use majority voting with 3+ annotators."
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Feedback-Driven Fine-Tuning Pipeline",
+      "content": "**Task:** Create an end-to-end feedback collection and curation system.\n\n**Requirements:**\n1. `FeedbackStore` backed by JSONL file (append-only, load on start)\n2. `DatasetCurator` with configurable min_response_words and max_imbalance_ratio\n3. CLI: `python flywheel.py collect --prompt '...' --response '...' --type thumbs_up`\n4. CLI: `python flywheel.py curate --output dataset.jsonl` — writes curated dataset\n5. CLI: `python flywheel.py stats` — prints FlywheelMetrics report\n6. Simulate retraining trigger: run `stats` and print whether retraining should be triggered\n\n**Bonus:** Add preference pair collection: `--type preference --chosen 'A...' --rejected 'B...'` and export in OpenAI fine-tuning JSONL format."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Data Flywheel",
+      "content": "**Conceptual:**\nQ: What is the difference between RLHF and DPO for fine-tuning on human preferences?\nA: RLHF trains a separate reward model on preference pairs, then uses PPO to optimise the generation policy — complex, unstable. DPO directly optimises the policy using a closed-form loss derived from the Bradley-Terry preference model, eliminating the reward model — simpler, more stable, often comparable quality.\n\n**Code-based:**\nQ: Your dataset has 8,000 positive and 400 negative feedback events. What should you do before training?\nA: Undersample positives to ~1,200 (3× negatives, MAX_IMBALANCE_RATIO=3.0), or oversample negatives via augmentation. Training on 8,000:400 causes the model to strongly bias toward verbose, agreeable responses.\n\n**Senior scenario:**\nQ: After a new model deployment, user satisfaction scores (explicit 5-star ratings) drop from 4.2 to 3.8 over 2 weeks but your internal eval benchmark stays at 0.85. What's happening and what do you do?\nA: Distribution drift — the new model handles a different query distribution than the benchmark tests. Steps: (1) Analyse which user segments see the drop (topic, language, use case). (2) Sample low-rated interactions and annotate them. (3) Add these to the eval benchmark. (4) Trigger fine-tuning on the newly annotated data. (5) This mismatch signals the benchmark is stale — refresh it with recent production queries.\n\n**Wrong answer to avoid:**\nQ: Why is it bad to use raw thumbs-down feedback directly as a training 'negative' label?\nBad: 'Thumbs down means the answer is wrong' — too simplistic. Correct: users thumbs-down for many reasons: disagrees with the correct answer, formatting issues, too long, irrelevant to their actual intent. Raw thumbs-down are noisy; they should trigger human review or preference pair annotation, not direct negative label assignment."
+    },
+    {
+      "type": "mcq",
+      "title": "Data Flywheel Quiz",
+      "questions": [
+        {
+          "q": "A user copies the LLM output to clipboard. This is classified as which type of feedback signal?",
+          "options": [
+            "Explicit positive (the user actively rated it)",
+            "Implicit positive (behavioural signal suggesting satisfaction)",
+            "Neutral signal with no training value",
+            "Explicit negative"
+          ],
+          "answer": 1,
+          "explanation": "Copy-to-clipboard is an implicit positive signal — the user valued the output enough to use it. It's less reliable than an explicit rating but valuable at scale."
+        },
+        {
+          "q": "Your feedback dataset has 90% positive and 10% negative labels. Without balancing, fine-tuning will most likely produce a model that:",
+          "options": [
+            "Refuses more requests",
+            "Becomes verbose and overly agreeable, biased toward positive-style outputs",
+            "Improves quality across all tasks",
+            "Reduces hallucination rate"
+          ],
+          "answer": 1,
+          "explanation": "Severe class imbalance causes the model to learn the dominant class distribution — in this case, always producing verbose, agreeable positive-style responses."
+        },
+        {
+          "q": "DPO (Direct Preference Optimisation) differs from RLHF by:",
+          "options": [
+            "Using a larger base model",
+            "Eliminating the need for a separate reward model by directly optimising the policy on preference pairs",
+            "Using reinforcement learning with human-generated rewards",
+            "Training only on positive examples"
+          ],
+          "answer": 1,
+          "explanation": "DPO derives a loss function directly from preference pairs using the Bradley-Terry model, skipping the reward model training and PPO steps required by classic RLHF."
+        },
+        {
+          "q": "Why is a fixed out-of-time holdout test set important for the data flywheel?",
+          "options": [
+            "It reduces training compute costs",
+            "It prevents data leakage from training into evaluation",
+            "It ensures all model versions are compared on the same distribution, enabling valid comparison across training runs",
+            "It satisfies GDPR requirements"
+          ],
+          "answer": 2,
+          "explanation": "A fixed test set ensures each new model version is evaluated on the same queries. If test data overlaps with training data time windows, improvements may just reflect distribution memorisation."
+        },
+        {
+          "q": "Inter-annotator agreement (Cohen's kappa) of 0.35 on preference pairs indicates:",
+          "options": [
+            "Strong agreement — proceed with training",
+            "Moderate agreement — acceptable for training",
+            "Poor agreement — labels are too noisy; improve guidelines before using for training",
+            "Perfect agreement — remove duplicate annotations"
+          ],
+          "answer": 2,
+          "explanation": "Kappa < 0.4 indicates poor agreement. Labels this noisy introduce training signal that is mostly noise, degrading fine-tune quality. Improve annotation guidelines or use 3+ annotators with majority vote."
+        }
+      ]
+    }
+  ]
+}

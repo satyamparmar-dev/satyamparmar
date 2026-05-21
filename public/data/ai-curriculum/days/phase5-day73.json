@@ -1,0 +1,113 @@
+{
+  "day": 73,
+  "phase": 5,
+  "title": "Multi-Model Strategies",
+  "description": "Design production systems that combine multiple LLMs through intelligent routing, fallback chains, ensemble voting, and specialised model selection to optimise cost, quality, and reliability.",
+  "type": "lesson",
+  "estimatedHours": 4,
+  "difficulty": "advanced",
+  "level": "senior",
+  "track": "ai-engineering",
+  "tags": ["multi-model", "routing", "fallback", "ensemble", "model-selection", "reliability"],
+  "prerequisites": ["phase5-day67", "phase5-day68"],
+  "learningObjectives": [
+    "Build an intelligent model router that selects models by task complexity and cost",
+    "Implement fallback chains with exponential backoff and circuit breakers",
+    "Design ensemble voting for high-stakes outputs",
+    "Apply specialised model routing for domain-specific tasks",
+    "Measure multi-model system reliability: availability, cost-per-request, quality"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Single-Model Systems Hit a Quality-Cost Ceiling",
+      "content": "Using GPT-4o for every request wastes money on simple tasks. Using GPT-4o-mini for complex reasoning degrades quality. A multi-model strategy unlocks a Pareto frontier: route 80% of cheap-to-handle requests to small models (10× cheaper), reserve powerful models for complex tasks, and use specialised models for domain work (code, vision, embeddings). Fallback chains eliminate single-provider outages as a reliability risk. Ensemble voting reduces error rate for high-stakes decisions by taking majority across models."
+    },
+    {
+      "type": "theory",
+      "title": "Multi-Model Architecture Patterns",
+      "content": "**1. Complexity-Based Router**\nScore request complexity on signals: prompt length, technical keywords, JSON schema requirement, multi-step instructions. Route low-complexity to small model, high-complexity to large.\n\n**2. Fallback Chain**\nPrimary → Secondary → Tertiary on failure (timeout, rate limit, error). Each fallback logs a reason. Circuit breaker opens after N consecutive failures — prevents thundering herd on recovering provider.\n\n**3. Latency-Based Routing**\nHedged request: send to two models simultaneously, use whichever responds first, cancel the other. Reduces P99 latency at cost of ~2× tokens.\n\n**4. Ensemble / Voting**\nFor classification or structured extraction, run K models and take majority vote. For generation, use LLM-as-judge to pick the best response from K candidates.\n\n**5. Specialised Model Registry**\n- Code generation: DeepSeek Coder, StarCoder, or fine-tuned GPT-4o\n- Embeddings: text-embedding-3-large, Cohere embed-v3\n- Vision: GPT-4o Vision, Claude 3.5 Sonnet with vision\n- Long context: Gemini 1.5 Pro (1M tokens), Claude 3.5 Sonnet (200k)\n- Low latency: gpt-4o-mini, Claude Haiku\n\n**6. Cost Accounting**\nTrack per-request cost by model; compute blended cost across routed traffic. Target: cost reduction vs always-large without measurable quality drop on shared benchmark.\n\n**7. Quality Monitoring**\nSample 5% of routed requests for LLM-as-judge evaluation. If small-model quality drops below threshold, increase routing threshold toward large models."
+    },
+    {
+      "type": "code",
+      "title": "Router, Fallback Chain & Ensemble",
+      "content": "```python\nimport asyncio\nimport random\nimport time\nfrom dataclasses import dataclass, field\nfrom enum import Enum\nfrom typing import Callable, Any\n\n\n# ── Model registry ────────────────────────────────────────────────────────────\n@dataclass\nclass ModelSpec:\n    model_id: str\n    cost_per_1k_input: float   # USD\n    cost_per_1k_output: float\n    max_tokens: int\n    p50_latency_ms: int\n    capabilities: set[str]     # e.g. {'chat', 'code', 'vision', 'long_context'}\n\n\nMODEL_REGISTRY = {\n    'gpt-4o-mini': ModelSpec('gpt-4o-mini', 0.00015, 0.0006, 128_000, 400, {'chat', 'code'}),\n    'gpt-4o':      ModelSpec('gpt-4o',      0.0025,  0.010,  128_000, 1200, {'chat', 'code', 'vision', 'reasoning'}),\n    'claude-haiku':ModelSpec('claude-haiku',0.00025, 0.00125,200_000, 350, {'chat', 'code', 'long_context'}),\n    'claude-sonnet':ModelSpec('claude-sonnet',0.003, 0.015,  200_000, 1000, {'chat', 'code', 'vision', 'reasoning', 'long_context'}),\n}\n\n\n# ── Complexity scorer ─────────────────────────────────────────────────────────\nCOMPLEX_KEYWORDS = {'analyse', 'reason', 'step by step', 'proof', 'optimise', 'architect', 'compare'}\nSIMPLE_KEYWORDS = {'summarise', 'translate', 'rewrite', 'list', 'define', 'what is'}\n\ndef score_complexity(prompt: str) -> float:\n    \"\"\"Returns 0.0 (simple) → 1.0 (complex).\"\"\"\n    lower = prompt.lower()\n    score = 0.5\n    score += 0.1 * sum(1 for kw in COMPLEX_KEYWORDS if kw in lower)\n    score -= 0.1 * sum(1 for kw in SIMPLE_KEYWORDS if kw in lower)\n    if len(prompt) > 2000:\n        score += 0.2\n    if '```' in prompt or 'code' in lower:\n        score += 0.1\n    return max(0.0, min(1.0, score))\n\n\n# ── Complexity-based router ───────────────────────────────────────────────────\nclass ComplexityRouter:\n    \"\"\"\n    Routes to cheap model if complexity < threshold, else expensive model.\n    Respects capability requirements.\n    \"\"\"\n\n    def __init__(self, cheap: str = 'gpt-4o-mini', expensive: str = 'gpt-4o',\n                 threshold: float = 0.65):\n        self._cheap = cheap\n        self._expensive = expensive\n        self._threshold = threshold\n        self._routing_log: list[dict] = []\n\n    def route(self, prompt: str, required_caps: set[str] | None = None) -> str:\n        complexity = score_complexity(prompt)\n        required_caps = required_caps or set()\n\n        # If cheap model lacks required capabilities, force expensive\n        cheap_spec = MODEL_REGISTRY[self._cheap]\n        if required_caps and not required_caps.issubset(cheap_spec.capabilities):\n            chosen = self._expensive\n            reason = 'capability_mismatch'\n        elif complexity >= self._threshold:\n            chosen = self._expensive\n            reason = f'complexity={complexity:.2f}'\n        else:\n            chosen = self._cheap\n            reason = f'complexity={complexity:.2f}'\n\n        self._routing_log.append({'model': chosen, 'complexity': complexity, 'reason': reason})\n        return chosen\n\n    def cost_report(self) -> dict:\n        if not self._routing_log:\n            return {}\n        cheap_count = sum(1 for r in self._routing_log if r['model'] == self._cheap)\n        expensive_count = len(self._routing_log) - cheap_count\n        # Estimate blended cost vs always-expensive (assume avg 500 input, 200 output tokens)\n        cheap_cost = cheap_count * (500 * MODEL_REGISTRY[self._cheap].cost_per_1k_input / 1000 +\n                                    200 * MODEL_REGISTRY[self._cheap].cost_per_1k_output / 1000)\n        exp_cost = expensive_count * (500 * MODEL_REGISTRY[self._expensive].cost_per_1k_input / 1000 +\n                                      200 * MODEL_REGISTRY[self._expensive].cost_per_1k_output / 1000)\n        always_exp = len(self._routing_log) * (500 * MODEL_REGISTRY[self._expensive].cost_per_1k_input / 1000 +\n                                               200 * MODEL_REGISTRY[self._expensive].cost_per_1k_output / 1000)\n        blended = cheap_cost + exp_cost\n        return {\n            'total_requests': len(self._routing_log),\n            'cheap_routed': cheap_count,\n            'expensive_routed': expensive_count,\n            'blended_cost_usd': round(blended, 6),\n            'always_expensive_cost_usd': round(always_exp, 6),\n            'savings_pct': round((1 - blended / always_exp) * 100, 1) if always_exp else 0,\n        }\n\n\n# ── Fallback chain ────────────────────────────────────────────────────────────\nclass CircuitBreaker:\n    def __init__(self, failure_threshold: int = 5, recovery_s: float = 60):\n        self._failures = 0\n        self._threshold = failure_threshold\n        self._open_until: float = 0\n\n    @property\n    def is_open(self) -> bool:\n        if self._open_until > time.time():\n            return True\n        self._failures = 0  # reset after recovery window\n        return False\n\n    def record_failure(self) -> None:\n        self._failures += 1\n        if self._failures >= self._threshold:\n            self._open_until = time.time() + 60\n\n    def record_success(self) -> None:\n        self._failures = 0\n\n\nclass FallbackChain:\n    \"\"\"\n    Tries models in order; moves to next on error or circuit-breaker open.\n    Uses exponential backoff on transient errors.\n    \"\"\"\n\n    def __init__(self, models: list[str], llm_fn: Callable[[str, str], str]):\n        self._models = models\n        self._llm = llm_fn\n        self._breakers = {m: CircuitBreaker() for m in models}\n\n    async def call(self, prompt: str, max_retries: int = 2) -> tuple[str, str]:\n        \"\"\"Returns (response, model_used).\"\"\"\n        for model in self._models:\n            if self._breakers[model].is_open:\n                continue\n            for attempt in range(max_retries):\n                try:\n                    result = self._llm(model, prompt)\n                    self._breakers[model].record_success()\n                    return result, model\n                except Exception as e:\n                    wait = 2 ** attempt\n                    await asyncio.sleep(wait)\n                    if attempt == max_retries - 1:\n                        self._breakers[model].record_failure()\n        raise RuntimeError('All models in fallback chain exhausted')\n\n\n# ── Ensemble voter ────────────────────────────────────────────────────────────\nclass EnsembleVoter:\n    \"\"\"\n    For classification tasks: runs K models, returns majority-voted answer.\n    For generation: uses judge_fn to pick best response from K candidates.\n    \"\"\"\n\n    def __init__(self, llm_fn: Callable[[str, str], str], models: list[str]):\n        self._llm = llm_fn\n        self._models = models\n\n    def classify(self, prompt: str) -> tuple[str, float]:\n        \"\"\"Returns (majority_answer, confidence).\"\"\"\n        from collections import Counter\n        responses = []\n        for model in self._models:\n            try:\n                resp = self._llm(model, prompt)\n                responses.append(resp.strip().lower())\n            except Exception:\n                pass\n        if not responses:\n            raise RuntimeError('All models failed')\n        counts = Counter(responses)\n        winner, count = counts.most_common(1)[0]\n        return winner, count / len(responses)\n\n    def generate_best(self, prompt: str,\n                      judge_fn: Callable[[str, list[str]], int] | None = None) -> str:\n        \"\"\"Generate from all models, use judge to pick best. Default: pick longest.\"\"\"\n        responses = []\n        for model in self._models:\n            try:\n                resp = self._llm(model, prompt)\n                responses.append(resp)\n            except Exception:\n                pass\n        if not responses:\n            raise RuntimeError('All models failed')\n        if judge_fn:\n            best_idx = judge_fn(prompt, responses)\n            return responses[best_idx]\n        # Default: pick longest (crude quality proxy)\n        return max(responses, key=len)\n\n\n# ── Hedged request (race two models) ─────────────────────────────────────────\nasync def hedged_request(\n    prompt: str,\n    primary: str,\n    secondary: str,\n    async_llm_fn: Callable[[str, str], Any],\n    hedge_delay_ms: float = 200,\n) -> tuple[str, str]:\n    \"\"\"\n    Start primary. If no response after hedge_delay_ms, also start secondary.\n    Return whichever finishes first.\n    \"\"\"\n    loop = asyncio.get_event_loop()\n    result_holder: list[Any] = []\n    model_holder: list[str] = []\n\n    async def run(model: str):\n        resp = await async_llm_fn(model, prompt)\n        if not result_holder:\n            result_holder.append(resp)\n            model_holder.append(model)\n\n    primary_task = loop.create_task(run(primary))\n    await asyncio.sleep(hedge_delay_ms / 1000)\n\n    if not result_holder:\n        secondary_task = loop.create_task(run(secondary))\n        done, pending = await asyncio.wait(\n            [primary_task, secondary_task], return_when=asyncio.FIRST_COMPLETED)\n        for task in pending:\n            task.cancel()\n\n    return result_holder[0], model_holder[0]\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    router = ComplexityRouter()\n\n    prompts = [\n        ('What is Python?', set()),\n        ('Architect a distributed event-driven microservices system for 10M users.', {'reasoning'}),\n        ('Summarise this paragraph: ...', set()),\n        ('Analyse the trade-offs between CAP theorem consistency models.', set()),\n        ('Define REST API.', set()),\n    ]\n\n    for prompt, caps in prompts:\n        model = router.route(prompt, caps)\n        print(f'  [{model:15}] {prompt[:60]}')\n\n    print()\n    print('Cost report:', router.cost_report())\n\n    # Ensemble classify demo (mock)\n    def mock_llm(model: str, prompt: str) -> str:\n        # Simulate slight model disagreement\n        answers = ['positive', 'positive', 'negative']\n        return random.choice(answers)\n\n    voter = EnsembleVoter(mock_llm, models=['gpt-4o-mini', 'gpt-4o', 'claude-haiku'])\n    answer, confidence = voter.classify('Is this review positive or negative: Great product!')\n    print(f'Ensemble answer: {answer}, confidence: {confidence:.2f}')\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Multi-Model Strategy Mistakes",
+      "content": "**1. Routing by cost alone without quality validation**\nRouting all simple requests to cheap models without measuring output quality creates silent degradation. Sample routed traffic and measure quality regularly.\n\n**2. Fallback chains without circuit breakers**\nOn provider outage, every request retries the failed provider, causing a thundering herd that makes recovery slower. Circuit breakers prevent this.\n\n**3. Ensemble on tasks where models are all wrong together**\nIf all models have the same systematic bias (e.g., all hallucinate the same wrong fact), majority voting reinforces the error. Ensemble helps with variance, not bias.\n\n**4. Hedged requests without cost awareness**\nHedging doubles token costs on every request. Use it selectively for latency-critical paths, not universally.\n\n**5. Not version-pinning model IDs**\nUsing 'gpt-4o-latest' in routing rules means model capabilities change under you. Pin to specific model versions in routing configs.\n\n**6. Forgetting model-specific output format differences**\nGPT-4o and Claude use different tool-call formats, different safety refusal phrasing, different whitespace conventions. Parsers must handle model-specific quirks."
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Production Multi-Model Router",
+      "content": "**Task:** Implement a multi-model API gateway with routing, fallback, and metrics.\n\n**Requirements:**\n1. `ModelRouter` that routes by complexity score AND required capabilities (from `MODEL_REGISTRY`)\n2. `FallbackChain` with three models: gpt-4o-mini → gpt-4o → claude-sonnet\n3. Circuit breaker: open after 3 consecutive failures, recover after 30 s\n4. Expose `POST /chat` that routes, calls (mocked), and falls back as needed\n5. `GET /routing/stats` returns ComplexityRouter cost_report + circuit breaker states\n6. Add sampling: 5% of requests also call the expensive model and log quality comparison\n\n**Acceptance:** Simulate 1000 requests with random complexity; cost savings should exceed 40%."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Multi-Model Strategies",
+      "content": "**Conceptual:**\nQ: When would you use a hedged request (racing two models) instead of a fallback chain?\nA: Hedging is for latency-critical paths where P99 latency is the constraint — you sacrifice cost for reliability of response time. Fallback chains are for availability — you try one model, then another on failure. Hedging doubles cost on every request; fallback only adds cost on failures.\n\n**Code-based:**\nQ: Your circuit breaker trips after 5 failures. Now the provider recovers but your system still sends all traffic to the fallback model. What's wrong?\nA: The circuit breaker recovery window is not resetting the failure counter. Fix: after the recovery window expires, reset `_failures = 0` on the first check of `is_open`. The half-open state should allow a trial request.\n\n**Senior scenario:**\nQ: Your complexity router saves 45% on costs but your support team reports a spike in customer complaints about answer quality. How do you investigate?\nA: (1) Correlate complaint timestamps with routing decisions — are complaints from cheap-model-routed requests? (2) Pull a sample of low-complexity routed requests and evaluate with LLM-as-judge. (3) Check if the complexity threshold is too low — prompts with complexity 0.60 may need the large model. (4) Adjust threshold and re-measure. (5) Add quality monitoring to the routing stats endpoint.\n\n**Wrong answer to avoid:**\nQ: Why not always use ensemble voting for all LLM tasks?\nBad: 'Ensemble always improves quality' — incorrect. Correct: ensemble reduces variance but not bias; it 3×+ the cost; for generation tasks it requires a judge which adds latency and cost; for tasks where all models are similarly good, the benefit is marginal."
+    },
+    {
+      "type": "mcq",
+      "title": "Multi-Model Strategies Quiz",
+      "questions": [
+        {
+          "q": "A circuit breaker 'opens' after 5 consecutive failures. While open, it should:",
+          "options": [
+            "Continue sending requests to the failed provider at reduced rate",
+            "Immediately stop sending requests to the provider and route to fallbacks",
+            "Send a health check every second to test recovery",
+            "Raise an exception to the caller"
+          ],
+          "answer": 1,
+          "explanation": "When open, the circuit breaker blocks all requests to the failed provider, preventing cascading failures and thundering herds. Recovery is tested after the timeout window."
+        },
+        {
+          "q": "Hedged requests reduce P99 latency by:",
+          "options": [
+            "Using a faster model for all requests",
+            "Starting a second model call after a delay if the first hasn't responded, using whichever responds first",
+            "Caching responses from previous requests",
+            "Reducing prompt length automatically"
+          ],
+          "answer": 1,
+          "explanation": "Hedging races two models and uses the faster response. The slow-tail of the primary distribution is cut off by the secondary model completing first."
+        },
+        {
+          "q": "Ensemble majority voting fails to help when:",
+          "options": [
+            "Models have different response styles",
+            "All models share the same systematic bias or factual error",
+            "The task requires a single answer",
+            "Models have different latencies"
+          ],
+          "answer": 1,
+          "explanation": "Ensemble reduces variance across independent errors. When models share the same bias (trained on the same data, same error), majority vote reinforces the wrong answer."
+        },
+        {
+          "q": "A complexity score of 0.3 triggers routing to gpt-4o-mini. But the request requires 'vision' capability, which gpt-4o-mini lacks. The router should:",
+          "options": [
+            "Return an error to the user",
+            "Still route to gpt-4o-mini and let it fail",
+            "Override the complexity decision and route to a model with vision capability",
+            "Ask the user to resend without the image"
+          ],
+          "answer": 2,
+          "explanation": "Capability requirements override complexity-based cost optimisation. Always check required capabilities first and route to a model that supports them."
+        },
+        {
+          "q": "You save 50% on cost with complexity routing but want to verify quality hasn't degraded. The most practical approach is:",
+          "options": [
+            "Run a full A/B test with all traffic",
+            "Ask users to rate every response",
+            "Sample 5% of cheap-model-routed requests, evaluate with LLM-as-judge, and compare to expensive model baseline",
+            "Check the BLEU score of responses"
+          ],
+          "answer": 2,
+          "explanation": "5% sampling is cost-efficient (small overhead), LLM-as-judge gives scalable quality scores, and comparing to the expensive model baseline provides a meaningful quality gap measurement."
+        }
+      ]
+    }
+  ]
+}

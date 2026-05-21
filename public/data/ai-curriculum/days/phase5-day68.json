@@ -1,0 +1,108 @@
+{
+  "day": 68,
+  "phase": 5,
+  "title": "Latency Optimisation for LLM Systems",
+  "description": "Reduce end-to-end latency through streaming, async batching, semantic pre-caching, model selection strategies, and connection pooling for production LLM services.",
+  "type": "lesson",
+  "estimatedHours": 4,
+  "difficulty": "advanced",
+  "level": "senior",
+  "track": "ai-engineering",
+  "tags": ["latency", "streaming", "async", "caching", "performance", "llm-ops"],
+  "prerequisites": ["phase5-day67"],
+  "learningObjectives": [
+    "Implement server-sent events streaming to reduce time-to-first-token",
+    "Build async batching to amortise network overhead across concurrent requests",
+    "Design semantic pre-caching with predictive warming",
+    "Apply speculative decoding concept for latency reduction",
+    "Measure P50/P95/P99 latency with percentile tracking"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Latency Dominates User Experience",
+      "content": "Users abandon interfaces after 3 seconds of waiting. For LLM products, perceived latency has two components: time-to-first-token (TTFT) and throughput (tokens/sec). Optimising TTFT via streaming makes apps feel instant even when total generation time is long. Async batching and caching reduce cost simultaneously. Latency optimisation is often the difference between a prototype and a shippable product."
+    },
+    {
+      "type": "theory",
+      "title": "Latency Decomposition & Reduction Strategies",
+      "content": "**End-to-end latency = network_out + queue_wait + TTFT + generation + network_in**\n\n**1. Streaming (SSE)**\nServer-Sent Events push tokens as they are generated. TTFT drops from total_generation_time to ~200-500 ms. FastAPI supports `StreamingResponse`; OpenAI SDK streams via `stream=True`.\n\n**2. Async & Concurrency**\nPython's `asyncio` enables concurrent LLM calls without threads. For CPU-bound preprocessing, use `loop.run_in_executor`. Avoid blocking the event loop with `time.sleep` or sync I/O.\n\n**3. Semantic Pre-Caching**\nPredict likely follow-up queries from conversation context and warm the cache proactively. Hit rate lift of 15-30% in conversational products.\n\n**4. Connection Pooling**\nReuse HTTP connections via `httpx.AsyncClient` with `limits=httpx.Limits(max_connections=100)`. Eliminates TLS handshake overhead on each request (~80-200 ms).\n\n**5. Model Tier Selection**\nRoute simple queries to faster small models (gpt-4o-mini: ~600 tok/s) vs complex to large models (gpt-4o: ~200 tok/s). Latency SLA-aware routing.\n\n**6. Prompt Length Reduction**\nShorter prompts = fewer input tokens processed = lower TTFT. Remove verbose instructions, compress few-shot examples.\n\n**7. Speculative Decoding (concept)**\nA small draft model generates token candidates; the large model verifies in parallel. Effective for deterministic or repetitive outputs."
+    },
+    {
+      "type": "code",
+      "title": "Streaming, Async Batching & Latency Tracker",
+      "content": "```python\nimport asyncio\nimport time\nimport statistics\nfrom collections import deque\nfrom dataclasses import dataclass, field\nfrom typing import AsyncIterator\nimport httpx\n\n# ── Latency percentile tracker ──────────────────────────────────────────────\nclass LatencyTracker:\n    \"\"\"Rolling window percentile tracker for request latencies.\"\"\"\n\n    def __init__(self, window: int = 1000):\n        self._samples: deque[float] = deque(maxlen=window)\n\n    def record(self, latency_ms: float) -> None:\n        self._samples.append(latency_ms)\n\n    def percentile(self, p: float) -> float:\n        if not self._samples:\n            return 0.0\n        sorted_s = sorted(self._samples)\n        idx = int(len(sorted_s) * p / 100)\n        return sorted_s[min(idx, len(sorted_s) - 1)]\n\n    def report(self) -> dict:\n        return {\n            'p50': round(self.percentile(50), 1),\n            'p95': round(self.percentile(95), 1),\n            'p99': round(self.percentile(99), 1),\n            'count': len(self._samples),\n        }\n\n\n# ── Async LLM client with connection pool ───────────────────────────────────\nclass AsyncLLMClient:\n    \"\"\"Reuses a single httpx.AsyncClient for all requests (connection pooling).\"\"\"\n\n    def __init__(self, api_key: str, base_url: str = 'https://api.openai.com/v1'):\n        self._client = httpx.AsyncClient(\n            base_url=base_url,\n            headers={'Authorization': f'Bearer {api_key}'},\n            limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),\n            timeout=httpx.Timeout(30.0),\n        )\n        self.tracker = LatencyTracker()\n\n    async def complete(self, messages: list[dict], model: str = 'gpt-4o-mini') -> str:\n        t0 = time.perf_counter()\n        resp = await self._client.post(\n            '/chat/completions',\n            json={'model': model, 'messages': messages},\n        )\n        resp.raise_for_status()\n        latency_ms = (time.perf_counter() - t0) * 1000\n        self.tracker.record(latency_ms)\n        return resp.json()['choices'][0]['message']['content']\n\n    async def stream(self, messages: list[dict], model: str = 'gpt-4o-mini') -> AsyncIterator[str]:\n        \"\"\"Yield tokens as they arrive (SSE streaming).\"\"\"\n        t0 = time.perf_counter()\n        first_token = True\n        async with self._client.stream(\n            'POST', '/chat/completions',\n            json={'model': model, 'messages': messages, 'stream': True},\n        ) as resp:\n            resp.raise_for_status()\n            async for line in resp.aiter_lines():\n                if not line.startswith('data: '):\n                    continue\n                payload = line[6:]\n                if payload == '[DONE]':\n                    break\n                import json\n                chunk = json.loads(payload)\n                delta = chunk['choices'][0]['delta'].get('content', '')\n                if delta:\n                    if first_token:\n                        ttft = (time.perf_counter() - t0) * 1000\n                        self.tracker.record(ttft)  # track TTFT separately\n                        first_token = False\n                    yield delta\n\n    async def close(self):\n        await self._client.aclose()\n\n\n# ── Async request batcher ────────────────────────────────────────────────────\n@dataclass\nclass _BatchItem:\n    messages: list[dict]\n    model: str\n    future: asyncio.Future = field(default_factory=asyncio.Future)\n\n\nclass AsyncBatcher:\n    \"\"\"\n    Accumulates requests for up to `max_wait_ms` ms or `max_size` items,\n    then dispatches them concurrently. Amortises network overhead.\n    \"\"\"\n\n    def __init__(self, client: AsyncLLMClient, max_size: int = 10, max_wait_ms: float = 50):\n        self._client = client\n        self._max_size = max_size\n        self._max_wait = max_wait_ms / 1000\n        self._queue: asyncio.Queue[_BatchItem] = asyncio.Queue()\n        self._task: asyncio.Task | None = None\n\n    def start(self):\n        self._task = asyncio.create_task(self._flush_loop())\n\n    async def stop(self):\n        if self._task:\n            self._task.cancel()\n\n    async def request(self, messages: list[dict], model: str = 'gpt-4o-mini') -> str:\n        item = _BatchItem(messages=messages, model=model)\n        await self._queue.put(item)\n        return await item.future\n\n    async def _flush_loop(self):\n        while True:\n            batch: list[_BatchItem] = []\n            deadline = asyncio.get_event_loop().time() + self._max_wait\n            while len(batch) < self._max_size:\n                timeout = max(0.0, deadline - asyncio.get_event_loop().time())\n                try:\n                    item = await asyncio.wait_for(self._queue.get(), timeout=timeout)\n                    batch.append(item)\n                except asyncio.TimeoutError:\n                    break\n            if batch:\n                await self._dispatch(batch)\n\n    async def _dispatch(self, batch: list[_BatchItem]):\n        tasks = [\n            asyncio.create_task(self._client.complete(item.messages, item.model))\n            for item in batch\n        ]\n        results = await asyncio.gather(*tasks, return_exceptions=True)\n        for item, result in zip(batch, results):\n            if isinstance(result, Exception):\n                item.future.set_exception(result)\n            else:\n                item.future.set_result(result)\n\n\n# ── Semantic pre-cache with predictive warming ───────────────────────────────\nclass SemanticPreCache:\n    \"\"\"\n    Warm the cache for predicted follow-up queries before the user asks them.\n    Prediction: simple heuristic — append common follow-up suffixes.\n    \"\"\"\n\n    FOLLOW_UPS = [\n        'Can you give an example?',\n        'How does this compare to alternatives?',\n        'What are the trade-offs?',\n    ]\n\n    def __init__(self, client: AsyncLLMClient):\n        self._client = client\n        self._cache: dict[str, str] = {}\n\n    def _key(self, messages: list[dict]) -> str:\n        return '|'.join(m['content'] for m in messages)\n\n    async def get_or_fetch(self, messages: list[dict], model: str = 'gpt-4o-mini') -> str:\n        key = self._key(messages)\n        if key in self._cache:\n            return self._cache[key]\n        result = await self._client.complete(messages, model)\n        self._cache[key] = result\n        # Fire-and-forget warming for follow-ups\n        asyncio.create_task(self._warm(messages, model))\n        return result\n\n    async def _warm(self, base_messages: list[dict], model: str):\n        for follow_up in self.FOLLOW_UPS:\n            warmed_messages = base_messages + [{'role': 'user', 'content': follow_up}]\n            key = self._key(warmed_messages)\n            if key not in self._cache:\n                try:\n                    result = await self._client.complete(warmed_messages, model)\n                    self._cache[key] = result\n                except Exception:\n                    pass  # warming is best-effort\n\n\n# ── Latency-aware model router ───────────────────────────────────────────────\nLATENCY_BUDGET = {\n    'real_time': 500,    # ms — chat interface\n    'interactive': 2000, # ms — async UI\n    'batch': 30000,      # ms — background job\n}\n\nMODEL_P50 = {\n    'gpt-4o-mini': 400,\n    'gpt-4o': 1200,\n}\n\ndef latency_route(prompt: str, sla: str = 'real_time') -> str:\n    budget = LATENCY_BUDGET[sla]\n    for model, p50 in MODEL_P50.items():\n        if p50 <= budget:\n            return model\n    return list(MODEL_P50.keys())[-1]  # slowest but most capable\n\n\n# ── Demo ─────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    # Simulate latency data\n    tracker = LatencyTracker()\n    import random\n    random.seed(42)\n    for _ in range(500):\n        # Simulate bimodal: fast cache hits + slow LLM calls\n        latency = random.choice([\n            random.gauss(80, 20),   # cache hit\n            random.gauss(900, 200), # LLM call\n        ])\n        tracker.record(max(10, latency))\n\n    print('Latency report:', tracker.report())\n    # Expected: p50~80-900 split, p99 will be high\n\n    # Route by SLA\n    for sla in ['real_time', 'interactive', 'batch']:\n        model = latency_route('Explain quantum computing', sla)\n        print(f'{sla}: → {model}')\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Latency Mistakes",
+      "content": "**1. Measuring mean instead of percentiles**\nMean hides tail latency. P99 for LLMs can be 5-10× P50 due to long generations. Always track P95/P99.\n\n**2. Blocking event loop**\nCalling `time.sleep()` or synchronous `requests.get()` inside an async handler freezes all concurrent requests. Use `asyncio.sleep()` and `httpx.AsyncClient`.\n\n**3. Creating a new HTTP client per request**\nEach `requests.Session()` or `httpx.AsyncClient()` creation triggers TLS handshake. Create once, reuse across requests.\n\n**4. Streaming without backpressure**\nIf the consumer is slow (e.g., writing to a DB per token), the stream buffer overflows. Add backpressure with `asyncio.Queue` between producer and consumer.\n\n**5. Pre-warming too aggressively**\nWarming every possible follow-up wastes tokens. Use frequency data or embeddings to predict high-probability next queries only.\n\n**6. Ignoring TTFT in favour of total latency**\nFor streaming UIs, TTFT is the user-perceived metric. A response that takes 5 s total but shows the first word in 200 ms feels much faster."
+    },
+    {
+      "type": "exercise",
+      "title": "Streaming Chat Server with Latency SLA",
+      "content": "**Task:** Build a FastAPI streaming chat endpoint with latency SLA enforcement.\n\n**Requirements:**\n1. `POST /chat/stream` accepts `{messages, sla}` and streams response via SSE\n2. `LatencyTracker` records TTFT per request; expose `GET /metrics` returning P50/P95/P99\n3. Route to `gpt-4o-mini` when `sla='real_time'`, `gpt-4o` otherwise\n4. If P99 > SLA budget (from `LATENCY_BUDGET`), log a warning\n5. Use a single `httpx.AsyncClient` shared across all requests (lifespan context manager)\n\n**Acceptance:** `curl -N http://localhost:8000/chat/stream -d '{...}'` streams tokens. `/metrics` returns percentiles."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Latency Optimisation",
+      "content": "**Conceptual:**\nQ: What is TTFT and why does streaming reduce perceived latency without reducing total generation time?\nA: Time-to-first-token is the delay until the user sees the first word. Streaming delivers tokens incrementally so the user can start reading at TTFT (~200-500 ms) rather than waiting for the full response. Total compute is unchanged.\n\n**Code-based:**\nQ: A teammate's LLM service creates `httpx.AsyncClient()` on every request. What is the latency impact and how do you fix it?\nA: Each creation opens a new TCP/TLS connection (~80-200 ms overhead per request). Fix: create one client at startup (e.g., lifespan event), share it globally, and close it on shutdown.\n\n**Senior scenario:**\nQ: Your chat API P50 is fine (400 ms) but P99 is 8 seconds. Users complain about occasional freezes. How do you diagnose and fix?\nA: P99 spikes indicate tail latency from long generations or queue waits. Steps: (1) Add per-request timing breakdowns (queue, TTFT, generation). (2) Set `max_tokens` to cap very long responses. (3) Add request timeout with graceful error. (4) Use streaming so users see progress during long generations. (5) Check if token-heavy system prompts inflate generation time.\n\n**Wrong answer to avoid:**\nQ: How do you reduce LLM API latency?\nBad: 'Use a bigger model for better quality responses' — bigger models are slower. Correct: route to the smallest model that meets quality requirements for each request type."
+    },
+    {
+      "type": "mcq",
+      "title": "Latency Optimisation Quiz",
+      "questions": [
+        {
+          "q": "Which metric best represents user-perceived latency for a streaming chat interface?",
+          "options": ["Total response time", "Time-to-first-token (TTFT)", "P50 latency", "Tokens per second"],
+          "answer": 1,
+          "explanation": "TTFT is what the user feels — how long until they see the first word. Streaming makes total time irrelevant to perceived wait."
+        },
+        {
+          "q": "What happens when you call `time.sleep(2)` inside an `async def` FastAPI route handler?",
+          "options": [
+            "The current request sleeps but others continue",
+            "The entire event loop blocks, freezing all concurrent requests",
+            "Python raises a RuntimeError",
+            "The request is automatically moved to a thread pool"
+          ],
+          "answer": 1,
+          "explanation": "`time.sleep` is synchronous and blocks the event loop. Use `asyncio.sleep` instead to yield control."
+        },
+        {
+          "q": "You have 100 concurrent LLM requests and create a new `httpx.AsyncClient()` for each. What is the primary overhead?",
+          "options": [
+            "JSON serialisation cost",
+            "Thread context switching",
+            "TCP/TLS handshake per request (~80-200 ms each)",
+            "DNS resolution"
+          ],
+          "answer": 2,
+          "explanation": "Each new client opens a new connection with TLS negotiation. Connection pooling via a shared client eliminates this."
+        },
+        {
+          "q": "Speculative decoding reduces latency by:",
+          "options": [
+            "Compressing the prompt before sending",
+            "Using a small draft model to generate candidates verified in parallel by a larger model",
+            "Caching identical prompt-response pairs",
+            "Routing all requests to faster hardware"
+          ],
+          "answer": 1,
+          "explanation": "Speculative decoding runs a fast draft model to predict tokens; the large verifier model checks them in batch, gaining speed without quality loss."
+        },
+        {
+          "q": "Your P50 latency is 400 ms but P99 is 9000 ms. The best first investigation step is:",
+          "options": [
+            "Switch to a faster model for all requests",
+            "Add per-request breakdowns for queue wait, TTFT, and generation time",
+            "Increase server CPU count",
+            "Reduce prompt length globally"
+          ],
+          "answer": 1,
+          "explanation": "P99 spikes can come from queue waits, long generations, or connectivity issues. Breakdown timing reveals which component causes tail latency."
+        }
+      ]
+    }
+  ]
+}
