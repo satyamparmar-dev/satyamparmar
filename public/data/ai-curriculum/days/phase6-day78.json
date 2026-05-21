@@ -1,0 +1,113 @@
+{
+  "day": 78,
+  "phase": 6,
+  "title": "LLM Reasoning & Chain-of-Thought",
+  "description": "Master structured reasoning techniques: chain-of-thought prompting, self-consistency, tree-of-thought, ReAct, and process reward models that enhance LLM problem-solving on complex tasks.",
+  "type": "lesson",
+  "estimatedHours": 4,
+  "difficulty": "expert",
+  "level": "expert",
+  "track": "ai-engineering",
+  "tags": ["reasoning", "chain-of-thought", "tree-of-thought", "self-consistency", "react", "process-reward"],
+  "prerequisites": ["phase1-day11", "phase3-day48"],
+  "learningObjectives": [
+    "Apply zero-shot and few-shot chain-of-thought prompting",
+    "Implement self-consistency via majority voting over multiple reasoning chains",
+    "Build tree-of-thought search with BFS/DFS and LLM evaluation",
+    "Design ReAct agents that interleave reasoning and tool use",
+    "Understand process reward models (PRMs) vs outcome reward models (ORMs)"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Reasoning Architecture Determines Problem-Solving Ceiling",
+      "content": "A standard LLM prompt produces one forward pass — one shot at the right answer. For simple questions, that's fine. For multi-step problems (math, code debugging, strategic planning), a single pass reliably fails because each token is generated without the ability to backtrack or reconsider. Reasoning frameworks give the model a structured process: think step-by-step, explore multiple paths, verify intermediate steps, and retry on failure. GPT-4's performance on math competitions jumps from 40% to 80%+ with self-consistency; o1/o3 models achieve PhD-level performance by internalising long chain-of-thought reasoning."
+    },
+    {
+      "type": "theory",
+      "title": "Reasoning Frameworks: CoT, Self-Consistency, ToT, ReAct",
+      "content": "**1. Chain-of-Thought (CoT)**\n- Zero-shot: append 'Let's think step by step.' to any prompt\n- Few-shot: provide (problem, reasoning_chain, answer) examples\n- Key insight: LLMs trained on human text contain latent reasoning ability; CoT unlocks it by providing 'thinking space'\n- Works best on: arithmetic, symbolic reasoning, commonsense reasoning\n\n**2. Self-Consistency**\n- Sample K diverse reasoning chains (temperature > 0)\n- Extract final answers from each chain\n- Return majority vote answer\n- Why: different reasoning paths sometimes reach the right answer for different sub-step failures; majority vote is more robust\n- Typical K=10-40; diminishing returns beyond 20\n\n**3. Tree-of-Thought (ToT)**\n- Problem → propose multiple next-step thoughts → LLM evaluates each thought (sure/maybe/impossible) → BFS/DFS tree search\n- Maintains search tree; can backtrack when a path is evaluated as dead-end\n- Expensive: O(b^d) LLM calls where b=branching factor, d=depth\n- Best for: creative writing, puzzles, strategy problems where many options must be explored\n\n**4. ReAct (Reason + Act)**\n- Interleaves: Thought → Action → Observation cycles\n- Agent reasons about what to do, executes a tool call, observes the result, updates reasoning\n- Prevents hallucination by grounding reasoning in real tool outputs\n- See Day 40 for implementation; here we focus on prompt design\n\n**5. Process Reward Models (PRMs)**\n- Outcome Reward Model (ORM): scores only the final answer (correct/incorrect)\n- Process Reward Model (PRM): scores each reasoning step (0-1 correctness)\n- PRMs enable: best-of-N step selection, beam search over reasoning trees, training signal for each step\n- More data-intensive but much stronger signal for learning to reason\n\n**6. Prompting Strategies for Reasoning**\n- 'Let's think step by step' — zero-shot CoT trigger\n- 'First, identify what we know. Then, determine what we need. Finally, solve.' — structured decomposition\n- 'Check your work: verify each step is correct before proceeding.' — self-verification\n- 'List all possible approaches, then select the best.' — explicit exploration"
+    },
+    {
+      "type": "code",
+      "title": "Self-Consistency, Tree-of-Thought & Process Reward",
+      "content": "```python\nimport random\nfrom collections import Counter\nfrom dataclasses import dataclass, field\nfrom typing import Callable\n\n\n# ── Self-Consistency Solver ───────────────────────────────────────────────────\n@dataclass\nclass ChainResult:\n    chain: str      # full reasoning chain\n    answer: str     # extracted final answer\n    confidence: float = 0.0\n\n\nclass SelfConsistencySolver:\n    \"\"\"\n    Sample K reasoning chains, extract answers, return majority vote.\n    \"\"\"\n\n    ANSWER_EXTRACTION_PROMPT = (\n        'Given this reasoning chain, extract ONLY the final answer (no explanation):\\n\\n'\n        '{chain}\\n\\nFinal answer:'\n    )\n\n    def __init__(self, llm_fn: Callable[[str, float], str], k: int = 10):\n        self._llm = llm_fn\n        self._k = k\n\n    def solve(self, problem: str, cot_prompt: str | None = None) -> dict:\n        prompt = cot_prompt or f'{problem}\\n\\nLet\\'s think step by step.'\n\n        chains = []\n        for _ in range(self._k):\n            # Sample with temperature > 0 for diversity\n            chain_text = self._llm(prompt, temperature=0.8)\n            # Extract answer from chain\n            extract_prompt = self.ANSWER_EXTRACTION_PROMPT.format(chain=chain_text)\n            answer = self._llm(extract_prompt, temperature=0.0).strip()\n            chains.append(ChainResult(chain=chain_text, answer=answer))\n\n        # Majority vote\n        answer_counts = Counter(c.answer.lower().strip() for c in chains)\n        winner, count = answer_counts.most_common(1)[0]\n        confidence = count / self._k\n\n        return {\n            'answer': winner,\n            'confidence': round(confidence, 3),\n            'vote_distribution': dict(answer_counts.most_common()),\n            'chains_sampled': self._k,\n            'agreement': 'strong' if confidence >= 0.7 else 'weak' if confidence >= 0.4 else 'very_weak',\n        }\n\n\n# ── Tree-of-Thought ───────────────────────────────────────────────────────────\n@dataclass\nclass ThoughtNode:\n    thought: str\n    depth: int\n    score: float = 0.0     # LLM evaluation: 0.0=impossible, 0.5=maybe, 1.0=sure\n    children: list['ThoughtNode'] = field(default_factory=list)\n    parent: 'ThoughtNode | None' = None\n\n    def is_leaf(self) -> bool:\n        return not self.children\n\n    def path(self) -> list[str]:\n        if self.parent is None:\n            return [self.thought]\n        return self.parent.path() + [self.thought]\n\n\nclass TreeOfThoughtSolver:\n    \"\"\"\n    BFS tree search over thought candidates with LLM evaluation at each step.\n    \"\"\"\n\n    def __init__(self,\n                 llm_fn: Callable[[str, float], str],\n                 max_depth: int = 3,\n                 branching_factor: int = 3,\n                 beam_width: int = 3):\n        self._llm = llm_fn\n        self._max_depth = max_depth\n        self._b = branching_factor\n        self._beam = beam_width\n\n    def _propose_thoughts(self, problem: str, path: list[str]) -> list[str]:\n        context = '\\n'.join([f'Step {i+1}: {t}' for i, t in enumerate(path)])\n        prompt = (\n            f'Problem: {problem}\\n\\n'\n            f'Steps so far:\\n{context}\\n\\n'\n            f'Propose {self._b} different next steps to solve this problem.'\n            f' Output one step per line:'\n        )\n        raw = self._llm(prompt, temperature=0.8)\n        return [line.strip() for line in raw.strip().split('\\n') if line.strip()][:self._b]\n\n    def _evaluate_thought(self, problem: str, path: list[str]) -> float:\n        context = '\\n'.join(path)\n        prompt = (\n            f'Problem: {problem}\\n\\n'\n            f'Reasoning path:\\n{context}\\n\\n'\n            f'Rate this reasoning path: output only \"sure\" (1.0), \"maybe\" (0.5), or \"impossible\" (0.0):'\n        )\n        rating = self._llm(prompt, temperature=0.0).strip().lower()\n        return {'sure': 1.0, 'maybe': 0.5, 'impossible': 0.0}.get(rating, 0.5)\n\n    def _extract_answer(self, problem: str, path: list[str]) -> str:\n        context = '\\n'.join(path)\n        prompt = f'Problem: {problem}\\n\\nReasoning:\\n{context}\\n\\nFinal answer:'\n        return self._llm(prompt, temperature=0.0).strip()\n\n    def solve(self, problem: str) -> dict:\n        root = ThoughtNode(thought=f'Problem: {problem}', depth=0, score=1.0)\n        frontier = [root]\n        best_node = root\n        best_score = 0.0\n\n        for depth in range(1, self._max_depth + 1):\n            candidates = []\n            for node in frontier:\n                thoughts = self._propose_thoughts(problem, node.path())\n                for thought in thoughts:\n                    child = ThoughtNode(\n                        thought=thought,\n                        depth=depth,\n                        parent=node,\n                    )\n                    child.score = self._evaluate_thought(problem, child.path())\n                    node.children.append(child)\n                    candidates.append(child)\n                    if child.score > best_score:\n                        best_score = child.score\n                        best_node = child\n\n            # Beam selection: keep top-beam_width nodes\n            frontier = sorted(\n                [c for c in candidates if c.score > 0.0],\n                key=lambda n: -n.score\n            )[:self._beam]\n\n            if not frontier:\n                break\n\n        answer = self._extract_answer(problem, best_node.path())\n        return {\n            'answer': answer,\n            'best_path': best_node.path(),\n            'best_score': round(best_score, 3),\n            'total_nodes_evaluated': sum(\n                len(node.children) for node in self._flatten_tree(root)\n            ),\n        }\n\n    @staticmethod\n    def _flatten_tree(root: ThoughtNode) -> list[ThoughtNode]:\n        nodes = [root]\n        for child in root.children:\n            nodes.extend(TreeOfThoughtSolver._flatten_tree(child))\n        return nodes\n\n\n# ── Process Reward Model (PRM) stub ──────────────────────────────────────────\n@dataclass\nclass ReasoningStep:\n    step_text: str\n    step_score: float  # 0-1: correctness/quality of this step\n\n\nclass ProcessRewardModel:\n    \"\"\"\n    Scores each reasoning step individually.\n    Uses LLM-as-judge for each step.\n    Final score = minimum step score (weakest link).\n    \"\"\"\n\n    STEP_EVAL_PROMPT = (\n        'Rate whether this reasoning step is correct and logically sound for the given problem.\\n\\n'\n        'Problem: {problem}\\n'\n        'Previous steps: {prev_steps}\\n'\n        'Current step: {step}\\n\\n'\n        'Score 0.0 (wrong/irrelevant) to 1.0 (correct and clear). Output only the score:'\n    )\n\n    def __init__(self, llm_fn: Callable[[str, float], str]):\n        self._llm = llm_fn\n\n    def score_chain(self, problem: str, chain: str) -> list[ReasoningStep]:\n        steps = [s.strip() for s in chain.split('.') if len(s.strip()) > 10]\n        scored_steps = []\n        prev = []\n        for step in steps:\n            prompt = self.STEP_EVAL_PROMPT.format(\n                problem=problem,\n                prev_steps='\\n'.join(prev) if prev else 'None',\n                step=step,\n            )\n            try:\n                score = float(self._llm(prompt, temperature=0.0).strip())\n                score = max(0.0, min(1.0, score))\n            except ValueError:\n                score = 0.5\n            scored_steps.append(ReasoningStep(step_text=step, step_score=score))\n            prev.append(step)\n        return scored_steps\n\n    def best_of_n(self, problem: str, chains: list[str]) -> tuple[str, float]:\n        \"\"\"Return the chain with the highest minimum step score.\"\"\"\n        best_chain = chains[0]\n        best_min_score = 0.0\n        for chain in chains:\n            steps = self.score_chain(problem, chain)\n            min_score = min(s.step_score for s in steps) if steps else 0.0\n            if min_score > best_min_score:\n                best_min_score = min_score\n                best_chain = chain\n        return best_chain, best_min_score\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    random.seed(42)\n\n    def mock_llm(prompt: str, temperature: float = 0.7) -> str:\n        if 'majority' in prompt or 'final answer' in prompt.lower():\n            return random.choice(['42', '42', '42', '41', '42'])\n        if 'rate' in prompt.lower() or 'score' in prompt.lower():\n            return random.choice(['sure', 'maybe', 'sure', '0.8'])\n        if 'propose' in prompt.lower() or 'next step' in prompt.lower():\n            return 'First, identify the known values.\\nSecond, apply the formula.\\nThird, compute the result.'\n        return f'Let me think step by step. Step 1: analyse the problem. Step 2: solve. Answer: 42.'\n\n    # Self-consistency\n    solver = SelfConsistencySolver(mock_llm, k=5)\n    result = solver.solve('If a train travels 60 mph for 2.5 hours, how far does it go?')\n    print('Self-consistency result:', result)\n\n    # Tree-of-thought\n    tot = TreeOfThoughtSolver(mock_llm, max_depth=2, branching_factor=2, beam_width=2)\n    result = tot.solve('Find the shortest path in a 3x3 grid from top-left to bottom-right.')\n    print('\\nTree-of-thought answer:', result['answer'])\n    print('Best path steps:', len(result['best_path']))\n    print('Nodes evaluated:', result['total_nodes_evaluated'])\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Reasoning Framework Mistakes",
+      "content": "**1. Using high temperature without self-consistency**\nHigh temperature produces diverse outputs — good for creative tasks, bad for factual reasoning. If you need diversity for self-consistency, use high temperature; for single-pass reasoning, use temperature 0-0.3.\n\n**2. Self-consistency with K too small**\nK=3 is not enough — if 2/3 chains agree by chance, confidence=0.67 but the answer may still be wrong. Use K≥10 for statistically meaningful majority voting.\n\n**3. Tree-of-Thought without beam pruning**\nWithout beam search (keeping only top-B nodes), ToT explores exponentially many paths — b=3, d=4 → 81 LLM calls just for expansion, plus evaluation calls. Always use beam_width.\n\n**4. Confusing 'thinking tokens' with CoT**\nModels like o1/o3 generate internal chain-of-thought that is not visible in the API response. You cannot directly observe or prompt-engineer these internal thoughts; you can only control the visible prompt.\n\n**5. Process reward models trained on final outcome labels**\nPRMs need step-level labels (is this reasoning step correct?). Training a PRM on final-answer labels only collapses it to an ORM. Step-level human annotation is required.\n\n**6. ReAct without grounding — hallucinated observations**\nIn a ReAct loop, the model may hallucinate tool outputs if the tool call returns an error. Always validate tool return values and re-inject real observations, never let the model self-hallucinate them."
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Self-Consistent Math Solver",
+      "content": "**Task:** Build a self-consistent solver with process-level verification.\n\n**Requirements:**\n1. `SelfConsistencySolver` with K=10 chains for a set of 5 math word problems\n2. For each problem, report: answer, confidence, vote_distribution\n3. If confidence < 0.5, trigger `TreeOfThoughtSolver` as fallback\n4. For the final answer, run `ProcessRewardModel.score_chain()` to verify each step\n5. Print which steps have score < 0.7 as potential errors\n\n**Metrics to report:** Accuracy on 5 test problems, mean confidence, and count of ToT fallbacks triggered.\n\n**Bonus:** Implement a `debate_solver()` that runs two CoT chains, identifies where they disagree, then runs a third chain to adjudicate."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — LLM Reasoning",
+      "content": "**Conceptual:**\nQ: What is the difference between an Outcome Reward Model (ORM) and a Process Reward Model (PRM)?\nA: ORM scores only the final answer (correct/incorrect), providing a binary training signal. PRM scores each intermediate reasoning step, providing dense step-level feedback. PRMs enable better training signal for reasoning tasks, beam search over partial solutions, and detection of the specific step where reasoning goes wrong.\n\n**Code-based:**\nQ: Self-consistency with K=10 returns confidence=0.4 (4/10 chains agree). What does this mean and what do you do?\nA: 0.4 confidence means no clear majority — the model is uncertain. Options: (1) Increase K to 20-30 for a more reliable majority. (2) Switch to Tree-of-Thought for systematic exploration. (3) Decompose the problem into sub-problems before solving. (4) Add more specific CoT examples in the prompt.\n\n**Senior scenario:**\nQ: You're building an LLM agent for financial calculations where errors have real consequences. How do you use reasoning frameworks to minimise errors?\nA: Multi-layer approach: (1) Structured CoT prompt with explicit step labels (Given/Find/Solve). (2) Self-consistency with K=15, require confidence ≥ 0.8 before accepting. (3) PRM to verify each arithmetic step. (4) ReAct with a calculator tool — never let the LLM do arithmetic directly. (5) Second LLM call to verify the final answer from a fresh perspective. (6) Human-in-the-loop for confidence < 0.8.\n\n**Wrong answer to avoid:**\nQ: When would you prefer self-consistency over Tree-of-Thought?\nBad: 'Always use Tree-of-Thought — it's more powerful.' Correct: Self-consistency is better for: (a) problems with a single correct answer (math, factual QA) — majority vote is reliable; (b) cost-constrained scenarios (K=10 SC chains vs ToT's O(b^d) calls); (c) latency-sensitive applications. ToT is better for: open-ended problems, creative tasks, planning problems where exploring diverse paths adds value."
+    },
+    {
+      "type": "mcq",
+      "title": "LLM Reasoning Quiz",
+      "questions": [
+        {
+          "q": "Self-consistency improves accuracy by:",
+          "options": [
+            "Using a larger model for each chain",
+            "Sampling K diverse reasoning chains and returning the majority vote answer",
+            "Running chain-of-thought at temperature 0 for deterministic output",
+            "Verifying each step with a process reward model"
+          ],
+          "answer": 1,
+          "explanation": "Self-consistency samples K chains at high temperature (diverse), extracts the final answer from each, and returns the most common answer. Different errors in different chains cancel out."
+        },
+        {
+          "q": "Tree-of-Thought differs from Chain-of-Thought in that it:",
+          "options": [
+            "Uses a smaller model for evaluation",
+            "Produces a single linear reasoning chain",
+            "Explores multiple reasoning branches in a tree structure and can backtrack from dead ends",
+            "Only works for mathematical problems"
+          ],
+          "answer": 2,
+          "explanation": "ToT maintains a search tree of thought candidates, evaluates each branch, and can backtrack — enabling exploration of multiple solution paths vs CoT's single linear chain."
+        },
+        {
+          "q": "A process reward model (PRM) is trained on:",
+          "options": [
+            "Final answer correctness labels only",
+            "Step-level correctness labels for each reasoning step",
+            "User preference pairs between full reasoning chains",
+            "Outcome-based rewards from environment interaction"
+          ],
+          "answer": 1,
+          "explanation": "PRMs require step-level annotations — was this intermediate reasoning step correct? This dense signal is what differentiates PRMs from ORMs."
+        },
+        {
+          "q": "Zero-shot chain-of-thought is triggered by appending:",
+          "options": [
+            "'Answer the question directly.'",
+            "'Let's think step by step.'",
+            "Few-shot examples with reasoning chains",
+            "A structured JSON schema for the answer"
+          ],
+          "answer": 1,
+          "explanation": "'Let's think step by step' is the canonical zero-shot CoT trigger identified in the Kojima et al. (2022) paper. It elicits latent reasoning capability without examples."
+        },
+        {
+          "q": "ReAct improves over pure chain-of-thought reasoning for tool-using agents because:",
+          "options": [
+            "It generates longer chains",
+            "It interleaves reasoning with real tool calls, grounding each reasoning step in actual observations rather than hallucinated ones",
+            "It uses a process reward model at each step",
+            "It always outperforms CoT on all tasks"
+          ],
+          "answer": 1,
+          "explanation": "ReAct prevents hallucination of facts by requiring the model to execute a real tool call and observe the actual result before continuing to reason. Pure CoT can hallucinate tool outputs."
+        }
+      ]
+    }
+  ]
+}

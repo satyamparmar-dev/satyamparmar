@@ -1,0 +1,98 @@
+{
+  "day": 83,
+  "phase": 6,
+  "title": "AI System Design Interviews",
+  "description": "Master AI/ML system design interviews: structured approach, canonical design patterns, capacity estimation for LLM services, trade-off articulation, and worked examples for common senior AI engineering interview questions.",
+  "type": "lesson",
+  "estimatedHours": 5,
+  "difficulty": "expert",
+  "level": "expert",
+  "track": "ai-engineering",
+  "tags": ["system-design", "interview", "architecture", "capacity-planning", "trade-offs", "llm-systems"],
+  "prerequisites": ["phase5-day75", "phase4-day63"],
+  "learningObjectives": [
+    "Apply a structured 6-step framework to AI system design questions",
+    "Estimate capacity requirements for LLM APIs at scale",
+    "Design canonical systems: RAG search, LLM chatbot, AI content moderation",
+    "Articulate design trade-offs at the senior/staff engineer level",
+    "Identify and address common pitfalls interviewers probe for"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why AI System Design Interviews Are Different from Traditional SDE Interviews",
+      "content": "Traditional system design interviews focus on distributed systems (caching, sharding, consistency). AI system design interviews add three layers: (1) ML model selection and trade-offs (latency vs quality, cost vs accuracy); (2) Data pipeline design (collection, labelling, versioning, training); (3) Production ML concerns (drift detection, A/B testing, monitoring, retraining). Interviewers expect you to reason about non-determinism, model behaviour, and feedback loops — not just infrastructure throughput. Senior AI engineers are also expected to quantify: 'at 1M requests/day with 2KB context each, how many GPU-hours do we need for inference?'"
+    },
+    {
+      "type": "theory",
+      "title": "6-Step AI System Design Framework",
+      "content": "**Step 1: Clarify Requirements (2-3 min)**\n- What is the exact user problem? What constitutes a successful response?\n- Scale: users/day, requests/day, peak QPS\n- Latency requirements: real-time (<500ms), interactive (<2s), batch (minutes)\n- Quality bar: accuracy/quality metric and target value\n- Budget constraints: cost per request target\n- Compliance: data residency, PII handling, regulatory requirements\n\n**Step 2: Define Metrics (2 min)**\n- Online metrics: P50/P95 latency, error rate, cost/request, user satisfaction\n- Offline metrics: task-specific quality score, RAGAS for RAG, BLEU for translation\n- Business metrics: session length, return rate, NPS\n\n**Step 3: High-Level Architecture (5-7 min)**\n- Draw the end-to-end system: input → processing → model → output → feedback\n- Identify the critical path for latency\n- Note data stores and their purpose\n\n**Step 4: Deep Dive Key Components (10-15 min)**\n- The interviewer will ask you to zoom in on one or two components\n- Be ready to go deep on: retrieval, model serving, caching, safety, monitoring\n\n**Step 5: Scale & Capacity (3-5 min)**\n- Estimate: requests/day → requests/s at peak (assume 10× average)\n- Token economics: context length × cost/token → $/request → $/day\n- Infrastructure: GPU count for inference latency target\n- Storage: vector index size, log retention\n\n**Step 6: Trade-offs & Bottlenecks (5 min)**\n- Cost vs quality: larger model = better quality, higher cost\n- Latency vs throughput: batching increases throughput, increases latency\n- Consistency vs availability: caching improves latency but may serve stale responses\n- Safety vs utility: more aggressive filtering reduces harm but increases over-refusal\n\n**Capacity Estimation Cheatsheet:**\n```\nLLM token cost:   1M tokens ≈ $0.15 (mini) to $2.50 (large)\nLLM latency:      gpt-4o-mini: ~400ms P50; gpt-4o: ~1200ms P50\nEmbedding cost:   1M tokens ≈ $0.02 (text-embedding-3-small)\nVector search:    ~10ms for 1M vectors (HNSW, single node)\nKafka throughput: 100K events/s per broker\nPostgres:         10K QPS for simple queries\nRedis:            100K ops/s for cache lookups\n```"
+    },
+    {
+      "type": "code",
+      "title": "Capacity Estimator & System Design Templates",
+      "content": "```python\nimport math\nfrom dataclasses import dataclass\nfrom typing import Any\n\n\n# ── Capacity estimator ────────────────────────────────────────────────────────\n@dataclass\nclass TrafficProfile:\n    daily_requests: int\n    peak_multiplier: float = 10.0  # peak QPS = daily / 86400 * peak_multiplier\n    avg_input_tokens: int = 500\n    avg_output_tokens: int = 200\n\n    @property\n    def avg_qps(self) -> float:\n        return self.daily_requests / 86400\n\n    @property\n    def peak_qps(self) -> float:\n        return self.avg_qps * self.peak_multiplier\n\n\n@dataclass\nclass ModelSpec:\n    name: str\n    cost_per_1k_input: float   # USD\n    cost_per_1k_output: float\n    p50_latency_ms: int\n    tokens_per_second: int     # throughput per model instance\n\n\nMODELS = {\n    'gpt-4o-mini': ModelSpec('gpt-4o-mini', 0.00015, 0.0006, 400, 5000),\n    'gpt-4o':      ModelSpec('gpt-4o',      0.0025,  0.010,  1200, 2000),\n    'claude-haiku':ModelSpec('claude-haiku',0.00025, 0.00125, 350, 6000),\n}\n\n\nclass CapacityEstimator:\n    def __init__(self, traffic: TrafficProfile, model_name: str):\n        self._t = traffic\n        self._m = MODELS[model_name]\n\n    def cost_per_request(self) -> float:\n        in_cost = self._t.avg_input_tokens * self._m.cost_per_1k_input / 1000\n        out_cost = self._t.avg_output_tokens * self._m.cost_per_1k_output / 1000\n        return in_cost + out_cost\n\n    def daily_cost(self) -> float:\n        return self.cost_per_request() * self._t.daily_requests\n\n    def monthly_cost(self) -> float:\n        return self.daily_cost() * 30\n\n    def model_instances_needed(self) -> int:\n        \"\"\"Instances needed to handle peak QPS at target latency.\"\"\"\n        tokens_per_request = self._t.avg_input_tokens + self._t.avg_output_tokens\n        tokens_per_second_per_instance = self._m.tokens_per_second\n        requests_per_second_per_instance = tokens_per_second_per_instance / tokens_per_request\n        instances = math.ceil(self._t.peak_qps / requests_per_second_per_instance)\n        return max(2, instances)  # minimum 2 for HA\n\n    def vector_store_size(self, n_documents: int, embedding_dim: int = 1536,\n                           bytes_per_float: int = 4) -> str:\n        \"\"\"Estimate vector index size in GB.\"\"\"\n        size_bytes = n_documents * embedding_dim * bytes_per_float\n        size_gb = size_bytes / 1e9\n        return f'{size_gb:.2f} GB'\n\n    def report(self, n_documents: int = 1_000_000) -> dict:\n        return {\n            'model': self._m.name,\n            'daily_requests': f'{self._t.daily_requests:,}',\n            'avg_qps': round(self._t.avg_qps, 1),\n            'peak_qps': round(self._t.peak_qps, 1),\n            'cost_per_request_usd': round(self.cost_per_request(), 6),\n            'daily_cost_usd': round(self.daily_cost(), 2),\n            'monthly_cost_usd': round(self.monthly_cost(), 2),\n            'model_instances_for_peak': self.model_instances_needed(),\n            'vector_store_size': self.vector_store_size(n_documents),\n        }\n\n\n# ── System design template: RAG-based enterprise search ───────────────────────\nRAG_SEARCH_DESIGN = \"\"\"\n=== DESIGN: Enterprise RAG Search System ===\n\nRequirements: 10K employees, 5M internal documents, P95 latency < 2s, 50K queries/day\n\nARCHITECTURE:\n  [User] → [API Gateway + Auth] → [Query Router]\n       ↓\n  [Retrieval Pipeline]\n    - Query expansion (multi-query, HyDE)\n    - Hybrid search: BM25 + Dense embedding (HNSW)\n    - Cross-encoder re-ranking (top-50 → top-5)\n       ↓\n  [Generation Pipeline]\n    - Prompt construction (system + context + query)\n    - Model: gpt-4o-mini for most, gpt-4o for complex queries\n    - Safety guard (input + output)\n       ↓\n  [Response + Citation] → [User]\n\nDATA PIPELINE:\n  Documents → [Preprocessor: PDF/DOCX extract] → [Chunker: 150-token chunks]\n           → [Embedder: text-embedding-3-large] → [Vector DB: Weaviate/Pinecone]\n           → [BM25 Index: Elasticsearch]\n\nCACHING:\n  - Semantic cache: cosine sim > 0.95 → return cached response (30% hit rate)\n  - Embedding cache: exact query hash → cached embeddings\n\nMONITORING:\n  - RAGAS metrics: faithfulness, context_recall per day\n  - P50/P95 latency per pipeline stage\n  - Cost per query\n  - User satisfaction (thumbs up/down)\n\nTRADE-OFFS:\n  Speed vs Quality: cross-encoder re-ranking adds 300ms but lifts faithfulness 0.15\n  Cost vs Recall:   larger embedding model costs 3× but improves recall 10%\n  Freshness vs Cache: 24h TTL balances cost savings with document update lag\n\"\"\"\n\n\n# ── System design template: LLM customer support ──────────────────────────────\nLLM_SUPPORT_DESIGN = \"\"\"\n=== DESIGN: LLM-powered Customer Support ===\n\nRequirements: 100K users/day, 500K messages/day, CSAT > 4.0/5.0, auto-resolution rate > 60%\n\nARCHITECTURE:\n  [User Message]\n      → [Intent Classifier] (route to: FAQ, order, billing, escalation)\n      → [Context Retrieval] (user history + relevant KB articles)\n      → [Safety Guard] (input check)\n      → [LLM Generation] (with streaming)\n      → [Safety Guard] (output check + PII redaction)\n      → [Response] + [Feedback Collection]\n\nMODEL STRATEGY:\n  - Simple FAQs → gpt-4o-mini (80% of traffic)\n  - Complex/emotional → gpt-4o (15% of traffic)\n  - Billing disputes → human escalation (5%)\n\nMEMORY:\n  - Short-term: conversation history in Redis (TTL: 24h)\n  - Long-term: user preferences in PostgreSQL\n  - Knowledge base: vector index of 50K support articles\n\nFLYWHEEL:\n  - Thumbs down → route to human + collect correction\n  - 10K corrections/week → fine-tuning pipeline\n  - Deploy fine-tuned model weekly via canary rollout\n\nSLOs:\n  - P95 TTFT < 500ms (streaming), P95 total < 5s\n  - Availability > 99.5%\n  - Safety violation rate < 0.1%\n  - CSAT > 4.0 (measured from 5-star feedback)\n\"\"\"\n\n\n# ── Trade-off decision matrix ─────────────────────────────────────────────────\nTRADE_OFFS = [\n    {\n        'dimension': 'Model size (quality vs cost/latency)',\n        'use_small_when': 'High volume, simple tasks, latency-critical',\n        'use_large_when': 'Complex reasoning, high-stakes, low volume',\n        'hybrid': 'Route by complexity score; use small for 80%+',\n    },\n    {\n        'dimension': 'Retrieval (precision vs recall)',\n        'high_precision_when': 'Short context window, noise hurts quality',\n        'high_recall_when': 'Missing documents is worse than extra noise',\n        'hybrid': 'High recall in retrieval (top-50), re-rank for precision (top-5)',\n    },\n    {\n        'dimension': 'Caching (freshness vs cost)',\n        'cache_more_when': 'Stable content, high repetition rate',\n        'cache_less_when': 'Frequently updated content, personalised responses',\n        'hybrid': 'TTL based on document update frequency; semantic cache for FAQ',\n    },\n    {\n        'dimension': 'Safety (security vs utility)',\n        'strict_when': 'Healthcare, legal, children\\'s products, high-liability',\n        'permissive_when': 'Internal tools, expert users, low-harm domain',\n        'hybrid': 'Tiered safety by use case; measure over-refusal rate',\n    },\n]\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    # Capacity estimation\n    traffic = TrafficProfile(\n        daily_requests=500_000,\n        peak_multiplier=8.0,\n        avg_input_tokens=800,\n        avg_output_tokens=300,\n    )\n\n    print('=== Capacity Estimates ===')\n    for model_name in ['gpt-4o-mini', 'gpt-4o']:\n        est = CapacityEstimator(traffic, model_name)\n        report = est.report(n_documents=5_000_000)\n        print(f'\\nModel: {model_name}')\n        for k, v in report.items():\n            print(f'  {k}: {v}')\n\n    # Cost comparison\n    mini_est = CapacityEstimator(traffic, 'gpt-4o-mini')\n    large_est = CapacityEstimator(traffic, 'gpt-4o')\n    savings = (large_est.monthly_cost() - mini_est.monthly_cost())\n    print(f'\\nMonthly savings (mini vs large): ${savings:,.0f}')\n\n    print('\\n=== Trade-off Matrix ===')\n    for t in TRADE_OFFS:\n        print(f\"\\n{t['dimension']}\")\n        print(f\"  Hybrid approach: {t['hybrid']}\")\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common AI System Design Interview Mistakes",
+      "content": "**1. Starting with implementation details before requirements**\nJumping to 'use RAG with Pinecone' before clarifying scale and latency requirements shows poor design instincts. Always clarify: scale, latency, quality, cost, compliance.\n\n**2. No numbers**\nSaying 'we need caching to reduce load' without estimating the hit rate, cost savings, or QPS reduction demonstrates superficial thinking. Quantify: '30% cache hit rate reduces LLM cost by 30%, from $50K to $35K/month.'\n\n**3. One-size-fits-all model selection**\nChoosing 'GPT-4' for everything ignores cost and latency trade-offs. Show model routing: 'simple queries → gpt-4o-mini ($0.0001/req), complex → gpt-4o ($0.003/req), expected 80/20 split.'\n\n**4. Ignoring the feedback loop**\nProduction AI systems must improve over time. Interviewers expect to see: feedback collection → dataset curation → retraining trigger → canary deployment → monitoring. Without this, the system is static.\n\n**5. No failure modes**\nEvery system has failure modes. For LLMs: model API down (fallback chain), quality regression (canary rollback), cost spike (circuit breaker), jailbreak (safety layer). Address at least 2-3 failure modes.\n\n**6. Safety as afterthought**\nAdding a 'we could add safety filters later' at the end signals immaturity. For any user-facing LLM, safety is part of the core architecture: input guard, output guard, monitoring."
+    },
+    {
+      "type": "exercise",
+      "title": "AI System Design Practice: AI Code Review Tool",
+      "content": "**Design an AI-powered code review tool for GitHub PRs.**\n\n**Constraints:**\n- 10,000 PRs/day, average PR size: 200 lines changed\n- Latency: comments posted within 60 seconds of PR creation\n- Quality: false positive rate < 5% on security issue detection\n- Cost: < $0.10 per PR review\n\n**Required components to address:**\n1. Architecture diagram: PR webhook → processing pipeline → comment posting\n2. Model selection: which model(s), routing strategy\n3. Context construction: how to handle large PRs exceeding context window\n4. Quality gate: how to measure and enforce false positive rate\n5. Capacity: QPS, model instances needed at peak, daily cost estimate\n6. Failure modes: API down, slow response, false positive spike\n7. Improvement loop: how does the system learn from developer feedback on comments\n\n**Time limit: 45 minutes (interview simulation)**"
+    },
+    {
+      "type": "interview",
+      "title": "Worked AI System Design Questions",
+      "content": "**Question 1: Design an AI content moderation system for a social platform with 100M posts/day.**\n\nModel answer: (1) Requirements: <100ms P95, 99.9% recall on CSAM, <5% false positive on general content. (2) Two-stage: fast classifier (distilBERT, 30ms) screens all posts; slow VLM (GPT-4V) re-checks flagged items. (3) Queue: Kafka for 100M/day = 1,160 QPS → 3 Kafka brokers. (4) Cost: 95% fast-path ($0.00001/post), 5% slow-path ($0.001/post) = $10K+$500/day. (5) Human review queue for confidence 0.4-0.6 band. (6) Monitoring: recall, false positive rate, queue depth, human review SLA.\n\n**Question 2: Design a personalised AI coding assistant for an IDE plugin.**\n\nModel answer: (1) Context: current file, related files, git diff, user's coding history (semantic memory). (2) Latency: must complete within 300ms for autocomplete → streaming + small model. (3) Model: local GGUF (fast, private, free) for autocomplete; cloud GPT-4o for complex questions. (4) Memory: episodic (past corrections), semantic (project-specific patterns). (5) Privacy: all code stays local for local model; cloud requests are stateless (no code stored). (6) Improvement: opt-in feedback → preference pairs → weekly fine-tune.\n\n**Senior scenario:**\nQ: Estimate the infrastructure cost to serve a RAG chatbot for 1M enterprise users making 5 queries/day.\nA: Traffic: 5M queries/day = 58 avg QPS, ~580 peak QPS. At avg 500 input + 200 output tokens, cost = 700 tokens × $0.00045/1k = $0.000315/query → $1,575/day = $47K/month for LLM alone. Embedding: 500 tokens × $0.00002/1k = $0.00001/query = $50/day. Vector search: 1M docs × 1536 dim × 4 bytes = 6 GB RAM index — single node. Total: ~$50K/month LLM + $5K/month infra = ~$55K/month for 1M users."
+    },
+    {
+      "type": "mcq",
+      "title": "AI System Design Interview Quiz",
+      "questions": [
+        {
+          "q": "You must design an LLM system for 1M requests/day at P95 < 1 second. What is the approximate peak QPS you must plan for?",
+          "options": ["~12 QPS", "~116 QPS", "~1,160 QPS", "~11,600 QPS"],
+          "answer": 2,
+          "explanation": "1M/day = 11.6 avg QPS. With 10× peak multiplier = 116 QPS. (The 1,160 option would be a 100× multiplier, which is too high.) Peak is typically 5-10× average."
+        },
+        {
+          "q": "At 500 input tokens + 200 output tokens per request with gpt-4o-mini ($0.15/1M input, $0.60/1M output), the cost per request is approximately:",
+          "options": ["$0.000075", "$ 0.000195", "$0.001950", "$0.01950"],
+          "answer": 1,
+          "explanation": "Input: 500 × $0.15/1M = $0.000075. Output: 200 × $0.60/1M = $0.00012. Total = $0.000195 per request."
+        },
+        {
+          "q": "In an AI system design interview, the most important thing to do in the first 3 minutes is:",
+          "options": [
+            "Choose the technology stack",
+            "Draw the architecture diagram",
+            "Clarify requirements: scale, latency, quality, cost, compliance",
+            "Estimate the monthly cost"
+          ],
+          "answer": 2,
+          "explanation": "Requirements clarification is the foundation of every system design answer. Designing before clarifying requirements leads to solving the wrong problem."
+        },
+        {
+          "q": "When asked 'how does your system improve over time?', the correct answer includes:",
+          "options": [
+            "We use a larger model",
+            "Feedback collection → dataset curation → retraining trigger → canary deployment → monitoring",
+            "We periodically update the system prompt",
+            "We increase the number of model instances"
+          ],
+          "answer": 1,
+          "explanation": "The data flywheel is what makes AI systems self-improving. Interviewers expect to see the full loop: collect feedback → curate data → retrain → safely deploy → monitor for regression."
+        },
+        {
+          "q": "A 1M-document HNSW vector index with 1536-dimensional float32 embeddings requires approximately:",
+          "options": ["~6 MB RAM", "~6 GB RAM", "~60 GB RAM", "~600 GB RAM"],
+          "answer": 1,
+          "explanation": "1M × 1536 dim × 4 bytes = 6.14 GB. This fits on a single node with 16 GB RAM, including HNSW graph overhead (~2×). A critical capacity estimation data point."
+        }
+      ]
+    }
+  ]
+}

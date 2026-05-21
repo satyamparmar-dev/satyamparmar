@@ -1,0 +1,113 @@
+{
+  "day": 77,
+  "phase": 6,
+  "title": "Retrieval-Augmented Generation: Advanced Patterns",
+  "description": "Go beyond basic RAG with advanced retrieval strategies: HyDE, multi-query expansion, parent-document retrieval, re-ranking with cross-encoders, and graph-based RAG for complex knowledge relationships.",
+  "type": "lesson",
+  "estimatedHours": 5,
+  "difficulty": "expert",
+  "level": "expert",
+  "track": "ai-engineering",
+  "tags": ["rag", "hyde", "reranking", "cross-encoder", "multi-query", "graph-rag", "retrieval"],
+  "prerequisites": ["phase5-day70", "phase4-day59"],
+  "learningObjectives": [
+    "Implement HyDE (Hypothetical Document Embeddings) for improved retrieval",
+    "Build multi-query expansion to retrieve from multiple query reformulations",
+    "Apply cross-encoder re-ranking to reorder bi-encoder retrieval results",
+    "Design parent-document retrieval for chunk-level search with full-context return",
+    "Understand graph-based RAG for entity relationship traversal"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Basic RAG Fails and Advanced RAG Fixes It",
+      "content": "Naive RAG (embed query → cosine search → stuff context) fails in three ways: (1) Query-document mismatch — user questions and document statements use different vocabulary (a question asks 'how fast?', the document says 'performance characteristics'); (2) Chunk boundary issues — relevant content is split across chunks, and individual chunks lack sufficient context; (3) Retrieval noise — top-k chunks include irrelevant results that confuse the generator. Advanced RAG patterns address each: HyDE closes vocabulary gap, parent-document retrieval fixes boundaries, and cross-encoder re-ranking eliminates noise."
+    },
+    {
+      "type": "theory",
+      "title": "Advanced RAG Retrieval Patterns",
+      "content": "**1. HyDE (Hypothetical Document Embeddings)**\n- Problem: query 'what causes inflation?' has low cosine similarity to document 'Inflation is caused by...'\n- Solution: LLM generates a hypothetical answer document → embed the *answer* → search with answer embedding\n- The hypothetical answer is in the same distributional space as real documents\n- Works best when query-document vocabulary gap is large\n\n**2. Multi-Query Expansion**\n- Problem: a single query may miss relevant documents that use synonyms or different framing\n- Solution: LLM generates N alternative query reformulations → retrieve top-k for each → deduplicate → RRF fusion\n- Typical N=3-5 reformulations; total retrieval 3-5× larger before fusion\n\n**3. Parent-Document Retrieval**\n- Problem: small chunks improve retrieval precision but lose context\n- Solution: index small *child* chunks (100-150 tokens) for retrieval; return the *parent* document (500-1000 tokens) for context\n- Child-to-parent mapping stored in a lookup table\n\n**4. Cross-Encoder Re-Ranking**\n- Bi-encoders (standard embedding search) encode query and document independently → fast but approximate\n- Cross-encoders take (query, document) jointly as input → full attention → much higher quality relevance score\n- Pipeline: bi-encoder retrieval (top-50) → cross-encoder re-rank → use top-5 for generation\n- Cross-encoder is 100× slower than bi-encoder — only applies to small candidate set\n\n**5. Graph RAG**\n- Knowledge graph where entities are nodes, relationships are edges\n- Query → extract entities → traverse graph → retrieve contextually connected subgraphs\n- Excels at multi-hop questions: 'Who founded the company that acquired X?'\n- Microsoft GraphRAG: community summarisation of entity clusters for global questions\n\n**6. Contextual Compression**\n- Retrieved chunks may contain irrelevant sentences\n- Compressor LLM extracts only sentences relevant to the query before passing to generator\n- Reduces context noise; trade-off: extra LLM call"
+    },
+    {
+      "type": "code",
+      "title": "HyDE, Multi-Query, Cross-Encoder Re-Ranking",
+      "content": "```python\nimport re\nfrom dataclasses import dataclass\nfrom typing import Callable\nimport math\n\n\n# ── Data types ────────────────────────────────────────────────────────────────\n@dataclass\nclass Document:\n    doc_id: str\n    content: str\n    metadata: dict\n\n    def chunk(self, size: int = 150, overlap: int = 20) -> list['Chunk']:\n        words = self.content.split()\n        chunks = []\n        i = 0\n        chunk_idx = 0\n        while i < len(words):\n            chunk_words = words[i:i + size]\n            chunks.append(Chunk(\n                chunk_id=f'{self.doc_id}_c{chunk_idx}',\n                parent_id=self.doc_id,\n                content=' '.join(chunk_words),\n                metadata={**self.metadata, 'chunk_idx': chunk_idx},\n            ))\n            i += size - overlap\n            chunk_idx += 1\n        return chunks\n\n\n@dataclass\nclass Chunk:\n    chunk_id: str\n    parent_id: str\n    content: str\n    metadata: dict\n    score: float = 0.0\n\n\n# ── Embedding proxy (token overlap Jaccard) ───────────────────────────────────\ndef embed(text: str) -> list[float]:\n    \"\"\"Returns a bag-of-words vector (simplified embedding).\"\"\"\n    tokens = re.findall(r'\\w+', text.lower())\n    vocab = sorted(set(tokens))\n    vec = [tokens.count(w) for w in vocab]\n    # Normalise\n    norm = math.sqrt(sum(x ** 2 for x in vec)) or 1.0\n    return [x / norm for x in vec], vocab\n\n\ndef cosine_sim(a_vec, a_vocab, b_vec, b_vocab) -> float:\n    \"\"\"Cosine similarity between two BoW vectors with different vocabs.\"\"\"\n    all_vocab = list(set(a_vocab) | set(b_vocab))\n    def expand(vec, vocab):\n        v_dict = dict(zip(vocab, vec))\n        return [v_dict.get(w, 0.0) for w in all_vocab]\n    av = expand(a_vec, a_vocab)\n    bv = expand(b_vec, b_vocab)\n    dot = sum(x * y for x, y in zip(av, bv))\n    na = math.sqrt(sum(x ** 2 for x in av)) or 1e-9\n    nb = math.sqrt(sum(x ** 2 for x in bv)) or 1e-9\n    return dot / (na * nb)\n\n\ndef simple_similarity(a: str, b: str) -> float:\n    av, avo = embed(a)\n    bv, bvo = embed(b)\n    return cosine_sim(av, avo, bv, bvo)\n\n\n# ── Vector store (in-memory) ──────────────────────────────────────────────────\nclass VectorStore:\n    def __init__(self):\n        self._chunks: list[Chunk] = []\n        self._docs: dict[str, Document] = {}\n\n    def index_documents(self, docs: list[Document], chunk_size: int = 150) -> None:\n        for doc in docs:\n            self._docs[doc.doc_id] = doc\n            self._chunks.extend(doc.chunk(chunk_size))\n\n    def search(self, query: str, top_k: int = 10) -> list[Chunk]:\n        scored = []\n        for chunk in self._chunks:\n            score = simple_similarity(query, chunk.content)\n            scored.append((score, chunk))\n        scored.sort(key=lambda x: -x[0])\n        results = []\n        for score, chunk in scored[:top_k]:\n            c = Chunk(**chunk.__dict__)\n            c.score = score\n            results.append(c)\n        return results\n\n    def get_parent(self, chunk: Chunk) -> Document:\n        return self._docs[chunk.parent_id]\n\n\n# ── HyDE Retriever ────────────────────────────────────────────────────────────\nclass HyDERetriever:\n    \"\"\"\n    Generate a hypothetical document, embed it, use for retrieval.\n    \"\"\"\n\n    def __init__(self, store: VectorStore, llm_fn: Callable[[str], str]):\n        self._store = store\n        self._llm = llm_fn\n\n    def retrieve(self, query: str, top_k: int = 5) -> list[Chunk]:\n        # Generate hypothetical answer\n        hyp_prompt = (\n            f'Write a short, factual paragraph that directly answers this question:\\n\\n'\n            f'Question: {query}\\n\\nAnswer:'\n        )\n        hypothetical_doc = self._llm(hyp_prompt)\n        # Use hypothetical document as retrieval query\n        return self._store.search(hypothetical_doc, top_k)\n\n\n# ── Multi-Query Retriever ─────────────────────────────────────────────────────\nclass MultiQueryRetriever:\n    \"\"\"\n    Generate N query reformulations, retrieve for each, fuse with RRF.\n    \"\"\"\n\n    def __init__(self, store: VectorStore, llm_fn: Callable[[str], str], n_queries: int = 3):\n        self._store = store\n        self._llm = llm_fn\n        self._n = n_queries\n\n    def _generate_queries(self, original: str) -> list[str]:\n        prompt = (\n            f'Generate {self._n} different reformulations of this question.'\n            f' Each should approach the topic differently.\\n\\n'\n            f'Original: {original}\\n\\n'\n            f'Output one reformulation per line:'\n        )\n        raw = self._llm(prompt)\n        queries = [q.strip() for q in raw.strip().split('\\n') if q.strip()]\n        return [original] + queries[:self._n - 1]  # always include original\n\n    def retrieve(self, query: str, top_k: int = 5, rrf_k: int = 60) -> list[Chunk]:\n        queries = self._generate_queries(query)\n        all_results: dict[str, list[Chunk]] = {q: self._store.search(q, top_k * 2) for q in queries}\n\n        # RRF fusion\n        rrf_scores: dict[str, float] = {}\n        rrf_chunks: dict[str, Chunk] = {}\n        for q_results in all_results.values():\n            for rank, chunk in enumerate(q_results):\n                rrf_scores[chunk.chunk_id] = rrf_scores.get(chunk.chunk_id, 0.0) + 1.0 / (rrf_k + rank + 1)\n                rrf_chunks[chunk.chunk_id] = chunk\n\n        ranked = sorted(rrf_scores.items(), key=lambda x: -x[1])\n        result = []\n        for chunk_id, score in ranked[:top_k]:\n            c = rrf_chunks[chunk_id]\n            c.score = score\n            result.append(c)\n        return result\n\n\n# ── Cross-Encoder Re-Ranker ───────────────────────────────────────────────────\nclass CrossEncoderReranker:\n    \"\"\"\n    Re-rank candidates using a cross-encoder (joint query+document scoring).\n    Real implementation: use sentence-transformers CrossEncoder.\n    Here: simulate with keyword overlap as joint feature.\n    \"\"\"\n\n    def __init__(self, cross_encode_fn: Callable[[str, str], float] | None = None):\n        self._score = cross_encode_fn or self._default_score\n\n    @staticmethod\n    def _default_score(query: str, document: str) -> float:\n        \"\"\"Simulate cross-encoder: joint TF-IDF overlap.\"\"\"\n        q_tokens = set(re.findall(r'\\w+', query.lower()))\n        d_tokens = re.findall(r'\\w+', document.lower())\n        if not q_tokens or not d_tokens:\n            return 0.0\n        # Weighted: query terms in document, position-adjusted\n        score = sum(1.0 / (1 + d_tokens.index(t)) if t in d_tokens else 0 for t in q_tokens)\n        return score / len(q_tokens)\n\n    def rerank(self, query: str, candidates: list[Chunk], top_k: int = 5) -> list[Chunk]:\n        scored = [(self._score(query, c.content), c) for c in candidates]\n        scored.sort(key=lambda x: -x[0])\n        result = []\n        for score, chunk in scored[:top_k]:\n            c = Chunk(**chunk.__dict__)\n            c.score = score\n            result.append(c)\n        return result\n\n\n# ── Parent-Document Retriever ─────────────────────────────────────────────────\nclass ParentDocumentRetriever:\n    \"\"\"\n    Index small child chunks; return full parent documents.\n    Deduplicates parents (multiple children may share a parent).\n    \"\"\"\n\n    def __init__(self, store: VectorStore, reranker: CrossEncoderReranker | None = None):\n        self._store = store\n        self._reranker = reranker or CrossEncoderReranker()\n\n    def retrieve(self, query: str, top_k_chunks: int = 20, top_k_parents: int = 5) -> list[Document]:\n        # 1. Retrieve child chunks\n        child_chunks = self._store.search(query, top_k_chunks)\n        # 2. Re-rank children\n        reranked = self._reranker.rerank(query, child_chunks, top_k=top_k_chunks)\n        # 3. Deduplicate parents, preserving rank order\n        seen_parents = set()\n        parents = []\n        for chunk in reranked:\n            if chunk.parent_id not in seen_parents:\n                seen_parents.add(chunk.parent_id)\n                parents.append(self._store.get_parent(chunk))\n            if len(parents) >= top_k_parents:\n                break\n        return parents\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    docs = [\n        Document('d1', 'Inflation is the rate at which the general level of prices for goods and services rises, eroding purchasing power. Central banks attempt to limit inflation and avoid deflation. The main causes are demand-pull (too much money chasing too few goods) and cost-push (rising production costs).', {}),\n        Document('d2', 'The Federal Reserve raises interest rates to control inflation. Higher rates increase borrowing costs, reducing consumer spending and business investment, which cools demand and lowers price pressures.', {}),\n        Document('d3', 'Machine learning models learn patterns from data. Neural networks use backpropagation to update weights. Deep learning uses multiple hidden layers.', {}),\n    ]\n\n    store = VectorStore()\n    store.index_documents(docs, chunk_size=50)\n\n    def mock_llm(prompt: str) -> str:\n        if 'reformulation' in prompt.lower():\n            return 'What drives price increases in an economy?\\nHow does monetary policy affect inflation?'\n        # HyDE: generate hypothetical answer\n        return 'Inflation is primarily caused by excessive demand relative to supply, and by rising production costs including wages and raw materials. Central banks raise rates to combat it.'\n\n    # HyDE\n    hyde = HyDERetriever(store, mock_llm)\n    results = hyde.retrieve('what causes inflation?', top_k=3)\n    print('HyDE results:')\n    for r in results:\n        print(f'  [{r.score:.3f}] {r.content[:70]}...')\n\n    # Multi-query\n    mq = MultiQueryRetriever(store, mock_llm, n_queries=3)\n    results = mq.retrieve('what causes inflation?', top_k=3)\n    print('\\nMulti-query results:')\n    for r in results:\n        print(f'  [{r.score:.3f}] {r.content[:70]}...')\n\n    # Parent-document\n    pdr = ParentDocumentRetriever(store)\n    parents = pdr.retrieve('inflation central bank interest rates', top_k_parents=2)\n    print('\\nParent documents retrieved:')\n    for p in parents:\n        print(f'  [{p.doc_id}] {p.content[:80]}...')\n```"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Advanced RAG Mistakes",
+      "content": "**1. Applying HyDE when queries are already document-like**\nHyDE helps when queries are short and question-like. If queries are already verbose or document-like, the hypothetical generation step adds latency without benefit.\n\n**2. Multi-query without deduplication**\nRetrieving top-k for N queries without RRF fusion produces N×k redundant chunks that overwhelm the context window. Always fuse with RRF before returning.\n\n**3. Cross-encoder on too many candidates**\nCross-encoders are 100× slower than bi-encoders. Running cross-encoder on 500 candidates adds seconds of latency. Limit bi-encoder retrieval to 20-50 candidates before re-ranking.\n\n**4. Parent chunks too large for context window**\nIf parent documents are 2,000 tokens each and you return 5 parents, you exceed a 4,096-token context window. Tune parent chunk size to the context budget.\n\n**5. Graph RAG without entity disambiguation**\nThe same entity may appear under multiple names ('Apple', 'Apple Inc.', 'AAPL'). Without disambiguation, graph traversal misses connections. Apply entity resolution before indexing.\n\n**6. Not evaluating retrieval separately from generation**\nRAGAS context recall and precision measure retrieval quality independently. If you only measure end-to-end answer quality, you can't diagnose whether retrieval or generation is the bottleneck."
+    },
+    {
+      "type": "exercise",
+      "title": "Build an Advanced RAG Pipeline",
+      "content": "**Task:** Compare retrieval quality across naive, HyDE, and multi-query RAG.\n\n**Requirements:**\n1. Index 20+ documents from a chosen domain (Wikipedia excerpts, docs, etc.)\n2. Create 10 test questions with ground-truth relevant document IDs\n3. Run three retrievers: naive cosine search, HyDE, multi-query with RRF\n4. Compute for each: context_recall@5 (how many ground-truth docs retrieved in top-5)\n5. Apply cross-encoder re-ranking on naive results; measure recall improvement\n6. Report: which retriever wins overall? On which query types does HyDE help most?\n\n**Expected insight:** HyDE helps most on short, interrogative queries; multi-query helps on ambiguous queries with multiple valid framings."
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions — Advanced RAG",
+      "content": "**Conceptual:**\nQ: Why does HyDE improve retrieval quality for question-answering use cases?\nA: Embedding models are trained on document-document similarity, not question-document similarity. A question like 'what causes inflation?' has a different embedding from the answer 'Inflation is caused by...'. HyDE generates a hypothetical answer in the same distribution as real documents, making the embedding more comparable.\n\n**Code-based:**\nQ: You retrieve top-50 chunks with a bi-encoder and want to re-rank to top-5. Why not just use a bi-encoder to get top-5 directly?\nA: Bi-encoders encode query and document independently — they're approximate. Cross-encoders see the (query, document) pair jointly, allowing full attention over both, giving much higher-quality relevance scores. The pipeline combines speed (bi-encoder for candidate generation) with quality (cross-encoder for ranking).\n\n**Senior scenario:**\nQ: A RAG system's context_precision is 0.45 (lots of irrelevant chunks) despite high context_recall. How do you improve precision?\nA: (1) Add cross-encoder re-ranking to reorder the top-50 bi-encoder results before passing to the generator. (2) Apply contextual compression — an LLM extracts only sentences relevant to the query from each chunk. (3) Use smaller chunk sizes to reduce irrelevant surrounding text. (4) Add metadata filtering if queries have a detectable domain/date/category.\n\n**Wrong answer to avoid:**\nQ: What is the trade-off of using parent-document retrieval?\nBad: 'Parent documents give more context which is always better.' Correct: Parent documents return more context, which can: (a) exceed the context window if parents are large, (b) include irrelevant sections that confuse the generator, (c) increase cost due to more input tokens. The win is avoiding chunk-boundary truncation; the risk is context bloat."
+    },
+    {
+      "type": "mcq",
+      "title": "Advanced RAG Quiz",
+      "questions": [
+        {
+          "q": "HyDE improves retrieval by:",
+          "options": [
+            "Filtering documents before embedding",
+            "Generating a hypothetical answer and embedding it to find documents in similar distributional space",
+            "Using a cross-encoder for the initial retrieval step",
+            "Expanding the corpus with generated documents"
+          ],
+          "answer": 1,
+          "explanation": "HyDE bridges the query-document vocabulary gap by generating a hypothetical document that is in the same distributional space as real corpus documents."
+        },
+        {
+          "q": "In parent-document retrieval, child chunks are used for:",
+          "options": [
+            "Final context passed to the LLM generator",
+            "Retrieval (fine-grained matching) while parent documents are returned for generation context",
+            "Training the embedding model",
+            "Cross-encoder re-ranking"
+          ],
+          "answer": 1,
+          "explanation": "Small child chunks enable precise retrieval; the retrieved children are then mapped to their parent documents, which provide richer context for generation."
+        },
+        {
+          "q": "Why is the cross-encoder re-ranking step applied to a small candidate set (20-50) rather than the entire corpus?",
+          "options": [
+            "Cross-encoders have a context length limit",
+            "Cross-encoders are 100× slower than bi-encoders; applying to the whole corpus would be too slow",
+            "Cross-encoders are less accurate than bi-encoders",
+            "Cross-encoders require GPU memory proportional to corpus size"
+          ],
+          "answer": 1,
+          "explanation": "Cross-encoders run joint attention over (query, doc) pairs — O(candidates) cross-encoder calls vs a single embedding lookup. They are fast enough only for tens of candidates."
+        },
+        {
+          "q": "Multi-query expansion increases retrieval recall by:",
+          "options": [
+            "Adding more documents to the corpus",
+            "Generating N alternative query phrasings and fusing their retrieval results with RRF",
+            "Running the same query N times with different random seeds",
+            "Using N different embedding models"
+          ],
+          "answer": 1,
+          "explanation": "Different query phrasings may match different documents. RRF fusion of N retrieval lists gives consistently better recall than any single query formulation."
+        },
+        {
+          "q": "Graph RAG excels at which type of question compared to standard vector RAG?",
+          "options": [
+            "Single-entity factual lookup",
+            "Sentiment analysis of documents",
+            "Multi-hop questions requiring traversal of entity relationships",
+            "Summarisation of long documents"
+          ],
+          "answer": 2,
+          "explanation": "Graph RAG traverses entity relationships (e.g., 'who founded the company that acquired X?'), which requires multi-hop reasoning across structured knowledge — something vector similarity alone cannot do."
+        }
+      ]
+    }
+  ]
+}
