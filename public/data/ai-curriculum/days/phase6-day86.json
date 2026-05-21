@@ -8,8 +8,19 @@
   "difficulty": "expert",
   "level": "expert",
   "track": "ai-engineering",
-  "tags": ["agents", "tool-use", "orchestration", "parallel", "error-recovery", "human-in-loop"],
-  "prerequisites": ["phase3-day43", "phase4-day60", "phase4-day56"],
+  "tags": [
+    "agents",
+    "tool-use",
+    "orchestration",
+    "parallel",
+    "error-recovery",
+    "human-in-loop"
+  ],
+  "prerequisites": [
+    "phase3-day43",
+    "phase4-day60",
+    "phase4-day56"
+  ],
   "learningObjectives": [
     "Define tools with precise JSON schemas to minimise hallucination",
     "Execute multiple tool calls in parallel with asyncio",
@@ -31,7 +42,10 @@
     {
       "type": "code",
       "title": "Tool Registry, Parallel Executor & Error Recovery",
-      "content": "```python\nimport asyncio\nimport json\nimport time\nfrom dataclasses import dataclass, field\nfrom enum import Enum\nfrom typing import Any, Callable\n\n\n# ── Tool safety classification ────────────────────────────────────────────────\nclass SafetyLevel(Enum):\n    READ_ONLY = 'read_only'\n    REVERSIBLE = 'reversible'\n    IRREVERSIBLE = 'irreversible'\n    DANGEROUS = 'dangerous'\n\n\n# ── Tool definition ───────────────────────────────────────────────────────────\n@dataclass\nclass ToolParam:\n    name: str\n    type: str  # 'string', 'integer', 'boolean', 'array'\n    description: str\n    required: bool = True\n    enum_values: list[str] | None = None\n    example: Any = None\n\n\n@dataclass\nclass Tool:\n    name: str\n    description: str\n    parameters: list[ToolParam]\n    safety_level: SafetyLevel\n    fn: Callable[..., Any]  # actual implementation\n    timeout_s: float = 10.0\n    max_retries: int = 2\n\n    def schema(self) -> dict:\n        \"\"\"OpenAI function calling schema.\"\"\"\n        props = {}\n        required = []\n        for p in self.parameters:\n            prop: dict = {'type': p.type, 'description': p.description}\n            if p.enum_values:\n                prop['enum'] = p.enum_values\n            if p.example is not None:\n                prop['examples'] = [p.example]\n            props[p.name] = prop\n            if p.required:\n                required.append(p.name)\n        return {\n            'type': 'function',\n            'function': {\n                'name': self.name,\n                'description': self.description,\n                'parameters': {\n                    'type': 'object',\n                    'properties': props,\n                    'required': required,\n                },\n            },\n        }\n\n\n# ── Tool execution result ─────────────────────────────────────────────────────\n@dataclass\nclass ToolResult:\n    tool_name: str\n    success: bool\n    result: Any\n    error: str = ''\n    duration_ms: float = 0.0\n    retries: int = 0\n\n    def to_message(self) -> dict:\n        if self.success:\n            return {'role': 'tool', 'name': self.tool_name,\n                    'content': json.dumps(self.result)}\n        return {'role': 'tool', 'name': self.tool_name,\n                'content': json.dumps({'error': self.error, 'retries': self.retries})}\n\n\n# ── Tool registry ─────────────────────────────────────────────────────────────\nclass ToolRegistry:\n    def __init__(self):\n        self._tools: dict[str, Tool] = {}\n\n    def register(self, tool: Tool) -> None:\n        self._tools[tool.name] = tool\n\n    def get(self, name: str) -> Tool:\n        if name not in self._tools:\n            raise KeyError(f'Unknown tool: {name}')\n        return self._tools[name]\n\n    def schemas(self) -> list[dict]:\n        return [t.schema() for t in self._tools.values()]\n\n    def filter_by_safety(self, max_level: SafetyLevel) -> list[dict]:\n        order = [SafetyLevel.READ_ONLY, SafetyLevel.REVERSIBLE,\n                 SafetyLevel.IRREVERSIBLE, SafetyLevel.DANGEROUS]\n        allowed_levels = order[:order.index(max_level) + 1]\n        return [t.schema() for t in self._tools.values()\n                if t.safety_level in allowed_levels]\n\n\n# ── Async tool executor with retry ────────────────────────────────────────────\nclass AsyncToolExecutor:\n    def __init__(self, registry: ToolRegistry,\n                 confirm_fn: Callable[[str, dict], bool] | None = None):\n        self._registry = registry\n        self._confirm = confirm_fn  # fn(tool_name, args) -> bool\n        self._execution_log: list[ToolResult] = []\n\n    async def execute_one(self, tool_name: str, arguments: dict) -> ToolResult:\n        tool = self._registry.get(tool_name)\n        t0 = time.perf_counter()\n\n        # Validate arguments\n        for param in tool.parameters:\n            if param.required and param.name not in arguments:\n                return ToolResult(\n                    tool_name=tool_name, success=False,\n                    result=None, error=f'Missing required parameter: {param.name}',\n                )\n            if param.enum_values and arguments.get(param.name) not in param.enum_values:\n                return ToolResult(\n                    tool_name=tool_name, success=False,\n                    result=None, error=f'Invalid value for {param.name}: must be one of {param.enum_values}',\n                )\n\n        # Confirmation gate for irreversible/dangerous actions\n        if tool.safety_level in (SafetyLevel.IRREVERSIBLE, SafetyLevel.DANGEROUS):\n            if self._confirm and not self._confirm(tool_name, arguments):\n                return ToolResult(\n                    tool_name=tool_name, success=False,\n                    result=None, error='User declined to confirm action',\n                )\n\n        # Execute with retry\n        retries = 0\n        last_error = ''\n        while retries <= tool.max_retries:\n            try:\n                result = await asyncio.wait_for(\n                    asyncio.get_event_loop().run_in_executor(None, lambda: tool.fn(**arguments)),\n                    timeout=tool.timeout_s,\n                )\n                duration = (time.perf_counter() - t0) * 1000\n                tr = ToolResult(tool_name=tool_name, success=True,\n                                result=result, duration_ms=duration, retries=retries)\n                self._execution_log.append(tr)\n                return tr\n            except asyncio.TimeoutError:\n                last_error = f'Tool timed out after {tool.timeout_s}s'\n                retries += 1\n                if retries <= tool.max_retries:\n                    await asyncio.sleep(2 ** retries)\n            except Exception as e:\n                last_error = str(e)\n                retries += 1\n                if retries <= tool.max_retries:\n                    await asyncio.sleep(2 ** retries)\n\n        duration = (time.perf_counter() - t0) * 1000\n        tr = ToolResult(tool_name=tool_name, success=False,\n                        result=None, error=last_error,\n                        duration_ms=duration, retries=retries - 1)\n        self._execution_log.append(tr)\n        return tr\n\n    async def execute_parallel(self, tool_calls: list[dict]) -> list[ToolResult]:\n        \"\"\"Execute multiple tool calls concurrently.\"\"\"\n        tasks = [\n            self.execute_one(call['name'], call.get('arguments', {}))\n            for call in tool_calls\n        ]\n        results = await asyncio.gather(*tasks, return_exceptions=True)\n        # Convert exceptions to ToolResult failures\n        final = []\n        for i, res in enumerate(results):\n            if isinstance(res, Exception):\n                final.append(ToolResult(\n                    tool_name=tool_calls[i]['name'], success=False,\n                    result=None, error=str(res),\n                ))\n            else:\n                final.append(res)\n        return final\n\n    def execution_summary(self) -> dict:\n        total = len(self._execution_log)\n        if not total:\n            return {'total': 0}\n        success = sum(1 for r in self._execution_log if r.success)\n        mean_duration = sum(r.duration_ms for r in self._execution_log) / total\n        return {\n            'total_calls': total,\n            'success_rate': round(success / total, 3),\n            'mean_duration_ms': round(mean_duration, 1),\n            'total_retries': sum(r.retries for r in self._execution_log),\n        }\n\n\n# ── Demo: agent with parallel tool execution ──────────────────────────────────\nif __name__ == '__main__':\n    import random\n\n    # Define tools\n    def search_web(query: str, max_results: int = 5) -> list[dict]:\n        time.sleep(0.05)  # simulate latency\n        return [{'title': f'Result {i} for {query}', 'url': f'https://example.com/{i}'}\n                for i in range(max_results)]\n\n    def read_file(path: str) -> str:\n        if 'missing' in path:\n            raise FileNotFoundError(f'File not found: {path}')\n        return f'Content of {path}'\n\n    def send_email(to: str, subject: str, body: str) -> dict:\n        return {'sent': True, 'message_id': f'msg_{random.randint(1000, 9999)}'}\n\n    registry = ToolRegistry()\n    registry.register(Tool(\n        name='search_web', description='Search the web for information.',\n        parameters=[\n            ToolParam('query', 'string', 'Search query', required=True, example='Python LoRA'),\n            ToolParam('max_results', 'integer', 'Number of results (1-10)', required=False),\n        ],\n        safety_level=SafetyLevel.READ_ONLY, fn=search_web,\n    ))\n    registry.register(Tool(\n        name='read_file', description='Read contents of a local file.',\n        parameters=[ToolParam('path', 'string', 'Absolute file path', required=True)],\n        safety_level=SafetyLevel.READ_ONLY, fn=read_file,\n    ))\n    registry.register(Tool(\n        name='send_email', description='Send an email.',\n        parameters=[\n            ToolParam('to', 'string', 'Recipient email address', required=True),\n            ToolParam('subject', 'string', 'Email subject', required=True),\n            ToolParam('body', 'string', 'Email body text', required=True),\n        ],\n        safety_level=SafetyLevel.IRREVERSIBLE, fn=send_email,\n    ))\n\n    # Confirm function (always approves for demo)\n    def confirm(tool_name: str, args: dict) -> bool:\n        print(f'  [CONFIRM] Action: {tool_name}({args}) — approved')\n        return True\n\n    executor = AsyncToolExecutor(registry, confirm_fn=confirm)\n\n    async def demo():\n        print('=== Parallel Tool Execution ===')\n        tool_calls = [\n            {'name': 'search_web', 'arguments': {'query': 'LLM fine-tuning'}},\n            {'name': 'read_file', 'arguments': {'path': '/docs/readme.txt'}},\n            {'name': 'read_file', 'arguments': {'path': '/docs/missing.txt'}},  # will fail\n        ]\n        t0 = time.perf_counter()\n        results = await executor.execute_parallel(tool_calls)\n        elapsed = (time.perf_counter() - t0) * 1000\n        print(f'All 3 tools completed in {elapsed:.0f}ms (parallel)')\n        for r in results:\n            status = 'OK' if r.success else 'FAIL'\n            print(f'  [{status}] {r.tool_name}: {str(r.result)[:60] if r.success else r.error}')\n\n        print('\\n=== Irreversible Action with Confirmation ===')\n        result = await executor.execute_one('send_email', {\n            'to': 'user@example.com',\n            'subject': 'Report ready',\n            'body': 'Your monthly report is attached.',\n        })\n        print(f'  Result: {result.result}')\n\n        print('\\n=== Execution Summary ===')\n        print(executor.execution_summary())\n\n    asyncio.run(demo())\n```"
+      "language": "python",
+      "filename": "tool_registry_parallel_executo.py",
+      "code": "import asyncio\nimport json\nimport time\nfrom dataclasses import dataclass, field\nfrom enum import Enum\nfrom typing import Any, Callable\n\n\n# ── Tool safety classification ────────────────────────────────────────────────\nclass SafetyLevel(Enum):\n    READ_ONLY = 'read_only'\n    REVERSIBLE = 'reversible'\n    IRREVERSIBLE = 'irreversible'\n    DANGEROUS = 'dangerous'\n\n\n# ── Tool definition ───────────────────────────────────────────────────────────\n@dataclass\nclass ToolParam:\n    name: str\n    type: str  # 'string', 'integer', 'boolean', 'array'\n    description: str\n    required: bool = True\n    enum_values: list[str] | None = None\n    example: Any = None\n\n\n@dataclass\nclass Tool:\n    name: str\n    description: str\n    parameters: list[ToolParam]\n    safety_level: SafetyLevel\n    fn: Callable[..., Any]  # actual implementation\n    timeout_s: float = 10.0\n    max_retries: int = 2\n\n    def schema(self) -> dict:\n        \"\"\"OpenAI function calling schema.\"\"\"\n        props = {}\n        required = []\n        for p in self.parameters:\n            prop: dict = {'type': p.type, 'description': p.description}\n            if p.enum_values:\n                prop['enum'] = p.enum_values\n            if p.example is not None:\n                prop['examples'] = [p.example]\n            props[p.name] = prop\n            if p.required:\n                required.append(p.name)\n        return {\n            'type': 'function',\n            'function': {\n                'name': self.name,\n                'description': self.description,\n                'parameters': {\n                    'type': 'object',\n                    'properties': props,\n                    'required': required,\n                },\n            },\n        }\n\n\n# ── Tool execution result ─────────────────────────────────────────────────────\n@dataclass\nclass ToolResult:\n    tool_name: str\n    success: bool\n    result: Any\n    error: str = ''\n    duration_ms: float = 0.0\n    retries: int = 0\n\n    def to_message(self) -> dict:\n        if self.success:\n            return {'role': 'tool', 'name': self.tool_name,\n                    'content': json.dumps(self.result)}\n        return {'role': 'tool', 'name': self.tool_name,\n                'content': json.dumps({'error': self.error, 'retries': self.retries})}\n\n\n# ── Tool registry ─────────────────────────────────────────────────────────────\nclass ToolRegistry:\n    def __init__(self):\n        self._tools: dict[str, Tool] = {}\n\n    def register(self, tool: Tool) -> None:\n        self._tools[tool.name] = tool\n\n    def get(self, name: str) -> Tool:\n        if name not in self._tools:\n            raise KeyError(f'Unknown tool: {name}')\n        return self._tools[name]\n\n    def schemas(self) -> list[dict]:\n        return [t.schema() for t in self._tools.values()]\n\n    def filter_by_safety(self, max_level: SafetyLevel) -> list[dict]:\n        order = [SafetyLevel.READ_ONLY, SafetyLevel.REVERSIBLE,\n                 SafetyLevel.IRREVERSIBLE, SafetyLevel.DANGEROUS]\n        allowed_levels = order[:order.index(max_level) + 1]\n        return [t.schema() for t in self._tools.values()\n                if t.safety_level in allowed_levels]\n\n\n# ── Async tool executor with retry ────────────────────────────────────────────\nclass AsyncToolExecutor:\n    def __init__(self, registry: ToolRegistry,\n                 confirm_fn: Callable[[str, dict], bool] | None = None):\n        self._registry = registry\n        self._confirm = confirm_fn  # fn(tool_name, args) -> bool\n        self._execution_log: list[ToolResult] = []\n\n    async def execute_one(self, tool_name: str, arguments: dict) -> ToolResult:\n        tool = self._registry.get(tool_name)\n        t0 = time.perf_counter()\n\n        # Validate arguments\n        for param in tool.parameters:\n            if param.required and param.name not in arguments:\n                return ToolResult(\n                    tool_name=tool_name, success=False,\n                    result=None, error=f'Missing required parameter: {param.name}',\n                )\n            if param.enum_values and arguments.get(param.name) not in param.enum_values:\n                return ToolResult(\n                    tool_name=tool_name, success=False,\n                    result=None, error=f'Invalid value for {param.name}: must be one of {param.enum_values}',\n                )\n\n        # Confirmation gate for irreversible/dangerous actions\n        if tool.safety_level in (SafetyLevel.IRREVERSIBLE, SafetyLevel.DANGEROUS):\n            if self._confirm and not self._confirm(tool_name, arguments):\n                return ToolResult(\n                    tool_name=tool_name, success=False,\n                    result=None, error='User declined to confirm action',\n                )\n\n        # Execute with retry\n        retries = 0\n        last_error = ''\n        while retries <= tool.max_retries:\n            try:\n                result = await asyncio.wait_for(\n                    asyncio.get_event_loop().run_in_executor(None, lambda: tool.fn(**arguments)),\n                    timeout=tool.timeout_s,\n                )\n                duration = (time.perf_counter() - t0) * 1000\n                tr = ToolResult(tool_name=tool_name, success=True,\n                                result=result, duration_ms=duration, retries=retries)\n                self._execution_log.append(tr)\n                return tr\n            except asyncio.TimeoutError:\n                last_error = f'Tool timed out after {tool.timeout_s}s'\n                retries += 1\n                if retries <= tool.max_retries:\n                    await asyncio.sleep(2 ** retries)\n            except Exception as e:\n                last_error = str(e)\n                retries += 1\n                if retries <= tool.max_retries:\n                    await asyncio.sleep(2 ** retries)\n\n        duration = (time.perf_counter() - t0) * 1000\n        tr = ToolResult(tool_name=tool_name, success=False,\n                        result=None, error=last_error,\n                        duration_ms=duration, retries=retries - 1)\n        self._execution_log.append(tr)\n        return tr\n\n    async def execute_parallel(self, tool_calls: list[dict]) -> list[ToolResult]:\n        \"\"\"Execute multiple tool calls concurrently.\"\"\"\n        tasks = [\n            self.execute_one(call['name'], call.get('arguments', {}))\n            for call in tool_calls\n        ]\n        results = await asyncio.gather(*tasks, return_exceptions=True)\n        # Convert exceptions to ToolResult failures\n        final = []\n        for i, res in enumerate(results):\n            if isinstance(res, Exception):\n                final.append(ToolResult(\n                    tool_name=tool_calls[i]['name'], success=False,\n                    result=None, error=str(res),\n                ))\n            else:\n                final.append(res)\n        return final\n\n    def execution_summary(self) -> dict:\n        total = len(self._execution_log)\n        if not total:\n            return {'total': 0}\n        success = sum(1 for r in self._execution_log if r.success)\n        mean_duration = sum(r.duration_ms for r in self._execution_log) / total\n        return {\n            'total_calls': total,\n            'success_rate': round(success / total, 3),\n            'mean_duration_ms': round(mean_duration, 1),\n            'total_retries': sum(r.retries for r in self._execution_log),\n        }\n\n\n# ── Demo: agent with parallel tool execution ──────────────────────────────────\nif __name__ == '__main__':\n    import random\n\n    # Define tools\n    def search_web(query: str, max_results: int = 5) -> list[dict]:\n        time.sleep(0.05)  # simulate latency\n        return [{'title': f'Result {i} for {query}', 'url': f'https://example.com/{i}'}\n                for i in range(max_results)]\n\n    def read_file(path: str) -> str:\n        if 'missing' in path:\n            raise FileNotFoundError(f'File not found: {path}')\n        return f'Content of {path}'\n\n    def send_email(to: str, subject: str, body: str) -> dict:\n        return {'sent': True, 'message_id': f'msg_{random.randint(1000, 9999)}'}\n\n    registry = ToolRegistry()\n    registry.register(Tool(\n        name='search_web', description='Search the web for information.',\n        parameters=[\n            ToolParam('query', 'string', 'Search query', required=True, example='Python LoRA'),\n            ToolParam('max_results', 'integer', 'Number of results (1-10)', required=False),\n        ],\n        safety_level=SafetyLevel.READ_ONLY, fn=search_web,\n    ))\n    registry.register(Tool(\n        name='read_file', description='Read contents of a local file.',\n        parameters=[ToolParam('path', 'string', 'Absolute file path', required=True)],\n        safety_level=SafetyLevel.READ_ONLY, fn=read_file,\n    ))\n    registry.register(Tool(\n        name='send_email', description='Send an email.',\n        parameters=[\n            ToolParam('to', 'string', 'Recipient email address', required=True),\n            ToolParam('subject', 'string', 'Email subject', required=True),\n            ToolParam('body', 'string', 'Email body text', required=True),\n        ],\n        safety_level=SafetyLevel.IRREVERSIBLE, fn=send_email,\n    ))\n\n    # Confirm function (always approves for demo)\n    def confirm(tool_name: str, args: dict) -> bool:\n        print(f'  [CONFIRM] Action: {tool_name}({args}) — approved')\n        return True\n\n    executor = AsyncToolExecutor(registry, confirm_fn=confirm)\n\n    async def demo():\n        print('=== Parallel Tool Execution ===')\n        tool_calls = [\n            {'name': 'search_web', 'arguments': {'query': 'LLM fine-tuning'}},\n            {'name': 'read_file', 'arguments': {'path': '/docs/readme.txt'}},\n            {'name': 'read_file', 'arguments': {'path': '/docs/missing.txt'}},  # will fail\n        ]\n        t0 = time.perf_counter()\n        results = await executor.execute_parallel(tool_calls)\n        elapsed = (time.perf_counter() - t0) * 1000\n        print(f'All 3 tools completed in {elapsed:.0f}ms (parallel)')\n        for r in results:\n            status = 'OK' if r.success else 'FAIL'\n            print(f'  [{status}] {r.tool_name}: {str(r.result)[:60] if r.success else r.error}')\n\n        print('\\n=== Irreversible Action with Confirmation ===')\n        result = await executor.execute_one('send_email', {\n            'to': 'user@example.com',\n            'subject': 'Report ready',\n            'body': 'Your monthly report is attached.',\n        })\n        print(f'  Result: {result.result}')\n\n        print('\\n=== Execution Summary ===')\n        print(executor.execution_summary())\n\n    asyncio.run(demo())",
+      "level": "advanced"
     },
     {
       "type": "pitfalls",
@@ -41,70 +55,108 @@
     {
       "type": "exercise",
       "title": "Build a Research Agent with Parallel Tool Execution",
-      "content": "**Task:** Build a research agent that searches, reads, and summarises in parallel.\n\n**Requirements:**\n1. Register 4 tools: `search_web`, `fetch_url`, `read_file`, `write_file`\n2. Classify each by SafetyLevel; `write_file` requires confirmation\n3. Agent receives: 'Research topic X and write a summary to summary.txt'\n4. Orchestrator plan: search (3 queries in parallel) → fetch top 3 URLs (parallel) → synthesise → write\n5. All tool calls log to execution_log; print execution_summary at end\n6. Handle errors gracefully: if 1 of 3 URLs fails to fetch, continue with 2 successful results\n\n**Bonus:** Add dynamic sub-agent spawning: if the topic has subtopics detected (multiple keywords), spawn one sub-agent per subtopic in parallel, then synthesise results."
+      "difficulty": "Advanced",
+      "problem": "**Task:** Build a research agent that searches, reads, and summarises in parallel.\n\n**Requirements:**\n1. Register 4 tools: `search_web`, `fetch_url`, `read_file`, `write_file`\n2. Classify each by SafetyLevel; `write_file` requires confirmation\n3. Agent receives: 'Research topic X and write a summary to summary.txt'\n4. Orchestrator plan: search (3 queries in parallel) → fetch top 3 URLs (parallel) → synthesise → write\n5. All tool calls log to execution_log; print execution_summary at end\n6. Handle errors gracefully: if 1 of 3 URLs fails to fetch, continue with 2 successful results\n\n**Bonus:** Add dynamic sub-agent spawning: if the topic has subtopics detected (multiple keywords), spawn one sub-agent per subtopic in parallel, then synthesise results.",
+      "hints": [],
+      "solution": ""
     },
     {
       "type": "interview",
       "title": "Interview Questions — Advanced Agent Tool Use",
-      "content": "**Conceptual:**\nQ: Why is a precise JSON schema for tool parameters important for reducing hallucination?\nA: When parameters are vaguely described, the model must guess what format/values are valid. With precise schemas — enum values, format constraints, concrete examples — the model has an explicit specification to follow, dramatically reducing parameter hallucination. The model essentially fills in a form vs composing free text.\n\n**Code-based:**\nQ: An agent calls 5 tools sequentially, each taking 2 seconds. How do you reduce total execution time and what is the new expected time?\nA: Check which tools are independent (no output of one is input to another). If all 5 are independent: execute with `asyncio.gather` in parallel → 2 seconds total (vs 10 seconds sequential). If some are dependent: identify the critical path and only parallelise independent branches.\n\n**Senior scenario:**\nQ: Your production agent is sending emails to users based on AI decisions without confirmation. A bug causes it to send 500 erroneous emails in 2 hours. How do you respond and what process change prevents this?\nA: Immediate: (1) Kill the agent process. (2) Send apology emails to 500 users. (3) Audit all emails sent in last 24 h. Process fix: (1) Add SafetyLevel.IRREVERSIBLE to send_email tool. (2) Implement confirmation gate: pause agent, present action + consequences, require explicit human approval. (3) Add rate limit: max N emails/hour with alert. (4) Add rollout gate: new agent versions must be tested with mock email tool before prod. (5) Require approval for any action affecting more than 1 user.\n\n**Wrong answer to avoid:**\nQ: How do you handle a tool call that times out?\nBad: 'Retry immediately 3 times.' Correct: Use exponential backoff with jitter: wait 2^retry_count + random_jitter seconds. After max_retries exhausted, return a structured error to the model explaining the timeout so it can decide: retry later, use an alternative tool, or abandon the subtask."
+      "conceptual": [
+        {
+          "question": "Why is a precise JSON schema for tool parameters important for reducing hallucination?",
+          "answer": "When parameters are vaguely described, the model must guess what format/values are valid. With precise schemas — enum values, format constraints, concrete examples — the model has an explicit specification to follow, dramatically reducing parameter hallucination. The model essentially fills in a form vs composing free text."
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "An agent calls 5 tools sequentially, each taking 2 seconds. How do you reduce total execution time and what is the new expected time?",
+          "answer": "Check which tools are independent (no output of one is input to another). If all 5 are independent: execute with `asyncio.gather` in parallel → 2 seconds total (vs 10 seconds sequential). If some are dependent: identify the critical path and only parallelise independent branches."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your production agent is sending emails to users based on AI decisions without confirmation. A bug causes it to send 500 erroneous emails in 2 hours. How do you respond and what process change prevents this?",
+          "answer": "Immediate: (1) Kill the agent process. (2) Send apology emails to 500 users. (3) Audit all emails sent in last 24 h. Process fix: (1) Add SafetyLevel.IRREVERSIBLE to send_email tool. (2) Implement confirmation gate: pause agent, present action + consequences, require explicit human approval. (3) Add rate limit: max N emails/hour with alert. (4) Add rollout gate: new agent versions must be tested with mock email tool before prod. (5) Require approval for any action affecting more than 1 user."
+        }
+      ],
+      "wrongAnswers": [
+        "Q: How do you handle a tool call that times out?\nBad: 'Retry immediately 3 times.' Correct: Use exponential backoff with jitter: wait 2^retry_count + random_jitter seconds. After max_retries exhausted, return a structured error to the model explaining the timeout so it can decide: retry later, use an alternative tool, or abandon the subtask."
+      ]
     },
     {
       "type": "mcq",
       "title": "Advanced Agent Tool Use Quiz",
       "questions": [
         {
-          "q": "When should tool calls be executed in parallel vs sequentially?",
-          "options": [
-            "Always parallel — it's always faster",
-            "Always sequential — it's simpler",
-            "Parallel when tools are independent (no output of one feeds into another); sequential when there are data dependencies",
-            "Parallel only for read-only tools"
-          ],
-          "answer": 2,
+          "id": 1,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "When should tool calls be executed in parallel vs sequentially?",
+          "options": {
+            "A": "Always parallel — it's always faster",
+            "B": "Always sequential — it's simpler",
+            "C": "Parallel when tools are independent (no output of one feeds into another); sequential when there are data dependencies",
+            "D": "Parallel only for read-only tools"
+          },
+          "answer": "C",
           "explanation": "Parallelise independent tool calls for latency reduction. If tool B needs tool A's output, B must wait for A — execute sequentially. Analyse the dependency graph to find parallelisable branches."
         },
         {
-          "q": "An agent's tool call returns a 429 (rate limit) error. The correct response is:",
-          "options": [
-            "Return the error to the user immediately",
-            "Retry immediately 3 times then give up",
-            "Exponential backoff: wait 2^retry_count seconds, retry up to max_retries times, then return structured error",
-            "Switch to a different tool and never retry"
-          ],
-          "answer": 2,
+          "id": 2,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "An agent's tool call returns a 429 (rate limit) error. The correct response is:",
+          "options": {
+            "A": "Return the error to the user immediately",
+            "B": "Retry immediately 3 times then give up",
+            "C": "Exponential backoff: wait 2^retry_count seconds, retry up to max_retries times, then return structured error",
+            "D": "Switch to a different tool and never retry"
+          },
+          "answer": "C",
           "explanation": "Rate limit errors are transient — the provider recovers after a short delay. Exponential backoff with max_retries prevents hammering the API while giving it time to recover."
         },
         {
-          "q": "A human confirmation gate is triggered before:",
-          "options": [
-            "Every tool call to maximise safety",
-            "All read-only operations",
-            "Irreversible and dangerous actions (delete, send, pay) that cannot be undone",
-            "Any tool call taking more than 5 seconds"
-          ],
-          "answer": 2,
+          "id": 3,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "A human confirmation gate is triggered before:",
+          "options": {
+            "A": "Every tool call to maximise safety",
+            "B": "All read-only operations",
+            "C": "Irreversible and dangerous actions (delete, send, pay) that cannot be undone",
+            "D": "Any tool call taking more than 5 seconds"
+          },
+          "answer": "C",
           "explanation": "Confirmation is required only for irreversible/dangerous actions. Requiring confirmation for every call creates friction that makes agents unusable. Read-only tools should never require confirmation."
         },
         {
-          "q": "A tool parameter defined as `enum: ['asc', 'desc']` prevents the model from:",
-          "options": [
-            "Calling the tool at all",
-            "Passing values like 'ascending', 'descending', 'up', 'down' that the tool doesn't understand",
-            "Calling the tool more than once",
-            "Using the tool in parallel"
-          ],
-          "answer": 1,
+          "id": 4,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "A tool parameter defined as `enum: ['asc', 'desc']` prevents the model from:",
+          "options": {
+            "A": "Calling the tool at all",
+            "B": "Passing values like 'ascending', 'descending', 'up', 'down' that the tool doesn't understand",
+            "C": "Calling the tool more than once",
+            "D": "Using the tool in parallel"
+          },
+          "answer": "B",
           "explanation": "Enum constraints in the JSON schema explicitly list valid values. The model is more likely to pass only listed values, preventing hallucinated alternatives that would cause the tool to error."
         },
         {
-          "q": "When an agent's tool call fails after all retries, the correct action is:",
-          "options": [
-            "Terminate the entire agent session",
-            "Silently skip the tool call and continue",
-            "Return a structured error message to the model so it can adapt (retry later, use alternative, or abandon subtask)",
-            "Automatically escalate to a senior engineer"
-          ],
-          "answer": 2,
+          "id": 5,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "When an agent's tool call fails after all retries, the correct action is:",
+          "options": {
+            "A": "Terminate the entire agent session",
+            "B": "Silently skip the tool call and continue",
+            "C": "Return a structured error message to the model so it can adapt (retry later, use alternative, or abandon subtask)",
+            "D": "Automatically escalate to a senior engineer"
+          },
+          "answer": "C",
           "explanation": "The model must know the tool failed to make informed next-step decisions. Silently skipping causes the model to hallucinate results. A structured error enables the model to adapt gracefully."
         }
       ]

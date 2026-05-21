@@ -8,8 +8,19 @@
   "difficulty": "expert",
   "level": "expert",
   "track": "ai-engineering",
-  "tags": ["observability", "tracing", "debugging", "rca", "logging", "monitoring", "llm-ops"],
-  "prerequisites": ["phase5-day66", "phase4-day61"],
+  "tags": [
+    "observability",
+    "tracing",
+    "debugging",
+    "rca",
+    "logging",
+    "monitoring",
+    "llm-ops"
+  ],
+  "prerequisites": [
+    "phase5-day66",
+    "phase4-day61"
+  ],
   "learningObjectives": [
     "Design a structured logging schema that enables rapid root-cause analysis",
     "Build distributed trace correlation across multi-agent pipelines",
@@ -31,7 +42,10 @@
     {
       "type": "code",
       "title": "Structured Logger, Tracer & RCA Engine",
-      "content": "```python\nimport json\nimport time\nimport statistics\nimport uuid\nfrom collections import defaultdict\nfrom contextlib import contextmanager\nfrom dataclasses import dataclass, field, asdict\nfrom typing import Any, Generator\n\n\n# ── Structured log record ─────────────────────────────────────────────────────\n@dataclass\nclass LLMLogRecord:\n    trace_id: str\n    span_id: str\n    request_id: str\n    timestamp: float\n    stage: str  # 'safety_input', 'retrieval', 'llm_call', 'safety_output', 'cache'\n    model_id: str = ''\n    model_version: str = ''\n    prompt_version: str = ''\n    input_tokens: int = 0\n    output_tokens: int = 0\n    latency_ms: float = 0.0\n    cost_usd: float = 0.0\n    safety_decision: str = ''\n    quality_score: float | None = None\n    cache_hit: bool = False\n    error: str | None = None\n    metadata: dict = field(default_factory=dict)\n\n    def to_jsonl(self) -> str:\n        d = asdict(self)\n        d['timestamp'] = self.timestamp\n        return json.dumps(d)\n\n\n# ── Span tracer (context manager) ─────────────────────────────────────────────\n@dataclass\nclass Span:\n    span_id: str\n    trace_id: str\n    name: str\n    start_ms: float\n    end_ms: float = 0.0\n    status: str = 'ok'  # 'ok', 'error'\n    attributes: dict = field(default_factory=dict)\n\n    @property\n    def duration_ms(self) -> float:\n        return self.end_ms - self.start_ms\n\n\nclass TraceContext:\n    def __init__(self, trace_id: str | None = None):\n        self.trace_id = trace_id or str(uuid.uuid4())[:12]\n        self._spans: list[Span] = []\n        self._current_span_id: str | None = None\n\n    @contextmanager\n    def span(self, name: str, **attributes) -> Generator[Span, None, None]:\n        span_id = str(uuid.uuid4())[:8]\n        span = Span(\n            span_id=span_id, trace_id=self.trace_id,\n            name=name, start_ms=time.perf_counter() * 1000,\n            attributes=attributes,\n        )\n        parent = self._current_span_id\n        self._current_span_id = span_id\n        try:\n            yield span\n            span.status = 'ok'\n        except Exception as e:\n            span.status = 'error'\n            span.attributes['error'] = str(e)\n            raise\n        finally:\n            span.end_ms = time.perf_counter() * 1000\n            self._spans.append(span)\n            self._current_span_id = parent\n\n    def flame_graph(self) -> str:\n        if not self._spans:\n            return '(no spans)'\n        t_min = min(s.start_ms for s in self._spans)\n        lines = [f'Trace {self.trace_id}:']\n        for span in sorted(self._spans, key=lambda s: s.start_ms):\n            offset = int(span.start_ms - t_min)\n            duration = int(span.duration_ms)\n            bar = '█' * max(1, duration // 20)\n            status = '✓' if span.status == 'ok' else '✗'\n            lines.append(f'  {status} {span.name:20s} [{offset:4d}ms offset, {duration:4d}ms] {bar}')\n        return '\\n'.join(lines)\n\n\n# ── Log store and RCA engine ──────────────────────────────────────────────────\nclass LLMLogStore:\n    def __init__(self):\n        self._records: list[LLMLogRecord] = []\n\n    def append(self, record: LLMLogRecord) -> None:\n        self._records.append(record)\n\n    def query(self, stage: str | None = None, after_ts: float = 0,\n               model_id: str | None = None,\n               prompt_version: str | None = None) -> list[LLMLogRecord]:\n        results = self._records\n        if after_ts:\n            results = [r for r in results if r.timestamp >= after_ts]\n        if stage:\n            results = [r for r in results if r.stage == stage]\n        if model_id:\n            results = [r for r in results if r.model_id == model_id]\n        if prompt_version:\n            results = [r for r in results if r.prompt_version == prompt_version]\n        return results\n\n    def quality_timeline(self, window_s: float = 300) -> list[dict]:\n        \"\"\"Group quality scores by time bucket.\"\"\"\n        cutoff = time.time() - window_s\n        records = [r for r in self._records\n                   if r.timestamp >= cutoff and r.quality_score is not None]\n        buckets: dict[int, list[float]] = defaultdict(list)\n        for r in records:\n            bucket = int(r.timestamp // 60)  # 1-minute buckets\n            buckets[bucket].append(r.quality_score)\n        return [\n            {'minute': bucket, 'mean_quality': round(statistics.mean(scores), 3), 'n': len(scores)}\n            for bucket, scores in sorted(buckets.items())\n        ]\n\n\nclass RCAEngine:\n    \"\"\"\n    Automated root-cause analysis: detects anomalies and produces diagnostic hints.\n    \"\"\"\n\n    ANOMALY_THRESHOLDS = {\n        'quality_drop': 0.10,       # quality drops more than 10 points\n        'latency_spike': 2.0,       # P95 latency > 2× baseline\n        'error_spike': 0.02,        # error rate > 2%\n        'cost_anomaly': 3.0,        # hourly cost > 3× EMA\n    }\n\n    def __init__(self, store: LLMLogStore):\n        self._store = store\n\n    def analyse_quality_drop(self, window_minutes: int = 30) -> dict:\n        now = time.time()\n        recent_cutoff = now - window_minutes * 60\n        baseline_cutoff = now - 2 * window_minutes * 60\n\n        recent = [r for r in self._store.query(stage='llm_call', after_ts=recent_cutoff)\n                  if r.quality_score is not None]\n        baseline = [r for r in self._store.query(stage='llm_call', after_ts=baseline_cutoff)\n                    if r.timestamp < recent_cutoff and r.quality_score is not None]\n\n        if not recent or not baseline:\n            return {'status': 'insufficient_data'}\n\n        recent_mean = statistics.mean(r.quality_score for r in recent)\n        baseline_mean = statistics.mean(r.quality_score for r in baseline)\n        drop = baseline_mean - recent_mean\n\n        if drop <= self.ANOMALY_THRESHOLDS['quality_drop']:\n            return {'status': 'ok', 'quality_drop': round(drop, 3)}\n\n        # Investigate: which dimensions changed?\n        hints = []\n\n        # Check prompt version change\n        recent_prompts = set(r.prompt_version for r in recent)\n        baseline_prompts = set(r.prompt_version for r in baseline)\n        if recent_prompts != baseline_prompts:\n            hints.append(f'Prompt version changed: {baseline_prompts} → {recent_prompts}')\n\n        # Check model version change\n        recent_models = set(r.model_id for r in recent)\n        baseline_models = set(r.model_id for r in baseline)\n        if recent_models != baseline_models:\n            hints.append(f'Model changed: {baseline_models} → {recent_models}')\n\n        # Check if cache hit rate changed (less cache = more variance)\n        recent_cache_rate = sum(1 for r in recent if r.cache_hit) / len(recent)\n        baseline_cache_rate = sum(1 for r in baseline if r.cache_hit) / len(baseline)\n        if abs(recent_cache_rate - baseline_cache_rate) > 0.1:\n            hints.append(f'Cache hit rate changed: {baseline_cache_rate:.1%} → {recent_cache_rate:.1%}')\n\n        # Check latency increase (may indicate model degradation)\n        recent_latency = statistics.mean(r.latency_ms for r in recent)\n        baseline_latency = statistics.mean(r.latency_ms for r in baseline)\n        if recent_latency > baseline_latency * 1.5:\n            hints.append(f'Latency increased: {baseline_latency:.0f}ms → {recent_latency:.0f}ms')\n\n        return {\n            'status': 'quality_drop_detected',\n            'recent_quality': round(recent_mean, 3),\n            'baseline_quality': round(baseline_mean, 3),\n            'quality_drop': round(drop, 3),\n            'rca_hints': hints or ['No obvious dimension change detected — sample failing requests manually'],\n        }\n\n    def latency_profile(self, stage: str = 'llm_call', window_s: float = 300) -> dict:\n        records = self._store.query(stage=stage, after_ts=time.time() - window_s)\n        if not records:\n            return {'status': 'no_data'}\n        latencies = sorted(r.latency_ms for r in records)\n        n = len(latencies)\n        return {\n            'stage': stage,\n            'n': n,\n            'p50': round(latencies[n // 2], 1),\n            'p95': round(latencies[int(n * 0.95)], 1),\n            'p99': round(latencies[int(n * 0.99)], 1),\n            'max': round(latencies[-1], 1),\n        }\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    import random\n    random.seed(42)\n\n    store = LLMLogStore()\n\n    # Simulate 100 requests (baseline quality 0.82)\n    base_ts = time.time() - 3600\n    for i in range(50):\n        store.append(LLMLogRecord(\n            trace_id=f't{i}', span_id=f's{i}', request_id=f'r{i}',\n            timestamp=base_ts + i * 60,\n            stage='llm_call', model_id='gpt-4o-mini', model_version='2024-09',\n            prompt_version='2.0.0', latency_ms=random.gauss(800, 100),\n            quality_score=random.gauss(0.82, 0.05),\n        ))\n\n    # Simulate quality drop after prompt change\n    now = time.time()\n    for i in range(50):\n        store.append(LLMLogRecord(\n            trace_id=f't{100+i}', span_id=f's{100+i}', request_id=f'r{100+i}',\n            timestamp=now - 1800 + i * 30,\n            stage='llm_call', model_id='gpt-4o-mini', model_version='2024-09',\n            prompt_version='2.1.0',  # prompt changed!\n            latency_ms=random.gauss(850, 120),\n            quality_score=random.gauss(0.68, 0.06),  # quality dropped\n        ))\n\n    # RCA\n    rca = RCAEngine(store)\n    result = rca.analyse_quality_drop(window_minutes=30)\n    print('=== RCA Report ===')\n    for k, v in result.items():\n        print(f'  {k}: {v}')\n\n    # Latency profile\n    print('\\n=== Latency Profile ===')\n    print(rca.latency_profile())\n\n    # Flame graph demo\n    print('\\n=== Distributed Trace ===')\n    trace = TraceContext('trace_demo')\n    import time as t\n    with trace.span('input_safety') as s:\n        t.sleep(0.02)\n    with trace.span('retrieval') as s:\n        t.sleep(0.08)\n    with trace.span('llm_call') as s:\n        t.sleep(0.15)\n    with trace.span('output_safety') as s:\n        t.sleep(0.01)\n    print(trace.flame_graph())\n```"
+      "language": "python",
+      "filename": "structured_logger_tracer_rca_e.py",
+      "code": "import json\nimport time\nimport statistics\nimport uuid\nfrom collections import defaultdict\nfrom contextlib import contextmanager\nfrom dataclasses import dataclass, field, asdict\nfrom typing import Any, Generator\n\n\n# ── Structured log record ─────────────────────────────────────────────────────\n@dataclass\nclass LLMLogRecord:\n    trace_id: str\n    span_id: str\n    request_id: str\n    timestamp: float\n    stage: str  # 'safety_input', 'retrieval', 'llm_call', 'safety_output', 'cache'\n    model_id: str = ''\n    model_version: str = ''\n    prompt_version: str = ''\n    input_tokens: int = 0\n    output_tokens: int = 0\n    latency_ms: float = 0.0\n    cost_usd: float = 0.0\n    safety_decision: str = ''\n    quality_score: float | None = None\n    cache_hit: bool = False\n    error: str | None = None\n    metadata: dict = field(default_factory=dict)\n\n    def to_jsonl(self) -> str:\n        d = asdict(self)\n        d['timestamp'] = self.timestamp\n        return json.dumps(d)\n\n\n# ── Span tracer (context manager) ─────────────────────────────────────────────\n@dataclass\nclass Span:\n    span_id: str\n    trace_id: str\n    name: str\n    start_ms: float\n    end_ms: float = 0.0\n    status: str = 'ok'  # 'ok', 'error'\n    attributes: dict = field(default_factory=dict)\n\n    @property\n    def duration_ms(self) -> float:\n        return self.end_ms - self.start_ms\n\n\nclass TraceContext:\n    def __init__(self, trace_id: str | None = None):\n        self.trace_id = trace_id or str(uuid.uuid4())[:12]\n        self._spans: list[Span] = []\n        self._current_span_id: str | None = None\n\n    @contextmanager\n    def span(self, name: str, **attributes) -> Generator[Span, None, None]:\n        span_id = str(uuid.uuid4())[:8]\n        span = Span(\n            span_id=span_id, trace_id=self.trace_id,\n            name=name, start_ms=time.perf_counter() * 1000,\n            attributes=attributes,\n        )\n        parent = self._current_span_id\n        self._current_span_id = span_id\n        try:\n            yield span\n            span.status = 'ok'\n        except Exception as e:\n            span.status = 'error'\n            span.attributes['error'] = str(e)\n            raise\n        finally:\n            span.end_ms = time.perf_counter() * 1000\n            self._spans.append(span)\n            self._current_span_id = parent\n\n    def flame_graph(self) -> str:\n        if not self._spans:\n            return '(no spans)'\n        t_min = min(s.start_ms for s in self._spans)\n        lines = [f'Trace {self.trace_id}:']\n        for span in sorted(self._spans, key=lambda s: s.start_ms):\n            offset = int(span.start_ms - t_min)\n            duration = int(span.duration_ms)\n            bar = '█' * max(1, duration // 20)\n            status = '✓' if span.status == 'ok' else '✗'\n            lines.append(f'  {status} {span.name:20s} [{offset:4d}ms offset, {duration:4d}ms] {bar}')\n        return '\\n'.join(lines)\n\n\n# ── Log store and RCA engine ──────────────────────────────────────────────────\nclass LLMLogStore:\n    def __init__(self):\n        self._records: list[LLMLogRecord] = []\n\n    def append(self, record: LLMLogRecord) -> None:\n        self._records.append(record)\n\n    def query(self, stage: str | None = None, after_ts: float = 0,\n               model_id: str | None = None,\n               prompt_version: str | None = None) -> list[LLMLogRecord]:\n        results = self._records\n        if after_ts:\n            results = [r for r in results if r.timestamp >= after_ts]\n        if stage:\n            results = [r for r in results if r.stage == stage]\n        if model_id:\n            results = [r for r in results if r.model_id == model_id]\n        if prompt_version:\n            results = [r for r in results if r.prompt_version == prompt_version]\n        return results\n\n    def quality_timeline(self, window_s: float = 300) -> list[dict]:\n        \"\"\"Group quality scores by time bucket.\"\"\"\n        cutoff = time.time() - window_s\n        records = [r for r in self._records\n                   if r.timestamp >= cutoff and r.quality_score is not None]\n        buckets: dict[int, list[float]] = defaultdict(list)\n        for r in records:\n            bucket = int(r.timestamp // 60)  # 1-minute buckets\n            buckets[bucket].append(r.quality_score)\n        return [\n            {'minute': bucket, 'mean_quality': round(statistics.mean(scores), 3), 'n': len(scores)}\n            for bucket, scores in sorted(buckets.items())\n        ]\n\n\nclass RCAEngine:\n    \"\"\"\n    Automated root-cause analysis: detects anomalies and produces diagnostic hints.\n    \"\"\"\n\n    ANOMALY_THRESHOLDS = {\n        'quality_drop': 0.10,       # quality drops more than 10 points\n        'latency_spike': 2.0,       # P95 latency > 2× baseline\n        'error_spike': 0.02,        # error rate > 2%\n        'cost_anomaly': 3.0,        # hourly cost > 3× EMA\n    }\n\n    def __init__(self, store: LLMLogStore):\n        self._store = store\n\n    def analyse_quality_drop(self, window_minutes: int = 30) -> dict:\n        now = time.time()\n        recent_cutoff = now - window_minutes * 60\n        baseline_cutoff = now - 2 * window_minutes * 60\n\n        recent = [r for r in self._store.query(stage='llm_call', after_ts=recent_cutoff)\n                  if r.quality_score is not None]\n        baseline = [r for r in self._store.query(stage='llm_call', after_ts=baseline_cutoff)\n                    if r.timestamp < recent_cutoff and r.quality_score is not None]\n\n        if not recent or not baseline:\n            return {'status': 'insufficient_data'}\n\n        recent_mean = statistics.mean(r.quality_score for r in recent)\n        baseline_mean = statistics.mean(r.quality_score for r in baseline)\n        drop = baseline_mean - recent_mean\n\n        if drop <= self.ANOMALY_THRESHOLDS['quality_drop']:\n            return {'status': 'ok', 'quality_drop': round(drop, 3)}\n\n        # Investigate: which dimensions changed?\n        hints = []\n\n        # Check prompt version change\n        recent_prompts = set(r.prompt_version for r in recent)\n        baseline_prompts = set(r.prompt_version for r in baseline)\n        if recent_prompts != baseline_prompts:\n            hints.append(f'Prompt version changed: {baseline_prompts} → {recent_prompts}')\n\n        # Check model version change\n        recent_models = set(r.model_id for r in recent)\n        baseline_models = set(r.model_id for r in baseline)\n        if recent_models != baseline_models:\n            hints.append(f'Model changed: {baseline_models} → {recent_models}')\n\n        # Check if cache hit rate changed (less cache = more variance)\n        recent_cache_rate = sum(1 for r in recent if r.cache_hit) / len(recent)\n        baseline_cache_rate = sum(1 for r in baseline if r.cache_hit) / len(baseline)\n        if abs(recent_cache_rate - baseline_cache_rate) > 0.1:\n            hints.append(f'Cache hit rate changed: {baseline_cache_rate:.1%} → {recent_cache_rate:.1%}')\n\n        # Check latency increase (may indicate model degradation)\n        recent_latency = statistics.mean(r.latency_ms for r in recent)\n        baseline_latency = statistics.mean(r.latency_ms for r in baseline)\n        if recent_latency > baseline_latency * 1.5:\n            hints.append(f'Latency increased: {baseline_latency:.0f}ms → {recent_latency:.0f}ms')\n\n        return {\n            'status': 'quality_drop_detected',\n            'recent_quality': round(recent_mean, 3),\n            'baseline_quality': round(baseline_mean, 3),\n            'quality_drop': round(drop, 3),\n            'rca_hints': hints or ['No obvious dimension change detected — sample failing requests manually'],\n        }\n\n    def latency_profile(self, stage: str = 'llm_call', window_s: float = 300) -> dict:\n        records = self._store.query(stage=stage, after_ts=time.time() - window_s)\n        if not records:\n            return {'status': 'no_data'}\n        latencies = sorted(r.latency_ms for r in records)\n        n = len(latencies)\n        return {\n            'stage': stage,\n            'n': n,\n            'p50': round(latencies[n // 2], 1),\n            'p95': round(latencies[int(n * 0.95)], 1),\n            'p99': round(latencies[int(n * 0.99)], 1),\n            'max': round(latencies[-1], 1),\n        }\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    import random\n    random.seed(42)\n\n    store = LLMLogStore()\n\n    # Simulate 100 requests (baseline quality 0.82)\n    base_ts = time.time() - 3600\n    for i in range(50):\n        store.append(LLMLogRecord(\n            trace_id=f't{i}', span_id=f's{i}', request_id=f'r{i}',\n            timestamp=base_ts + i * 60,\n            stage='llm_call', model_id='gpt-4o-mini', model_version='2024-09',\n            prompt_version='2.0.0', latency_ms=random.gauss(800, 100),\n            quality_score=random.gauss(0.82, 0.05),\n        ))\n\n    # Simulate quality drop after prompt change\n    now = time.time()\n    for i in range(50):\n        store.append(LLMLogRecord(\n            trace_id=f't{100+i}', span_id=f's{100+i}', request_id=f'r{100+i}',\n            timestamp=now - 1800 + i * 30,\n            stage='llm_call', model_id='gpt-4o-mini', model_version='2024-09',\n            prompt_version='2.1.0',  # prompt changed!\n            latency_ms=random.gauss(850, 120),\n            quality_score=random.gauss(0.68, 0.06),  # quality dropped\n        ))\n\n    # RCA\n    rca = RCAEngine(store)\n    result = rca.analyse_quality_drop(window_minutes=30)\n    print('=== RCA Report ===')\n    for k, v in result.items():\n        print(f'  {k}: {v}')\n\n    # Latency profile\n    print('\\n=== Latency Profile ===')\n    print(rca.latency_profile())\n\n    # Flame graph demo\n    print('\\n=== Distributed Trace ===')\n    trace = TraceContext('trace_demo')\n    import time as t\n    with trace.span('input_safety') as s:\n        t.sleep(0.02)\n    with trace.span('retrieval') as s:\n        t.sleep(0.08)\n    with trace.span('llm_call') as s:\n        t.sleep(0.15)\n    with trace.span('output_safety') as s:\n        t.sleep(0.01)\n    print(trace.flame_graph())",
+      "level": "advanced"
     },
     {
       "type": "pitfalls",
@@ -41,70 +55,108 @@
     {
       "type": "exercise",
       "title": "Build an LLM Debugging Toolkit",
-      "content": "**Task:** Create a complete observability and debugging toolkit for an LLM service.\n\n**Requirements:**\n1. `LLMLogStore` backed by JSONL file with rotation at 10MB\n2. `TraceContext` with nested span support and flame graph rendering\n3. `RCAEngine.analyse_quality_drop()` with 5+ diagnostic checks\n4. CLI: `python debug.py rca --window 30` — runs RCA for last 30 minutes\n5. CLI: `python debug.py replay --request-id req_123` — re-executes a logged request against mock LLM\n6. CLI: `python debug.py latency --stage retrieval` — prints latency profile\n\n**Bonus:** Add `python debug.py diff --trace-id abc123 --trace-id def456` that compares two traces side-by-side to identify where the pipeline diverged."
+      "difficulty": "Advanced",
+      "problem": "**Task:** Create a complete observability and debugging toolkit for an LLM service.\n\n**Requirements:**\n1. `LLMLogStore` backed by JSONL file with rotation at 10MB\n2. `TraceContext` with nested span support and flame graph rendering\n3. `RCAEngine.analyse_quality_drop()` with 5+ diagnostic checks\n4. CLI: `python debug.py rca --window 30` — runs RCA for last 30 minutes\n5. CLI: `python debug.py replay --request-id req_123` — re-executes a logged request against mock LLM\n6. CLI: `python debug.py latency --stage retrieval` — prints latency profile\n\n**Bonus:** Add `python debug.py diff --trace-id abc123 --trace-id def456` that compares two traces side-by-side to identify where the pipeline diverged.",
+      "hints": [],
+      "solution": ""
     },
     {
       "type": "interview",
       "title": "Interview Questions — LLM Observability",
-      "content": "**Conceptual:**\nQ: Why is a trace_id more important for LLM services than for traditional microservices?\nA: LLM responses are non-deterministic and multi-stage. A bad response could be caused by: wrong model version, stale prompt, bad retrieval, safety filter false positive, or API degradation. Without a trace_id connecting retrieval → safety → LLM call → output guard logs, you cannot determine which stage caused the bad response. Traditional services are deterministic — the same inputs produce the same outputs — so root-cause analysis is simpler.\n\n**Code-based:**\nQ: Your quality_score drops from 0.82 to 0.68 at 2 AM. Walk through your automated RCA investigation.\nA: (1) Scope: how many requests affected? Which models/prompt versions involved? (2) Timeline: segment quality by model_id and prompt_version — did one version drop while others stayed stable? (3) Correlated events: check deployment log — was a prompt or model update deployed near 2 AM? (4) Latency check: did latency increase simultaneously? (5) Safety check: did safety_violation_rate change? (6) If no obvious dimension changed: sample 10 failing requests and manually review inputs/outputs to form hypothesis.\n\n**Senior scenario:**\nQ: You need to build observability for a 10-agent multi-agent pipeline. Span tracing works for request/response cycles. What additional observability is needed?\nA: (1) Trace propagation: a single user request spawns N agent calls — each must carry the root trace_id. (2) Agent activity log: which agent made which tool call, with what arguments, with what result. (3) Message journal: full conversation history between agents (who sent what to whom, in what order). (4) Decision attribution: which agent's output caused the downstream failure. (5) Coordination metrics: how long each agent waited for messages from others (bottleneck identification). (6) Replay: ability to replay the full multi-agent conversation deterministically from the journal.\n\n**Wrong answer to avoid:**\nQ: What should be logged for each LLM request?\nBad: 'The prompt and the response.' Correct: At minimum: trace_id, request_id, timestamp, user_hash (not raw user_id), model_id, model_version, prompt_version, input_tokens, output_tokens, latency_ms, cost_usd, safety_decision (input + output), quality_score (sampled), cache_hit, error. The full prompt content should be optional and PII-scrubbed."
+      "conceptual": [
+        {
+          "question": "Why is a trace_id more important for LLM services than for traditional microservices?",
+          "answer": "LLM responses are non-deterministic and multi-stage. A bad response could be caused by: wrong model version, stale prompt, bad retrieval, safety filter false positive, or API degradation. Without a trace_id connecting retrieval → safety → LLM call → output guard logs, you cannot determine which stage caused the bad response. Traditional services are deterministic — the same inputs produce the same outputs — so root-cause analysis is simpler."
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Your quality_score drops from 0.82 to 0.68 at 2 AM. Walk through your automated RCA investigation.",
+          "answer": "(1) Scope: how many requests affected? Which models/prompt versions involved? (2) Timeline: segment quality by model_id and prompt_version — did one version drop while others stayed stable? (3) Correlated events: check deployment log — was a prompt or model update deployed near 2 AM? (4) Latency check: did latency increase simultaneously? (5) Safety check: did safety_violation_rate change? (6) If no obvious dimension changed: sample 10 failing requests and manually review inputs/outputs to form hypothesis."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You need to build observability for a 10-agent multi-agent pipeline. Span tracing works for request/response cycles. What additional observability is needed?",
+          "answer": "(1) Trace propagation: a single user request spawns N agent calls — each must carry the root trace_id. (2) Agent activity log: which agent made which tool call, with what arguments, with what result. (3) Message journal: full conversation history between agents (who sent what to whom, in what order). (4) Decision attribution: which agent's output caused the downstream failure. (5) Coordination metrics: how long each agent waited for messages from others (bottleneck identification). (6) Replay: ability to replay the full multi-agent conversation deterministically from the journal."
+        }
+      ],
+      "wrongAnswers": [
+        "Q: What should be logged for each LLM request?\nBad: 'The prompt and the response.' Correct: At minimum: trace_id, request_id, timestamp, user_hash (not raw user_id), model_id, model_version, prompt_version, input_tokens, output_tokens, latency_ms, cost_usd, safety_decision (input + output), quality_score (sampled), cache_hit, error. The full prompt content should be optional and PII-scrubbed."
+      ]
     },
     {
       "type": "mcq",
       "title": "LLM Observability Quiz",
       "questions": [
         {
-          "q": "A trace_id should be generated at which point and how long should it be propagated?",
-          "options": [
-            "At the LLM call and propagated to the output only",
-            "At the API boundary and propagated through every pipeline stage (retrieval, safety, LLM, output guard) in every log record",
-            "By the database layer when storing results",
-            "At the user interface layer only"
-          ],
-          "answer": 1,
+          "id": 1,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "A trace_id should be generated at which point and how long should it be propagated?",
+          "options": {
+            "A": "At the LLM call and propagated to the output only",
+            "B": "At the API boundary and propagated through every pipeline stage (retrieval, safety, LLM, output guard) in every log record",
+            "C": "By the database layer when storing results",
+            "D": "At the user interface layer only"
+          },
+          "answer": "B",
           "explanation": "The trace_id must be created at the request entry point and propagated through ALL stages. Only then can you join logs across pipeline components to reconstruct the full request lifecycle."
         },
         {
-          "q": "Quality score drift is best detected using:",
-          "options": [
-            "HTTP 5xx error rate monitoring",
-            "A rolling window mean quality_score compared to a baseline window, with alerting on drops > threshold",
-            "Database query latency monitoring",
-            "CPU utilisation metrics"
-          ],
-          "answer": 1,
+          "id": 2,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Quality score drift is best detected using:",
+          "options": {
+            "A": "HTTP 5xx error rate monitoring",
+            "B": "A rolling window mean quality_score compared to a baseline window, with alerting on drops > threshold",
+            "C": "Database query latency monitoring",
+            "D": "CPU utilisation metrics"
+          },
+          "answer": "B",
           "explanation": "Quality degradation is silent — it doesn't cause HTTP errors. A rolling window comparison (recent vs baseline period) with configurable thresholds is the correct detection mechanism."
         },
         {
-          "q": "Why should deployment events be annotated on the metrics dashboard?",
-          "options": [
-            "To satisfy regulatory requirements",
-            "To visually correlate metric changes with specific deployments (model upgrades, prompt changes) for rapid root-cause analysis",
-            "To track team performance",
-            "To calculate deployment frequency"
-          ],
-          "answer": 1,
+          "id": 3,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why should deployment events be annotated on the metrics dashboard?",
+          "options": {
+            "A": "To satisfy regulatory requirements",
+            "B": "To visually correlate metric changes with specific deployments (model upgrades, prompt changes) for rapid root-cause analysis",
+            "C": "To track team performance",
+            "D": "To calculate deployment frequency"
+          },
+          "answer": "B",
           "explanation": "When quality drops at 2 AM and a deployment happened at 1:58 AM, the annotation makes the correlation immediately obvious. Without it, you manually search logs to find what changed."
         },
         {
-          "q": "When replaying a logged production request in staging for debugging, you must:",
-          "options": [
-            "Use the exact production environment",
-            "Sanitise PII from the logged content and mock irreversible tool calls (email, payment) before replaying",
-            "Replay with a different model to compare",
-            "Only replay requests that resulted in errors"
-          ],
-          "answer": 1,
+          "id": 4,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "When replaying a logged production request in staging for debugging, you must:",
+          "options": {
+            "A": "Use the exact production environment",
+            "B": "Sanitise PII from the logged content and mock irreversible tool calls (email, payment) before replaying",
+            "C": "Replay with a different model to compare",
+            "D": "Only replay requests that resulted in errors"
+          },
+          "answer": "B",
           "explanation": "Production logs may contain PII (user messages) and irreversible tool calls. Replay must: (1) redact PII before passing to staging; (2) mock send_email, payment, delete calls to prevent real side-effects."
         },
         {
-          "q": "Segmenting quality_score by model_id and prompt_version in RCA is important because:",
-          "options": [
-            "Different models have different pricing",
-            "An overall quality drop may hide that only one model version or prompt version is degraded, while others are healthy",
-            "It reduces storage costs",
-            "It improves model accuracy"
-          ],
-          "answer": 1,
+          "id": 5,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Segmenting quality_score by model_id and prompt_version in RCA is important because:",
+          "options": {
+            "A": "Different models have different pricing",
+            "B": "An overall quality drop may hide that only one model version or prompt version is degraded, while others are healthy",
+            "C": "It reduces storage costs",
+            "D": "It improves model accuracy"
+          },
+          "answer": "B",
           "explanation": "Aggregate metrics mask segmented failures. If 20% of traffic on model_version v2 scores 0.55 while 80% on v3 scores 0.85, the overall average (0.79) looks acceptable but hides a v2 regression."
         }
       ]

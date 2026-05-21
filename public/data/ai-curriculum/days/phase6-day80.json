@@ -8,8 +8,19 @@
   "difficulty": "expert",
   "level": "expert",
   "track": "ai-engineering",
-  "tags": ["memory", "agents", "episodic", "semantic", "procedural", "knowledge-graph", "persistence"],
-  "prerequisites": ["phase3-day47", "phase4-day52"],
+  "tags": [
+    "memory",
+    "agents",
+    "episodic",
+    "semantic",
+    "procedural",
+    "knowledge-graph",
+    "persistence"
+  ],
+  "prerequisites": [
+    "phase3-day47",
+    "phase4-day52"
+  ],
   "learningObjectives": [
     "Design a three-tier memory system: episodic, semantic, procedural",
     "Implement memory consolidation from episodic to semantic",
@@ -31,7 +42,10 @@
     {
       "type": "code",
       "title": "Three-Tier Memory System with Consolidation",
-      "content": "```python\nimport json\nimport math\nimport re\nimport time\nfrom dataclasses import dataclass, field, asdict\nfrom pathlib import Path\nfrom typing import Any, Callable\nimport uuid\n\n\n# ── Episodic Memory ───────────────────────────────────────────────────────────\n@dataclass\nclass EpisodicEvent:\n    event_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])\n    timestamp: float = field(default_factory=time.time)\n    event_type: str = 'interaction'  # interaction, error, success, observation\n    content: str = ''\n    outcome: str = ''  # positive, negative, neutral\n    importance: float = 0.5  # 0-1\n    user_id: str = ''\n    consolidated: bool = False\n\n    def importance_score(self, now: float | None = None) -> float:\n        now = now or time.time()\n        age_days = (now - self.timestamp) / 86400\n        recency = math.exp(-0.1 * age_days)  # exponential decay\n        outcome_boost = {'positive': 0.2, 'negative': 0.15, 'neutral': 0.0}.get(self.outcome, 0.0)\n        return min(1.0, self.importance * recency + outcome_boost)\n\n\n# ── Knowledge Graph for Semantic Memory ───────────────────────────────────────\n@dataclass\nclass Triple:\n    subject: str\n    predicate: str\n    obj: str\n    confidence: float = 1.0\n    source_event_ids: list[str] = field(default_factory=list)\n    created_at: float = field(default_factory=time.time)\n    access_count: int = 0\n\n    @property\n    def key(self) -> str:\n        return f'{self.subject}|{self.predicate}|{self.obj}'\n\n\nclass KnowledgeGraph:\n    def __init__(self):\n        self._triples: dict[str, Triple] = {}\n        self._subject_index: dict[str, list[str]] = {}  # subject → [triple_keys]\n\n    def add(self, triple: Triple) -> None:\n        if triple.key in self._triples:\n            # Update confidence and sources\n            existing = self._triples[triple.key]\n            existing.confidence = min(1.0, existing.confidence + 0.1)\n            existing.source_event_ids.extend(triple.source_event_ids)\n        else:\n            self._triples[triple.key] = triple\n            self._subject_index.setdefault(triple.subject, []).append(triple.key)\n\n    def get_facts_about(self, entity: str) -> list[Triple]:\n        keys = self._subject_index.get(entity, [])\n        triples = [self._triples[k] for k in keys if k in self._triples]\n        for t in triples:\n            t.access_count += 1\n        return sorted(triples, key=lambda t: -t.confidence)\n\n    def search(self, query: str) -> list[Triple]:\n        q_tokens = set(re.findall(r'\\w+', query.lower()))\n        scored = []\n        for triple in self._triples.values():\n            text = f'{triple.subject} {triple.predicate} {triple.obj}'.lower()\n            t_tokens = set(re.findall(r'\\w+', text))\n            overlap = len(q_tokens & t_tokens) / (len(q_tokens | t_tokens) or 1)\n            if overlap > 0:\n                scored.append((overlap, triple))\n        scored.sort(key=lambda x: -x[0])\n        return [t for _, t in scored[:10]]\n\n    def to_context_string(self, entities: list[str]) -> str:\n        lines = []\n        for entity in entities:\n            for triple in self.get_facts_about(entity)[:5]:\n                lines.append(f'{triple.subject} {triple.predicate} {triple.obj}')\n        return '\\n'.join(lines)\n\n\n# ── Procedural Memory ─────────────────────────────────────────────────────────\n@dataclass\nclass Skill:\n    skill_id: str\n    name: str\n    trigger_keywords: list[str]  # keywords that suggest this skill is needed\n    steps: list[str]\n    success_rate: float = 0.5\n    use_count: int = 0\n    last_used: float = field(default_factory=time.time)\n\n    def matches(self, query: str) -> float:\n        q_lower = query.lower()\n        hits = sum(1 for kw in self.trigger_keywords if kw in q_lower)\n        return hits / len(self.trigger_keywords) if self.trigger_keywords else 0.0\n\n    def update_success(self, succeeded: bool) -> None:\n        alpha = 0.2  # EMA smoothing\n        self.success_rate = (1 - alpha) * self.success_rate + alpha * (1.0 if succeeded else 0.0)\n        self.use_count += 1\n        self.last_used = time.time()\n\n\nclass ProceduralMemory:\n    def __init__(self):\n        self._skills: list[Skill] = []\n\n    def register(self, skill: Skill) -> None:\n        self._skills.append(skill)\n\n    def retrieve(self, query: str, top_k: int = 3) -> list[Skill]:\n        scored = [(s.matches(query), s) for s in self._skills]\n        scored.sort(key=lambda x: (-x[0], -x[1].success_rate))\n        return [s for score, s in scored[:top_k] if score > 0]\n\n\n# ── Memory consolidation ──────────────────────────────────────────────────────\nclass MemoryConsolidator:\n    \"\"\"\n    Extracts semantic facts and procedural patterns from episodic events.\n    \"\"\"\n\n    def __init__(self, llm_fn: Callable[[str], str]):\n        self._llm = llm_fn\n\n    def consolidate(self, events: list[EpisodicEvent], kg: KnowledgeGraph) -> int:\n        \"\"\"\n        Process unconsolidated events → extract triples → add to knowledge graph.\n        Returns count of triples added.\n        \"\"\"\n        unconsolidated = [e for e in events if not e.consolidated]\n        if not unconsolidated:\n            return 0\n\n        # Batch events for LLM extraction\n        events_text = '\\n'.join(\n            f'[{e.event_type}] {e.content} → outcome: {e.outcome}'\n            for e in unconsolidated[:20]  # batch limit\n        )\n        prompt = (\n            f'Extract factual knowledge from these events as subject-predicate-object triples.\\n'\n            f'Format: subject | predicate | object\\n\\n'\n            f'Events:\\n{events_text}\\n\\n'\n            f'Triples (one per line):'\n        )\n        raw = self._llm(prompt)\n        added = 0\n        for line in raw.strip().split('\\n'):\n            parts = [p.strip() for p in line.split('|')]\n            if len(parts) == 3:\n                triple = Triple(\n                    subject=parts[0],\n                    predicate=parts[1],\n                    obj=parts[2],\n                    source_event_ids=[e.event_id for e in unconsolidated],\n                )\n                kg.add(triple)\n                added += 1\n\n        # Mark as consolidated\n        for e in unconsolidated:\n            e.consolidated = True\n\n        return added\n\n\n# ── Long-term memory agent ────────────────────────────────────────────────────\nclass MemoryAgent:\n    \"\"\"\n    Agent with three-tier memory. Retrieves relevant memories before each call.\n    Updates memory after each interaction.\n    \"\"\"\n\n    def __init__(self,\n                 llm_fn: Callable[[str], str],\n                 user_id: str,\n                 storage_path: str | None = None):\n        self._llm = llm_fn\n        self._user_id = user_id\n        self._episodes: list[EpisodicEvent] = []\n        self._kg = KnowledgeGraph()\n        self._procedural = ProceduralMemory()\n        self._consolidator = MemoryConsolidator(llm_fn)\n        self._storage = Path(storage_path) if storage_path else None\n\n        # Register default skills\n        self._procedural.register(Skill(\n            skill_id='s1', name='Explain technical concept',\n            trigger_keywords=['explain', 'what is', 'how does', 'define'],\n            steps=['Identify core concept', 'Explain with analogy', 'Give example', 'Check for clarity'],\n        ))\n        self._procedural.register(Skill(\n            skill_id='s2', name='Debug code',\n            trigger_keywords=['error', 'bug', 'fix', 'debug', 'exception', 'crash'],\n            steps=['Reproduce the error', 'Identify root cause', 'Propose fix', 'Verify solution'],\n        ))\n\n    def _build_memory_context(self, query: str) -> str:\n        # Episodic: top-3 most important recent events\n        sorted_episodes = sorted(\n            self._episodes, key=lambda e: -e.importance_score(), reverse=False\n        )[-10:]  # last 10 events\n        relevant_episodes = sorted(sorted_episodes, key=lambda e: -e.importance_score())[:3]\n        episodic_context = '\\n'.join(\n            f'- [{e.event_type}] {e.content[:100]}' for e in relevant_episodes\n        ) or 'No prior episodes.'\n\n        # Semantic: search knowledge graph\n        entities = re.findall(r'\\b[A-Z][a-z]+\\b', query)  # naive entity extraction\n        kg_facts = self._kg.search(query)[:5]\n        semantic_context = '\\n'.join(\n            f'- {t.subject} {t.predicate} {t.obj}' for t in kg_facts\n        ) or 'No semantic facts.'\n\n        # Procedural: matching skills\n        skills = self._procedural.retrieve(query, top_k=2)\n        skill_context = '\\n'.join(\n            f'- Use skill \"{s.name}\": {\" → \".join(s.steps)}' for s in skills\n        ) or 'No matching skills.'\n\n        return (\n            f'=== Memory Context ===\\n'\n            f'[Episodic - Past interactions]\\n{episodic_context}\\n\\n'\n            f'[Semantic - Known facts]\\n{semantic_context}\\n\\n'\n            f'[Procedural - Applicable skills]\\n{skill_context}\\n'\n            f'====================='\n        )\n\n    def chat(self, user_message: str) -> str:\n        memory_ctx = self._build_memory_context(user_message)\n        full_prompt = f'{memory_ctx}\\n\\nUser: {user_message}\\n\\nAssistant:'\n        response = self._llm(full_prompt)\n\n        # Store episodic event\n        event = EpisodicEvent(\n            event_type='interaction',\n            content=f'User: {user_message[:200]} | Agent: {response[:200]}',\n            outcome='positive',  # could be updated via feedback\n            importance=0.6,\n            user_id=self._user_id,\n        )\n        self._episodes.append(event)\n\n        # Consolidate every 10 episodes\n        if len(self._episodes) % 10 == 0:\n            added = self._consolidator.consolidate(self._episodes, self._kg)\n\n        return response\n\n    def remember(self, fact: str, subject: str, predicate: str, obj: str) -> None:\n        \"\"\"Explicitly add a fact to semantic memory.\"\"\"\n        self._kg.add(Triple(subject=subject, predicate=predicate, obj=obj))\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    def mock_llm(prompt: str) -> str:\n        if 'triple' in prompt.lower() or '|' in prompt:\n            return 'Alice | PREFERS | concise explanations\\nPython | IS | programming language'\n        return f'Response with memory context applied: {prompt[-100:]}'\n\n    agent = MemoryAgent(mock_llm, user_id='alice')\n\n    # Explicitly remember preferences\n    agent.remember('Alice prefers bullet points', 'Alice', 'PREFERS', 'bullet_point_format')\n    agent.remember('Alice is a senior engineer', 'Alice', 'IS', 'senior_software_engineer')\n\n    # Simulate interactions\n    queries = [\n        'Explain how transformers work.',\n        'I have a bug in my Python code, it throws a KeyError.',\n        'What is the difference between SQL and NoSQL?',\n    ]\n\n    for q in queries:\n        print(f'User: {q}')\n        resp = agent.chat(q)\n        print(f'Agent: {resp[:100]}...')\n        print()\n\n    # Check knowledge graph\n    facts = agent._kg.get_facts_about('Alice')\n    print(f'Facts about Alice: {[(t.predicate, t.obj) for t in facts]}')\n\n    # Procedural memory retrieval\n    skills = agent._procedural.retrieve('I have an error in my code', top_k=2)\n    print(f'Matching skills: {[s.name for s in skills]}')\n```"
+      "language": "python",
+      "filename": "threetier_memory_system_with_c.py",
+      "code": "import json\nimport math\nimport re\nimport time\nfrom dataclasses import dataclass, field, asdict\nfrom pathlib import Path\nfrom typing import Any, Callable\nimport uuid\n\n\n# ── Episodic Memory ───────────────────────────────────────────────────────────\n@dataclass\nclass EpisodicEvent:\n    event_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])\n    timestamp: float = field(default_factory=time.time)\n    event_type: str = 'interaction'  # interaction, error, success, observation\n    content: str = ''\n    outcome: str = ''  # positive, negative, neutral\n    importance: float = 0.5  # 0-1\n    user_id: str = ''\n    consolidated: bool = False\n\n    def importance_score(self, now: float | None = None) -> float:\n        now = now or time.time()\n        age_days = (now - self.timestamp) / 86400\n        recency = math.exp(-0.1 * age_days)  # exponential decay\n        outcome_boost = {'positive': 0.2, 'negative': 0.15, 'neutral': 0.0}.get(self.outcome, 0.0)\n        return min(1.0, self.importance * recency + outcome_boost)\n\n\n# ── Knowledge Graph for Semantic Memory ───────────────────────────────────────\n@dataclass\nclass Triple:\n    subject: str\n    predicate: str\n    obj: str\n    confidence: float = 1.0\n    source_event_ids: list[str] = field(default_factory=list)\n    created_at: float = field(default_factory=time.time)\n    access_count: int = 0\n\n    @property\n    def key(self) -> str:\n        return f'{self.subject}|{self.predicate}|{self.obj}'\n\n\nclass KnowledgeGraph:\n    def __init__(self):\n        self._triples: dict[str, Triple] = {}\n        self._subject_index: dict[str, list[str]] = {}  # subject → [triple_keys]\n\n    def add(self, triple: Triple) -> None:\n        if triple.key in self._triples:\n            # Update confidence and sources\n            existing = self._triples[triple.key]\n            existing.confidence = min(1.0, existing.confidence + 0.1)\n            existing.source_event_ids.extend(triple.source_event_ids)\n        else:\n            self._triples[triple.key] = triple\n            self._subject_index.setdefault(triple.subject, []).append(triple.key)\n\n    def get_facts_about(self, entity: str) -> list[Triple]:\n        keys = self._subject_index.get(entity, [])\n        triples = [self._triples[k] for k in keys if k in self._triples]\n        for t in triples:\n            t.access_count += 1\n        return sorted(triples, key=lambda t: -t.confidence)\n\n    def search(self, query: str) -> list[Triple]:\n        q_tokens = set(re.findall(r'\\w+', query.lower()))\n        scored = []\n        for triple in self._triples.values():\n            text = f'{triple.subject} {triple.predicate} {triple.obj}'.lower()\n            t_tokens = set(re.findall(r'\\w+', text))\n            overlap = len(q_tokens & t_tokens) / (len(q_tokens | t_tokens) or 1)\n            if overlap > 0:\n                scored.append((overlap, triple))\n        scored.sort(key=lambda x: -x[0])\n        return [t for _, t in scored[:10]]\n\n    def to_context_string(self, entities: list[str]) -> str:\n        lines = []\n        for entity in entities:\n            for triple in self.get_facts_about(entity)[:5]:\n                lines.append(f'{triple.subject} {triple.predicate} {triple.obj}')\n        return '\\n'.join(lines)\n\n\n# ── Procedural Memory ─────────────────────────────────────────────────────────\n@dataclass\nclass Skill:\n    skill_id: str\n    name: str\n    trigger_keywords: list[str]  # keywords that suggest this skill is needed\n    steps: list[str]\n    success_rate: float = 0.5\n    use_count: int = 0\n    last_used: float = field(default_factory=time.time)\n\n    def matches(self, query: str) -> float:\n        q_lower = query.lower()\n        hits = sum(1 for kw in self.trigger_keywords if kw in q_lower)\n        return hits / len(self.trigger_keywords) if self.trigger_keywords else 0.0\n\n    def update_success(self, succeeded: bool) -> None:\n        alpha = 0.2  # EMA smoothing\n        self.success_rate = (1 - alpha) * self.success_rate + alpha * (1.0 if succeeded else 0.0)\n        self.use_count += 1\n        self.last_used = time.time()\n\n\nclass ProceduralMemory:\n    def __init__(self):\n        self._skills: list[Skill] = []\n\n    def register(self, skill: Skill) -> None:\n        self._skills.append(skill)\n\n    def retrieve(self, query: str, top_k: int = 3) -> list[Skill]:\n        scored = [(s.matches(query), s) for s in self._skills]\n        scored.sort(key=lambda x: (-x[0], -x[1].success_rate))\n        return [s for score, s in scored[:top_k] if score > 0]\n\n\n# ── Memory consolidation ──────────────────────────────────────────────────────\nclass MemoryConsolidator:\n    \"\"\"\n    Extracts semantic facts and procedural patterns from episodic events.\n    \"\"\"\n\n    def __init__(self, llm_fn: Callable[[str], str]):\n        self._llm = llm_fn\n\n    def consolidate(self, events: list[EpisodicEvent], kg: KnowledgeGraph) -> int:\n        \"\"\"\n        Process unconsolidated events → extract triples → add to knowledge graph.\n        Returns count of triples added.\n        \"\"\"\n        unconsolidated = [e for e in events if not e.consolidated]\n        if not unconsolidated:\n            return 0\n\n        # Batch events for LLM extraction\n        events_text = '\\n'.join(\n            f'[{e.event_type}] {e.content} → outcome: {e.outcome}'\n            for e in unconsolidated[:20]  # batch limit\n        )\n        prompt = (\n            f'Extract factual knowledge from these events as subject-predicate-object triples.\\n'\n            f'Format: subject | predicate | object\\n\\n'\n            f'Events:\\n{events_text}\\n\\n'\n            f'Triples (one per line):'\n        )\n        raw = self._llm(prompt)\n        added = 0\n        for line in raw.strip().split('\\n'):\n            parts = [p.strip() for p in line.split('|')]\n            if len(parts) == 3:\n                triple = Triple(\n                    subject=parts[0],\n                    predicate=parts[1],\n                    obj=parts[2],\n                    source_event_ids=[e.event_id for e in unconsolidated],\n                )\n                kg.add(triple)\n                added += 1\n\n        # Mark as consolidated\n        for e in unconsolidated:\n            e.consolidated = True\n\n        return added\n\n\n# ── Long-term memory agent ────────────────────────────────────────────────────\nclass MemoryAgent:\n    \"\"\"\n    Agent with three-tier memory. Retrieves relevant memories before each call.\n    Updates memory after each interaction.\n    \"\"\"\n\n    def __init__(self,\n                 llm_fn: Callable[[str], str],\n                 user_id: str,\n                 storage_path: str | None = None):\n        self._llm = llm_fn\n        self._user_id = user_id\n        self._episodes: list[EpisodicEvent] = []\n        self._kg = KnowledgeGraph()\n        self._procedural = ProceduralMemory()\n        self._consolidator = MemoryConsolidator(llm_fn)\n        self._storage = Path(storage_path) if storage_path else None\n\n        # Register default skills\n        self._procedural.register(Skill(\n            skill_id='s1', name='Explain technical concept',\n            trigger_keywords=['explain', 'what is', 'how does', 'define'],\n            steps=['Identify core concept', 'Explain with analogy', 'Give example', 'Check for clarity'],\n        ))\n        self._procedural.register(Skill(\n            skill_id='s2', name='Debug code',\n            trigger_keywords=['error', 'bug', 'fix', 'debug', 'exception', 'crash'],\n            steps=['Reproduce the error', 'Identify root cause', 'Propose fix', 'Verify solution'],\n        ))\n\n    def _build_memory_context(self, query: str) -> str:\n        # Episodic: top-3 most important recent events\n        sorted_episodes = sorted(\n            self._episodes, key=lambda e: -e.importance_score(), reverse=False\n        )[-10:]  # last 10 events\n        relevant_episodes = sorted(sorted_episodes, key=lambda e: -e.importance_score())[:3]\n        episodic_context = '\\n'.join(\n            f'- [{e.event_type}] {e.content[:100]}' for e in relevant_episodes\n        ) or 'No prior episodes.'\n\n        # Semantic: search knowledge graph\n        entities = re.findall(r'\\b[A-Z][a-z]+\\b', query)  # naive entity extraction\n        kg_facts = self._kg.search(query)[:5]\n        semantic_context = '\\n'.join(\n            f'- {t.subject} {t.predicate} {t.obj}' for t in kg_facts\n        ) or 'No semantic facts.'\n\n        # Procedural: matching skills\n        skills = self._procedural.retrieve(query, top_k=2)\n        skill_context = '\\n'.join(\n            f'- Use skill \"{s.name}\": {\" → \".join(s.steps)}' for s in skills\n        ) or 'No matching skills.'\n\n        return (\n            f'=== Memory Context ===\\n'\n            f'[Episodic - Past interactions]\\n{episodic_context}\\n\\n'\n            f'[Semantic - Known facts]\\n{semantic_context}\\n\\n'\n            f'[Procedural - Applicable skills]\\n{skill_context}\\n'\n            f'====================='\n        )\n\n    def chat(self, user_message: str) -> str:\n        memory_ctx = self._build_memory_context(user_message)\n        full_prompt = f'{memory_ctx}\\n\\nUser: {user_message}\\n\\nAssistant:'\n        response = self._llm(full_prompt)\n\n        # Store episodic event\n        event = EpisodicEvent(\n            event_type='interaction',\n            content=f'User: {user_message[:200]} | Agent: {response[:200]}',\n            outcome='positive',  # could be updated via feedback\n            importance=0.6,\n            user_id=self._user_id,\n        )\n        self._episodes.append(event)\n\n        # Consolidate every 10 episodes\n        if len(self._episodes) % 10 == 0:\n            added = self._consolidator.consolidate(self._episodes, self._kg)\n\n        return response\n\n    def remember(self, fact: str, subject: str, predicate: str, obj: str) -> None:\n        \"\"\"Explicitly add a fact to semantic memory.\"\"\"\n        self._kg.add(Triple(subject=subject, predicate=predicate, obj=obj))\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    def mock_llm(prompt: str) -> str:\n        if 'triple' in prompt.lower() or '|' in prompt:\n            return 'Alice | PREFERS | concise explanations\\nPython | IS | programming language'\n        return f'Response with memory context applied: {prompt[-100:]}'\n\n    agent = MemoryAgent(mock_llm, user_id='alice')\n\n    # Explicitly remember preferences\n    agent.remember('Alice prefers bullet points', 'Alice', 'PREFERS', 'bullet_point_format')\n    agent.remember('Alice is a senior engineer', 'Alice', 'IS', 'senior_software_engineer')\n\n    # Simulate interactions\n    queries = [\n        'Explain how transformers work.',\n        'I have a bug in my Python code, it throws a KeyError.',\n        'What is the difference between SQL and NoSQL?',\n    ]\n\n    for q in queries:\n        print(f'User: {q}')\n        resp = agent.chat(q)\n        print(f'Agent: {resp[:100]}...')\n        print()\n\n    # Check knowledge graph\n    facts = agent._kg.get_facts_about('Alice')\n    print(f'Facts about Alice: {[(t.predicate, t.obj) for t in facts]}')\n\n    # Procedural memory retrieval\n    skills = agent._procedural.retrieve('I have an error in my code', top_k=2)\n    print(f'Matching skills: {[s.name for s in skills]}')",
+      "level": "advanced"
     },
     {
       "type": "pitfalls",
@@ -41,70 +55,108 @@
     {
       "type": "exercise",
       "title": "Build a Personalised Learning Agent",
-      "content": "**Task:** Build a tutoring agent that remembers student progress and adapts.\n\n**Requirements:**\n1. `EpisodicMemory` stores each quiz question and whether the student got it right\n2. `KnowledgeGraph` records: topics the student knows, common mistake patterns, preferred explanation style\n3. `ProceduralMemory` has skills: 'explain_new_concept', 'review_weak_topic', 'quiz_student'\n4. After 5 interactions, run consolidation to extract which topics need more practice\n5. Agent adapts next question difficulty based on recent performance (from episodic memory)\n6. Export student profile as JSON after 10 interactions\n\n**Bonus:** Implement spaced repetition: topics with low performance get `next_review = now + 1 day`; high-performance topics get `next_review = now + 7 days`."
+      "difficulty": "Advanced",
+      "problem": "**Task:** Build a tutoring agent that remembers student progress and adapts.\n\n**Requirements:**\n1. `EpisodicMemory` stores each quiz question and whether the student got it right\n2. `KnowledgeGraph` records: topics the student knows, common mistake patterns, preferred explanation style\n3. `ProceduralMemory` has skills: 'explain_new_concept', 'review_weak_topic', 'quiz_student'\n4. After 5 interactions, run consolidation to extract which topics need more practice\n5. Agent adapts next question difficulty based on recent performance (from episodic memory)\n6. Export student profile as JSON after 10 interactions\n\n**Bonus:** Implement spaced repetition: topics with low performance get `next_review = now + 1 day`; high-performance topics get `next_review = now + 7 days`.",
+      "hints": [],
+      "solution": ""
     },
     {
       "type": "interview",
       "title": "Interview Questions — Long-Term Memory Agents",
-      "content": "**Conceptual:**\nQ: What are the three tiers of agent memory and what does each store?\nA: Episodic memory stores specific past events (what happened, when, outcome). Semantic memory stores structured facts and relationships (knowledge graph). Procedural memory stores skill templates — how to perform specific tasks. The tiers correspond to human memory types: episodic (autobiographical), semantic (world knowledge), procedural (motor skills).\n\n**Code-based:**\nQ: An agent has 1,000 episodic events but the context window fits only 10. How do you select which to inject?\nA: Compute importance_score() for each event (recency decay × base importance × outcome boost). Retrieve top-5 by importance. Then retrieve top-5 by embedding similarity to the current query. Deduplicate and inject top-10 combined. Alternatively, use MMR (Maximal Marginal Relevance) to balance relevance and diversity.\n\n**Senior scenario:**\nQ: Your memory agent serves multiple users. User A's fact 'Python is a scripting language' and User B's fact 'Python is an OOP language' both end up in the same knowledge graph. How do you fix the architecture?\nA: The knowledge graph must be scoped per user_id. Options: (1) Namespace triple subjects with user_id prefix: 'user_A:Python IS scripting'. (2) Maintain separate KnowledgeGraph instances per user (better isolation). (3) Add user_id field to Triple and filter at retrieval time. Option 2 is cleanest for isolation but requires per-user persistence.\n\n**Wrong answer to avoid:**\nQ: How does memory consolidation work?\nBad: 'Store everything the user says in the system prompt.' Correct: Consolidation runs periodically on episodic events, uses an LLM to extract recurring patterns and facts, writes those as triples to the knowledge graph, and compresses or deletes old episodic events to prevent memory bloat."
+      "conceptual": [
+        {
+          "question": "What are the three tiers of agent memory and what does each store?",
+          "answer": "Episodic memory stores specific past events (what happened, when, outcome). Semantic memory stores structured facts and relationships (knowledge graph). Procedural memory stores skill templates — how to perform specific tasks. The tiers correspond to human memory types: episodic (autobiographical), semantic (world knowledge), procedural (motor skills)."
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "An agent has 1,000 episodic events but the context window fits only 10. How do you select which to inject?",
+          "answer": "Compute importance_score() for each event (recency decay × base importance × outcome boost). Retrieve top-5 by importance. Then retrieve top-5 by embedding similarity to the current query. Deduplicate and inject top-10 combined. Alternatively, use MMR (Maximal Marginal Relevance) to balance relevance and diversity."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your memory agent serves multiple users. User A's fact 'Python is a scripting language' and User B's fact 'Python is an OOP language' both end up in the same knowledge graph. How do you fix the architecture?",
+          "answer": "The knowledge graph must be scoped per user_id. Options: (1) Namespace triple subjects with user_id prefix: 'user_A:Python IS scripting'. (2) Maintain separate KnowledgeGraph instances per user (better isolation). (3) Add user_id field to Triple and filter at retrieval time. Option 2 is cleanest for isolation but requires per-user persistence."
+        }
+      ],
+      "wrongAnswers": [
+        "Q: How does memory consolidation work?\nBad: 'Store everything the user says in the system prompt.' Correct: Consolidation runs periodically on episodic events, uses an LLM to extract recurring patterns and facts, writes those as triples to the knowledge graph, and compresses or deletes old episodic events to prevent memory bloat."
+      ]
     },
     {
       "type": "mcq",
       "title": "Long-Term Memory Quiz",
       "questions": [
         {
-          "q": "Episodic memory importance_score() decays over time because:",
-          "options": [
-            "Older events are less likely to be grammatically correct",
-            "Recent events are more likely to be relevant to the current context",
-            "Storage limits require deletion of old events",
-            "LLM context windows cannot access old information"
-          ],
-          "answer": 1,
+          "id": 1,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Episodic memory importance_score() decays over time because:",
+          "options": {
+            "A": "Older events are less likely to be grammatically correct",
+            "B": "Recent events are more likely to be relevant to the current context",
+            "C": "Storage limits require deletion of old events",
+            "D": "LLM context windows cannot access old information"
+          },
+          "answer": "B",
           "explanation": "Recency decay (e.g., exponential: e^{-0.1*age_days}) reflects that recent interactions are more likely contextually relevant than old ones. Important events resist decay via higher base importance."
         },
         {
-          "q": "A knowledge graph Triple with subject='Alice', predicate='PREFERS', obj='bullet_points' allows the agent to:",
-          "options": [
-            "Search for Alice in a database",
-            "Inject personalised style preferences into prompts without re-learning from each conversation",
-            "Authenticate the user as Alice",
-            "Track Alice's billing information"
-          ],
-          "answer": 1,
+          "id": 2,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "A knowledge graph Triple with subject='Alice', predicate='PREFERS', obj='bullet_points' allows the agent to:",
+          "options": {
+            "A": "Search for Alice in a database",
+            "B": "Inject personalised style preferences into prompts without re-learning from each conversation",
+            "C": "Authenticate the user as Alice",
+            "D": "Track Alice's billing information"
+          },
+          "answer": "B",
           "explanation": "Persistent semantic facts like user preferences are retrieved at query time and injected into the system prompt, enabling personalisation without needing to re-observe the preference in each session."
         },
         {
-          "q": "Memory consolidation should run:",
-          "options": [
-            "On every single LLM call to keep the knowledge graph current",
-            "Periodically (e.g., every N episodes or nightly) to batch-extract patterns from episodic events",
-            "Only when the user requests it",
-            "Only during system startup"
-          ],
-          "answer": 1,
+          "id": 3,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Memory consolidation should run:",
+          "options": {
+            "A": "On every single LLM call to keep the knowledge graph current",
+            "B": "Periodically (e.g., every N episodes or nightly) to batch-extract patterns from episodic events",
+            "C": "Only when the user requests it",
+            "D": "Only during system startup"
+          },
+          "answer": "B",
           "explanation": "Consolidation is a batch process — running it on every call is too expensive. Periodic consolidation extracts patterns from accumulated episodes and updates the knowledge graph efficiently."
         },
         {
-          "q": "Procedural memory's success_rate is updated with an EMA (exponential moving average) rather than a simple average because:",
-          "options": [
-            "EMA is computationally cheaper",
-            "EMA weights recent executions more heavily, reflecting that recent performance is more predictive of current capability than historical performance",
-            "Simple average would require storing all past outcomes",
-            "EMA ensures success_rate stays between 0 and 1"
-          ],
-          "answer": 1,
+          "id": 4,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Procedural memory's success_rate is updated with an EMA (exponential moving average) rather than a simple average because:",
+          "options": {
+            "A": "EMA is computationally cheaper",
+            "B": "EMA weights recent executions more heavily, reflecting that recent performance is more predictive of current capability than historical performance",
+            "C": "Simple average would require storing all past outcomes",
+            "D": "EMA ensures success_rate stays between 0 and 1"
+          },
+          "answer": "B",
           "explanation": "EMA gives more weight to recent successes/failures. If a skill improved recently, EMA catches this faster than averaging all historical outcomes equally."
         },
         {
-          "q": "Why must episodic and semantic memory be scoped per user_id?",
-          "options": [
-            "To reduce storage costs",
-            "To prevent one user's facts and preferences from being injected into another user's context",
-            "To comply with GDPR right-to-erasure (allows per-user deletion)",
-            "Both B and C"
-          ],
-          "answer": 3,
+          "id": 5,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why must episodic and semantic memory be scoped per user_id?",
+          "options": {
+            "A": "To reduce storage costs",
+            "B": "To prevent one user's facts and preferences from being injected into another user's context",
+            "C": "To comply with GDPR right-to-erasure (allows per-user deletion)",
+            "D": "Both B and C"
+          },
+          "answer": "D",
           "explanation": "Both apply: cross-user memory contamination degrades personalisation and can leak private information; per-user scoping also enables clean deletion of a user's data for GDPR compliance."
         }
       ]

@@ -8,8 +8,19 @@
   "difficulty": "expert",
   "level": "expert",
   "track": "ai-engineering",
-  "tags": ["o1", "moe", "mamba", "ssm", "reasoning-models", "mixture-of-experts", "architecture"],
-  "prerequisites": ["phase6-day78", "phase1-day6"],
+  "tags": [
+    "o1",
+    "moe",
+    "mamba",
+    "ssm",
+    "reasoning-models",
+    "mixture-of-experts",
+    "architecture"
+  ],
+  "prerequisites": [
+    "phase6-day78",
+    "phase1-day6"
+  ],
   "learningObjectives": [
     "Understand how o1/o3 reasoning models use extended chain-of-thought",
     "Explain Mixture-of-Experts architecture and sparse activation",
@@ -31,7 +42,10 @@
     {
       "type": "code",
       "title": "Architecture-Aware Model Selector & Cost Estimator",
-      "content": "```python\nimport math\nfrom dataclasses import dataclass\nfrom enum import Enum\nfrom typing import Any\n\n\n# ── Model architecture taxonomy ───────────────────────────────────────────────\nclass ArchType(Enum):\n    DENSE_TRANSFORMER = 'dense_transformer'\n    MOE_TRANSFORMER = 'moe_transformer'\n    REASONING_MODEL = 'reasoning_model'    # o1-style extended CoT\n    STATE_SPACE = 'state_space'             # Mamba-style\n\n\n@dataclass\nclass ModelProfile:\n    name: str\n    arch: ArchType\n    total_params_b: float          # total parameters (billions)\n    active_params_b: float         # parameters activated per forward pass\n    context_length: int            # max tokens\n    cost_per_1k_input: float       # USD\n    cost_per_1k_output: float\n    reasoning_overhead_s: float    # avg thinking time for reasoning models (0 for others)\n    p50_ttft_ms: int               # time to first token\n    strengths: list[str]\n    weaknesses: list[str]\n\n\nMODEL_CATALOGUE: dict[str, ModelProfile] = {\n    'gpt-4o-mini': ModelProfile(\n        name='gpt-4o-mini', arch=ArchType.MOE_TRANSFORMER,\n        total_params_b=8, active_params_b=2, context_length=128_000,\n        cost_per_1k_input=0.00015, cost_per_1k_output=0.0006,\n        reasoning_overhead_s=0, p50_ttft_ms=400,\n        strengths=['fast', 'cheap', 'sufficient for simple tasks'],\n        weaknesses=['complex reasoning', 'nuanced analysis'],\n    ),\n    'gpt-4o': ModelProfile(\n        name='gpt-4o', arch=ArchType.MOE_TRANSFORMER,\n        total_params_b=200, active_params_b=50, context_length=128_000,\n        cost_per_1k_input=0.0025, cost_per_1k_output=0.010,\n        reasoning_overhead_s=0, p50_ttft_ms=1200,\n        strengths=['high quality', 'vision', 'instruction following', 'coding'],\n        weaknesses=['cost', 'latency vs mini'],\n    ),\n    'o1-mini': ModelProfile(\n        name='o1-mini', arch=ArchType.REASONING_MODEL,\n        total_params_b=50, active_params_b=50, context_length=128_000,\n        cost_per_1k_input=0.003, cost_per_1k_output=0.012,\n        reasoning_overhead_s=5, p50_ttft_ms=6000,\n        strengths=['math', 'code', 'reasoning', 'multi-step logic'],\n        weaknesses=['latency', 'cost', 'simple tasks (overkill)'],\n    ),\n    'o3-mini': ModelProfile(\n        name='o3-mini', arch=ArchType.REASONING_MODEL,\n        total_params_b=50, active_params_b=50, context_length=200_000,\n        cost_per_1k_input=0.0011, cost_per_1k_output=0.0044,\n        reasoning_overhead_s=8, p50_ttft_ms=10000,\n        strengths=['frontier reasoning', 'STEM', 'PhD-level problems'],\n        weaknesses=['very high latency', 'expensive at scale'],\n    ),\n    'mixtral-8x7b': ModelProfile(\n        name='mixtral-8x7b', arch=ArchType.MOE_TRANSFORMER,\n        total_params_b=56, active_params_b=14, context_length=32_000,\n        cost_per_1k_input=0.0006, cost_per_1k_output=0.0006,\n        reasoning_overhead_s=0, p50_ttft_ms=600,\n        strengths=['cost efficient', 'open source', 'good multilingual'],\n        weaknesses=['shorter context', 'lower quality than GPT-4o'],\n    ),\n    'gemini-1.5-pro': ModelProfile(\n        name='gemini-1.5-pro', arch=ArchType.DENSE_TRANSFORMER,\n        total_params_b=175, active_params_b=175, context_length=2_000_000,\n        cost_per_1k_input=0.00125, cost_per_1k_output=0.005,\n        reasoning_overhead_s=0, p50_ttft_ms=2000,\n        strengths=['ultra-long context (2M)', 'video', 'multimodal'],\n        weaknesses=['slower', 'not cheapest for short context'],\n    ),\n}\n\n\n# ── Architecture-aware model selector ─────────────────────────────────────────\n@dataclass\nclass TaskRequirements:\n    task_type: str              # 'reasoning', 'qa', 'coding', 'long_context', 'real_time'\n    max_latency_ms: int = 5000\n    context_tokens: int = 1000\n    budget_per_request_usd: float = 0.01\n    needs_vision: bool = False\n    needs_long_context: bool = False  # > 200K tokens\n    is_batch: bool = False            # latency not critical\n\n\nclass ArchitectureAwareSelector:\n    TASK_ARCH_PREFERENCE = {\n        'reasoning': [ArchType.REASONING_MODEL, ArchType.DENSE_TRANSFORMER],\n        'coding': [ArchType.REASONING_MODEL, ArchType.DENSE_TRANSFORMER],\n        'qa': [ArchType.MOE_TRANSFORMER, ArchType.DENSE_TRANSFORMER],\n        'long_context': [ArchType.STATE_SPACE, ArchType.DENSE_TRANSFORMER],\n        'real_time': [ArchType.STATE_SPACE, ArchType.MOE_TRANSFORMER],\n        'summarisation': [ArchType.MOE_TRANSFORMER, ArchType.DENSE_TRANSFORMER],\n    }\n\n    def select(self, req: TaskRequirements) -> list[tuple[str, str]]:\n        \"\"\"Returns ranked list of (model_name, reason).\"\"\"\n        candidates = []\n        pref_archs = self.TASK_ARCH_PREFERENCE.get(req.task_type, [ArchType.DENSE_TRANSFORMER])\n\n        for model_name, profile in MODEL_CATALOGUE.items():\n            reasons = []\n            disqualify = False\n\n            # Hard constraints\n            if profile.context_length < req.context_tokens * 2:\n                disqualify = True\n                continue\n\n            effective_latency = profile.p50_ttft_ms + profile.reasoning_overhead_s * 1000\n            if not req.is_batch and effective_latency > req.max_latency_ms:\n                disqualify = True\n                continue\n\n            cost = (req.context_tokens * profile.cost_per_1k_input / 1000 +\n                    300 * profile.cost_per_1k_output / 1000)\n            if cost > req.budget_per_request_usd:\n                disqualify = True\n                continue\n\n            if req.needs_long_context and profile.context_length < 200_000:\n                disqualify = True\n                continue\n\n            # Soft preferences\n            if profile.arch in pref_archs:\n                arch_rank = pref_archs.index(profile.arch)\n                reasons.append(f'arch_match (rank {arch_rank})')\n\n            score = (\n                (1 - arch_rank / len(pref_archs)) * 0.5\n                - (cost / req.budget_per_request_usd) * 0.3\n                - (effective_latency / req.max_latency_ms) * 0.2\n                if profile.arch in pref_archs else -1\n            )\n            candidates.append((score, model_name, ', '.join(reasons) or 'default match'))\n\n        candidates.sort(key=lambda x: -x[0])\n        return [(name, reason) for _, name, reason in candidates[:3]]\n\n\n# ── MoE compute efficiency calculator ─────────────────────────────────────────\ndef moe_efficiency(total_params_b: float, n_experts: int, top_k: int) -> dict:\n    \"\"\"Compare MoE vs equivalent dense model compute.\"\"\"\n    active_fraction = top_k / n_experts\n    active_params = total_params_b * active_fraction\n    # Compute scales with active params; memory scales with total params\n    compute_vs_dense_equivalent = active_params / total_params_b\n    memory_overhead = total_params_b / active_params  # memory/compute ratio\n    return {\n        'total_params_b': total_params_b,\n        'active_params_b': round(active_params, 1),\n        'compute_fraction': round(compute_vs_dense_equivalent, 3),\n        'memory_vs_compute_ratio': round(memory_overhead, 1),\n        'cost_efficiency': f'{100 - compute_vs_dense_equivalent*100:.0f}% compute saved vs dense of same capacity',\n    }\n\n\n# ── Attention vs SSM complexity ───────────────────────────────────────────────\ndef context_length_comparison(seq_lengths: list[int]) -> list[dict]:\n    results = []\n    for n in seq_lengths:\n        attn_ops = n * n           # O(n²) for attention\n        ssm_ops = n                # O(n) for SSM\n        results.append({\n            'seq_length': n,\n            'attention_ops': f'{attn_ops:,}',\n            'ssm_ops': f'{ssm_ops:,}',\n            'ssm_speedup': f'{attn_ops / ssm_ops:.0f}×',\n        })\n    return results\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    # Model selection\n    selector = ArchitectureAwareSelector()\n\n    tasks = [\n        TaskRequirements(task_type='reasoning', max_latency_ms=30_000, budget_per_request_usd=0.05),\n        TaskRequirements(task_type='qa', max_latency_ms=1000, budget_per_request_usd=0.001),\n        TaskRequirements(task_type='long_context', max_latency_ms=30_000, needs_long_context=True, budget_per_request_usd=0.1),\n    ]\n\n    for task in tasks:\n        print(f'\\nTask: {task.task_type} (latency={task.max_latency_ms}ms, budget=${task.budget_per_request_usd})')\n        recommendations = selector.select(task)\n        for i, (model, reason) in enumerate(recommendations):\n            print(f'  {i+1}. {model}: {reason}')\n\n    # MoE efficiency\n    print('\\n=== MoE Efficiency: Mixtral-8×7B ===')\n    print(moe_efficiency(total_params_b=56, n_experts=8, top_k=2))\n\n    # Context length complexity\n    print('\\n=== Attention vs SSM Complexity ===')\n    for row in context_length_comparison([1000, 10_000, 100_000, 1_000_000]):\n        print(f\"  n={row['seq_length']:>9,}: Attention={row['attention_ops']:>20}, SSM={row['ssm_ops']:>10}, Speedup={row['ssm_speedup']}\")\n```"
+      "language": "python",
+      "filename": "architectureaware_model_select.py",
+      "code": "import math\nfrom dataclasses import dataclass\nfrom enum import Enum\nfrom typing import Any\n\n\n# ── Model architecture taxonomy ───────────────────────────────────────────────\nclass ArchType(Enum):\n    DENSE_TRANSFORMER = 'dense_transformer'\n    MOE_TRANSFORMER = 'moe_transformer'\n    REASONING_MODEL = 'reasoning_model'    # o1-style extended CoT\n    STATE_SPACE = 'state_space'             # Mamba-style\n\n\n@dataclass\nclass ModelProfile:\n    name: str\n    arch: ArchType\n    total_params_b: float          # total parameters (billions)\n    active_params_b: float         # parameters activated per forward pass\n    context_length: int            # max tokens\n    cost_per_1k_input: float       # USD\n    cost_per_1k_output: float\n    reasoning_overhead_s: float    # avg thinking time for reasoning models (0 for others)\n    p50_ttft_ms: int               # time to first token\n    strengths: list[str]\n    weaknesses: list[str]\n\n\nMODEL_CATALOGUE: dict[str, ModelProfile] = {\n    'gpt-4o-mini': ModelProfile(\n        name='gpt-4o-mini', arch=ArchType.MOE_TRANSFORMER,\n        total_params_b=8, active_params_b=2, context_length=128_000,\n        cost_per_1k_input=0.00015, cost_per_1k_output=0.0006,\n        reasoning_overhead_s=0, p50_ttft_ms=400,\n        strengths=['fast', 'cheap', 'sufficient for simple tasks'],\n        weaknesses=['complex reasoning', 'nuanced analysis'],\n    ),\n    'gpt-4o': ModelProfile(\n        name='gpt-4o', arch=ArchType.MOE_TRANSFORMER,\n        total_params_b=200, active_params_b=50, context_length=128_000,\n        cost_per_1k_input=0.0025, cost_per_1k_output=0.010,\n        reasoning_overhead_s=0, p50_ttft_ms=1200,\n        strengths=['high quality', 'vision', 'instruction following', 'coding'],\n        weaknesses=['cost', 'latency vs mini'],\n    ),\n    'o1-mini': ModelProfile(\n        name='o1-mini', arch=ArchType.REASONING_MODEL,\n        total_params_b=50, active_params_b=50, context_length=128_000,\n        cost_per_1k_input=0.003, cost_per_1k_output=0.012,\n        reasoning_overhead_s=5, p50_ttft_ms=6000,\n        strengths=['math', 'code', 'reasoning', 'multi-step logic'],\n        weaknesses=['latency', 'cost', 'simple tasks (overkill)'],\n    ),\n    'o3-mini': ModelProfile(\n        name='o3-mini', arch=ArchType.REASONING_MODEL,\n        total_params_b=50, active_params_b=50, context_length=200_000,\n        cost_per_1k_input=0.0011, cost_per_1k_output=0.0044,\n        reasoning_overhead_s=8, p50_ttft_ms=10000,\n        strengths=['frontier reasoning', 'STEM', 'PhD-level problems'],\n        weaknesses=['very high latency', 'expensive at scale'],\n    ),\n    'mixtral-8x7b': ModelProfile(\n        name='mixtral-8x7b', arch=ArchType.MOE_TRANSFORMER,\n        total_params_b=56, active_params_b=14, context_length=32_000,\n        cost_per_1k_input=0.0006, cost_per_1k_output=0.0006,\n        reasoning_overhead_s=0, p50_ttft_ms=600,\n        strengths=['cost efficient', 'open source', 'good multilingual'],\n        weaknesses=['shorter context', 'lower quality than GPT-4o'],\n    ),\n    'gemini-1.5-pro': ModelProfile(\n        name='gemini-1.5-pro', arch=ArchType.DENSE_TRANSFORMER,\n        total_params_b=175, active_params_b=175, context_length=2_000_000,\n        cost_per_1k_input=0.00125, cost_per_1k_output=0.005,\n        reasoning_overhead_s=0, p50_ttft_ms=2000,\n        strengths=['ultra-long context (2M)', 'video', 'multimodal'],\n        weaknesses=['slower', 'not cheapest for short context'],\n    ),\n}\n\n\n# ── Architecture-aware model selector ─────────────────────────────────────────\n@dataclass\nclass TaskRequirements:\n    task_type: str              # 'reasoning', 'qa', 'coding', 'long_context', 'real_time'\n    max_latency_ms: int = 5000\n    context_tokens: int = 1000\n    budget_per_request_usd: float = 0.01\n    needs_vision: bool = False\n    needs_long_context: bool = False  # > 200K tokens\n    is_batch: bool = False            # latency not critical\n\n\nclass ArchitectureAwareSelector:\n    TASK_ARCH_PREFERENCE = {\n        'reasoning': [ArchType.REASONING_MODEL, ArchType.DENSE_TRANSFORMER],\n        'coding': [ArchType.REASONING_MODEL, ArchType.DENSE_TRANSFORMER],\n        'qa': [ArchType.MOE_TRANSFORMER, ArchType.DENSE_TRANSFORMER],\n        'long_context': [ArchType.STATE_SPACE, ArchType.DENSE_TRANSFORMER],\n        'real_time': [ArchType.STATE_SPACE, ArchType.MOE_TRANSFORMER],\n        'summarisation': [ArchType.MOE_TRANSFORMER, ArchType.DENSE_TRANSFORMER],\n    }\n\n    def select(self, req: TaskRequirements) -> list[tuple[str, str]]:\n        \"\"\"Returns ranked list of (model_name, reason).\"\"\"\n        candidates = []\n        pref_archs = self.TASK_ARCH_PREFERENCE.get(req.task_type, [ArchType.DENSE_TRANSFORMER])\n\n        for model_name, profile in MODEL_CATALOGUE.items():\n            reasons = []\n            disqualify = False\n\n            # Hard constraints\n            if profile.context_length < req.context_tokens * 2:\n                disqualify = True\n                continue\n\n            effective_latency = profile.p50_ttft_ms + profile.reasoning_overhead_s * 1000\n            if not req.is_batch and effective_latency > req.max_latency_ms:\n                disqualify = True\n                continue\n\n            cost = (req.context_tokens * profile.cost_per_1k_input / 1000 +\n                    300 * profile.cost_per_1k_output / 1000)\n            if cost > req.budget_per_request_usd:\n                disqualify = True\n                continue\n\n            if req.needs_long_context and profile.context_length < 200_000:\n                disqualify = True\n                continue\n\n            # Soft preferences\n            if profile.arch in pref_archs:\n                arch_rank = pref_archs.index(profile.arch)\n                reasons.append(f'arch_match (rank {arch_rank})')\n\n            score = (\n                (1 - arch_rank / len(pref_archs)) * 0.5\n                - (cost / req.budget_per_request_usd) * 0.3\n                - (effective_latency / req.max_latency_ms) * 0.2\n                if profile.arch in pref_archs else -1\n            )\n            candidates.append((score, model_name, ', '.join(reasons) or 'default match'))\n\n        candidates.sort(key=lambda x: -x[0])\n        return [(name, reason) for _, name, reason in candidates[:3]]\n\n\n# ── MoE compute efficiency calculator ─────────────────────────────────────────\ndef moe_efficiency(total_params_b: float, n_experts: int, top_k: int) -> dict:\n    \"\"\"Compare MoE vs equivalent dense model compute.\"\"\"\n    active_fraction = top_k / n_experts\n    active_params = total_params_b * active_fraction\n    # Compute scales with active params; memory scales with total params\n    compute_vs_dense_equivalent = active_params / total_params_b\n    memory_overhead = total_params_b / active_params  # memory/compute ratio\n    return {\n        'total_params_b': total_params_b,\n        'active_params_b': round(active_params, 1),\n        'compute_fraction': round(compute_vs_dense_equivalent, 3),\n        'memory_vs_compute_ratio': round(memory_overhead, 1),\n        'cost_efficiency': f'{100 - compute_vs_dense_equivalent*100:.0f}% compute saved vs dense of same capacity',\n    }\n\n\n# ── Attention vs SSM complexity ───────────────────────────────────────────────\ndef context_length_comparison(seq_lengths: list[int]) -> list[dict]:\n    results = []\n    for n in seq_lengths:\n        attn_ops = n * n           # O(n²) for attention\n        ssm_ops = n                # O(n) for SSM\n        results.append({\n            'seq_length': n,\n            'attention_ops': f'{attn_ops:,}',\n            'ssm_ops': f'{ssm_ops:,}',\n            'ssm_speedup': f'{attn_ops / ssm_ops:.0f}×',\n        })\n    return results\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    # Model selection\n    selector = ArchitectureAwareSelector()\n\n    tasks = [\n        TaskRequirements(task_type='reasoning', max_latency_ms=30_000, budget_per_request_usd=0.05),\n        TaskRequirements(task_type='qa', max_latency_ms=1000, budget_per_request_usd=0.001),\n        TaskRequirements(task_type='long_context', max_latency_ms=30_000, needs_long_context=True, budget_per_request_usd=0.1),\n    ]\n\n    for task in tasks:\n        print(f'\\nTask: {task.task_type} (latency={task.max_latency_ms}ms, budget=${task.budget_per_request_usd})')\n        recommendations = selector.select(task)\n        for i, (model, reason) in enumerate(recommendations):\n            print(f'  {i+1}. {model}: {reason}')\n\n    # MoE efficiency\n    print('\\n=== MoE Efficiency: Mixtral-8×7B ===')\n    print(moe_efficiency(total_params_b=56, n_experts=8, top_k=2))\n\n    # Context length complexity\n    print('\\n=== Attention vs SSM Complexity ===')\n    for row in context_length_comparison([1000, 10_000, 100_000, 1_000_000]):\n        print(f\"  n={row['seq_length']:>9,}: Attention={row['attention_ops']:>20}, SSM={row['ssm_ops']:>10}, Speedup={row['ssm_speedup']}\")",
+      "level": "advanced"
     },
     {
       "type": "pitfalls",
@@ -41,70 +55,108 @@
     {
       "type": "exercise",
       "title": "Model Architecture Selection for Three Scenarios",
-      "content": "**Task:** For each scenario, select the optimal model architecture and justify with specific trade-offs.\n\n**Scenario 1:** Real-time code autocomplete IDE plugin. Latency budget: 200 ms. 10M requests/day. Simple completions.\n\n**Scenario 2:** Automated PhD-level literature review. Latency: 5 minutes acceptable. 100 papers to synthesise (500K tokens total). Must reason about contradictions.\n\n**Scenario 3:** Customer churn prediction explanation: 'Why is customer X likely to churn?' Latency: 30 s. 50K customers/day. Simple explanations with structured output.\n\n**For each, specify:**\n1. Architecture type (dense, MoE, reasoning, SSM)\n2. Specific model recommendation\n3. Context length required\n4. Cost estimate per request\n5. Key trade-off you're accepting"
+      "difficulty": "Advanced",
+      "problem": "**Task:** For each scenario, select the optimal model architecture and justify with specific trade-offs.\n\n**Scenario 1:** Real-time code autocomplete IDE plugin. Latency budget: 200 ms. 10M requests/day. Simple completions.\n\n**Scenario 2:** Automated PhD-level literature review. Latency: 5 minutes acceptable. 100 papers to synthesise (500K tokens total). Must reason about contradictions.\n\n**Scenario 3:** Customer churn prediction explanation: 'Why is customer X likely to churn?' Latency: 30 s. 50K customers/day. Simple explanations with structured output.\n\n**For each, specify:**\n1. Architecture type (dense, MoE, reasoning, SSM)\n2. Specific model recommendation\n3. Context length required\n4. Cost estimate per request\n5. Key trade-off you're accepting",
+      "hints": [],
+      "solution": ""
     },
     {
       "type": "interview",
       "title": "Interview Questions — Emerging LLM Architectures",
-      "content": "**Conceptual:**\nQ: Why is Mixture-of-Experts more parameter-efficient than a dense transformer of equivalent capacity?\nA: In a dense transformer, all FFN parameters activate for every token — FLOPS scale with total parameters. In MoE, a router selects only K of N expert FFNs per token. Mixtral-8×7B (56B total, 2-of-8 experts) uses 14B parameters worth of compute per token — same quality as a 14B dense model but with 56B of total capacity (more knowledge capacity). The efficiency gain is total_capacity / active_params = 4×.\n\n**Code-based:**\nQ: A user complains that o1-mini takes 25 seconds to answer 'What is 2+2?'. What's happening and how do you fix it?\nA: O1/o3 models generate extended internal reasoning tokens regardless of question complexity — even trivial questions trigger multi-step thinking. Fix: add a complexity router before model selection. Simple arithmetic/factual questions → gpt-4o-mini. Complex multi-step reasoning → o1/o3. Complexity scoring (Day 67): len(prompt) < 100 AND no reasoning keywords → cheap fast model.\n\n**Senior scenario:**\nQ: Your team wants to deploy Mamba for a 1M-token context RAG application. What are the risks vs using Gemini 1.5 Pro?\nA: Mamba risks: (1) Recall degradation — Mamba's recurrent state compresses 1M tokens, making specific token recall unreliable. For RAG, exact phrase retrieval may fail. (2) Less mature tooling and fine-tuning ecosystem. (3) Lower quality on most benchmarks than frontier transformers. Gemini risks: (1) 'Lost in the middle' — transformers also degrade on very long contexts, just less severely than SSMs for local reasoning. (2) Cost: $0.00125/1k input × 1M = $1.25 per query. Recommendation: use RAG (retrieve top-3K relevant tokens) with GPT-4o for quality + cost, rather than either alternative for this use case.\n\n**Wrong answer to avoid:**\nQ: Should you use o1 for all your LLM API calls for best quality?\nBad: 'Yes, o1 is the best model so always use it.' Correct: o1/o3 are best only for complex multi-step reasoning. For simple tasks they add 5-25 seconds of latency and 3-5× cost with no quality benefit. Always route by task complexity — use o1 selectively for tasks that genuinely need extended reasoning."
+      "conceptual": [
+        {
+          "question": "Why is Mixture-of-Experts more parameter-efficient than a dense transformer of equivalent capacity?",
+          "answer": "In a dense transformer, all FFN parameters activate for every token — FLOPS scale with total parameters. In MoE, a router selects only K of N expert FFNs per token. Mixtral-8×7B (56B total, 2-of-8 experts) uses 14B parameters worth of compute per token — same quality as a 14B dense model but with 56B of total capacity (more knowledge capacity). The efficiency gain is total_capacity / active_params = 4×."
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "A user complains that o1-mini takes 25 seconds to answer 'What is 2+2?'. What's happening and how do you fix it?",
+          "answer": "O1/o3 models generate extended internal reasoning tokens regardless of question complexity — even trivial questions trigger multi-step thinking. Fix: add a complexity router before model selection. Simple arithmetic/factual questions → gpt-4o-mini. Complex multi-step reasoning → o1/o3. Complexity scoring (Day 67): len(prompt) < 100 AND no reasoning keywords → cheap fast model."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your team wants to deploy Mamba for a 1M-token context RAG application. What are the risks vs using Gemini 1.5 Pro?",
+          "answer": "Mamba risks: (1) Recall degradation — Mamba's recurrent state compresses 1M tokens, making specific token recall unreliable. For RAG, exact phrase retrieval may fail. (2) Less mature tooling and fine-tuning ecosystem. (3) Lower quality on most benchmarks than frontier transformers. Gemini risks: (1) 'Lost in the middle' — transformers also degrade on very long contexts, just less severely than SSMs for local reasoning. (2) Cost: $0.00125/1k input × 1M = $1.25 per query. Recommendation: use RAG (retrieve top-3K relevant tokens) with GPT-4o for quality + cost, rather than either alternative for this use case."
+        }
+      ],
+      "wrongAnswers": [
+        "Q: Should you use o1 for all your LLM API calls for best quality?\nBad: 'Yes, o1 is the best model so always use it.' Correct: o1/o3 are best only for complex multi-step reasoning. For simple tasks they add 5-25 seconds of latency and 3-5× cost with no quality benefit. Always route by task complexity — use o1 selectively for tasks that genuinely need extended reasoning."
+      ]
     },
     {
       "type": "mcq",
       "title": "Emerging LLM Architecture Quiz",
       "questions": [
         {
-          "q": "Mixtral-8×7B has 56B total parameters but behaves like a 14B model in terms of compute because:",
-          "options": [
-            "It uses 4-bit quantisation",
-            "It activates only 2 of 8 expert networks per token (Top-2 gating)",
-            "It uses knowledge distillation from a larger model",
-            "It skips half the transformer layers for simple tokens"
-          ],
-          "answer": 1,
+          "id": 1,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Mixtral-8×7B has 56B total parameters but behaves like a 14B model in terms of compute because:",
+          "options": {
+            "A": "It uses 4-bit quantisation",
+            "B": "It activates only 2 of 8 expert networks per token (Top-2 gating)",
+            "C": "It uses knowledge distillation from a larger model",
+            "D": "It skips half the transformer layers for simple tokens"
+          },
+          "answer": "B",
           "explanation": "MoE gating selects K=2 of N=8 experts. 2/8 = 25% of FFN parameters activate per token. Total capacity = 56B (more knowledge); compute per token = 14B equivalent."
         },
         {
-          "q": "A key limitation of o1/o3 reasoning models is:",
-          "options": [
-            "They cannot process images",
-            "They add significant latency (5-30s thinking time) even for simple queries",
-            "They are limited to 4K token context",
-            "They cannot use tools or function calling"
-          ],
-          "answer": 1,
+          "id": 2,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "A key limitation of o1/o3 reasoning models is:",
+          "options": {
+            "A": "They cannot process images",
+            "B": "They add significant latency (5-30s thinking time) even for simple queries",
+            "C": "They are limited to 4K token context",
+            "D": "They cannot use tools or function calling"
+          },
+          "answer": "B",
           "explanation": "O1/o3 models generate extended internal chain-of-thought before responding. Even simple queries trigger this process, making them 5-30× slower than GPT-4o at comparable quality for non-reasoning tasks."
         },
         {
-          "q": "Mamba (SSM) achieves O(n) inference complexity compared to transformer's O(n²) by:",
-          "options": [
-            "Caching all previous tokens in a key-value store",
-            "Using a compressed recurrent hidden state that summarises history, rather than attending to all past tokens",
-            "Limiting context length to 4K tokens",
-            "Using sparse attention patterns"
-          ],
-          "answer": 1,
+          "id": 3,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Mamba (SSM) achieves O(n) inference complexity compared to transformer's O(n²) by:",
+          "options": {
+            "A": "Caching all previous tokens in a key-value store",
+            "B": "Using a compressed recurrent hidden state that summarises history, rather than attending to all past tokens",
+            "C": "Limiting context length to 4K tokens",
+            "D": "Using sparse attention patterns"
+          },
+          "answer": "B",
           "explanation": "Mamba's recurrent formulation h_t = A·h_{t-1} + B·x_t compresses all history into a fixed-size state vector. This gives O(1) per-step inference (O(n) total) vs attention's O(n) per-step (O(n²) total)."
         },
         {
-          "q": "When fine-tuning an MoE model, 'expert collapse' refers to:",
-          "options": [
-            "Model accuracy dropping below baseline",
-            "The router sending almost all tokens to a small subset of experts, eliminating the benefits of multiple experts",
-            "Memory overflow due to loading all expert parameters",
-            "Gradient explosion during training"
-          ],
-          "answer": 1,
+          "id": 4,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "When fine-tuning an MoE model, 'expert collapse' refers to:",
+          "options": {
+            "A": "Model accuracy dropping below baseline",
+            "B": "The router sending almost all tokens to a small subset of experts, eliminating the benefits of multiple experts",
+            "C": "Memory overflow due to loading all expert parameters",
+            "D": "Gradient explosion during training"
+          },
+          "answer": "B",
           "explanation": "Without load-balancing auxiliary loss, the router learns to always use 1-2 experts that minimised early training loss. This collapses the MoE to essentially a small dense model."
         },
         {
-          "q": "For a task requiring precise recall of a specific sentence from a 500K-token document, which architecture is likely to perform best?",
-          "options": [
-            "Mamba (SSM) — faster for long sequences",
-            "A dense transformer (Gemini 1.5 Pro) with long context + RAG",
-            "An MoE model with 8 experts",
-            "An o1 reasoning model"
-          ],
-          "answer": 1,
+          "id": 5,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "For a task requiring precise recall of a specific sentence from a 500K-token document, which architecture is likely to perform best?",
+          "options": {
+            "A": "Mamba (SSM) — faster for long sequences",
+            "B": "A dense transformer (Gemini 1.5 Pro) with long context + RAG",
+            "C": "An MoE model with 8 experts",
+            "D": "An o1 reasoning model"
+          },
+          "answer": "B",
           "explanation": "Precise token recall from long contexts requires attention to specific positions — which dense transformers do (attending to all positions). Mamba compresses history into a state, losing precise recall. RAG adds targeted retrieval to combat 'lost in the middle' degradation."
         }
       ]

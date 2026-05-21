@@ -8,8 +8,19 @@
   "difficulty": "expert",
   "level": "expert",
   "track": "ai-engineering",
-  "tags": ["product", "ux", "metrics", "non-determinism", "go-to-market", "ai-product", "tpm"],
-  "prerequisites": ["phase5-day74", "phase5-day72"],
+  "tags": [
+    "product",
+    "ux",
+    "metrics",
+    "non-determinism",
+    "go-to-market",
+    "ai-product",
+    "tpm"
+  ],
+  "prerequisites": [
+    "phase5-day74",
+    "phase5-day72"
+  ],
   "learningObjectives": [
     "Define and instrument AI-specific product metrics (task completion, CSAT, retention)",
     "Design UX patterns that manage LLM non-determinism gracefully",
@@ -31,7 +42,10 @@
     {
       "type": "code",
       "title": "AI Product Metrics Dashboard & Feedback Tracker",
-      "content": "```python\nimport time\nimport random\nfrom collections import defaultdict\nfrom dataclasses import dataclass, field\nfrom typing import Any\n\n\n# ── Session and interaction tracking ─────────────────────────────────────────\n@dataclass\nclass AIInteraction:\n    session_id: str\n    request_id: str\n    user_id: str\n    prompt: str\n    response: str\n    model: str\n    latency_ms: float\n    cost_usd: float\n    timestamp: float = field(default_factory=time.time)\n    # User signals\n    thumbs_up: bool | None = None\n    thumbs_down: bool | None = None\n    regenerated: bool = False\n    copied: bool = False\n    user_edited: bool = False\n    # Quality signals\n    quality_score: float | None = None  # LLM-as-judge, sampled\n    safety_flag: bool = False\n\n    @property\n    def implicit_positive(self) -> bool:\n        return self.copied or (self.thumbs_up is True)\n\n    @property\n    def implicit_negative(self) -> bool:\n        return self.regenerated or (self.thumbs_down is True)\n\n    @property\n    def outcome(self) -> str:\n        if self.implicit_positive:\n            return 'positive'\n        if self.implicit_negative:\n            return 'negative'\n        return 'neutral'\n\n\n@dataclass\nclass Session:\n    session_id: str\n    user_id: str\n    started_at: float = field(default_factory=time.time)\n    interactions: list[AIInteraction] = field(default_factory=list)\n    ended: bool = False\n\n    def add(self, interaction: AIInteraction) -> None:\n        self.interactions.append(interaction)\n\n    @property\n    def completed(self) -> bool:\n        \"\"\"Session is successful if at least one positive interaction occurred.\"\"\"\n        return any(i.implicit_positive for i in self.interactions)\n\n    @property\n    def depth(self) -> int:\n        return len(self.interactions)\n\n    @property\n    def total_cost(self) -> float:\n        return sum(i.cost_usd for i in self.interactions)\n\n\n# ── AI Product Metrics Dashboard ──────────────────────────────────────────────\nclass AIProductMetrics:\n    def __init__(self, window_hours: int = 24):\n        self._window = window_hours * 3600\n        self._sessions: list[Session] = []\n        self._interactions: list[AIInteraction] = []\n\n    def track_session(self, session: Session) -> None:\n        self._sessions.append(session)\n        self._interactions.extend(session.interactions)\n\n    def _recent_sessions(self) -> list[Session]:\n        cutoff = time.time() - self._window\n        return [s for s in self._sessions if s.started_at >= cutoff]\n\n    def _recent_interactions(self) -> list[AIInteraction]:\n        cutoff = time.time() - self._window\n        return [i for i in self._interactions if i.timestamp >= cutoff]\n\n    def task_completion_rate(self) -> float:\n        sessions = self._recent_sessions()\n        if not sessions:\n            return 0.0\n        return sum(1 for s in sessions if s.completed) / len(sessions)\n\n    def mean_csat(self) -> float | None:\n        rated = [i for i in self._recent_interactions()\n                 if i.thumbs_up is not None or i.thumbs_down is not None]\n        if not rated:\n            return None\n        positive = sum(1 for i in rated if i.thumbs_up)\n        return positive / len(rated)\n\n    def regeneration_rate(self) -> float:\n        interactions = self._recent_interactions()\n        if not interactions:\n            return 0.0\n        return sum(1 for i in interactions if i.regenerated) / len(interactions)\n\n    def mean_quality_score(self) -> float | None:\n        scored = [i for i in self._recent_interactions() if i.quality_score is not None]\n        if not scored:\n            return None\n        return sum(i.quality_score for i in scored) / len(scored)\n\n    def cost_per_session(self) -> float:\n        sessions = self._recent_sessions()\n        if not sessions:\n            return 0.0\n        total = sum(s.total_cost for s in sessions)\n        return total / len(sessions)\n\n    def latency_percentile(self, p: float) -> float:\n        latencies = [i.latency_ms for i in self._recent_interactions()]\n        if not latencies:\n            return 0.0\n        s = sorted(latencies)\n        idx = int(len(s) * p / 100)\n        return s[min(idx, len(s) - 1)]\n\n    def session_depth_distribution(self) -> dict[str, int]:\n        sessions = self._recent_sessions()\n        dist = {'1': 0, '2-3': 0, '4-10': 0, '10+': 0}\n        for s in sessions:\n            d = s.depth\n            if d == 1:\n                dist['1'] += 1\n            elif d <= 3:\n                dist['2-3'] += 1\n            elif d <= 10:\n                dist['4-10'] += 1\n            else:\n                dist['10+'] += 1\n        return dist\n\n    def report(self) -> dict:\n        return {\n            'window_hours': self._window // 3600,\n            'total_sessions': len(self._recent_sessions()),\n            'total_interactions': len(self._recent_interactions()),\n            'task_completion_rate': round(self.task_completion_rate(), 3),\n            'csat': round(self.mean_csat() or 0, 3),\n            'regeneration_rate': round(self.regeneration_rate(), 3),\n            'mean_quality_score': round(self.mean_quality_score() or 0, 3),\n            'cost_per_session_usd': round(self.cost_per_session(), 5),\n            'latency_p50_ms': round(self.latency_percentile(50), 1),\n            'latency_p95_ms': round(self.latency_percentile(95), 1),\n            'session_depth_distribution': self.session_depth_distribution(),\n        }\n\n\n# ── Product health check ──────────────────────────────────────────────────────\nclass AIProductHealthCheck:\n    THRESHOLDS = {\n        'task_completion_rate': (0.6, 'min'),   # must be >= 60%\n        'csat': (0.7, 'min'),                    # must be >= 70% positive\n        'regeneration_rate': (0.15, 'max'),      # must be <= 15%\n        'mean_quality_score': (0.7, 'min'),      # must be >= 0.70\n        'latency_p95_ms': (3000, 'max'),         # must be <= 3000ms\n    }\n\n    def check(self, metrics: dict) -> dict:\n        results = {}\n        overall_healthy = True\n        for metric, (threshold, direction) in self.THRESHOLDS.items():\n            value = metrics.get(metric, 0)\n            if direction == 'min':\n                ok = value >= threshold\n            else:\n                ok = value <= threshold\n            results[metric] = {'value': value, 'threshold': threshold, 'ok': ok}\n            if not ok:\n                overall_healthy = False\n\n        return {\n            'healthy': overall_healthy,\n            'metrics': results,\n            'recommendation': 'Ship' if overall_healthy else 'Hold — fix failing gates first',\n        }\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    random.seed(42)\n    dashboard = AIProductMetrics(window_hours=24)\n    health = AIProductHealthCheck()\n\n    # Simulate 200 sessions\n    for i in range(200):\n        session = Session(session_id=f's{i}', user_id=f'u{i % 50}')\n        n_interactions = random.randint(1, 6)\n        for j in range(n_interactions):\n            interaction = AIInteraction(\n                session_id=session.session_id,\n                request_id=f'r{i}_{j}',\n                user_id=session.user_id,\n                prompt=f'Question {j}',\n                response='Model response...',\n                model=random.choice(['gpt-4o-mini', 'gpt-4o']),\n                latency_ms=random.gauss(800, 300),\n                cost_usd=random.uniform(0.0001, 0.002),\n                thumbs_up=random.choice([True, False, None, None]),\n                thumbs_down=random.choice([False, True, None, None]),\n                regenerated=random.random() < 0.10,\n                copied=random.random() < 0.35,\n                quality_score=random.uniform(0.6, 0.95) if random.random() < 0.1 else None,\n            )\n            session.add(interaction)\n        dashboard.track_session(session)\n\n    report = dashboard.report()\n    print('=== AI Product Metrics Dashboard ===')\n    for k, v in report.items():\n        print(f'  {k}: {v}')\n\n    print('\\n=== Product Health Check ===')\n    health_result = health.check(report)\n    print(f'Overall: {\"HEALTHY\" if health_result[\"healthy\"] else \"UNHEALTHY\"}')\n    print(f'Recommendation: {health_result[\"recommendation\"]}')\n    for metric, data in health_result['metrics'].items():\n        status = 'OK' if data['ok'] else 'FAIL'\n        print(f'  [{status}] {metric}: {data[\"value\"]} (threshold: {data[\"threshold\"]})')\n```"
+      "language": "python",
+      "filename": "ai_product_metrics_dashboard_f.py",
+      "code": "import time\nimport random\nfrom collections import defaultdict\nfrom dataclasses import dataclass, field\nfrom typing import Any\n\n\n# ── Session and interaction tracking ─────────────────────────────────────────\n@dataclass\nclass AIInteraction:\n    session_id: str\n    request_id: str\n    user_id: str\n    prompt: str\n    response: str\n    model: str\n    latency_ms: float\n    cost_usd: float\n    timestamp: float = field(default_factory=time.time)\n    # User signals\n    thumbs_up: bool | None = None\n    thumbs_down: bool | None = None\n    regenerated: bool = False\n    copied: bool = False\n    user_edited: bool = False\n    # Quality signals\n    quality_score: float | None = None  # LLM-as-judge, sampled\n    safety_flag: bool = False\n\n    @property\n    def implicit_positive(self) -> bool:\n        return self.copied or (self.thumbs_up is True)\n\n    @property\n    def implicit_negative(self) -> bool:\n        return self.regenerated or (self.thumbs_down is True)\n\n    @property\n    def outcome(self) -> str:\n        if self.implicit_positive:\n            return 'positive'\n        if self.implicit_negative:\n            return 'negative'\n        return 'neutral'\n\n\n@dataclass\nclass Session:\n    session_id: str\n    user_id: str\n    started_at: float = field(default_factory=time.time)\n    interactions: list[AIInteraction] = field(default_factory=list)\n    ended: bool = False\n\n    def add(self, interaction: AIInteraction) -> None:\n        self.interactions.append(interaction)\n\n    @property\n    def completed(self) -> bool:\n        \"\"\"Session is successful if at least one positive interaction occurred.\"\"\"\n        return any(i.implicit_positive for i in self.interactions)\n\n    @property\n    def depth(self) -> int:\n        return len(self.interactions)\n\n    @property\n    def total_cost(self) -> float:\n        return sum(i.cost_usd for i in self.interactions)\n\n\n# ── AI Product Metrics Dashboard ──────────────────────────────────────────────\nclass AIProductMetrics:\n    def __init__(self, window_hours: int = 24):\n        self._window = window_hours * 3600\n        self._sessions: list[Session] = []\n        self._interactions: list[AIInteraction] = []\n\n    def track_session(self, session: Session) -> None:\n        self._sessions.append(session)\n        self._interactions.extend(session.interactions)\n\n    def _recent_sessions(self) -> list[Session]:\n        cutoff = time.time() - self._window\n        return [s for s in self._sessions if s.started_at >= cutoff]\n\n    def _recent_interactions(self) -> list[AIInteraction]:\n        cutoff = time.time() - self._window\n        return [i for i in self._interactions if i.timestamp >= cutoff]\n\n    def task_completion_rate(self) -> float:\n        sessions = self._recent_sessions()\n        if not sessions:\n            return 0.0\n        return sum(1 for s in sessions if s.completed) / len(sessions)\n\n    def mean_csat(self) -> float | None:\n        rated = [i for i in self._recent_interactions()\n                 if i.thumbs_up is not None or i.thumbs_down is not None]\n        if not rated:\n            return None\n        positive = sum(1 for i in rated if i.thumbs_up)\n        return positive / len(rated)\n\n    def regeneration_rate(self) -> float:\n        interactions = self._recent_interactions()\n        if not interactions:\n            return 0.0\n        return sum(1 for i in interactions if i.regenerated) / len(interactions)\n\n    def mean_quality_score(self) -> float | None:\n        scored = [i for i in self._recent_interactions() if i.quality_score is not None]\n        if not scored:\n            return None\n        return sum(i.quality_score for i in scored) / len(scored)\n\n    def cost_per_session(self) -> float:\n        sessions = self._recent_sessions()\n        if not sessions:\n            return 0.0\n        total = sum(s.total_cost for s in sessions)\n        return total / len(sessions)\n\n    def latency_percentile(self, p: float) -> float:\n        latencies = [i.latency_ms for i in self._recent_interactions()]\n        if not latencies:\n            return 0.0\n        s = sorted(latencies)\n        idx = int(len(s) * p / 100)\n        return s[min(idx, len(s) - 1)]\n\n    def session_depth_distribution(self) -> dict[str, int]:\n        sessions = self._recent_sessions()\n        dist = {'1': 0, '2-3': 0, '4-10': 0, '10+': 0}\n        for s in sessions:\n            d = s.depth\n            if d == 1:\n                dist['1'] += 1\n            elif d <= 3:\n                dist['2-3'] += 1\n            elif d <= 10:\n                dist['4-10'] += 1\n            else:\n                dist['10+'] += 1\n        return dist\n\n    def report(self) -> dict:\n        return {\n            'window_hours': self._window // 3600,\n            'total_sessions': len(self._recent_sessions()),\n            'total_interactions': len(self._recent_interactions()),\n            'task_completion_rate': round(self.task_completion_rate(), 3),\n            'csat': round(self.mean_csat() or 0, 3),\n            'regeneration_rate': round(self.regeneration_rate(), 3),\n            'mean_quality_score': round(self.mean_quality_score() or 0, 3),\n            'cost_per_session_usd': round(self.cost_per_session(), 5),\n            'latency_p50_ms': round(self.latency_percentile(50), 1),\n            'latency_p95_ms': round(self.latency_percentile(95), 1),\n            'session_depth_distribution': self.session_depth_distribution(),\n        }\n\n\n# ── Product health check ──────────────────────────────────────────────────────\nclass AIProductHealthCheck:\n    THRESHOLDS = {\n        'task_completion_rate': (0.6, 'min'),   # must be >= 60%\n        'csat': (0.7, 'min'),                    # must be >= 70% positive\n        'regeneration_rate': (0.15, 'max'),      # must be <= 15%\n        'mean_quality_score': (0.7, 'min'),      # must be >= 0.70\n        'latency_p95_ms': (3000, 'max'),         # must be <= 3000ms\n    }\n\n    def check(self, metrics: dict) -> dict:\n        results = {}\n        overall_healthy = True\n        for metric, (threshold, direction) in self.THRESHOLDS.items():\n            value = metrics.get(metric, 0)\n            if direction == 'min':\n                ok = value >= threshold\n            else:\n                ok = value <= threshold\n            results[metric] = {'value': value, 'threshold': threshold, 'ok': ok}\n            if not ok:\n                overall_healthy = False\n\n        return {\n            'healthy': overall_healthy,\n            'metrics': results,\n            'recommendation': 'Ship' if overall_healthy else 'Hold — fix failing gates first',\n        }\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\nif __name__ == '__main__':\n    random.seed(42)\n    dashboard = AIProductMetrics(window_hours=24)\n    health = AIProductHealthCheck()\n\n    # Simulate 200 sessions\n    for i in range(200):\n        session = Session(session_id=f's{i}', user_id=f'u{i % 50}')\n        n_interactions = random.randint(1, 6)\n        for j in range(n_interactions):\n            interaction = AIInteraction(\n                session_id=session.session_id,\n                request_id=f'r{i}_{j}',\n                user_id=session.user_id,\n                prompt=f'Question {j}',\n                response='Model response...',\n                model=random.choice(['gpt-4o-mini', 'gpt-4o']),\n                latency_ms=random.gauss(800, 300),\n                cost_usd=random.uniform(0.0001, 0.002),\n                thumbs_up=random.choice([True, False, None, None]),\n                thumbs_down=random.choice([False, True, None, None]),\n                regenerated=random.random() < 0.10,\n                copied=random.random() < 0.35,\n                quality_score=random.uniform(0.6, 0.95) if random.random() < 0.1 else None,\n            )\n            session.add(interaction)\n        dashboard.track_session(session)\n\n    report = dashboard.report()\n    print('=== AI Product Metrics Dashboard ===')\n    for k, v in report.items():\n        print(f'  {k}: {v}')\n\n    print('\\n=== Product Health Check ===')\n    health_result = health.check(report)\n    print(f'Overall: {\"HEALTHY\" if health_result[\"healthy\"] else \"UNHEALTHY\"}')\n    print(f'Recommendation: {health_result[\"recommendation\"]}')\n    for metric, data in health_result['metrics'].items():\n        status = 'OK' if data['ok'] else 'FAIL'\n        print(f'  [{status}] {metric}: {data[\"value\"]} (threshold: {data[\"threshold\"]})')",
+      "level": "advanced"
     },
     {
       "type": "pitfalls",
@@ -41,65 +55,108 @@
     {
       "type": "exercise",
       "title": "Product Metrics Instrumentation & Launch Checklist",
-      "content": "**Task:** Instrument an existing LLM chat endpoint with full product metrics.\n\n**Requirements:**\n1. Track each interaction as `AIInteraction` with latency, cost, model, user_id\n2. Track sessions: group interactions by session_id, compute completion per session\n3. `AIProductMetrics.report()` after 100 simulated sessions\n4. `AIProductHealthCheck.check()` — if any gate fails, print which metric is failing and why\n5. Implement a simple A/B metric comparison: compare CSAT and task_completion_rate for two model variants across 50 sessions each\n\n**Launch readiness checklist (manual review):**\n- [ ] Task completion rate ≥ 60%\n- [ ] P95 latency ≤ 3 s\n- [ ] Regeneration rate ≤ 15%\n- [ ] Safety red team pass (0 bypasses on 50 attacks)\n- [ ] Regression suite pass (≥ 95% of golden cases)\n- [ ] Human escalation path implemented\n- [ ] Model rollback tested\n- [ ] Cost per session within budget\n- [ ] User disclosure of AI involvement"
+      "difficulty": "Advanced",
+      "problem": "**Task:** Instrument an existing LLM chat endpoint with full product metrics.\n\n**Requirements:**\n1. Track each interaction as `AIInteraction` with latency, cost, model, user_id\n2. Track sessions: group interactions by session_id, compute completion per session\n3. `AIProductMetrics.report()` after 100 simulated sessions\n4. `AIProductHealthCheck.check()` — if any gate fails, print which metric is failing and why\n5. Implement a simple A/B metric comparison: compare CSAT and task_completion_rate for two model variants across 50 sessions each\n\n**Launch readiness checklist (manual review):**\n- [ ] Task completion rate ≥ 60%\n- [ ] P95 latency ≤ 3 s\n- [ ] Regeneration rate ≤ 15%\n- [ ] Safety red team pass (0 bypasses on 50 attacks)\n- [ ] Regression suite pass (≥ 95% of golden cases)\n- [ ] Human escalation path implemented\n- [ ] Model rollback tested\n- [ ] Cost per session within budget\n- [ ] User disclosure of AI involvement",
+      "hints": [],
+      "solution": ""
     },
     {
       "type": "interview",
       "title": "Interview Questions — AI Product",
-      "content": "**Conceptual:**\nQ: What is the difference between task completion rate and CSAT as AI product metrics?\nA: Task completion rate is a behavioural metric (did the user achieve their goal, inferred from signals like copying output, thumbs up, session not abandoned). CSAT is a subjective rating (user explicitly rates the experience). Task completion is more reliable at scale (no response bias) but indirect. CSAT is direct but has low response rates and positivity bias. Both are needed: completion catches silent dissatisfaction, CSAT catches stated dissatisfaction.\n\n**Code-based:**\nQ: Your AI product has 40% task completion rate (target 60%) and 18% regeneration rate (target <15%). What are the most likely root causes?\nA: Low task completion + high regeneration → the model frequently produces unsatisfactory first answers. Root causes: (1) Prompts are ambiguous — users ask something the model misinterprets. (2) Context window is too small — model lacks information to answer well. (3) Model quality is insufficient for task complexity. Investigate: sample low-completion sessions, look for patterns in prompts that cause regenerations, check if specific query types consistently fail.\n\n**Senior scenario:**\nQ: Your VP of Product wants to launch an AI feature in 2 weeks. Your evaluation shows 65% task completion and 12% hallucination rate. How do you respond?\nA: Present the data clearly: 12% hallucination rate means 1 in 8 responses contains a factual error — unacceptable for most products. Propose: (1) 2-week delay to add source citations + hallucination detection. (2) Narrow scope: launch only for low-stakes use cases where hallucinations are less harmful. (3) Add human review for high-confidence output. (4) Communicate limitations clearly in UI. Do not ship a 12% hallucination rate without explicit user disclosure and appropriate domain scope.\n\n**Wrong answer to avoid:**\nQ: How do you handle non-determinism in LLM UX?\nBad: 'Hide it — users shouldn't see different outputs for the same input.' Correct: Design for it — streaming shows generation in progress (it's expected); regenerate button gives users agency; source citations explain why this specific output was generated; confidence signalling distinguishes certain from uncertain claims."
+      "conceptual": [
+        {
+          "question": "What is the difference between task completion rate and CSAT as AI product metrics?",
+          "answer": "Task completion rate is a behavioural metric (did the user achieve their goal, inferred from signals like copying output, thumbs up, session not abandoned). CSAT is a subjective rating (user explicitly rates the experience). Task completion is more reliable at scale (no response bias) but indirect. CSAT is direct but has low response rates and positivity bias. Both are needed: completion catches silent dissatisfaction, CSAT catches stated dissatisfaction."
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Your AI product has 40% task completion rate (target 60%) and 18% regeneration rate (target <15%). What are the most likely root causes?",
+          "answer": "Low task completion + high regeneration → the model frequently produces unsatisfactory first answers. Root causes: (1) Prompts are ambiguous — users ask something the model misinterprets. (2) Context window is too small — model lacks information to answer well. (3) Model quality is insufficient for task complexity. Investigate: sample low-completion sessions, look for patterns in prompts that cause regenerations, check if specific query types consistently fail."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your VP of Product wants to launch an AI feature in 2 weeks. Your evaluation shows 65% task completion and 12% hallucination rate. How do you respond?",
+          "answer": "Present the data clearly: 12% hallucination rate means 1 in 8 responses contains a factual error — unacceptable for most products. Propose: (1) 2-week delay to add source citations + hallucination detection. (2) Narrow scope: launch only for low-stakes use cases where hallucinations are less harmful. (3) Add human review for high-confidence output. (4) Communicate limitations clearly in UI. Do not ship a 12% hallucination rate without explicit user disclosure and appropriate domain scope."
+        }
+      ],
+      "wrongAnswers": [
+        "Q: How do you handle non-determinism in LLM UX?\nBad: 'Hide it — users shouldn't see different outputs for the same input.' Correct: Design for it — streaming shows generation in progress (it's expected); regenerate button gives users agency; source citations explain why this specific output was generated; confidence signalling distinguishes certain from uncertain claims."
+      ]
     },
     {
       "type": "mcq",
       "title": "AI Product Quiz",
       "questions": [
         {
-          "q": "Task completion rate is measured as:",
-          "options": [
-            "% of requests that return HTTP 200",
-            "% of sessions where at least one user action signals a useful outcome (copy, thumbs up, no regeneration)",
-            "% of users who complete onboarding",
-            "% of AI responses rated above 4 stars"
-          ],
-          "answer": 1,
+          "id": 1,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Task completion rate is measured as:",
+          "options": {
+            "A": "% of requests that return HTTP 200",
+            "B": "% of sessions where at least one user action signals a useful outcome (copy, thumbs up, no regeneration)",
+            "C": "% of users who complete onboarding",
+            "D": "% of AI responses rated above 4 stars"
+          },
+          "answer": "B",
           "explanation": "Task completion is inferred from behavioural signals that suggest the user got what they needed — copying output, thumbs up, session continuation. It's a proxy for 'did the AI actually help?'"
         },
         {
-          "q": "A regeneration rate of 25% indicates:",
-          "options": [
-            "High user engagement",
-            "Users frequently find the first response unsatisfactory and request another generation",
-            "The model is generating streaming output",
-            "25% of users are premium subscribers"
-          ],
-          "answer": 1,
+          "id": 2,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "A regeneration rate of 25% indicates:",
+          "options": {
+            "A": "High user engagement",
+            "B": "Users frequently find the first response unsatisfactory and request another generation",
+            "C": "The model is generating streaming output",
+            "D": "25% of users are premium subscribers"
+          },
+          "answer": "B",
           "explanation": "High regeneration rate signals the model's first attempt often misses user intent. It's a leading indicator of quality problems and a strong negative signal for user satisfaction."
         },
         {
-          "q": "The most critical UX pattern for managing LLM non-determinism is:",
-          "options": [
-            "Hiding the AI's identity from users",
-            "Token streaming to show progress immediately, reducing perceived wait time and showing generation is in progress",
-            "Always returning the same response for the same question",
-            "Asking users to rate every response before seeing the next"
-          ],
-          "answer": 1,
+          "id": 3,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "The most critical UX pattern for managing LLM non-determinism is:",
+          "options": {
+            "A": "Hiding the AI's identity from users",
+            "B": "Token streaming to show progress immediately, reducing perceived wait time and showing generation is in progress",
+            "C": "Always returning the same response for the same question",
+            "D": "Asking users to rate every response before seeing the next"
+          },
+          "answer": "B",
           "explanation": "Streaming makes the non-deterministic generation process visible and expected. Users tolerate variability much better when they can see tokens appearing than when they stare at a spinner."
         },
         {
-          "q": "An AI feature that costs $0.005 per request at 500K daily users averaging 8 requests each costs approximately per month:",
-          "options": ["$600/month", "$6,000/month", "$60,000/month", "$600,000/month"],
-          "answer": 3,
+          "id": 4,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "An AI feature that costs $0.005 per request at 500K daily users averaging 8 requests each costs approximately per month:",
+          "options": {
+            "A": "$600/month",
+            "B": "$6,000/month",
+            "C": "$60,000/month",
+            "D": "$600,000/month"
+          },
+          "answer": "D",
           "explanation": "500K users × 8 requests × $0.005 × 30 days = 500K × 8 × 30 × 0.005 = $600,000/month. Always model unit economics before launch."
         },
         {
-          "q": "The MVP-to-production roadmap for an AI feature should include which phase before General Availability?",
-          "options": [
-            "Global launch to all users",
-            "Closed beta with feedback collection, quality gates, and monitoring before GA",
-            "Internal prototype only — skip external testing",
-            "Two weeks of A/B testing at 50% traffic"
-          ],
-          "answer": 1,
+          "id": 5,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "The MVP-to-production roadmap for an AI feature should include which phase before General Availability?",
+          "options": {
+            "A": "Global launch to all users",
+            "B": "Closed beta with feedback collection, quality gates, and monitoring before GA",
+            "C": "Internal prototype only — skip external testing",
+            "D": "Two weeks of A/B testing at 50% traffic"
+          },
+          "answer": "B",
           "explanation": "A closed beta with real users (100-500) surfaces edge cases the team didn't anticipate, establishes baseline metrics, and allows quality gates to be set before full launch."
         }
       ]
