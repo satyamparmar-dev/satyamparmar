@@ -2,7 +2,8 @@ const fs = require('fs');
 const path = require('path');
 
 const mainPath = path.join(__dirname, '..', 'public', 'data', 'scenarioInterviewThemes.json');
-const newPath = path.join(__dirname, 'new-themes.json');
+const newThemesFile = process.argv[2] || 'new-themes.json';
+const newPath = path.join(__dirname, newThemesFile);
 
 const main = JSON.parse(fs.readFileSync(mainPath, 'utf8'));
 const newThemes = JSON.parse(fs.readFileSync(newPath, 'utf8'));
