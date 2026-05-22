@@ -1,5 +1,7 @@
 // Prompt Engineering for Java Developers — Course Data
 
+import { applyPromptEngineeringEnhancements } from './lessonEnhancements';
+
 const STORAGE_KEY = 'pe_completed_lessons';
 
 export type SectionType = 'why' | 'analogy' | 'concept' | 'code' | 'task' | 'summary';
@@ -78,7 +80,7 @@ export const COURSE_PHASES: CoursePhase[] = [
   },
 ];
 
-export const COURSE_LESSONS: CourseLesson[] = [
+const RAW_COURSE_LESSONS: CourseLesson[] = [
 
   // ─── PHASE 1 ───────────────────────────────────────────────────────────────
 
@@ -2441,6 +2443,8 @@ Your PR cannot merge if violations exist.
     ],
   },
 ];
+
+export const COURSE_LESSONS: CourseLesson[] = applyPromptEngineeringEnhancements(RAW_COURSE_LESSONS);
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
