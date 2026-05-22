@@ -31,6 +31,16 @@ import JavaGithubHome from '../pages/javaGithub/JavaGithubHome';
 import JavaGithubTopic from '../pages/javaGithub/JavaGithubTopic';
 import KafkaGithubHome from '../pages/apacheKafka/KafkaGithubHome';
 import KafkaGithubTopic from '../pages/apacheKafka/KafkaGithubTopic';
+import KafkaCourseHome from '../pages/kafkaCourse/KafkaCourseHome';
+import KafkaCourseLesson from '../pages/kafkaCourse/KafkaCourseLesson';
+import JavaCourseHome from '../pages/javaCourse/JavaCourseHome';
+import JavaCourseLesson from '../pages/javaCourse/JavaCourseLesson';
+import ClaudeCourseHome from '../pages/claudeCourse/ClaudeCourseHome';
+import ClaudeCourseLesson from '../pages/claudeCourse/ClaudeCourseLesson';
+import PromptEngineeringCourseHome from '../pages/promptEngineeringCourse/PromptEngineeringCourseHome';
+import PromptEngineeringCourseLesson from '../pages/promptEngineeringCourse/PromptEngineeringCourseLesson';
+import CourseAccessGuard from '../components/CourseAccessGuard';
+import Pricing from '../pages/Pricing';
 
 const AppRoutes: React.FC = () => (
   <Routes>
@@ -61,11 +71,37 @@ const AppRoutes: React.FC = () => (
         </RouteErrorBoundary>
       }
     />
-    <Route path="/llm" element={<LlmOverview />} />
-    <Route path="/java-repo" element={<JavaGithubHome />} />
-    <Route path="/java-repo/topic/:step" element={<JavaGithubTopic />} />
+    <Route path="/pricing" element={<Pricing />} />
+    <Route
+      path="/llm"
+      element={
+        <CourseAccessGuard courseId="genai-roadmap">
+          <LlmOverview />
+        </CourseAccessGuard>
+      }
+    />
+    <Route path="/java-repo" element={<CourseAccessGuard courseId="java-roadmap" />}>
+      <Route index element={<JavaGithubHome />} />
+      <Route path="topic/:step" element={<JavaGithubTopic />} />
+    </Route>
     <Route path="/kafka-repo" element={<KafkaGithubHome />} />
     <Route path="/kafka-repo/topic/:step" element={<KafkaGithubTopic />} />
+    <Route path="/kafka-course" element={<CourseAccessGuard courseId="apache-kafka" />}>
+      <Route index element={<KafkaCourseHome />} />
+      <Route path="lesson/:lessonId" element={<KafkaCourseLesson />} />
+    </Route>
+    <Route path="/claude-course" element={<CourseAccessGuard courseId="claude-for-developers" />}>
+      <Route index element={<ClaudeCourseHome />} />
+      <Route path="lesson/:lessonId" element={<ClaudeCourseLesson />} />
+    </Route>
+    <Route path="/prompt-course" element={<CourseAccessGuard courseId="prompt-engineering" />}>
+      <Route index element={<PromptEngineeringCourseHome />} />
+      <Route path="lesson/:lessonId" element={<PromptEngineeringCourseLesson />} />
+    </Route>
+    <Route path="/java-course" element={<CourseAccessGuard courseId="java-modern" />}>
+      <Route index element={<JavaCourseHome />} />
+      <Route path="lesson/:lessonId" element={<JavaCourseLesson />} />
+    </Route>
     <Route path="/blog" element={<BlogIndex />} />
     <Route path="/blog/:slug" element={<BlogPost />} />
     <Route path="/roadmap" element={<Roadmap />} />

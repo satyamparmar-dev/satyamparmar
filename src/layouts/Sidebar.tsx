@@ -31,6 +31,8 @@ import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
 import BusinessIcon from '@mui/icons-material/Business';
 import DataObjectIcon from '@mui/icons-material/DataObject';
 import HubIcon from '@mui/icons-material/Hub';
+import LocalCafeIcon from '@mui/icons-material/LocalCafe';
+import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAppStore, selectCompletionRate } from '../store/useAppStore';
 import { getLevelColor } from '../utils/formatters';
@@ -46,6 +48,11 @@ const navItems = [
   { path: '/llm', icon: <AutoAwesomeIcon />, label: 'LLM & GenAI' },
   { path: '/java-repo', icon: <DataObjectIcon />, label: 'Java' },
   { path: '/kafka-repo', icon: <HubIcon />, label: 'Apache Kafka' },
+  { path: '/java-course', icon: <LocalCafeIcon />, label: 'Java Course', badge: 'NEW' },
+  { path: '/pricing', icon: <LocalOfferIcon />, label: 'Pricing' },
+  { path: '/kafka-course', icon: <HubIcon />, label: 'Kafka Course', badge: 'NEW' },
+  { path: '/claude-course', icon: <AutoAwesomeIcon />, label: 'Claude for developers', badge: 'NEW' },
+  { path: '/prompt-course', icon: <AutoAwesomeIcon />, label: 'Prompt Engineering', badge: 'NEW' },
   { path: '/blog', icon: <MenuBookIcon />, label: 'Topics & blog' },
   { path: '/roadmap', icon: <MapIcon />, label: 'Roadmap' },
   { path: '/companies', icon: <BusinessIcon />, label: 'Companies' },
@@ -209,6 +216,20 @@ const Sidebar: React.FC<Props> = ({ open, onClose }) => {
                       fontWeight: active ? 700 : 500,
                     }}
                   />
+                  {'badge' in item && item.badge && (
+                    <Chip
+                      label={item.badge}
+                      size="small"
+                      sx={{
+                        height: 16,
+                        fontSize: '0.55rem',
+                        fontWeight: 700,
+                        borderRadius: '4px',
+                        color: '#f59e0b',
+                        bgcolor: 'rgba(245,158,11,0.15)',
+                      }}
+                    />
+                  )}
                 </ListItemButton>
               </ListItem>
             );

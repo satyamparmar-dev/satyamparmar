@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Grid, Typography, Card, CardContent,
   Button, Chip, LinearProgress, Tabs, Tab,
-  alpha,
+  alpha, CircularProgress,
 } from '@mui/material';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -17,6 +17,25 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { useNavigate } from 'react-router-dom';
+import { useAuthStore } from '../auth/useAuthStore';
+import { usePaymentStore } from '../store/usePaymentStore';
+import { getCourseDef } from '../config/courses';
+import {
+  getCompletedLessons as getJavaCompletedLessons,
+  getTotalLessons as getJavaTotalLessons,
+} from '../content/javaCourse/courseData';
+import {
+  getCompletedLessons as getKafkaCompletedLessons,
+  getTotalLessons as getKafkaTotalLessons,
+} from '../content/kafkaCourse/courseData';
+import {
+  getCompletedLessons as getClaudeCompletedLessons,
+  getTotalLessons as getClaudeTotalLessons,
+} from '../content/claudeCourse/courseData';
+import {
+  getCompletedLessons as getPromptEngineeringCompletedLessons,
+  getTotalLessons as getPromptEngineeringTotalLessons,
+} from '../content/promptEngineeringCourse/courseData';
 import { format, subDays } from 'date-fns';
 import { useAppStore, selectCompletionRate } from '../store/useAppStore';
 import { fetchCurriculum, fetchPhaseWithCache } from '../services/api';
@@ -212,8 +231,49 @@ const buildChartData = (completedDays: number[]) => {
   });
 };
 
+function getPaidCourseProgressPercent(courseId: string): number | null {
+  if (courseId === 'java-modern') {
+    const done = getJavaCompletedLessons().size;
+    const total = getJavaTotalLessons();
+    return total > 0 ? Math.round((done / total) * 100) : null;
+  }
+  if (courseId === 'apache-kafka') {
+    const done = getKafkaCompletedLessons().size;
+    const total = getKafkaTotalLessons();
+    return total > 0 ? Math.round((done / total) * 100) : null;
+  }
+  if (courseId === 'claude-for-developers') {
+    const done = getClaudeCompletedLessons().size;
+    const total = getClaudeTotalLessons();
+    return total > 0 ? Math.round((done / total) * 100) : null;
+  }
+  if (courseId === 'prompt-engineering') {
+    const done = getPromptEngineeringCompletedLessons().size;
+    const total = getPromptEngineeringTotalLessons();
+    return total > 0 ? Math.round((done / total) * 100) : null;
+  }
+  return null;
+}
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const userId = useAuthStore((s) => s.currentUser?.userId ?? null);
+  const purchasesForUser = usePaymentStore((s) => (userId ? s.purchasesByUser[userId] : undefined));
+  const [paymentHydrated, setPaymentHydrated] = useState(() => usePaymentStore.persist.hasHydrated());
+
+  useEffect(() => {
+    if (usePaymentStore.persist.hasHydrated()) {
+      setPaymentHydrated(true);
+      return;
+    }
+    return usePaymentStore.persist.onFinishHydration(() => setPaymentHydrated(true));
+  }, []);
+
+  const myPurchasedCourses = useMemo(() => {
+    if (!userId || !purchasesForUser) return [];
+    return Object.values(purchasesForUser).sort((a, b) => b.purchasedAt - a.purchasedAt);
+  }, [userId, purchasesForUser]);
+
   const {
     curriculum, setCurriculum, loadPhase, loadedPhases,
     progress, activeTrack, setActiveTrack, activeCurriculum, setActiveCurriculum, theme,
@@ -343,6 +403,90 @@ const Dashboard: React.FC = () => {
           </Grid>
         ))}
       </Grid>
+
+      {/* My Courses (purchased) */}
+      <Box mb={3}>
+        <Typography variant="h6" fontWeight={700} gutterBottom>
+          My Courses
+        </Typography>
+        {!paymentHydrated ? (
+          <Card>
+            <CardContent sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress size={28} sx={{ color: '#667eea' }} />
+            </CardContent>
+          </Card>
+        ) : myPurchasedCourses.length === 0 ? (
+          <Card variant="outlined" sx={{ borderStyle: 'dashed' }}>
+            <CardContent sx={{ py: 3, textAlign: 'center' }}>
+              <Typography variant="body1" fontWeight={700} gutterBottom>
+                Start your learning journey
+              </Typography>
+              <Button
+                variant="contained"
+                onClick={() => navigate('/pricing')}
+                sx={{
+                  mt: 1,
+                  fontWeight: 700,
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                }}
+              >
+                Browse Courses
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Grid container spacing={2}>
+            {myPurchasedCourses.map((p) => {
+              const def = getCourseDef(p.courseId);
+              if (!def) return null;
+              const pct = getPaidCourseProgressPercent(p.courseId);
+              return (
+                <Grid item xs={12} sm={6} md={4} key={p.courseId}>
+                  <Card sx={{ height: '100%' }}>
+                    <CardContent sx={{ p: 2 }}>
+                      <Typography variant="subtitle2" fontWeight={800} gutterBottom>
+                        {def.name}
+                      </Typography>
+                      {pct != null ? (
+                        <>
+                          <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
+                            Progress
+                          </Typography>
+                          <LinearProgress
+                            variant="determinate"
+                            value={pct}
+                            sx={{
+                              height: 8,
+                              borderRadius: 2,
+                              mb: 1,
+                              '& .MuiLinearProgress-bar': { bgcolor: def.color },
+                            }}
+                          />
+                          <Typography variant="caption" color="text.secondary">
+                            {pct}% complete
+                          </Typography>
+                        </>
+                      ) : (
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                          Progress tracked inside the course
+                        </Typography>
+                      )}
+                      <Button
+                        variant="outlined"
+                        fullWidth
+                        sx={{ mt: 2, fontWeight: 700, borderColor: def.color, color: def.color }}
+                        onClick={() => navigate(def.route)}
+                      >
+                        Continue
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              );
+            })}
+          </Grid>
+        )}
+      </Box>
 
       <Grid container spacing={3}>
         {/* Study Chart */}
