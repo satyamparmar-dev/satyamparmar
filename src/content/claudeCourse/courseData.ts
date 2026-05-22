@@ -6,6 +6,7 @@ import {
   applyClaudeLessonEnhancements,
 } from './lessonEnhancements';
 import { PHASE_5_LESSONS } from './phase5Lessons';
+import { PHASE_5_MORE_LESSONS } from './phase5MoreLessons';
 
 export type SectionType = 'why' | 'analogy' | 'concept' | 'code' | 'task' | 'summary';
 export type Difficulty = 'Beginner' | 'Intermediate' | 'Advanced' | 'Expert';
@@ -92,11 +93,11 @@ export const COURSE_PHASES: CoursePhase[] = [
     id: 'phase-5',
     title: '90-Day Production Roadmap',
     subtitle: 'Months 2–4 — from course to production AI features',
-    description: 'Ship real features, build a RAG knowledge base, add multi-agent workflows, harden with circuit breakers and A/B testing, and track ROI metrics.',
+    description: 'Ship real features, build a RAG knowledge base, add multi-agent workflows, harden with circuit breakers and A/B testing, master prompt templates, apply advanced engineering patterns, and ship 3 complete weekend projects.',
     icon: '🏭',
     color: '#f59e0b',
     gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-    totalDuration: '2 hours',
+    totalDuration: '5 hours',
   },
 ];
 
@@ -2211,6 +2212,7 @@ The Batches API ships in the same Java SDK — check [Anthropic Batches document
     ],
   },
   ...PHASE_5_LESSONS,
+  ...PHASE_5_MORE_LESSONS,
 ];
 
 applyClaudeLessonEnhancements(COURSE_LESSONS, CLAUDE_LESSON_ENHANCEMENTS);
