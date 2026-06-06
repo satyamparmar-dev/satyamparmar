@@ -1,5 +1,6 @@
 import React from 'react';
 import { Route, Routes } from 'react-router-dom';
+import NotFoundPage from '../pages/NotFoundPage';
 import Dashboard from '../pages/Dashboard';
 import Learn from '../pages/Learn';
 import Progress from '../pages/Progress';
@@ -94,10 +95,8 @@ const AppRoutes: React.FC = () => (
       <Route index element={<ClaudeCourseHome />} />
       <Route path="lesson/:lessonId" element={<ClaudeCourseLesson />} />
     </Route>
-    <Route path="/prompt-course" element={<CourseAccessGuard courseId="prompt-engineering" />}>
-      <Route index element={<PromptEngineeringCourseHome />} />
-      <Route path="lesson/:lessonId" element={<PromptEngineeringCourseLesson />} />
-    </Route>
+    <Route path="/prompt-course" element={<PromptEngineeringCourseHome />} />
+    <Route path="/prompt-course/lesson/:lessonId" element={<PromptEngineeringCourseLesson />} />
     <Route path="/java-course" element={<CourseAccessGuard courseId="java-modern" />}>
       <Route index element={<JavaCourseHome />} />
       <Route path="lesson/:lessonId" element={<JavaCourseLesson />} />
@@ -124,6 +123,7 @@ const AppRoutes: React.FC = () => (
     <Route path="/pro/tutor" element={<ProTutor />} />
     <Route path="/pro/tutor/:lessonId" element={<ProTutor />} />
     <Route path="/pro/certifications" element={<Certifications />} />
+    <Route path="*" element={<NotFoundPage />} />
   </Routes>
 );
 

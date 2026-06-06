@@ -1,0 +1,173 @@
+{
+  "id": "phase3-day44",
+  "day": 44,
+  "phase": 3,
+  "title": "Anthropic Tool Use & Computer Use",
+  "estimatedHours": 4,
+  "difficulty": "advanced",
+  "level": "Senior",
+  "track": "Senior",
+  "tags": ["anthropic", "tool-use", "computer-use", "claude", "automation"],
+  "prerequisites": ["phase1-day16", "phase2-day28", "phase3-day37"],
+  "learningObjectives": [
+    "Master Anthropic's tool use protocol differences from OpenAI",
+    "Implement multi-turn tool conversations with Claude",
+    "Understand Claude's Computer Use API for GUI automation",
+    "Build a production tool-use pipeline with Claude",
+    "Handle Claude-specific behaviors: extended thinking, cache control"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Anthropic Tool Use Matters",
+      "content": "Anthropic's Claude has distinct strengths: stronger instruction following, better reasoning on complex tasks, and more cautious behavior on sensitive tasks. Claude's tool use protocol differs from OpenAI in important ways that trip up developers. Additionally, Anthropic introduced Computer Use — the ability for Claude to see a screenshot and control a computer (click, type, scroll) just like a human would. This enables a new class of automation: GUI automation that works on any application without custom APIs. Understanding both tools deepens your ability to choose the right model and capabilities for each task."
+    },
+    {
+      "type": "theory",
+      "title": "Anthropic Tool Use Protocol",
+      "content": "**Key differences from OpenAI (reviewed from Day 16):**\n\n| Aspect | OpenAI | Anthropic |\n|--------|--------|----------|\n| Schema key | `parameters` | `input_schema` |\n| Tool wrapper | `{type:'function', function:{...}}` | Direct object |\n| Tool call block | `message.tool_calls[].function.arguments` (JSON string) | `content[].input` (already dict) |\n| Tool result | `{role:'tool', tool_call_id, content}` | `{role:'user', content:[{type:'tool_result', tool_use_id, content}]}` |\n| Stop reason | `finish_reason == 'tool_calls'` | `stop_reason == 'tool_use'` |\n| Force specific tool | `tool_choice: {type:'function', function:{name}}` | `tool_choice: {type:'tool', name:'X'}` |\n\n**Tool use response content structure:**\n```python\n# Claude's response when calling a tool:\nresponse.content = [\n    TextBlock(type='text', text='I will look up the weather...'),  # optional thinking\n    ToolUseBlock(\n        type='tool_use',\n        id='toolu_01abc123',\n        name='get_weather',\n        input={'city': 'Paris', 'unit': 'celsius'},  # dict, not JSON string!\n    )\n]\nresponse.stop_reason  # 'tool_use'\n```\n\n**Cache control (Anthropic-specific, reduces cost on repeated contexts):**\n```python\n# Mark a large system prompt or context for caching\n{'type': 'text', 'text': '...long system prompt...', 'cache_control': {'type': 'ephemeral'}}\n# Cached tokens: billed at 10% of normal input cost\n# Cache lifetime: 5 minutes\n```\n\n**Extended Thinking (Claude 3.7+):**\n```python\nclient.messages.create(\n    model='claude-opus-4-7',\n    max_tokens=16000,\n    thinking={'type': 'enabled', 'budget_tokens': 10000},  # internal reasoning budget\n    messages=[...]\n)\n# response.content[0] is a ThinkingBlock with the full reasoning trace\n# response.content[1] is the actual TextBlock answer\n```\n\n**Computer Use:**\n```python\n# Available on Claude 3.5 Sonnet (claude-sonnet-4-6)\ntools = [\n    {'type': 'computer_20241022', 'name': 'computer',\n     'display_width_px': 1024, 'display_height_px': 768,\n     'display_number': 1},\n    {'type': 'text_editor_20241022', 'name': 'str_replace_editor'},\n    {'type': 'bash_20241022', 'name': 'bash'},\n]\n# Claude can: screenshot → click(x,y) → type(text) → scroll → key()\n# You implement the actual computer control (pyautogui, Playwright)\n```"
+    },
+    {
+      "type": "code",
+      "title": "Anthropic Tool Use — Complete Implementation",
+      "language": "python",
+      "code": "# pip install anthropic\nfrom __future__ import annotations\nimport json\nimport os\nimport base64\nfrom pathlib import Path\nfrom typing import Any, Callable, Optional\nimport anthropic\n\nclient = anthropic.Anthropic(api_key=os.environ['ANTHROPIC_API_KEY'])\nMODEL = 'claude-haiku-4-5-20251001'  # fast + cheap for tool use\n\n\n# ── Tool definitions (Anthropic format) ───────────────────────────────────────\n\nTOOLS = [\n    {\n        'name': 'get_weather',\n        'description': 'Get current weather for a city. Returns temperature and conditions.',\n        'input_schema': {  # Note: 'input_schema', not 'parameters'\n            'type': 'object',\n            'properties': {\n                'city': {'type': 'string', 'description': 'City name'},\n                'unit': {'type': 'string', 'enum': ['celsius', 'fahrenheit']},\n            },\n            'required': ['city'],\n        },\n    },\n    {\n        'name': 'search_database',\n        'description': 'Search the product database. Returns matching products with prices.',\n        'input_schema': {\n            'type': 'object',\n            'properties': {\n                'query': {'type': 'string'},\n                'category': {'type': 'string', 'enum': ['hardware', 'software', 'accessories']},\n            },\n            'required': ['query'],\n        },\n    },\n    {\n        'name': 'send_notification',\n        'description': 'Send a notification to a user. Use only when explicitly asked to notify someone.',\n        'input_schema': {\n            'type': 'object',\n            'properties': {\n                'user_id': {'type': 'string'},\n                'message': {'type': 'string'},\n                'channel': {'type': 'string', 'enum': ['email', 'sms', 'push']},\n            },\n            'required': ['user_id', 'message', 'channel'],\n        },\n    },\n]\n\n# Tool implementations\n\ndef get_weather(city: str, unit: str = 'celsius') -> dict:\n    data = {'Paris': {'temp_c': 18, 'condition': 'partly cloudy'}, 'Tokyo': {'temp_c': 28, 'condition': 'sunny'}}\n    info = data.get(city, {'temp_c': 20, 'condition': 'unknown'})\n    temp = info['temp_c'] if unit == 'celsius' else info['temp_c'] * 9/5 + 32\n    return {'city': city, 'temperature': f'{temp}°{\"C\" if unit == \"celsius\" else \"F\"}', 'condition': info['condition']}\n\ndef search_database(query: str, category: Optional[str] = None) -> list[dict]:\n    products = [\n        {'name': 'Widget Pro', 'price': 29.99, 'category': 'hardware'},\n        {'name': 'Code Editor', 'price': 49.99, 'category': 'software'},\n        {'name': 'USB Hub', 'price': 19.99, 'category': 'accessories'},\n    ]\n    q = query.lower()\n    results = [p for p in products if q in p['name'].lower()]\n    if category:\n        results = [p for p in results if p['category'] == category]\n    return results or products[:2]\n\ndef send_notification(user_id: str, message: str, channel: str) -> dict:\n    print(f'  [NOTIFICATION] To {user_id} via {channel}: {message}')\n    return {'sent': True, 'channel': channel, 'user_id': user_id}\n\nTOOL_FNS: dict[str, Callable] = {\n    'get_weather': get_weather,\n    'search_database': search_database,\n    'send_notification': send_notification,\n}\n\n\n# ── Anthropic tool loop ────────────────────────────────────────────────────────\n\ndef anthropic_tool_loop(\n    user_message: str,\n    system: str = 'You are a helpful assistant.',\n    max_rounds: int = 5,\n    verbose: bool = True,\n) -> str:\n    messages = [{'role': 'user', 'content': user_message}]\n\n    for round_num in range(max_rounds):\n        response = client.messages.create(\n            model=MODEL,\n            max_tokens=1024,\n            system=system,\n            tools=TOOLS,\n            messages=messages,\n        )\n\n        # Append assistant turn (all content blocks)\n        messages.append({'role': 'assistant', 'content': response.content})\n\n        if response.stop_reason == 'end_turn':  # no tool calls\n            text_blocks = [b.text for b in response.content if hasattr(b, 'text')]\n            return '\\n'.join(text_blocks)\n\n        # stop_reason == 'tool_use' — execute all tool blocks\n        tool_results = []\n        for block in response.content:\n            if block.type == 'tool_use':\n                fn = TOOL_FNS.get(block.name)\n                if fn:\n                    result = fn(**block.input)  # block.input is already a dict!\n                    result_str = json.dumps(result)\n                else:\n                    result_str = json.dumps({'error': f'Unknown tool: {block.name}'})\n\n                if verbose:\n                    print(f'  [{round_num+1}] {block.name}({block.input}) → {result_str[:80]}')\n\n                tool_results.append({\n                    'type': 'tool_result',\n                    'tool_use_id': block.id,\n                    'content': result_str,\n                })\n\n        # Tool results go into a user message\n        messages.append({'role': 'user', 'content': tool_results})\n\n    return 'Max rounds reached'\n\n\n# ── Cache control example ──────────────────────────────────────────────────────\n\ndef cached_system_prompt_call(\n    user_question: str,\n    large_context: str,\n) -> str:\n    \"\"\"Use cache_control to reduce cost on repeated large contexts.\"\"\"\n    response = client.messages.create(\n        model=MODEL,\n        max_tokens=512,\n        system=[\n            {\n                'type': 'text',\n                'text': 'You are a helpful assistant. Answer based on the context provided.',\n            },\n            {\n                'type': 'text',\n                'text': large_context,\n                'cache_control': {'type': 'ephemeral'},  # cache this large context\n            },\n        ],\n        messages=[{'role': 'user', 'content': user_question}],\n    )\n    # Check if cache was used\n    usage = response.usage\n    print(f'  Input tokens: {usage.input_tokens}, Cache read: {getattr(usage, \"cache_read_input_tokens\", 0)}')\n    return response.content[0].text\n\n\n# ── Force specific tool ────────────────────────────────────────────────────────\n\ndef force_tool_call(message: str, tool_name: str) -> dict:\n    \"\"\"Force Claude to use a specific tool — useful for structured extraction.\"\"\"\n    response = client.messages.create(\n        model=MODEL,\n        max_tokens=512,\n        tools=TOOLS,\n        tool_choice={'type': 'tool', 'name': tool_name},  # force specific tool\n        messages=[{'role': 'user', 'content': message}],\n    )\n    # Find the tool_use block\n    for block in response.content:\n        if block.type == 'tool_use' and block.name == tool_name:\n            return block.input  # returns the arguments as dict\n    return {}\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    queries = [\n        'What is the weather in Paris and Tokyo?',\n        'Find me some hardware products and check the weather in Tokyo',\n    ]\n\n    print('=== Anthropic Tool Use Loop ===')\n    for q in queries:\n        print(f'\\nQ: {q}')\n        answer = anthropic_tool_loop(q)\n        print(f'A: {answer}')\n\n    print('\\n=== Force Tool Call (structured extraction) ===')\n    result = force_tool_call('I need weather for London please', 'get_weather')\n    print(f'Extracted args: {result}')\n    print(f'Weather: {get_weather(**result)}')\n\n    print('\\n=== Cache Control Demo ===')\n    large_context = 'Company policy: ' + 'Our return policy allows 30 days. ' * 200  # ~800 tokens\n    ans1 = cached_system_prompt_call('What is the return policy?', large_context)\n    print(f'Answer: {ans1[:100]}')\n    ans2 = cached_system_prompt_call('How long do I have to return?', large_context)  # should hit cache\n    print(f'Answer (cached): {ans2[:100]}')"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Anthropic Tool Use Pitfalls",
+      "items": [
+        {
+          "mistake": "Using 'parameters' instead of 'input_schema' in Anthropic tool definitions",
+          "why": "OpenAI uses 'parameters'. Anthropic uses 'input_schema'. Using the wrong key silently ignores the schema definition, causing validation failures or wrong model behavior.",
+          "fix": "Anthropic tool schema always uses `'input_schema'`, not `'parameters'`. Build or use an adapter function to convert between formats."
+        },
+        {
+          "mistake": "Calling json.loads() on block.input",
+          "why": "Unlike OpenAI where `tc.function.arguments` is a JSON string, Anthropic's `block.input` is already a Python dict. Calling json.loads() on a dict raises a TypeError.",
+          "fix": "Use `block.input` directly: `fn(**block.input)`. No json.loads() needed for Anthropic."
+        },
+        {
+          "mistake": "Not passing all content blocks in the assistant turn",
+          "why": "If the model returned both a TextBlock and ToolUseBlock, you must include both when appending the assistant turn. Dropping the TextBlock breaks the message history.",
+          "fix": "Always append `response.content` (the full list) as the assistant message content, not just the tool_use blocks."
+        },
+        {
+          "mistake": "Missing the 'tool_result' wrapper when submitting tool outputs",
+          "why": "OpenAI uses `{role: 'tool', tool_call_id, content}`. Anthropic requires tool results inside a user message: `{role: 'user', content: [{type: 'tool_result', tool_use_id, content}]}`.",
+          "fix": "Anthropic tool results always go in a user message as a list with `type: 'tool_result'` items. Get tool_use_id from `block.id`."
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "What is Anthropic's cache_control and how does it reduce costs?",
+          "answer": "Cache control marks specific content blocks (typically large system prompts or document contexts) for server-side caching. When the same cached prefix appears in subsequent requests within 5 minutes, the cached tokens are charged at 10% of normal input cost instead of 100%. To use: add `'cache_control': {'type': 'ephemeral'}` to the content block you want cached. Best for: large system prompts (>1000 tokens), document contexts passed repeatedly, few-shot examples. Only effective when the same prefix is reused across multiple requests — single requests don't benefit.",
+          "followUps": ["How does Anthropic's cache differ from OpenAI's automatic prompt caching?"]
+        },
+        {
+          "question": "What is Claude Computer Use and what are its main use cases?",
+          "answer": "Computer Use is a capability where Claude can see a screenshot and emit computer control actions: click(x,y), type(text), scroll, key press. Your code captures the screenshot, sends it to Claude, receives an action, executes it (via pyautogui or a browser driver), takes another screenshot, and loops. Use cases: GUI automation for applications without APIs (legacy software), automated QA testing across visual interfaces, web scraping where the UI changes frequently. Current limitations: slow (each iteration requires an API call), expensive (image tokens), error-prone with complex UIs, not suitable for high-frequency automation.",
+          "followUps": ["When would you prefer Playwright over Claude Computer Use for web automation?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write the message structure for a two-turn Anthropic conversation where Claude calls a tool and you provide the result.",
+          "answer": "```python\n# Turn 1: User asks, Claude responds with tool_use\nmsgs = [{'role': 'user', 'content': 'What is the weather in Tokyo?'}]\nresponse = client.messages.create(model=MODEL, max_tokens=512, tools=TOOLS, messages=msgs)\n\n# Turn 2: Append assistant turn (ALL content blocks)\nmsgs.append({'role': 'assistant', 'content': response.content})\n\n# Execute tool + append user turn with results\nresults = []\nfor block in response.content:\n    if block.type == 'tool_use':\n        result = get_weather(**block.input)  # block.input is dict\n        results.append({'type': 'tool_result', 'tool_use_id': block.id, 'content': json.dumps(result)})\n\nmsgs.append({'role': 'user', 'content': results})\n\n# Turn 3: Claude generates final answer\nfinal = client.messages.create(model=MODEL, max_tokens=512, tools=TOOLS, messages=msgs)\nprint(final.content[0].text)\n```"
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You need to choose between OpenAI's function calling and Anthropic's tool use for a production customer support system. What factors guide the decision?",
+          "answer": "Key dimensions: (1) Quality of tool selection: test both on your specific task. Claude tends to be more conservative — it's less likely to call unnecessary tools and asks for clarification when the task is ambiguous. (2) Latency: GPT-4o-mini is generally faster than Claude Haiku for tool-heavy tasks. (3) Cost: compare (model price × avg tokens per session) including tool call overhead. (4) Specific capabilities: if you need Computer Use or extended thinking, Claude is the only option. If you need the Assistants API (managed threads, Code Interpreter), OpenAI is the choice. (5) Compliance: some enterprises have vendor exclusivity requirements. (6) Reliability: run both for a week in shadow mode (same queries, different model, human-evaluated quality), pick the better one. (7) Multi-model strategy: use both with a routing layer — GPT-4o-mini for standard queries, Claude Opus for complex reasoning. Build a provider-agnostic tool schema layer so you can switch providers without rewriting tools.",
+          "followUps": ["How would you implement A/B testing between OpenAI and Anthropic tool implementations?"]
+        }
+      ],
+      "wrongAnswers": [
+        "Anthropic tool results use the same format as OpenAI — they use different message structures; Anthropic requires tool results inside a user message content array with type:'tool_result'",
+        "block.input in Anthropic tool use is a JSON string like OpenAI's arguments — block.input is already a Python dict; do not call json.loads() on it",
+        "cache_control permanently caches the content on Anthropic's servers — it's ephemeral with a 5-minute TTL; the cache expires if not accessed within that window"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d44q1",
+          "level": "basic",
+          "category": "code",
+          "question": "In Anthropic's tool use, what is the correct key for defining a tool's parameter schema?",
+          "options": {
+            "A": "parameters",
+            "B": "schema",
+            "C": "input_schema",
+            "D": "function_schema"
+          },
+          "answer": "C",
+          "explanation": "Anthropic uses 'input_schema' while OpenAI uses 'parameters'. This is the most common source of bugs when migrating between providers."
+        },
+        {
+          "id": "d44q2",
+          "level": "intermediate",
+          "category": "code",
+          "question": "After Claude emits a tool_use block, where do the tool results go in the next API request?",
+          "options": {
+            "A": "As a 'tool' role message with tool_call_id",
+            "B": "Inside a user message's content array as {type: 'tool_result', tool_use_id, content}",
+            "C": "As an additional field in the last assistant message",
+            "D": "In a new system message"
+          },
+          "answer": "B",
+          "explanation": "Anthropic tool results are embedded in a user message: {role: 'user', content: [{type: 'tool_result', tool_use_id: block.id, content: result_string}]}. The tool_use_id links the result back to the specific tool call."
+        },
+        {
+          "id": "d44q3",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What does `cache_control: {type: 'ephemeral'}` do in an Anthropic API call?",
+          "options": {
+            "A": "Prevents the response from being logged",
+            "B": "Marks a content block for server-side caching — cached tokens cost 10% of normal input price for 5 minutes",
+            "C": "Enables streaming for the marked content block",
+            "D": "Deletes the content from Anthropic's servers after the request"
+          },
+          "answer": "B",
+          "explanation": "cache_control marks content for ephemeral caching. If the same prefix appears in subsequent requests within 5 minutes, it's a cache hit — those tokens cost 10% of normal input price instead of 100%. Best for large repeated contexts."
+        },
+        {
+          "id": "d44q4",
+          "level": "advanced",
+          "category": "theory",
+          "question": "What is Anthropic's Computer Use and how does the control loop work?",
+          "options": {
+            "A": "A tool for controlling IoT devices via Claude",
+            "B": "Claude can see a screenshot and emit GUI actions (click, type, scroll) — you execute the actions and send a new screenshot back",
+            "C": "A way to execute shell commands directly from Claude",
+            "D": "A computer vision tool for analyzing screenshots without control capability"
+          },
+          "answer": "B",
+          "explanation": "Computer Use: (1) take screenshot → send to Claude. (2) Claude emits action (click at x,y, type text, etc.). (3) Your code executes the action (pyautogui, Playwright). (4) Take new screenshot, send back. Repeat until task complete. Claude sees and controls the GUI."
+        },
+        {
+          "id": "d44q5",
+          "level": "basic",
+          "category": "code",
+          "question": "Unlike OpenAI's `tc.function.arguments`, what type is Anthropic's `block.input`?",
+          "options": {
+            "A": "A JSON string that must be parsed with json.loads()",
+            "B": "A Python dict ready to unpack with **",
+            "C": "A list of argument name-value tuples",
+            "D": "A base64-encoded object"
+          },
+          "answer": "B",
+          "explanation": "Anthropic's block.input is already a Python dict — just call fn(**block.input). OpenAI's tc.function.arguments is a JSON string that requires json.loads(). This is a common bug when mixing the two APIs."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,172 @@
+{
+  "day": 15,
+  "phase": 1,
+  "title": "OpenAI API — GPT-4o in Python",
+  "description": "Build real applications with the OpenAI API. Master authentication, chat completions, streaming, function calling basics, error handling, and cost monitoring — everything needed to ship GPT-4o-powered features.",
+  "estimatedHours": 3.5,
+  "difficulty": "Beginner",
+  "level": "Fresher",
+  "track": "Fresher",
+  "tags": ["openai", "gpt-4o", "chat-completions", "streaming", "api", "function-calling", "error-handling"],
+  "prerequisites": ["phase1-day13", "phase1-day14"],
+  "learningObjectives": [
+    "Authenticate and make basic chat completion calls with the OpenAI Python SDK",
+    "Implement streaming responses for real-time output",
+    "Handle all common OpenAI API errors gracefully",
+    "Monitor token usage and estimate costs per request",
+    "Build a multi-turn conversation with proper history management",
+    "Use the responses API and understand when to use it vs chat completions"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "GPT-4o is the benchmark model every AI engineer must know. OpenAI's API is the most widely used LLM API in production. The patterns you learn here — streaming, error handling, token tracking, multi-turn — transfer directly to every other provider's API."
+    },
+    {
+      "type": "theory",
+      "content": "## OpenAI SDK Setup\n\n```bash\npip install openai\nexport OPENAI_API_KEY=sk-...\n```\n\n```python\nfrom openai import OpenAI\nclient = OpenAI()  # picks up OPENAI_API_KEY from env automatically\n```\n\n**Never hardcode API keys.** Use environment variables or `.env` + `python-dotenv`.\n\n---\n\n## Chat Completions API\n\nThe core API call:\n\n```python\nresponse = client.chat.completions.create(\n    model=\"gpt-4o\",\n    messages=[\n        {\"role\": \"system\",  \"content\": \"You are a helpful assistant.\"},\n        {\"role\": \"user\",    \"content\": \"What is 2+2?\"}\n    ],\n    temperature=0.7,\n    max_tokens=1000,\n)\ntext = response.choices[0].message.content\n```\n\n**Response structure:**\n```python\nresponse.choices[0].message.content    # the text\nresponse.choices[0].finish_reason      # 'stop' or 'length'\nresponse.usage.prompt_tokens           # input tokens used\nresponse.usage.completion_tokens       # output tokens used\nresponse.usage.total_tokens            # total\nresponse.model                         # actual model used\n```\n\n---\n\n## Streaming\n\nFor long responses, streaming sends tokens as they're generated — critical for good UX:\n\n```python\nwith client.chat.completions.stream(\n    model=\"gpt-4o\",\n    messages=[{\"role\": \"user\", \"content\": \"Write a poem\"}],\n) as stream:\n    for text in stream.text_stream:\n        print(text, end=\"\", flush=True)\n```\n\nFor older SDK versions:\n```python\nstream = client.chat.completions.create(\n    model=\"gpt-4o\",\n    messages=[...],\n    stream=True,\n)\nfor chunk in stream:\n    delta = chunk.choices[0].delta.content\n    if delta:\n        print(delta, end=\"\", flush=True)\n```\n\n---\n\n## Error Handling\n\nOpenAI raises typed exceptions you must handle:\n\n```python\nfrom openai import (\n    RateLimitError,        # 429 — too many requests\n    APIConnectionError,    # network issue\n    AuthenticationError,   # bad API key\n    BadRequestError,       # bad request (e.g., context too long)\n    APIStatusError,        # other 4xx/5xx\n)\n```\n\n**Retry strategy**: Exponential backoff with jitter for `RateLimitError`.\n\n---\n\n## Token Usage & Cost Tracking\n\n```python\ncost_per_1m = {\"input\": 2.50, \"output\": 10.00}  # GPT-4o pricing\n\ndef calculate_cost(usage) -> float:\n    input_cost  = (usage.prompt_tokens     / 1_000_000) * cost_per_1m[\"input\"]\n    output_cost = (usage.completion_tokens / 1_000_000) * cost_per_1m[\"output\"]\n    return input_cost + output_cost\n```\n\n---\n\n## Available GPT Models (2025)\n\n| Model | Context | Best for |\n|-------|---------|----------|\n| gpt-4o | 128K | Best overall, vision, multimodal |\n| gpt-4o-mini | 128K | Fast, cheap, high-volume tasks |\n| gpt-4-turbo | 128K | Legacy, prefer gpt-4o |\n| o3 | 200K | Complex reasoning, math |\n| o4-mini | 200K | Fast reasoning tasks |"
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "openai_client.py",
+      "level": "Beginner",
+      "code": "\"\"\"Production-ready OpenAI API client with streaming, error handling, cost tracking.\"\"\"\nimport os\nimport time\nimport random\nfrom dataclasses import dataclass, field\nfrom openai import OpenAI, RateLimitError, APIConnectionError, AuthenticationError, BadRequestError\n\nclient = OpenAI(api_key=os.environ[\"OPENAI_API_KEY\"])\n\n\n# ── Cost tracking ────────────────────────────────────────────────\n@dataclass\nclass UsageTracker:\n    model: str = \"gpt-4o\"\n    total_input_tokens: int = 0\n    total_output_tokens: int = 0\n    total_calls: int = 0\n    PRICING = {  # per 1M tokens\n        \"gpt-4o\":      {\"input\": 2.50,  \"output\": 10.00},\n        \"gpt-4o-mini\": {\"input\": 0.15,  \"output\": 0.60},\n    }\n\n    def record(self, usage) -> None:\n        self.total_input_tokens  += usage.prompt_tokens\n        self.total_output_tokens += usage.completion_tokens\n        self.total_calls         += 1\n\n    def total_cost(self) -> float:\n        pricing = self.PRICING.get(self.model, self.PRICING[\"gpt-4o\"])\n        return (\n            (self.total_input_tokens  / 1_000_000) * pricing[\"input\"] +\n            (self.total_output_tokens / 1_000_000) * pricing[\"output\"]\n        )\n\n    def report(self) -> str:\n        return (\n            f\"Calls: {self.total_calls} | \"\n            f\"Input: {self.total_input_tokens:,} tokens | \"\n            f\"Output: {self.total_output_tokens:,} tokens | \"\n            f\"Cost: ${self.total_cost():.4f}\"\n        )\n\n\ntracker = UsageTracker()\n\n\n# ── Retry with exponential backoff ───────────────────────────────\ndef chat(\n    messages: list[dict],\n    model: str = \"gpt-4o\",\n    temperature: float = 0.7,\n    max_tokens: int = 1000,\n    max_retries: int = 3,\n) -> str:\n    for attempt in range(max_retries):\n        try:\n            response = client.chat.completions.create(\n                model=model,\n                messages=messages,\n                temperature=temperature,\n                max_tokens=max_tokens,\n            )\n            if response.usage:\n                tracker.record(response.usage)\n            if response.choices[0].finish_reason == \"length\":\n                print(f\"[WARN] Response truncated — increase max_tokens (current: {max_tokens})\")\n            return response.choices[0].message.content\n\n        except RateLimitError:\n            if attempt == max_retries - 1:\n                raise\n            wait = (2 ** attempt) + random.uniform(0, 1)\n            print(f\"Rate limited. Retrying in {wait:.1f}s...\")\n            time.sleep(wait)\n\n        except AuthenticationError:\n            raise RuntimeError(\"Invalid OPENAI_API_KEY. Check your environment variable.\") from None\n\n        except BadRequestError as e:\n            raise RuntimeError(f\"Bad request — likely context too long: {e}\") from e\n\n        except APIConnectionError:\n            if attempt == max_retries - 1:\n                raise\n            time.sleep(2 ** attempt)\n\n    raise RuntimeError(\"All retries exhausted\")\n\n\n# ── Streaming response ───────────────────────────────────────────\ndef chat_stream(messages: list[dict], model: str = \"gpt-4o\") -> str:\n    \"\"\"Stream response tokens as they arrive. Returns full text.\"\"\"\n    full_text = \"\"\n    with client.chat.completions.stream(\n        model=model,\n        messages=messages,\n        max_tokens=1000,\n    ) as stream:\n        for text in stream.text_stream:\n            print(text, end=\"\", flush=True)\n            full_text += text\n    print()  # newline after stream\n    return full_text\n\n\n# ── Multi-turn conversation manager ─────────────────────────────\nclass Conversation:\n    def __init__(self, system_prompt: str, model: str = \"gpt-4o\"):\n        self.model = model\n        self.messages: list[dict] = [{\"role\": \"system\", \"content\": system_prompt}]\n\n    def send(self, user_message: str) -> str:\n        self.messages.append({\"role\": \"user\", \"content\": user_message})\n        reply = chat(self.messages, model=self.model)\n        self.messages.append({\"role\": \"assistant\", \"content\": reply})\n        return reply\n\n    def clear_history(self, keep_system: bool = True) -> None:\n        system = self.messages[:1] if keep_system else []\n        self.messages = system\n\n\nif __name__ == \"__main__\":\n    # Single call\n    print(\"=== Single Call ===\")\n    reply = chat(\n        messages=[{\"role\": \"user\", \"content\": \"What is the capital of France?\"}],\n        temperature=0.0,\n        max_tokens=50,\n    )\n    print(f\"Response: {reply}\")\n    print(tracker.report())\n\n    # Multi-turn\n    print(\"\\n=== Multi-turn ===\")\n    conv = Conversation(\"You are a Python tutor. Keep answers under 2 sentences.\")\n    r1 = conv.send(\"What is a list comprehension?\")\n    print(f\"Turn 1: {r1}\")\n    r2 = conv.send(\"Give me an example.\")\n    print(f\"Turn 2: {r2}\")\n    print(tracker.report())",
+      "output": "=== Single Call ===\nResponse: The capital of France is Paris.\nCalls: 1 | Input: 18 tokens | Output: 9 tokens | Cost: $0.0001\n\n=== Multi-turn ===\nTurn 1: A list comprehension is a concise way to create a list by applying an expression to each item in an iterable. It's written as [expression for item in iterable].\nTurn 2: numbers = [1, 2, 3, 4, 5]; squares = [x**2 for x in numbers]  # [1, 4, 9, 16, 25]\nCalls: 3 | Input: 145 tokens | Output: 62 tokens | Cost: $0.0010"
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Hardcoding API keys in source code — they get committed to git and exposed. Always use environment variables or a secrets manager.",
+        "Not handling RateLimitError — in production with concurrent users, rate limits will be hit. Always implement exponential backoff with jitter.",
+        "Building multi-turn conversations without tracking message count — conversations grow unboundedly, eventually hitting the context limit. Implement history pruning.",
+        "Ignoring finish_reason='length' — this means your response was cut off mid-sentence. Your app silently returns incomplete output. Always check finish_reason.",
+        "Using gpt-4o for every task — gpt-4o-mini is 15x cheaper and handles most classification, extraction, and simple chat tasks equally well. Reserve gpt-4o for complex reasoning."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Cost-Aware Chat Session",
+      "problem": "Extend the Conversation class to: (1) enforce a maximum token budget per session (stop accepting messages when budget exhausted), (2) warn when conversation history exceeds 50% of the context window, (3) provide a cost_summary() method that returns tokens used and estimated cost. Test with a 3-turn conversation using gpt-4o-mini.",
+      "hints": [
+        "Use tiktoken to count tokens before each API call",
+        "Track cumulative input+output tokens on the tracker attribute",
+        "Set GPT-4o-mini context limit at 128,000 tokens",
+        "Budget check: count current messages tokens before sending"
+      ],
+      "solution": "class BudgetedConversation(Conversation):\n    def __init__(self, system_prompt: str, model: str = 'gpt-4o-mini', token_budget: int = 10_000):\n        super().__init__(system_prompt, model)\n        self.token_budget = token_budget\n        self.tokens_used = 0\n        self.CONTEXT_LIMITS = {'gpt-4o': 128_000, 'gpt-4o-mini': 128_000}\n\n    def _count_tokens(self, messages: list[dict]) -> int:\n        return sum(len(str(m.get('content', ''))) // 4 for m in messages)\n\n    def send(self, user_message: str) -> str:\n        if self.tokens_used >= self.token_budget:\n            raise RuntimeError(f'Session token budget ({self.token_budget}) exhausted.')\n\n        current_tokens = self._count_tokens(self.messages)\n        limit = self.CONTEXT_LIMITS.get(self.model, 128_000)\n        if current_tokens > limit * 0.5:\n            print(f'[WARN] Using {current_tokens/limit:.0%} of context window')\n\n        self.messages.append({'role': 'user', 'content': user_message})\n        reply = chat(self.messages, model=self.model)\n        self.messages.append({'role': 'assistant', 'content': reply})\n        self.tokens_used += self._count_tokens([{'role': 'assistant', 'content': reply}])\n        return reply\n\n    def cost_summary(self) -> dict:\n        pricing = {'gpt-4o-mini': {'input': 0.15, 'output': 0.60}}.get(self.model, {'input': 2.50, 'output': 10.00})\n        cost = (self.tokens_used / 1_000_000) * (pricing['input'] + pricing['output']) / 2\n        return {'tokens_used': self.tokens_used, 'estimated_cost_usd': round(cost, 6)}",
+      "difficulty": "Beginner"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "What is streaming in the context of LLM APIs and why is it important for UX?",
+          "answer": "Streaming sends tokens to the client as they're generated, rather than waiting for the full response to complete. Without streaming, a user sees nothing for 5–30 seconds then gets the full response at once. With streaming, they see words appearing in real-time — like a person typing. This is critical for chat interfaces because it gives immediate feedback, feels responsive, and allows users to stop generation early if the model is going in the wrong direction.",
+          "followUps": [
+            "How do you track token usage when using streaming?",
+            "What are the drawbacks of streaming for non-chat use cases like batch processing?"
+          ]
+        },
+        {
+          "question": "How do you handle OpenAI rate limits in a production application?",
+          "answer": "Implement exponential backoff with jitter: catch RateLimitError, wait 2^attempt + random(0,1) seconds, and retry up to a max number of attempts. Add a queue or semaphore for concurrent requests to stay under requests-per-minute limits. For high-volume applications, use batch processing (OpenAI Batch API) which has separate, higher limits at 50% cost. Monitor token usage per minute proactively rather than reacting to 429s.",
+          "followUps": [
+            "What is the difference between RPM and TPM rate limits?",
+            "How would you implement a token bucket rate limiter in Python?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write a function that calls the OpenAI API and returns None (with a log) instead of crashing on any API error.",
+          "answer": "import logging\nfrom openai import OpenAI, RateLimitError, APIConnectionError, AuthenticationError, APIStatusError\n\nclient = OpenAI()\nlog = logging.getLogger(__name__)\n\ndef safe_chat(messages: list[dict], **kwargs) -> str | None:\n    try:\n        response = client.chat.completions.create(\n            model=kwargs.get('model', 'gpt-4o'),\n            messages=messages,\n            **{k: v for k, v in kwargs.items() if k != 'model'}\n        )\n        return response.choices[0].message.content\n    except RateLimitError:\n        log.warning('Rate limited by OpenAI API')\n    except AuthenticationError:\n        log.error('Invalid OpenAI API key')\n    except APIConnectionError:\n        log.warning('Network error connecting to OpenAI')\n    except APIStatusError as e:\n        log.error('OpenAI API error %s: %s', e.status_code, e.message)\n    return None",
+          "followUps": [
+            "When is it appropriate to return None vs raise an exception?",
+            "How would you add retry logic to this function?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You're building a high-volume API that calls GPT-4o 100,000 times per day. How do you architect for cost and reliability?",
+          "answer": "Cost: (1) Profile which tasks actually need GPT-4o — most classification, extraction, and simple Q&A tasks work equally well with gpt-4o-mini at 15x lower cost. (2) Implement caching — semantic cache with embeddings to detect near-duplicate prompts and return cached responses. (3) Use the OpenAI Batch API for non-latency-sensitive tasks at 50% cost. Reliability: (1) Exponential backoff with jitter for rate limits. (2) Circuit breaker pattern — after N failures, route to a fallback model. (3) Request queuing with token bucket to stay under rate limits. (4) Multi-provider failover — route to Claude or Gemini if OpenAI is down. Monitor per-endpoint token usage and set alerts for cost spikes.",
+          "followUps": [
+            "What is a semantic cache and how does it differ from a response cache?",
+            "How would you implement a circuit breaker for LLM API calls?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "Streaming is only available for GPT-4 — GPT-3.5 doesn't support it",
+        "Rate limits only apply to concurrent requests, not token usage per minute",
+        "The finish_reason field is only set when there's an error"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "code",
+          "question": "How do you access the text content from an OpenAI chat completion response?",
+          "options": {
+            "A": "response.text",
+            "B": "response.content",
+            "C": "response.choices[0].message.content",
+            "D": "response.output[0].text"
+          },
+          "answer": "C",
+          "explanation": "The OpenAI API returns a ChatCompletion object. The response text is at response.choices[0].message.content. There may be multiple choices if n > 1, so [0] accesses the first (and usually only) choice."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "scenario",
+          "question": "Your chat app shows the full response 30 seconds after the user sends a message. What feature should you implement?",
+          "options": {
+            "A": "Reduce max_tokens to generate faster",
+            "B": "Implement streaming to show tokens as they're generated",
+            "C": "Switch to a smaller model",
+            "D": "Cache all responses"
+          },
+          "answer": "B",
+          "explanation": "Streaming sends tokens to the client as the model generates them, eliminating the 30-second wait. The user sees output immediately. Reducing max_tokens cuts response quality. Smaller models may not meet quality requirements. Caching only helps for repeated identical queries."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "You're processing 500,000 customer emails for sentiment analysis — not in real time. What OpenAI feature reduces cost by 50%?",
+          "options": {
+            "A": "Streaming API",
+            "B": "Function calling",
+            "C": "Batch API",
+            "D": "Fine-tuning"
+          },
+          "answer": "C",
+          "explanation": "OpenAI's Batch API processes requests asynchronously with a 24-hour window and charges 50% of standard prices. It's designed for high-volume, non-latency-sensitive tasks like bulk classification, extraction, and analysis — exactly this use case."
+        },
+        {
+          "id": 4,
+          "level": "intermediate",
+          "category": "code",
+          "question": "Which exception should you catch and retry with exponential backoff when calling the OpenAI API?",
+          "options": {
+            "A": "AuthenticationError",
+            "B": "BadRequestError",
+            "C": "RateLimitError",
+            "D": "ValueError"
+          },
+          "answer": "C",
+          "explanation": "RateLimitError (HTTP 429) is a transient error that should be retried with exponential backoff — the request is valid, you're just sending too many. AuthenticationError means your API key is wrong (don't retry). BadRequestError means your request is malformed (don't retry). ValueError is a local Python error unrelated to the API."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## OpenAI API — Quick Reference\n\n### Setup\n```python\nfrom openai import OpenAI\nclient = OpenAI()  # reads OPENAI_API_KEY from env\n```\n\n### Basic Call\n```python\nresponse = client.chat.completions.create(\n    model='gpt-4o',\n    messages=[{'role': 'user', 'content': 'Hello'}],\n    temperature=0.7, max_tokens=1000\n)\ntext = response.choices[0].message.content\nreason = response.choices[0].finish_reason  # 'stop' or 'length'\n```\n\n### Token Usage\n```python\nresponse.usage.prompt_tokens\nresponse.usage.completion_tokens\nresponse.usage.total_tokens\n```\n\n### Streaming\n```python\nwith client.chat.completions.stream(model='gpt-4o', messages=[...]) as s:\n    for text in s.text_stream:\n        print(text, end='', flush=True)\n```\n\n### Error Handling\n```python\nfrom openai import RateLimitError, APIConnectionError, AuthenticationError\ntry:\n    response = client.chat.completions.create(...)\nexcept RateLimitError:\n    time.sleep(2**attempt + random.random())  # retry\nexcept AuthenticationError:\n    raise  # don't retry\n```\n\n### Models (2025)\n| Model | Use case | Cost |\n|-------|----------|------|\n| gpt-4o | Best quality | $2.50/$10 per 1M |\n| gpt-4o-mini | High volume | $0.15/$0.60 per 1M |"
+    }
+  ]
+}

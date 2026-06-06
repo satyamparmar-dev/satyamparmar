@@ -1,0 +1,178 @@
+{
+  "id": "phase2-day33",
+  "day": 33,
+  "phase": 2,
+  "title": "Evaluation Frameworks — RAGAS & TruLens",
+  "estimatedHours": 4,
+  "difficulty": "intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["evaluation", "ragas", "trulens", "rag-evaluation", "llm-as-judge", "metrics"],
+  "prerequisites": ["phase2-day23", "phase2-day25"],
+  "learningObjectives": [
+    "Understand why LLM evaluation is different from traditional software testing",
+    "Implement RAGAS metrics: faithfulness, answer relevancy, context precision, context recall",
+    "Set up TruLens for RAG triad evaluation",
+    "Use LLM-as-a-judge for evaluation",
+    "Build a continuous evaluation pipeline"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why LLM Evaluation Is Hard",
+      "content": "You can't unit-test an LLM the way you test a sort algorithm. The output is probabilistic, open-ended, and context-dependent. A RAG system might return factually correct answers that are completely irrelevant to the user's question. Or it might return highly relevant answers that hallucinate facts not in the retrieved context. Traditional string matching fails: 'Paris is the capital of France' and 'The French capital is Paris' are semantically identical but string-different. Evaluation frameworks like RAGAS and TruLens solve this by using LLMs to judge LLM outputs — measuring coherent, semantic properties like faithfulness, relevance, and groundedness."
+    },
+    {
+      "type": "theory",
+      "title": "RAGAS Metrics and the RAG Triad",
+      "content": "**RAGAS (RAG Assessment) — four core metrics:**\n\n| Metric | Measures | Inputs needed | Score range |\n|--------|----------|---------------|-------------|\n| Faithfulness | Does the answer only contain claims supported by the context? | answer + context | 0-1 |\n| Answer Relevancy | Is the answer relevant to the question? | question + answer | 0-1 |\n| Context Precision | Is the retrieved context relevant (no noise)? | question + context | 0-1 |\n| Context Recall | Does the context contain everything needed to answer? | question + context + ground_truth | 0-1 |\n\n**Faithfulness in detail:**\n1. Extract atomic claims from the answer (LLM call)\n2. For each claim, check if it can be inferred from the context (LLM call)\n3. Score = supported claims / total claims\n→ Detects hallucination: claims the model made up vs retrieved\n\n**Answer Relevancy in detail:**\n1. Generate N questions that the answer would answer (LLM call)\n2. Embed generated questions + original question\n3. Score = mean cosine similarity between generated questions and original\n→ Detects off-topic answers (correct but not for the asked question)\n\n**The RAG Triad (TruLens framing):**\n```\nQuery → [Retrieval] → Context → [Generation] → Answer\n\n1. Context Relevance:  Is retrieved context relevant to the query?\n2. Groundedness:       Does the answer stick to the retrieved context?\n3. Answer Relevance:   Does the answer address the original query?\n\nAll three must be high for a trustworthy RAG response.\n```\n\n**LLM-as-a-judge pattern:**\n```python\njudge_prompt = \"\"\"\nYou are evaluating a RAG system. Given:\nQuestion: {question}\nContext: {context}\nAnswer: {answer}\n\nRate the answer's faithfulness to the context on a scale of 0-1.\nReturn only a JSON: {\"score\": <float>, \"reasoning\": \"<one sentence>\"}\n\"\"\"\n```\nUse temperature=0 for deterministic scores. For calibration, compare judge scores to human labels.\n\n**Evaluation dataset types:**\n1. **With ground truth**: Use a labeled Q&A dataset. Enables context recall measurement.\n2. **Without ground truth** (reference-free): Use faithfulness + relevancy only. Common in production.\n3. **Adversarial**: Inject wrong context or off-topic context — system should show low scores.\n\n**RAGAS vs TruLens:**\n\n| | RAGAS | TruLens |\n|--|-------|--------|\n| Focus | Metric calculation on datasets | App tracing + evaluation |\n| Integration | Batch evaluation | Per-request instrumentation |\n| Storage | In-memory/local | SQLite/Postgres dashboard |\n| Best for | Offline benchmark | Online production monitoring |"
+    },
+    {
+      "type": "code",
+      "title": "RAGAS and Custom Evaluation Implementation",
+      "language": "python",
+      "code": "# pip install ragas langchain langchain-openai datasets\nfrom __future__ import annotations\nimport os\nimport json\nfrom dataclasses import dataclass\nfrom typing import Optional\nfrom openai import OpenAI\n\nclient = OpenAI(api_key=os.environ['OPENAI_API_KEY'])\n\n\n# ── 1. RAGAS — standard usage ─────────────────────────────────────────────────\n\n# from ragas import evaluate\n# from ragas.metrics import faithfulness, answer_relevancy, context_precision, context_recall\n# from datasets import Dataset\n\ndef demo_ragas_usage():\n    \"\"\"\n    Standard RAGAS evaluation.\n    Requires: pip install ragas datasets\n    \"\"\"\n    # Evaluation dataset format\n    eval_data = {\n        'question': [\n            'What is the capital of France?',\n            'Who invented the telephone?',\n        ],\n        'answer': [\n            'Paris is the capital of France.',\n            'Alexander Graham Bell invented the telephone in 1876.',\n        ],\n        'contexts': [\n            ['France is a country in Western Europe. Its capital is Paris.'],\n            ['Alexander Graham Bell was awarded the first patent for a telephone in 1876.'],\n        ],\n        'ground_truth': [\n            'Paris',\n            'Alexander Graham Bell',\n        ],\n    }\n    \n    # dataset = Dataset.from_dict(eval_data)\n    # result = evaluate(\n    #     dataset,\n    #     metrics=[faithfulness, answer_relevancy, context_precision, context_recall],\n    # )\n    # print(result.to_pandas())\n    \n    print('RAGAS eval_data prepared (uncomment evaluate() to run)')\n    print(json.dumps(eval_data, indent=2))\n\n\n# ── 2. Custom LLM-as-Judge evaluators ─────────────────────────────────────────\n\n@dataclass\nclass EvalResult:\n    metric: str\n    score: float\n    reasoning: str\n    question: str\n    answer: str\n\n\ndef judge_faithfulness(question: str, context: str, answer: str) -> EvalResult:\n    \"\"\"Check if answer only contains claims supported by context.\"\"\"\n    prompt = f\"\"\"You are evaluating RAG system faithfulness.\n\nQuestion: {question}\nRetrieved Context: {context}\nGenerated Answer: {answer}\n\nEvaluate: Does the answer contain ONLY information supported by the context?\nAn answer is faithful if every factual claim can be verified in the context.\nAn answer is NOT faithful if it introduces facts not present in the context.\n\nReturn JSON only: {{\"score\": <0.0-1.0>, \"reasoning\": \"<one sentence>\"}}\"\"\"\n    \n    response = client.chat.completions.create(\n        model='gpt-4o-mini',\n        messages=[{'role': 'user', 'content': prompt}],\n        temperature=0,\n        response_format={'type': 'json_object'},\n    )\n    result = json.loads(response.choices[0].message.content)\n    return EvalResult(\n        metric='faithfulness',\n        score=float(result['score']),\n        reasoning=result['reasoning'],\n        question=question,\n        answer=answer,\n    )\n\n\ndef judge_answer_relevancy(question: str, answer: str) -> EvalResult:\n    \"\"\"Check if the answer actually addresses the question.\"\"\"\n    prompt = f\"\"\"You are evaluating RAG system answer relevancy.\n\nQuestion: {question}\nAnswer: {answer}\n\nEvaluate: Does the answer directly address what was asked?\nHigh relevancy (0.9-1.0): Answer directly answers the question.\nMedium relevancy (0.5-0.8): Answer is related but incomplete or tangential.\nLow relevancy (0-0.4): Answer is off-topic or ignores the question.\n\nReturn JSON only: {{\"score\": <0.0-1.0>, \"reasoning\": \"<one sentence>\"}}\"\"\"\n    \n    response = client.chat.completions.create(\n        model='gpt-4o-mini',\n        messages=[{'role': 'user', 'content': prompt}],\n        temperature=0,\n        response_format={'type': 'json_object'},\n    )\n    result = json.loads(response.choices[0].message.content)\n    return EvalResult(\n        metric='answer_relevancy',\n        score=float(result['score']),\n        reasoning=result['reasoning'],\n        question=question,\n        answer=answer,\n    )\n\n\ndef judge_context_precision(question: str, contexts: list[str]) -> EvalResult:\n    \"\"\"Check if retrieved contexts are relevant to the question.\"\"\"\n    context_str = '\\n---\\n'.join(f'Context {i+1}: {c}' for i, c in enumerate(contexts))\n    prompt = f\"\"\"You are evaluating RAG system context precision.\n\nQuestion: {question}\n{context_str}\n\nEvaluate: What fraction of the retrieved context chunks are actually relevant to the question?\n1.0 = All chunks are relevant, 0.5 = Half are relevant, 0.0 = No chunks are relevant.\n\nReturn JSON only: {{\"score\": <0.0-1.0>, \"reasoning\": \"<one sentence>\"}}\"\"\"\n    \n    response = client.chat.completions.create(\n        model='gpt-4o-mini',\n        messages=[{'role': 'user', 'content': prompt}],\n        temperature=0,\n        response_format={'type': 'json_object'},\n    )\n    result = json.loads(response.choices[0].message.content)\n    return EvalResult(\n        metric='context_precision',\n        score=float(result['score']),\n        reasoning=result['reasoning'],\n        question=question,\n        answer='',\n    )\n\n\n# ── 3. Full evaluation pipeline ────────────────────────────────────────────────\n\n@dataclass\nclass RAGEvalSample:\n    question: str\n    answer: str\n    contexts: list[str]\n    ground_truth: Optional[str] = None\n\n\nclass RAGEvaluator:\n    def evaluate_sample(self, sample: RAGEvalSample) -> dict[str, EvalResult]:\n        context_str = '\\n\\n'.join(sample.contexts)\n        results = {}\n        \n        results['faithfulness'] = judge_faithfulness(\n            sample.question, context_str, sample.answer\n        )\n        results['answer_relevancy'] = judge_answer_relevancy(\n            sample.question, sample.answer\n        )\n        results['context_precision'] = judge_context_precision(\n            sample.question, sample.contexts\n        )\n        return results\n    \n    def evaluate_dataset(self, samples: list[RAGEvalSample]) -> dict:\n        all_scores: dict[str, list[float]] = {'faithfulness': [], 'answer_relevancy': [], 'context_precision': []}\n        details = []\n        \n        for i, sample in enumerate(samples):\n            print(f'Evaluating sample {i+1}/{len(samples)}...')\n            results = self.evaluate_sample(sample)\n            for metric, result in results.items():\n                all_scores[metric].append(result.score)\n            details.append({'question': sample.question, 'results': {k: {'score': v.score, 'reasoning': v.reasoning} for k, v in results.items()}})\n        \n        averages = {metric: sum(scores)/len(scores) for metric, scores in all_scores.items() if scores}\n        return {'averages': averages, 'details': details, 'n_samples': len(samples)}\n    \n    @staticmethod\n    def print_report(report: dict) -> None:\n        print('\\n' + '='*50)\n        print('RAG EVALUATION REPORT')\n        print('='*50)\n        print(f'Samples evaluated: {report[\"n_samples\"]}')\n        print('\\nAverage Scores:')\n        for metric, score in report['averages'].items():\n            bar = '█' * int(score * 20) + '░' * (20 - int(score * 20))\n            status = '✓' if score >= 0.7 else '⚠' if score >= 0.5 else '✗'\n            print(f'  {status} {metric:<22} [{bar}] {score:.3f}')\n        print('\\nLow-scoring samples:')\n        for detail in report['details']:\n            for metric, r in detail['results'].items():\n                if r['score'] < 0.6:\n                    print(f'  [{metric}={r[\"score\"]:.2f}] Q: {detail[\"question\"][:60]}...')\n                    print(f'    Reason: {r[\"reasoning\"]}')\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    demo_ragas_usage()\n    \n    # Test the custom evaluator\n    test_samples = [\n        RAGEvalSample(\n            question='What causes climate change?',\n            answer='Climate change is primarily caused by greenhouse gas emissions from burning fossil fuels, deforestation, and industrial processes.',\n            contexts=['Greenhouse gases like CO2 and methane trap heat in the atmosphere. The main sources are fossil fuel combustion, deforestation, and agriculture.'],\n        ),\n        RAGEvalSample(\n            question='What is the boiling point of water?',\n            answer='The Eiffel Tower is 330 meters tall and located in Paris, France.',\n            contexts=['Water boils at 100°C (212°F) at standard atmospheric pressure (1 atm).'],\n        ),\n        RAGEvalSample(\n            question='How do neural networks learn?',\n            answer='Neural networks learn through backpropagation, which adjusts weights based on the gradient of the loss function.',\n            contexts=['Backpropagation is an algorithm used in neural network training. It computes gradients of the loss with respect to weights and updates them via gradient descent.', 'The weather today is sunny with a high of 72°F.'],\n        ),\n    ]\n    \n    evaluator = RAGEvaluator()\n    report = evaluator.evaluate_dataset(test_samples)\n    RAGEvaluator.print_report(report)"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Evaluation Pitfalls",
+      "items": [
+        {
+          "mistake": "Using string matching / BLEU score for LLM output evaluation",
+          "why": "LLM outputs are paraphrastic — 'Paris is the capital' and 'The capital is Paris' are identical in meaning but score 0.0 with string matching. BLEU was designed for translation with multiple references, not open-ended generation.",
+          "fix": "Use semantic similarity (embeddings) for paraphrase detection. Use LLM-as-judge for nuanced qualities (faithfulness, relevance). Use RAGAS for end-to-end RAG evaluation."
+        },
+        {
+          "mistake": "Evaluating only on the golden test set without adversarial cases",
+          "why": "A system can score 0.95 on clean examples and catastrophically fail on edge cases: off-topic queries, queries with no relevant context, or contradictory context.",
+          "fix": "Include adversarial samples: questions with no relevant context (system should say 'I don't know'), questions where context contains contradictions, and out-of-domain questions."
+        },
+        {
+          "mistake": "Treating evaluation scores as absolute thresholds",
+          "why": "A faithfulness score of 0.7 isn't universally 'good' or 'bad' — it depends on the domain. Medical RAG needs 0.95+; casual chitchat might accept 0.7.",
+          "fix": "Calibrate thresholds by comparing LLM judge scores to human labels for your specific domain. What does 0.7 faithfulness mean for your use case?"
+        },
+        {
+          "mistake": "Running all LLM judge calls serially",
+          "why": "Evaluating 1000 samples with 3 metrics × 1 LLM call each = 3000 sequential API calls. At 100ms/call, that's 5 minutes.",
+          "fix": "Use asyncio to parallelize judge calls. RAGAS does this internally. For custom evaluators, batch with asyncio.gather()."
+        },
+        {
+          "mistake": "Not tracking evaluation scores over time",
+          "why": "A one-time evaluation snapshot doesn't tell you if your system is improving or degrading as you make changes.",
+          "fix": "Store evaluation results in a time-series database. Plot trend lines. Set up alerts when scores drop below threshold after a code change."
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "What is the RAG triad and why is each component necessary?",
+          "answer": "The RAG triad has three components: (1) Context Relevance — is the retrieved content relevant to the query? Low score means the retriever is fetching wrong documents. (2) Groundedness — does the answer only contain claims from the retrieved context? Low score means hallucination — the model is making up facts. (3) Answer Relevance — does the final answer address the original question? Low score means the answer is correct but off-topic. All three must be high. You can have perfectly relevant context (1.0) but if the model ignores it and hallucinates, groundedness is 0. You can have grounded answers (1.0) that still don't answer the question (low answer relevance).",
+          "followUps": ["How do you diagnose which stage of the RAG pipeline is the bottleneck?"]
+        },
+        {
+          "question": "What is 'LLM-as-a-judge' and what are its main limitations?",
+          "answer": "LLM-as-a-judge uses a capable LLM (e.g., GPT-4o) to evaluate the output of another LLM, scoring qualities like faithfulness, relevance, and helpfulness. It scales better than human evaluation and can handle open-ended text. Limitations: (1) Positional bias — judges prefer longer answers and responses in the first position when comparing two options. (2) Self-enhancement bias — models give higher scores to outputs from the same model family. (3) Cost — each evaluation is an API call. (4) Calibration — judge scores may not correlate with human preferences in your specific domain without calibration on labeled data.",
+          "followUps": ["How would you validate that your LLM judge is reliable?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "What information do you need to calculate RAGAS faithfulness score?",
+          "answer": "Faithfulness requires: (1) the generated answer, (2) the retrieved context(s). The algorithm extracts atomic claims from the answer and verifies each against the context using an LLM. You do NOT need the ground truth or the original question for faithfulness (unlike context recall which needs ground truth, and answer relevancy which needs the question)."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your RAG system gets a 0.62 average faithfulness score in production. Leadership wants it above 0.85. What is your systematic approach?",
+          "answer": "First, analyze the low-scoring samples — look for patterns: which document types produce hallucinations? Which question types? Which parts of the pipeline? Then: (1) Retrieval fix: if context_precision is low, the retriever is returning irrelevant chunks — improve chunking strategy, try MMR retrieval, or add metadata filtering. (2) Prompt fix: add explicit grounding instruction to system prompt: 'Only use information from the provided context. If unsure, say I don't know.' Use XML tags to clearly delimit the context. (3) Post-processing: add a separate faithfulness check call after generation — if score < threshold, regenerate or return 'insufficient context' response. (4) Model: some models hallucinate more than others — benchmark GPT-4o vs Claude Sonnet for faithfulness on your domain. Set up a regression suite: any code change must maintain faithfulness ≥ 0.85 on the test set to merge.",
+          "followUps": ["How do you handle cases where the context is truly insufficient to answer the question?"]
+        }
+      ],
+      "wrongAnswers": [
+        "RAGAS evaluates whether the answer is factually correct according to world knowledge — it evaluates whether the answer is grounded in the retrieved context, not whether that context is correct",
+        "Higher faithfulness always means a better system — a system that always says 'I don't know' would have perfect faithfulness but zero usefulness",
+        "You need ground truth answers to run RAGAS — faithfulness and answer relevancy are reference-free metrics; only context recall requires ground truth"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d33q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "What does a RAGAS faithfulness score of 0.3 indicate?",
+          "options": {
+            "A": "Only 30% of the retrieved context is relevant",
+            "B": "Only 30% of the claims in the answer are supported by the retrieved context",
+            "C": "The answer only addresses 30% of the question",
+            "D": "The model used only 30% of the available context"
+          },
+          "answer": "B",
+          "explanation": "Faithfulness measures claim support: 0.3 means 30% of the atomic claims made in the answer can be verified in the context. The remaining 70% are potential hallucinations."
+        },
+        {
+          "id": "d33q2",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Which RAGAS metric requires a 'ground_truth' reference answer?",
+          "options": {
+            "A": "Faithfulness",
+            "B": "Answer Relevancy",
+            "C": "Context Precision",
+            "D": "Context Recall"
+          },
+          "answer": "D",
+          "explanation": "Context Recall measures how much of the ground truth answer can be attributed to the retrieved context. This requires knowing what the correct answer is. Faithfulness, Answer Relevancy, and Context Precision are reference-free."
+        },
+        {
+          "id": "d33q3",
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "Your RAG system has: Faithfulness=0.95, Answer Relevancy=0.90, Context Precision=0.40. What is the bottleneck?",
+          "options": {
+            "A": "The generator is hallucinating",
+            "B": "The retriever is returning irrelevant chunks",
+            "C": "The answer doesn't address the question",
+            "D": "The chunking size is too small"
+          },
+          "answer": "B",
+          "explanation": "High faithfulness (0.95) means the generator is grounded — not hallucinating. High answer relevancy (0.90) means the answer addresses the question. Low context precision (0.40) means the retriever is pulling mostly irrelevant chunks. Fix the retriever: improve embeddings, adjust similarity threshold, or use metadata filtering."
+        },
+        {
+          "id": "d33q4",
+          "level": "advanced",
+          "category": "theory",
+          "question": "What is 'positional bias' in LLM-as-a-judge evaluation?",
+          "options": {
+            "A": "The judge scores answers at the beginning of the context higher",
+            "B": "When comparing two options, LLM judges prefer whichever is presented first",
+            "C": "The judge gives higher scores to shorter answers",
+            "D": "The judge is biased toward answers from the same model family"
+          },
+          "answer": "B",
+          "explanation": "When LLM judges compare two responses side by side (A vs B), they tend to prefer whichever is in the first position, regardless of quality. Mitigation: run each comparison twice (swapping positions) and average the scores."
+        },
+        {
+          "id": "d33q5",
+          "level": "basic",
+          "category": "theory",
+          "question": "What temperature should you use for an LLM judge to get consistent, reproducible scores?",
+          "options": {
+            "A": "0.7 — for balanced scoring",
+            "B": "1.0 — to explore the full scoring range",
+            "C": "0 — for deterministic, reproducible scores",
+            "D": "0.3 — to slightly vary scores for ensemble averaging"
+          },
+          "answer": "C",
+          "explanation": "LLM judges must be deterministic. Temperature=0 ensures the same input always produces the same score, making evaluations reproducible and comparable across runs."
+        }
+      ]
+    }
+  ]
+}

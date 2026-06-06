@@ -12,6 +12,7 @@ import {
 import BusinessIcon from '@mui/icons-material/Business';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import { useNavigate } from 'react-router-dom';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 interface CompanyCard {
   id: string;
@@ -38,6 +39,7 @@ const COMPANIES: CompanyCard[] = [
 ];
 
 const CompaniesHome: React.FC = () => {
+  usePageTitle('Company Guides');
   const navigate = useNavigate();
 
   return (

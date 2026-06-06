@@ -6,8 +6,10 @@ import ProShell from '../../components/pro/ProShell'
 import CertBadge from '../../components/pro/CertBadge'
 import { PRO_CURRICULUM } from '../../constants/proCurriculum'
 import { PRO_UI } from '../../constants/proUi'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 const Certifications: React.FC = () => {
+  usePageTitle('Certifications')
   const navigate = useNavigate()
   const { profile, progress, hasProProfile } = useProProgress()
 

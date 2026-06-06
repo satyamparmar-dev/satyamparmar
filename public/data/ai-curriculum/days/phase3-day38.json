@@ -1,0 +1,173 @@
+{
+  "id": "phase3-day38",
+  "day": 38,
+  "phase": 3,
+  "title": "Planning & Task Decomposition",
+  "estimatedHours": 4,
+  "difficulty": "advanced",
+  "level": "Senior",
+  "track": "Senior",
+  "tags": ["planning", "task-decomposition", "plan-execute", "tree-of-thoughts", "reflection"],
+  "prerequisites": ["phase3-day37"],
+  "learningObjectives": [
+    "Implement the Plan-and-Execute agent pattern",
+    "Use LLMs to decompose complex tasks into subtasks",
+    "Build a Reflexion loop for self-correction",
+    "Implement Tree of Thoughts for exploratory reasoning",
+    "Design replanning mechanisms when execution fails"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Planning Improves Agent Performance",
+      "content": "Pure ReAct (think → act → observe → repeat) is greedy — it commits to an action without considering whether it's the globally optimal path. For complex tasks, this leads to dead ends and backtracking. Planning-first approaches (Plan-and-Execute, Tree of Thoughts) separate the high-level strategy from low-level execution. The planner uses a strong model to think through the whole task before taking any action. The executor can be a cheaper model. This reduces errors, improves efficiency, and makes the agent's behavior more predictable and debuggable."
+    },
+    {
+      "type": "theory",
+      "title": "Planning Patterns",
+      "content": "**Plan-and-Execute pattern:**\n```\n1. PLAN:    LLM generates ordered list of steps for the full task\n2. EXECUTE: For each step, call the appropriate tool or subagent\n3. OBSERVE: Collect results\n4. REPLAN:  If a step fails or reveals new info, update remaining plan\n5. ANSWER:  Synthesize all step results into final response\n```\nAdvantage: plan is inspectable before execution — humans can approve it. Failure recovery is scoped to a single step.\n\n**Reflexion (self-evaluation loop):**\n```\n1. ATTEMPT: Run task, get result\n2. REFLECT: LLM evaluates the result — was it correct? What went wrong?\n3. REVISE:  LLM generates an improved attempt based on reflection\n4. REPEAT:  Up to N reflection cycles\n```\nKey insight: the reflection prompt asks 'What did you do wrong and how would you fix it?' This grounds the revision in specific mistakes rather than generic retry.\n\n**Tree of Thoughts (ToT):**\n```\n          Root Task\n         /    |    \\\n      Path1  Path2  Path3   ← expand k branches\n       /|       |      |\\n    ...  ...    ...   ...   ← prune weak paths\n              Best            ← keep top-b paths\n```\nAt each node, generate k candidate next steps, evaluate each with a value function (another LLM call), keep top-b, discard the rest. More expensive but finds better solutions for hard reasoning tasks.\n\n**Task decomposition strategies:**\n\n| Strategy | Approach | When to use |\n|----------|----------|-------------|\n| Sequential | Step A → Step B → Step C | Dependent subtasks |\n| Parallel | Steps A, B, C concurrently | Independent subtasks |\n| Hierarchical | Task → Subtasks → Sub-subtasks | Complex nested tasks |\n| Conditional | If X then Plan A else Plan B | Variable-path tasks |\n\n**Replanning triggers:**\n- Step returned an error (tool failure)\n- Step result contradicts the plan assumptions\n- New information discovered that changes the approach\n- Resource constraint hit (cost, time)\n\n**Plan quality signals:**\n- Completeness: does the plan cover all aspects of the task?\n- Feasibility: are all steps achievable with available tools?\n- Ordering: are steps in the right dependency order?\n- Granularity: not too coarse (skips details) or too fine (over-engineered)"
+    },
+    {
+      "type": "code",
+      "title": "Plan-and-Execute Agent with Reflexion",
+      "language": "python",
+      "code": "from __future__ import annotations\nimport json\nimport os\nfrom dataclasses import dataclass, field\nfrom typing import Optional\nfrom openai import OpenAI\n\nclient = OpenAI(api_key=os.environ['OPENAI_API_KEY'])\nMODEL = 'gpt-4o-mini'\n\n\n# ── Data structures ───────────────────────────────────────────────────────────\n\n@dataclass\nclass PlanStep:\n    number: int\n    description: str\n    tool: Optional[str] = None\n    tool_args: Optional[dict] = None\n    result: Optional[str] = None\n    status: str = 'pending'  # pending | success | failed | skipped\n\n@dataclass\nclass ExecutionPlan:\n    goal: str\n    steps: list[PlanStep] = field(default_factory=list)\n    context: dict = field(default_factory=dict)  # accumulated facts\n\n    def pending_steps(self) -> list[PlanStep]:\n        return [s for s in self.steps if s.status == 'pending']\n\n    def summary(self) -> str:\n        lines = [f'Goal: {self.goal}', 'Steps:']\n        for s in self.steps:\n            status_icon = {'pending': '○', 'success': '✓', 'failed': '✗', 'skipped': '—'}[s.status]\n            lines.append(f'  {status_icon} [{s.number}] {s.description}')\n            if s.result and s.status in ('success', 'failed'):\n                lines.append(f'       Result: {s.result[:80]}...' if len(s.result) > 80 else f'       Result: {s.result}')\n        return '\\n'.join(lines)\n\n\n# ── Planner ────────────────────────────────────────────────────────────────────\n\nAVAILABLE_TOOLS = [\n    {'name': 'web_search', 'description': 'Search the web for information'},\n    {'name': 'calculate', 'description': 'Evaluate a math expression'},\n    {'name': 'summarize', 'description': 'Summarize a given text'},\n    {'name': 'write_file', 'description': 'Write content to a file'},\n]\n\nPLAN_SYSTEM = \"\"\"You are a planning AI. Given a task, produce a step-by-step execution plan.\nAvailable tools: {tools}\nReturn JSON: {{\"steps\": [\n  {{\"number\": 1, \"description\": \"step description\", \"tool\": \"tool_name_or_null\"}},\n  ...\n]}}\"\"\"\n\ndef create_plan(goal: str) -> ExecutionPlan:\n    tools_str = json.dumps([t['name'] + ': ' + t['description'] for t in AVAILABLE_TOOLS])\n    response = client.chat.completions.create(\n        model=MODEL,\n        messages=[\n            {'role': 'system', 'content': PLAN_SYSTEM.format(tools=tools_str)},\n            {'role': 'user', 'content': f'Create a plan to: {goal}'},\n        ],\n        temperature=0,\n        response_format={'type': 'json_object'},\n    )\n    plan_data = json.loads(response.choices[0].message.content)\n    plan = ExecutionPlan(goal=goal)\n    for s in plan_data.get('steps', []):\n        plan.steps.append(PlanStep(\n            number=s['number'],\n            description=s['description'],\n            tool=s.get('tool'),\n        ))\n    return plan\n\n\ndef replan(plan: ExecutionPlan, failed_step: PlanStep, error: str) -> list[PlanStep]:\n    \"\"\"Generate replacement steps for a failed step.\"\"\"\n    context = f'Goal: {plan.goal}\\nCompleted: {[s.description for s in plan.steps if s.status==\"success\"]}'\n    response = client.chat.completions.create(\n        model=MODEL,\n        messages=[{\n            'role': 'user',\n            'content': f'{context}\\n\\nStep \"{failed_step.description}\" failed with: {error}\\n\\n'\n                       'Provide 1-2 alternative steps to achieve the same sub-goal. '\n                       'Return JSON: {\"steps\": [{\"number\": N, \"description\": \"...\", \"tool\": \"...\"}]}',\n        }],\n        temperature=0,\n        response_format={'type': 'json_object'},\n    )\n    data = json.loads(response.choices[0].message.content)\n    return [PlanStep(number=s['number'], description=s['description'], tool=s.get('tool'))\n            for s in data.get('steps', [])]\n\n\n# ── Mock tool executor ─────────────────────────────────────────────────────────\n\ndef execute_tool(step: PlanStep) -> tuple[str, bool]:  # (result, success)\n    \"\"\"Simulated tool execution.\"\"\"\n    tool = step.tool or 'no_tool'\n    if tool == 'web_search':\n        return f'Search results for step: {step.description[:50]}', True\n    if tool == 'calculate':\n        return '42 (simulated calculation)', True\n    if tool == 'summarize':\n        return f'Summary of content for: {step.description[:50]}', True\n    if tool == 'write_file':\n        return 'File written successfully', True\n    if tool == 'no_tool':\n        return 'Step completed via LLM reasoning', True\n    return f'Unknown tool: {tool}', False\n\n\n# ── Plan-and-Execute runner ────────────────────────────────────────────────────\n\nclass PlanAndExecuteAgent:\n    def __init__(self, max_replan_attempts: int = 2):\n        self.max_replan_attempts = max_replan_attempts\n\n    def run(self, goal: str) -> str:\n        # 1. Create plan\n        plan = create_plan(goal)\n        print(f'Initial plan for: {goal}')\n        print(plan.summary())\n        print()\n\n        # 2. Execute step by step\n        step_idx = 0\n        while step_idx < len(plan.steps):\n            step = plan.steps[step_idx]\n            if step.status != 'pending':\n                step_idx += 1\n                continue\n\n            print(f'Executing step {step.number}: {step.description}')\n            result, success = execute_tool(step)\n\n            if success:\n                step.result = result\n                step.status = 'success'\n                plan.context[f'step_{step.number}'] = result\n                print(f'  ✓ {result[:60]}')\n            else:\n                # Try to replan\n                step.status = 'failed'\n                print(f'  ✗ Failed: {result}')\n                if self.max_replan_attempts > 0:\n                    alt_steps = replan(plan, step, result)\n                    # Insert alternative steps\n                    plan.steps = plan.steps[:step_idx] + alt_steps + plan.steps[step_idx+1:]\n                    print(f'  → Replanned with {len(alt_steps)} alternative step(s)')\n                    continue  # retry without incrementing step_idx\n\n            step_idx += 1\n\n        # 3. Synthesize final answer\n        return self._synthesize(plan)\n\n    def _synthesize(self, plan: ExecutionPlan) -> str:\n        completed = [(s.description, s.result) for s in plan.steps if s.status == 'success']\n        response = client.chat.completions.create(\n            model=MODEL,\n            messages=[{\n                'role': 'user',\n                'content': f'Goal: {plan.goal}\\n\\nCompleted steps and results:\\n'\n                           + '\\n'.join(f'- {desc}: {res}' for desc, res in completed)\n                           + '\\n\\nProvide a concise final answer that synthesizes these results.',\n            }],\n            temperature=0,\n        )\n        return response.choices[0].message.content\n\n\n# ── Reflexion agent ────────────────────────────────────────────────────────────\n\nclass ReflexionAgent:\n    \"\"\"Agent that reflects on its output and self-corrects.\"\"\"\n\n    def __init__(self, max_reflections: int = 2):\n        self.max_reflections = max_reflections\n\n    def attempt(self, task: str, prior_feedback: str = '') -> str:\n        messages = [{'role': 'user', 'content': task}]\n        if prior_feedback:\n            messages[0]['content'] += f'\\n\\nPrevious attempt feedback: {prior_feedback}\\nPlease address these issues.'\n        response = client.chat.completions.create(\n            model=MODEL, messages=messages, temperature=0.3,\n        )\n        return response.choices[0].message.content\n\n    def reflect(self, task: str, attempt_result: str) -> str:\n        \"\"\"Evaluate the attempt and return improvement feedback.\"\"\"\n        response = client.chat.completions.create(\n            model=MODEL,\n            messages=[{\n                'role': 'user',\n                'content': f'Task: {task}\\n\\nAttempt result:\\n{attempt_result}\\n\\n'\n                           'Evaluate this result. What is wrong or missing? '\n                           'Be specific and actionable. If it is good enough, say \"ACCEPTED\".'\n            }],\n            temperature=0,\n        )\n        return response.choices[0].message.content\n\n    def run(self, task: str) -> str:\n        result = self.attempt(task)\n        print(f'Initial attempt: {result[:100]}...')\n\n        for i in range(self.max_reflections):\n            feedback = self.reflect(task, result)\n            print(f'\\nReflection {i+1}: {feedback[:100]}...')\n\n            if 'ACCEPTED' in feedback.upper():\n                print('  → Accepted!')\n                return result\n\n            result = self.attempt(task, prior_feedback=feedback)\n            print(f'Revised attempt: {result[:100]}...')\n\n        return result\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    print('=== Plan-and-Execute Agent ===')\n    agent = PlanAndExecuteAgent(max_replan_attempts=1)\n    result = agent.run('Research the benefits of async programming in Python and write a 3-bullet summary')\n    print(f'\\nFinal answer: {result}')\n\n    print('\\n\\n=== Reflexion Agent ===')\n    reflexion = ReflexionAgent(max_reflections=2)\n    result = reflexion.run('Write a Python function to find all prime numbers up to N using the Sieve of Eratosthenes. Include type hints and a brief docstring.')\n    print(f'\\nFinal answer: {result}')"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Planning Agent Pitfalls",
+      "items": [
+        {
+          "mistake": "Plans that are too granular (micro-managing every step)",
+          "why": "A 20-step plan for a 3-step task wastes LLM tokens, creates more failure points, and makes the agent slower without improving quality.",
+          "fix": "Plans should have 3-7 steps for most tasks. Use 'complete X' level granularity, not 'open file, read line 1, read line 2...'."
+        },
+        {
+          "mistake": "Not passing accumulated context to subsequent steps",
+          "why": "Step 3 often depends on the output of step 1. Without passing context forward, the agent re-discovers information instead of building on it.",
+          "fix": "Maintain a shared context dict that accumulates step results. Pass this context when generating subsequent steps or synthesizing the final answer."
+        },
+        {
+          "mistake": "Infinite replanning loop",
+          "why": "If every alternative plan also fails, the agent replans indefinitely. Without a max_replan_attempts limit, costs spiral.",
+          "fix": "Set max_replan_attempts = 2-3. After exhausting replans, either skip the step (if non-critical) or return a partial result with a note about what couldn't be completed."
+        },
+        {
+          "mistake": "Over-using Reflexion (reflecting on everything)",
+          "why": "Reflexion adds an extra LLM call per reflection cycle. For simple tasks, this doubles the cost with no quality improvement.",
+          "fix": "Apply Reflexion only to high-quality-critical outputs (code generation, complex analysis). Use a confidence check: only reflect if the initial result doesn't meet a quality threshold."
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "What are the advantages of Plan-and-Execute over pure ReAct?",
+          "answer": "Plan-and-Execute advantages: (1) The plan is visible before execution — a human can review and approve it before any actions are taken. (2) Errors are scoped — if step 3 fails, it doesn't necessarily invalidate steps 1-2. Replanning only needs to handle the failed step. (3) Parallelism — independent plan steps can execute concurrently. (4) Better overall coherence — the planner sees the full task before deciding on a strategy, avoiding greedy local decisions. (5) Separation of concerns — you can use a strong, expensive planner model and a cheaper executor model. Disadvantage: less adaptive — the plan is created upfront without access to intermediate results.",
+          "followUps": ["When would you choose ReAct over Plan-and-Execute?"]
+        },
+        {
+          "question": "What is the Reflexion pattern and when is it most valuable?",
+          "answer": "Reflexion is a self-correction loop: (1) attempt the task, (2) critically evaluate the attempt ('what's wrong with this?'), (3) revise based on the evaluation. It's most valuable when: the task has verifiable quality criteria (code correctness, factual accuracy); a single attempt is often imperfect but the direction is right; human feedback is not available in the loop. It's less valuable for: simple tasks where first attempts are usually good; tasks without quality criteria (creative writing); when extra LLM calls are too costly.",
+          "followUps": ["How do you prevent Reflexion from changing a correct answer to an incorrect one?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "In a Plan-and-Execute agent, how do you pass context from completed steps to the synthesizer?",
+          "answer": "```python\n# After each successful step, store result in shared context\nplan.context[f'step_{step.number}_result'] = step.result\n\n# When synthesizing, pass all accumulated context\ncontext_str = '\\n'.join(f'Step {k}: {v}' for k, v in plan.context.items())\nresponse = client.chat.completions.create(\n    model=MODEL,\n    messages=[{\n        'role': 'user',\n        'content': f'Goal: {plan.goal}\\n\\nSteps completed:\\n{context_str}\\n\\nSynthesize a final answer.'\n    }],\n    temperature=0,\n)\n```\nFor large contexts, summarize individual step results before adding to context to avoid token overflow."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "A user asks your Plan-and-Execute agent to 'write a report on our Q3 revenue performance'. The agent creates a 15-step plan but step 5 (fetch database) fails. How do you handle this gracefully?",
+          "answer": "Step 5 failure handling: (1) Mark step 5 as failed. (2) Check if it's blocking — can later steps proceed without step 5's output? In this case, a revenue report without database data is meaningless. (3) Attempt replan: try an alternative data source (CSV export, BI tool API, manual input request). (4) If replan also fails: pause execution, notify the user with context ('I was unable to retrieve Q3 revenue data from the database due to [error]. Please provide the data or grant database access.'). (5) If non-critical steps remain (formatting, analysis of available data), complete those and return a partial report clearly labeled as incomplete due to data retrieval failure. Key principle: fail loudly with specific information about what failed and why, rather than silently producing an incomplete or incorrect report.",
+          "followUps": ["How do you design the agent to distinguish blocking vs non-blocking step failures?"]
+        }
+      ],
+      "wrongAnswers": [
+        "Plan-and-Execute always produces better results than ReAct — for simple, short tasks, ReAct's adaptive approach often outperforms the overhead of upfront planning",
+        "Reflexion always improves output quality — a poor reflector prompt can change a correct answer to an incorrect one; the reflection step itself can introduce errors",
+        "Planning agents don't need max_steps limits since the plan has a fixed number of steps — replanning can add steps indefinitely; limits are still essential"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d38q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the core difference between Plan-and-Execute and ReAct?",
+          "options": {
+            "A": "ReAct uses more tools than Plan-and-Execute",
+            "B": "Plan-and-Execute generates a full strategy before acting; ReAct decides the next action after each observation",
+            "C": "Plan-and-Execute is faster because it skips tool calls",
+            "D": "ReAct is only for single-step tasks"
+          },
+          "answer": "B",
+          "explanation": "Plan-and-Execute separates planning (create full strategy) from execution (follow the strategy). ReAct is greedy — it decides the next action based only on current observations without global planning."
+        },
+        {
+          "id": "d38q2",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "In the Reflexion pattern, what triggers the agent to stop reflecting and accept the result?",
+          "options": {
+            "A": "The result is longer than the initial attempt",
+            "B": "The reflection step returns 'ACCEPTED' or max_reflections is reached",
+            "C": "The result has no more syntax errors",
+            "D": "Three consecutive reflection cycles produce the same output"
+          },
+          "answer": "B",
+          "explanation": "The reflector LLM evaluates the attempt and returns either specific feedback (triggering revision) or an acceptance signal (stopping the loop). Additionally, a hard max_reflections cap prevents infinite loops."
+        },
+        {
+          "id": "d38q3",
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "A Plan-and-Execute agent's step 4 (out of 8) fails. What is the appropriate response?",
+          "options": {
+            "A": "Restart the entire plan from step 1",
+            "B": "Skip step 4 and continue with step 5",
+            "C": "Attempt to replan only for the failed step, then continue with the original remaining steps",
+            "D": "Return a failure immediately without completing any further steps"
+          },
+          "answer": "C",
+          "explanation": "Replanning scoped to the failed step preserves the work done in steps 1-3. Generate alternative steps to achieve the same sub-goal as step 4, then resume the original plan from step 5. Only fail the entire task if replanning is exhausted and the step is blocking."
+        },
+        {
+          "id": "d38q4",
+          "level": "advanced",
+          "category": "theory",
+          "question": "What is Tree of Thoughts (ToT) and why is it more expensive than standard planning?",
+          "options": {
+            "A": "ToT uses a tree data structure to store conversation history, requiring more memory",
+            "B": "ToT explores multiple reasoning paths at each step, using k LLM calls per node to evaluate branch quality",
+            "C": "ToT is a multi-agent system where each agent handles one branch",
+            "D": "ToT adds retry loops at each step, requiring extra LLM calls on failure"
+          },
+          "answer": "B",
+          "explanation": "ToT generates k candidate continuations at each step and evaluates each with an LLM-based value function. For a 3-step plan with k=3 branches and b=2 kept, it makes 3 (expand) + 3 (evaluate) LLM calls per level — vs 1 for standard planning. Total cost: O(k×b×depth) vs O(depth)."
+        },
+        {
+          "id": "d38q5",
+          "level": "basic",
+          "category": "code",
+          "question": "What should a Plan-and-Execute agent store after each successful step?",
+          "options": {
+            "A": "Only the step number",
+            "B": "The step result in a shared context dict to pass to subsequent steps",
+            "C": "A checksum of the step output for validation",
+            "D": "Nothing — results are embedded in the next prompt automatically"
+          },
+          "answer": "B",
+          "explanation": "Subsequent steps and the final synthesizer need access to previous step results. Storing results in a shared context dict enables building on prior work rather than re-discovering information."
+        }
+      ]
+    }
+  ]
+}

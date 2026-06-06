@@ -1,0 +1,173 @@
+{
+  "id": "phase3-day43",
+  "day": 43,
+  "phase": 3,
+  "title": "OpenAI Assistants API",
+  "estimatedHours": 4,
+  "difficulty": "intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["assistants-api", "openai", "threads", "file-search", "code-interpreter"],
+  "prerequisites": ["phase2-day28", "phase3-day37"],
+  "learningObjectives": [
+    "Understand the Assistants API object model: Assistants, Threads, Messages, Runs",
+    "Create and configure an Assistant with tools",
+    "Use File Search for document Q&A",
+    "Use Code Interpreter for data analysis",
+    "Stream Run outputs and handle tool calls"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Use the Assistants API",
+      "content": "Building an agent from scratch (managing message history, tool dispatch, state) is powerful but complex. The Assistants API is OpenAI's managed agent infrastructure: it handles thread/message persistence, runs the tool loop automatically, provides Code Interpreter (sandboxed Python execution) and File Search (managed RAG over uploaded documents) as built-in tools, and lets you focus on the assistant's behavior rather than infrastructure. Trade-off: you give up some control and flexibility for reduced boilerplate. The Assistants API is best when you need a quick, production-ready assistant with file understanding and code execution."
+    },
+    {
+      "type": "theory",
+      "title": "Assistants API Object Model",
+      "content": "**Four core objects:**\n\n```\nAssistant  — persistent entity with instructions + tools + model\n    │\n    │  (a user's conversation)\n    ▼\nThread     — persistent conversation (sequence of messages)\n    │\n    │  (add messages + execute)\n    ▼\nMessage    — user or assistant message with content + attachments\n    │\n    │  (async execution of assistant on thread)\n    ▼\nRun        — one execution of the assistant on a thread\n            Statuses: queued → in_progress → requires_action\n                      → completed | failed | cancelled | expired\n```\n\n**Built-in tools:**\n\n| Tool | What it does |\n|------|-------------|\n| `file_search` | Semantic search over uploaded files (managed RAG) |\n| `code_interpreter` | Sandboxed Python execution + file generation |\n| Custom function tools | Your own function definitions (same as Day 28) |\n\n**File Search internals:**\n- Upload files → create a Vector Store → attach to Assistant or Thread\n- Supported: PDF, DOCX, TXT, Markdown, HTML, JSON, and more\n- Automatically chunks, embeds, and indexes\n- Token cost: $0.10/GB/day for stored vectors\n\n**Code Interpreter:**\n- Runs Python in an OpenAI-managed sandbox\n- Can create files (charts, processed data) and attach them to messages\n- Has access to common data science libraries (pandas, numpy, matplotlib)\n- Costs extra per session\n\n**Run lifecycle:**\n```python\n# Create and poll a run\nrun = client.beta.threads.runs.create(thread_id=thread.id, assistant_id=assistant.id)\nwhile run.status in ('queued', 'in_progress'):\n    time.sleep(1)\n    run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)\n\n# Or use streaming (preferred)\nwith client.beta.threads.runs.stream(\n    thread_id=thread.id,\n    assistant_id=assistant.id,\n) as stream:\n    for event in stream:\n        ...\n```\n\n**When `requires_action` status:**\n```python\nif run.status == 'requires_action':\n    tool_calls = run.required_action.submit_tool_outputs.tool_calls\n    outputs = []\n    for tc in tool_calls:\n        result = dispatch_tool(tc.function.name, json.loads(tc.function.arguments))\n        outputs.append({'tool_call_id': tc.id, 'output': result})\n    run = client.beta.threads.runs.submit_tool_outputs(\n        thread_id=thread.id, run_id=run.id, tool_outputs=outputs\n    )\n```"
+    },
+    {
+      "type": "code",
+      "title": "Assistants API — Complete Implementation",
+      "language": "python",
+      "code": "# pip install openai\nfrom __future__ import annotations\nimport json\nimport os\nimport time\nfrom pathlib import Path\nfrom typing import Optional\nfrom openai import OpenAI\nfrom openai.types.beta import Thread\nfrom openai.types.beta.threads import Run\n\nclient = OpenAI(api_key=os.environ['OPENAI_API_KEY'])\n\n\n# ── 1. Create a persistent assistant ──────────────────────────────────────────\n\ndef create_assistant(\n    name: str,\n    instructions: str,\n    tools: Optional[list[dict]] = None,\n    model: str = 'gpt-4o-mini',\n) -> str:  # returns assistant_id\n    assistant = client.beta.assistants.create(\n        name=name,\n        instructions=instructions,\n        tools=tools or [],\n        model=model,\n    )\n    print(f'Created assistant: {assistant.id} ({assistant.name})')\n    return assistant.id\n\n\ndef get_or_create_assistant(name: str, instructions: str, tools: list[dict], model: str = 'gpt-4o-mini') -> str:\n    \"\"\"Retrieve existing assistant by name or create a new one.\"\"\"\n    existing = client.beta.assistants.list(limit=20)\n    for a in existing.data:\n        if a.name == name:\n            print(f'Using existing assistant: {a.id}')\n            return a.id\n    return create_assistant(name, instructions, tools, model)\n\n\n# ── 2. Thread management ──────────────────────────────────────────────────────\n\ndef create_thread() -> str:\n    thread = client.beta.threads.create()\n    return thread.id\n\n\ndef add_message(thread_id: str, content: str, role: str = 'user') -> None:\n    client.beta.threads.messages.create(\n        thread_id=thread_id,\n        role=role,\n        content=content,\n    )\n\n\ndef get_messages(thread_id: str, limit: int = 10) -> list[dict]:\n    messages = client.beta.threads.messages.list(thread_id=thread_id, limit=limit, order='asc')\n    result = []\n    for msg in messages.data:\n        text_content = next(\n            (c.text.value for c in msg.content if hasattr(c, 'text')), ''\n        )\n        result.append({'role': msg.role, 'content': text_content})\n    return result\n\n\n# ── 3. Run with polling ────────────────────────────────────────────────────────\n\nTOOL_REGISTRY: dict[str, callable] = {}\n\ndef register_tool(name: str, fn: callable) -> None:\n    TOOL_REGISTRY[name] = fn\n\n\ndef run_and_wait(\n    thread_id: str,\n    assistant_id: str,\n    max_wait_seconds: int = 60,\n) -> str:  # returns last assistant message\n    run = client.beta.threads.runs.create(\n        thread_id=thread_id,\n        assistant_id=assistant_id,\n    )\n\n    start = time.time()\n    while time.time() - start < max_wait_seconds:\n        run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)\n\n        if run.status == 'completed':\n            messages = get_messages(thread_id, limit=1)\n            return messages[-1]['content'] if messages else ''\n\n        elif run.status == 'requires_action':\n            tool_calls = run.required_action.submit_tool_outputs.tool_calls\n            outputs = []\n            for tc in tool_calls:\n                fn = TOOL_REGISTRY.get(tc.function.name)\n                if fn:\n                    args = json.loads(tc.function.arguments)\n                    result = fn(**args)\n                else:\n                    result = json.dumps({'error': f'Unknown tool: {tc.function.name}'})\n                outputs.append({'tool_call_id': tc.id, 'output': str(result)})\n\n            run = client.beta.threads.runs.submit_tool_outputs(\n                thread_id=thread_id, run_id=run.id, tool_outputs=outputs\n            )\n\n        elif run.status in ('failed', 'cancelled', 'expired'):\n            error = getattr(run, 'last_error', None)\n            return f'Run failed: {run.status} — {error}'\n\n        time.sleep(1)\n\n    return 'Timeout: run did not complete in time'\n\n\n# ── 4. Run with streaming ─────────────────────────────────────────────────────\n\ndef run_streaming(thread_id: str, assistant_id: str) -> str:\n    full_text = ''\n    with client.beta.threads.runs.stream(\n        thread_id=thread_id,\n        assistant_id=assistant_id,\n    ) as stream:\n        for event in stream:\n            # Text delta events\n            if hasattr(event, 'data') and hasattr(event.data, 'delta'):\n                delta = event.data.delta\n                if hasattr(delta, 'content'):\n                    for block in delta.content or []:\n                        if hasattr(block, 'text') and block.text:\n                            chunk = block.text.value or ''\n                            print(chunk, end='', flush=True)\n                            full_text += chunk\n    print()  # newline after stream\n    return full_text\n\n\n# ── 5. File Search assistant ──────────────────────────────────────────────────\n\ndef setup_file_search_assistant(\n    name: str,\n    file_paths: list[str],\n) -> tuple[str, str]:  # (assistant_id, vector_store_id)\n    \"\"\"Create assistant with File Search over uploaded documents.\"\"\"\n    # Upload files\n    file_ids = []\n    for path in file_paths:\n        with open(path, 'rb') as f:\n            uploaded = client.files.create(file=f, purpose='assistants')\n        file_ids.append(uploaded.id)\n        print(f'Uploaded {path} → {uploaded.id}')\n\n    # Create vector store\n    vs = client.beta.vector_stores.create(\n        name=f'{name}_docs',\n        file_ids=file_ids,\n    )\n    # Wait for indexing\n    while vs.status != 'completed':\n        time.sleep(1)\n        vs = client.beta.vector_stores.retrieve(vs.id)\n    print(f'Vector store ready: {vs.id} ({vs.file_counts.completed} files indexed)')\n\n    # Create assistant with file_search\n    assistant_id = create_assistant(\n        name=name,\n        instructions='You are a helpful assistant. Answer questions using the provided documents. Cite sources.',\n        tools=[{'type': 'file_search'}],\n        model='gpt-4o-mini',\n    )\n\n    # Attach vector store to assistant\n    client.beta.assistants.update(\n        assistant_id,\n        tool_resources={'file_search': {'vector_store_ids': [vs.id]}},\n    )\n    print(f'File Search assistant ready: {assistant_id}')\n    return assistant_id, vs.id\n\n\n# ── 6. Session manager (wraps thread lifecycle) ───────────────────────────────\n\nclass AssistantSession:\n    def __init__(self, assistant_id: str):\n        self.assistant_id = assistant_id\n        self.thread_id = create_thread()\n        print(f'Session started: thread={self.thread_id}')\n\n    def chat(self, message: str, stream: bool = False) -> str:\n        add_message(self.thread_id, message)\n        if stream:\n            return run_streaming(self.thread_id, self.assistant_id)\n        return run_and_wait(self.thread_id, self.assistant_id)\n\n    def history(self) -> list[dict]:\n        return get_messages(self.thread_id)\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    # Register a custom tool\n    def get_weather(city: str) -> str:\n        return json.dumps({'city': city, 'temp': '18°C', 'condition': 'Sunny'})\n\n    register_tool('get_weather', get_weather)\n\n    weather_tool_def = [{\n        'type': 'function',\n        'function': {\n            'name': 'get_weather',\n            'description': 'Get current weather for a city',\n            'parameters': {\n                'type': 'object',\n                'properties': {'city': {'type': 'string'}},\n                'required': ['city'],\n            },\n        },\n    }]\n\n    # Create a general assistant\n    assistant_id = get_or_create_assistant(\n        name='Demo Assistant',\n        instructions='You are a helpful assistant. Use the weather tool when asked about weather.',\n        tools=weather_tool_def,\n    )\n\n    # Start a session and chat\n    session = AssistantSession(assistant_id)\n\n    questions = [\n        \"What's the weather in Tokyo?\",\n        'How does that compare to typical Japanese summers?',  # tests multi-turn memory\n    ]\n\n    for q in questions:\n        print(f'\\nUser: {q}')\n        answer = session.chat(q)\n        print(f'Assistant: {answer}')\n\n    print('\\nFull conversation history:')\n    for msg in session.history():\n        print(f'  [{msg[\"role\"]}]: {msg[\"content\"][:80]}')"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Assistants API Pitfalls",
+      "items": [
+        {
+          "mistake": "Not polling or streaming — just checking status once",
+          "why": "Runs are asynchronous. Checking status once immediately after creating a run will always find it in 'queued' or 'in_progress'. You must loop until a terminal status.",
+          "fix": "Always poll in a loop (with sleep) or use the streaming API which handles this automatically."
+        },
+        {
+          "mistake": "Creating a new assistant for every user",
+          "why": "Assistants are persistent, reusable configurations. Creating one per user is wasteful and makes updates hard (you'd need to update thousands of assistants).",
+          "fix": "Create one assistant per use case (e.g., 'Customer Support Bot'). Create a new Thread per user session. Threads are cheap and isolated."
+        },
+        {
+          "mistake": "Forgetting to submit tool outputs on requires_action",
+          "why": "If the run status is 'requires_action' and you don't submit tool outputs within the timeout, the run expires. The conversation is broken.",
+          "fix": "Always handle 'requires_action' in your polling loop. Execute all tool calls, gather outputs, and call submit_tool_outputs before the run expires."
+        },
+        {
+          "mistake": "Not cleaning up unused threads and files",
+          "why": "Threads are stored indefinitely by default, and files cost storage. A high-traffic app can accumulate thousands of stale threads and gigabytes of old files.",
+          "fix": "Delete threads after sessions end. Set up a cleanup job to delete files older than N days. Monitor storage costs in the OpenAI dashboard."
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "What are the four main objects in the Assistants API and how do they relate to each other?",
+          "answer": "Assistant: persistent configuration with instructions, model, and tools. Created once, reused across many conversations. Thread: a persistent conversation container — created per user session, holds all messages. One assistant can have many concurrent threads. Message: a single turn (user or assistant) within a thread, with text content and optional file attachments. Run: an asynchronous execution of the assistant on a thread. A single thread can have many sequential runs (one per user message). The lifecycle: create Assistant → create Thread per session → add Messages → create Run → poll until complete → read new Messages.",
+          "followUps": ["When would you use threads with multiple runs vs a single long run?"]
+        },
+        {
+          "question": "What is the difference between the Assistants API's File Search and building your own RAG?",
+          "answer": "File Search: managed, zero-infrastructure — upload files, create a Vector Store, attach to assistant. OpenAI handles chunking, embedding, indexing, and retrieval. Limited control: can't tune chunk size, embedding model, retrieval strategy, or reranking. Custom RAG (Day 23-27): full control over every parameter — chunk size, overlap, embedding model, retrieval strategy (MMR, reranking, hybrid search), metadata filtering. Required when you need: specific chunking for structured documents, metadata-based access control, custom embedding models, or retrieval strategies not supported by File Search. For most use cases, File Search is sufficient and much faster to ship.",
+          "followUps": ["How would you migrate from File Search to custom RAG as requirements grow?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "How do you handle the 'requires_action' run status?",
+          "answer": "```python\nif run.status == 'requires_action':\n    tool_calls = run.required_action.submit_tool_outputs.tool_calls\n    outputs = []\n    for tc in tool_calls:\n        args = json.loads(tc.function.arguments)\n        fn = TOOL_REGISTRY.get(tc.function.name)\n        result = fn(**args) if fn else json.dumps({'error': 'Unknown tool'})\n        outputs.append({'tool_call_id': tc.id, 'output': json.dumps(result)})\n    \n    # Submit all outputs in one call\n    run = client.beta.threads.runs.submit_tool_outputs(\n        thread_id=thread_id,\n        run_id=run.id,\n        tool_outputs=outputs,\n    )\n    # Continue polling — run will resume\n```\nAll tool outputs must be submitted in a single `submit_tool_outputs` call."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You're building a customer support assistant using the Assistants API that needs to: answer product FAQ from a 500-page PDF, look up order status via API, and escalate to humans for complex issues. How do you architect this?",
+          "answer": "Architecture: (1) Assistant: one Assistant with instructions ('You are TechCorp support. Answer FAQ from documents. Look up order status when asked. If you cannot resolve in 3 attempts, escalate.'). Tools: file_search (for FAQ PDF), get_order_status function, create_escalation_ticket function. (2) Vector Store: upload the 500-page PDF once, create a Vector Store. Attach to the assistant. No per-user indexing needed. (3) Thread: one Thread per customer session. Tag with session_id, user_id metadata. (4) Tool functions: get_order_status(order_id) → calls your order management API, returns JSON. create_escalation_ticket(issue_summary, conversation_summary) → creates a Zendesk ticket, notifies a human agent, marks thread as escalated. (5) Session lifecycle: create Thread on first contact. Keep thread_id in your session store (Redis, keyed by session_id). On new message: add to thread, run assistant, return response. Delete thread after session ends (24h TTL). (6) Monitoring: log every run's cost (from usage field), response time, and whether escalation was triggered.",
+          "followUps": ["How do you handle concurrent sessions from the same user on multiple devices?"]
+        }
+      ],
+      "wrongAnswers": [
+        "A Run processes one message at a time and cannot call multiple tools — Runs can handle parallel tool calls in a single requires_action event",
+        "File Search in the Assistants API works the same as retrieving any attached file — it performs vector-based semantic search over the file's content, not full-file retrieval",
+        "Threads persist indefinitely for free — Threads are stored persistently and charged for storage if you keep them; delete unused threads to avoid accumulation costs"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d43q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "In the Assistants API, what should you create once and reuse vs create per user session?",
+          "options": {
+            "A": "Create Thread once, create Assistant per session",
+            "B": "Create Assistant once, create Thread per session",
+            "C": "Create both Assistant and Thread once globally",
+            "D": "Create Run once, reuse for all sessions"
+          },
+          "answer": "B",
+          "explanation": "Assistants are persistent configurations (instructions + tools) — create once, reuse across all users. Threads are conversation containers — create a new one per user session for isolation. This is the correct pattern in the Assistants API."
+        },
+        {
+          "id": "d43q2",
+          "level": "intermediate",
+          "category": "code",
+          "question": "A Run is in 'requires_action' status. What must you do to allow the run to continue?",
+          "options": {
+            "A": "Wait — the run will automatically retry the tool call",
+            "B": "Execute the requested tool calls and submit all outputs via submit_tool_outputs",
+            "C": "Cancel the run and create a new one",
+            "D": "Add a new user message to the thread"
+          },
+          "answer": "B",
+          "explanation": "requires_action means the assistant decided to call your function tools. You must execute the functions, collect their outputs, and submit all outputs in a single submit_tool_outputs call. The run then continues processing."
+        },
+        {
+          "id": "d43q3",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is the advantage of streaming Runs vs polling?",
+          "options": {
+            "A": "Streaming is cheaper",
+            "B": "Streaming shows tokens as they generate, enabling faster perceived response in UI",
+            "C": "Streaming avoids the requires_action status",
+            "D": "Streaming uses fewer API credits"
+          },
+          "answer": "B",
+          "explanation": "Streaming delivers token delta events as they're generated, so the UI can display text progressively rather than waiting for the complete response. This dramatically improves perceived latency — users see output after 500ms instead of 3+ seconds."
+        },
+        {
+          "id": "d43q4",
+          "level": "advanced",
+          "category": "scenario",
+          "question": "Your Assistants API app's storage costs are unexpectedly high. What is the likely cause?",
+          "options": {
+            "A": "Too many API calls per run",
+            "B": "Threads and Vector Store files accumulating without cleanup",
+            "C": "Using gpt-4o instead of gpt-4o-mini",
+            "D": "Streaming uses more tokens than polling"
+          },
+          "answer": "B",
+          "explanation": "Threads persist indefinitely unless explicitly deleted, and Vector Store files are charged at $0.10/GB/day. A high-traffic app creates thousands of threads and many large Vector Stores that accumulate over time. Implement thread TTLs and regular cleanup jobs."
+        },
+        {
+          "id": "d43q5",
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the Assistants API's 'code_interpreter' tool?",
+          "options": {
+            "A": "A tool that executes code by calling your own code execution service",
+            "B": "OpenAI-managed sandboxed Python execution environment with data science libraries",
+            "C": "A code review and syntax checking tool",
+            "D": "A static analysis tool that evaluates code quality"
+          },
+          "answer": "B",
+          "explanation": "Code Interpreter is a fully managed sandboxed Python environment hosted by OpenAI. It has pandas, numpy, matplotlib and other data science libraries. The assistant can write and run Python, process files, and generate charts — returned as file attachments in messages."
+        }
+      ]
+    }
+  ]
+}

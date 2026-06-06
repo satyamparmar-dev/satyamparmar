@@ -1,0 +1,178 @@
+{
+  "id": "phase2-day35",
+  "day": 35,
+  "phase": 2,
+  "title": "Async & Batch Processing for LLM Applications",
+  "estimatedHours": 4,
+  "difficulty": "intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["async", "batch-processing", "asyncio", "concurrency", "throughput", "openai-batch"],
+  "prerequisites": ["phase1-day15", "phase2-day34"],
+  "learningObjectives": [
+    "Implement async LLM calls with asyncio and aiohttp",
+    "Use the OpenAI Async client for concurrent requests",
+    "Build a batch processing pipeline with rate limit handling",
+    "Use OpenAI Batch API for 50% cost reduction",
+    "Design a producer-consumer pipeline for high-throughput processing"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Async Matters for LLM Apps",
+      "content": "LLM API calls spend 80-99% of their time waiting for the network response. Sequential processing wastes all that idle time. If each call takes 2 seconds and you have 100 documents to process, sequential takes 200 seconds. With async (20 concurrent workers), it takes ~10 seconds. Python's asyncio lets you run thousands of 'in-flight' API calls without spawning threads, keeping memory low. For batch workloads (nightly reports, bulk embeddings, evaluation runs), the OpenAI Batch API offers 50% cost reduction for up to 24-hour turnaround — perfect for non-real-time jobs."
+    },
+    {
+      "type": "theory",
+      "title": "Async Patterns and Batch API",
+      "content": "**asyncio fundamentals for LLM work:**\n```python\nimport asyncio\nfrom openai import AsyncOpenAI  # async client\n\nasync def fetch_one(client, prompt):\n    resp = await client.chat.completions.create(...)\n    return resp.choices[0].message.content\n\nasync def fetch_many(prompts):\n    client = AsyncOpenAI()\n    tasks = [fetch_one(client, p) for p in prompts]\n    return await asyncio.gather(*tasks)  # all concurrent\n\nresults = asyncio.run(fetch_many(prompts))\n```\n\n**Rate limiting — two axes to control:**\n1. **Requests per minute (RPM)**: Too many concurrent requests → 429 RateLimitError\n2. **Tokens per minute (TPM)**: Large context × many requests → TPM limit\n\n**Concurrency control patterns:**\n```python\n# Pattern 1: asyncio.Semaphore — cap concurrent requests\nsem = asyncio.Semaphore(20)\nasync def rate_limited_call(client, prompt):\n    async with sem:\n        return await fetch_one(client, prompt)\n\n# Pattern 2: asyncio.Queue — producer-consumer\nqueue = asyncio.Queue(maxsize=50)\n# Producer puts items; workers consume and call API\n\n# Pattern 3: tenacity for exponential backoff\nfrom tenacity import retry, wait_exponential, retry_if_exception_type\n@retry(wait=wait_exponential(min=1, max=60), retry=retry_if_exception_type(RateLimitError))\nasync def resilient_call(...):\n    ...\n```\n\n**OpenAI Batch API:**\n- Submit a JSONL file of requests\n- 50% cost reduction vs real-time API\n- Up to 24-hour completion time (usually much faster)\n- Perfect for: evaluation runs, bulk document processing, nightly analytics\n\nBatch request format:\n```jsonl\n{\"custom_id\": \"task-1\", \"method\": \"POST\", \"url\": \"/v1/chat/completions\", \"body\": {\"model\": \"gpt-4o-mini\", \"messages\": [{\"role\": \"user\", \"content\": \"Summarize: ...\"}], \"max_tokens\": 100}}\n{\"custom_id\": \"task-2\", \"method\": \"POST\", \"url\": \"/v1/chat/completions\", \"body\": {\"model\": \"gpt-4o-mini\", \"messages\": [{\"role\": \"user\", \"content\": \"Classify: ...\"}], \"max_tokens\": 50}}\n```\n\n**Batch API flow:**\n```\n1. Create JSONL file of requests\n2. client.files.create(purpose='batch')\n3. client.batches.create(input_file_id, endpoint, completion_window='24h')\n4. Poll client.batches.retrieve(batch_id) until status == 'completed'\n5. Download output_file_id → JSONL with responses\n```\n\n**Throughput optimization table:**\n\n| Technique | Speedup | Complexity | Use case |\n|-----------|---------|------------|----------|\n| asyncio.gather | 10-50× | Low | General async |\n| Semaphore throttle | Prevents 429s | Low | Rate-limited APIs |\n| Batch API | 50% cost, slower | Medium | Offline jobs |\n| Streaming | Faster perceived | Low | Real-time UX |\n| Model downgrade | 3-10× faster | Low | Non-critical tasks |"
+    },
+    {
+      "type": "code",
+      "title": "Async Processing and Batch API",
+      "language": "python",
+      "code": "# pip install openai asyncio aiofiles tenacity\nimport asyncio\nimport json\nimport os\nimport time\nfrom dataclasses import dataclass\nfrom pathlib import Path\nfrom typing import Optional\nfrom openai import AsyncOpenAI, OpenAI\nfrom openai import RateLimitError, APIConnectionError\n\nasync_client = AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])\nsync_client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])\n\n\n# ── 1. Basic async completion ─────────────────────────────────────────────────\n\nasync def async_complete(\n    prompt: str,\n    system: str = 'You are a helpful assistant.',\n    model: str = 'gpt-4o-mini',\n    max_tokens: int = 200,\n) -> str:\n    response = await async_client.chat.completions.create(\n        model=model,\n        messages=[\n            {'role': 'system', 'content': system},\n            {'role': 'user', 'content': prompt},\n        ],\n        max_tokens=max_tokens,\n        temperature=0,\n    )\n    return response.choices[0].message.content\n\n\nasync def process_all_concurrent(prompts: list[str]) -> list[str]:\n    \"\"\"Run all prompts concurrently — no rate limiting.\"\"\"\n    tasks = [async_complete(p) for p in prompts]\n    return await asyncio.gather(*tasks)\n\n\n# ── 2. Rate-limited async with Semaphore ──────────────────────────────────────\n\nclass AsyncLLMProcessor:\n    def __init__(self, max_concurrent: int = 20, retry_attempts: int = 3):\n        self.semaphore = asyncio.Semaphore(max_concurrent)\n        self.retry_attempts = retry_attempts\n        self._processed = 0\n        self._errors = 0\n    \n    async def _call_with_retry(self, prompt: str, metadata: dict) -> dict:\n        last_error = None\n        for attempt in range(self.retry_attempts):\n            try:\n                async with self.semaphore:\n                    result = await async_complete(prompt)\n                self._processed += 1\n                return {'success': True, 'result': result, **metadata}\n            except RateLimitError:\n                wait_time = 2 ** attempt  # exponential backoff: 1, 2, 4 seconds\n                await asyncio.sleep(wait_time)\n                last_error = 'rate_limit'\n            except APIConnectionError as e:\n                last_error = str(e)\n                break\n        \n        self._errors += 1\n        return {'success': False, 'error': last_error, **metadata}\n    \n    async def process_batch(\n        self,\n        items: list[dict],  # each: {prompt: str, id: str, ...metadata}\n    ) -> list[dict]:\n        start = time.time()\n        tasks = [self._call_with_retry(item['prompt'], {'id': item['id']}) for item in items]\n        results = await asyncio.gather(*tasks)\n        elapsed = time.time() - start\n        \n        success_count = sum(1 for r in results if r['success'])\n        print(f'Processed {len(items)} items in {elapsed:.1f}s | {success_count} success | {self._errors} errors')\n        return results\n\n\n# ── 3. Producer-consumer pipeline ─────────────────────────────────────────────\n\nasync def producer_consumer_pipeline(\n    documents: list[str],\n    n_workers: int = 10,\n    task_name: str = 'Summarize in one sentence',\n) -> list[str]:\n    \"\"\"Producer-consumer pattern: producer enqueues, workers dequeue and call API.\"\"\"\n    queue: asyncio.Queue = asyncio.Queue(maxsize=n_workers * 2)\n    results = {}\n    \n    async def producer():\n        for i, doc in enumerate(documents):\n            await queue.put((i, doc))\n        for _ in range(n_workers):\n            await queue.put(None)  # sentinel to stop workers\n    \n    async def worker(worker_id: int):\n        while True:\n            item = await queue.get()\n            if item is None:\n                queue.task_done()\n                return\n            idx, doc = item\n            try:\n                result = await async_complete(f'{task_name}:\\n\\n{doc}')\n                results[idx] = result\n            except Exception as e:\n                results[idx] = f'ERROR: {e}'\n            finally:\n                queue.task_done()\n    \n    workers = [asyncio.create_task(worker(i)) for i in range(n_workers)]\n    await asyncio.gather(producer(), *workers)\n    return [results[i] for i in range(len(documents))]\n\n\n# ── 4. OpenAI Batch API ────────────────────────────────────────────────────────\n\ndef create_batch_file(items: list[dict], output_path: str) -> None:\n    \"\"\"Create JSONL batch request file.\"\"\"\n    with open(output_path, 'w') as f:\n        for item in items:\n            request = {\n                'custom_id': item['id'],\n                'method': 'POST',\n                'url': '/v1/chat/completions',\n                'body': {\n                    'model': 'gpt-4o-mini',\n                    'messages': [\n                        {'role': 'system', 'content': item.get('system', 'You are a helpful assistant.')},\n                        {'role': 'user', 'content': item['prompt']},\n                    ],\n                    'max_tokens': item.get('max_tokens', 200),\n                    'temperature': 0,\n                },\n            }\n            f.write(json.dumps(request) + '\\n')\n    print(f'Created batch file: {output_path} ({len(items)} requests)')\n\n\ndef submit_batch_job(batch_file_path: str) -> str:\n    \"\"\"Upload file and create batch job. Returns batch_id.\"\"\"\n    with open(batch_file_path, 'rb') as f:\n        uploaded = sync_client.files.create(file=f, purpose='batch')\n    \n    batch = sync_client.batches.create(\n        input_file_id=uploaded.id,\n        endpoint='/v1/chat/completions',\n        completion_window='24h',\n    )\n    print(f'Batch submitted: {batch.id} | Status: {batch.status}')\n    return batch.id\n\n\ndef poll_batch(batch_id: str, poll_interval: int = 30) -> dict[str, str]:\n    \"\"\"Poll batch status and return results when complete.\"\"\"\n    while True:\n        batch = sync_client.batches.retrieve(batch_id)\n        print(f'  Status: {batch.status} | Completed: {batch.request_counts.completed}/{batch.request_counts.total}')\n        \n        if batch.status == 'completed':\n            output_content = sync_client.files.content(batch.output_file_id)\n            results = {}\n            for line in output_content.text.strip().split('\\n'):\n                record = json.loads(line)\n                custom_id = record['custom_id']\n                if record.get('error'):\n                    results[custom_id] = f'ERROR: {record[\"error\"]}'\n                else:\n                    results[custom_id] = record['response']['body']['choices'][0]['message']['content']\n            return results\n        \n        if batch.status in ('failed', 'expired', 'cancelled'):\n            raise RuntimeError(f'Batch {batch_id} {batch.status}')\n        \n        time.sleep(poll_interval)\n\n\n# ── 5. Throughput benchmark helper ────────────────────────────────────────────\n\nasync def benchmark_throughput(n_requests: int = 20) -> None:\n    \"\"\"Compare sequential vs async throughput.\"\"\"\n    prompts = [f'What is {i} + {i}? Answer with just the number.' for i in range(n_requests)]\n    \n    # Sequential\n    start = time.time()\n    seq_results = []\n    for p in prompts[:5]:  # test with 5 to keep demo fast\n        r = await async_complete(p)  # no concurrency\n        seq_results.append(r)\n    seq_time = time.time() - start\n    \n    # Concurrent\n    start = time.time()\n    sem = asyncio.Semaphore(10)\n    async def sem_call(p):\n        async with sem:\n            return await async_complete(p)\n    conc_results = await asyncio.gather(*[sem_call(p) for p in prompts[:5]])\n    conc_time = time.time() - start\n    \n    print(f'Sequential (5 requests): {seq_time:.2f}s')\n    print(f'Concurrent (5 requests, semaphore=10): {conc_time:.2f}s')\n    print(f'Speedup: {seq_time/conc_time:.1f}×')\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    # Batch API demo (offline — creates the JSONL file without submitting)\n    batch_items = [\n        {'id': f'doc-{i}', 'prompt': f'Summarize in 10 words: Document {i} about AI and machine learning topic {i}.'}\n        for i in range(10)\n    ]\n    create_batch_file(batch_items, '/tmp/batch_requests.jsonl')\n    \n    print('\\nBatch file created. To submit:')\n    print('  batch_id = submit_batch_job(\"/tmp/batch_requests.jsonl\")')\n    print('  results = poll_batch(batch_id)  # waits up to 24h')\n    \n    # Async demo\n    print('\\nAsync processor demo:')\n    async def demo():\n        processor = AsyncLLMProcessor(max_concurrent=5)\n        items = [{'id': f'q{i}', 'prompt': f'What is {i}*{i}? Answer with just the number.'} for i in range(10)]\n        results = await processor.process_batch(items)\n        for r in results[:3]:\n            print(f'  {r[\"id\"]}: {r.get(\"result\", r.get(\"error\"))}')\n    \n    asyncio.run(demo())"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Async Processing Pitfalls",
+      "items": [
+        {
+          "mistake": "Using asyncio.gather without a concurrency limit",
+          "why": "asyncio.gather(*[call() for _ in range(1000)]) fires all 1000 requests simultaneously, instantly triggering rate limit errors (429) and connection pool exhaustion.",
+          "fix": "Always wrap async LLM calls with asyncio.Semaphore(N) where N is your rate limit budget (typically 10-50)."
+        },
+        {
+          "mistake": "Mixing sync and async clients",
+          "why": "Calling a sync function (time.sleep, requests.get) inside an async function blocks the event loop, preventing other coroutines from running — you lose all parallelism.",
+          "fix": "Use AsyncOpenAI not OpenAI. Replace time.sleep with await asyncio.sleep. Use aiofiles for file I/O, aiohttp for HTTP."
+        },
+        {
+          "mistake": "No error handling in asyncio.gather",
+          "why": "If one task raises an exception with return_exceptions=False (default), the exception propagates but other tasks may still run untracked. You may lose results silently.",
+          "fix": "Use asyncio.gather(*tasks, return_exceptions=True) to collect exceptions as return values, then check each result's type."
+        },
+        {
+          "mistake": "Using Batch API for real-time user requests",
+          "why": "Batch API has up to 24-hour completion time. Using it for a user-facing chat interface means users wait 24 hours for a response.",
+          "fix": "Batch API is for offline/async jobs: evaluation runs, nightly reports, bulk document processing. Use the real-time API for any user-facing interaction."
+        },
+        {
+          "mistake": "Not tracking tokens per minute (TPM) separately from requests per minute",
+          "why": "You can be within RPM limits but hit TPM limits if your requests have large contexts. Both limits cause 429 errors but need different fixes.",
+          "fix": "Track estimated tokens for each request (len(prompt.split())*1.3 as estimate). If TPM budget is exhausted, wait even if RPM budget remains."
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "Why is asyncio better than threading for LLM API calls?",
+          "answer": "LLM API calls are I/O-bound — the CPU is idle while waiting for the network response (500ms-5s). Threads solve I/O-bound problems but have high overhead: each thread needs ~8MB of stack memory, and Python's GIL still limits true parallelism for CPU work. asyncio uses a single thread with an event loop: while one coroutine awaits a response, the loop switches to another coroutine. For 100 concurrent LLM calls, asyncio uses ~1MB overhead vs ~800MB for threads. The tradeoff: asyncio requires all I/O to use async libraries — mixing sync calls blocks the loop.",
+          "followUps": ["When would you use ProcessPoolExecutor instead of asyncio for LLM work?"]
+        },
+        {
+          "question": "What is the OpenAI Batch API and when should you use it?",
+          "answer": "The Batch API accepts a JSONL file of up to 50,000 API requests, processes them asynchronously within 24 hours, and returns results at 50% of the normal API cost. It's ideal for offline workloads: evaluation runs, bulk text classification, generating embeddings for a document corpus, or nightly summaries. You should NOT use it for user-facing requests (too slow) or real-time pipelines. The workflow: create JSONL → upload file → create batch job → poll status → download results JSONL.",
+          "followUps": ["How do you handle partial failures in a Batch API job?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "What is wrong with this async code?\n```python\nasync def process_many(prompts):\n    results = []\n    for p in prompts:\n        r = await async_complete(p)\n        results.append(r)\n    return results\n```",
+          "answer": "This is sequential async — it awaits each call before starting the next. The 'async' wrapper adds no concurrency. Despite being async, each call blocks the next. Fix:\n```python\nasync def process_many(prompts):\n    sem = asyncio.Semaphore(20)\n    async def bounded(p):\n        async with sem:\n            return await async_complete(p)\n    return await asyncio.gather(*[bounded(p) for p in prompts])\n```\nThis runs up to 20 calls concurrently."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You need to embed 2 million documents for a RAG system. Each embedding call handles 100 documents. How do you architect this pipeline to complete in under 2 hours?",
+          "answer": "2M documents / 100 per call = 20,000 API calls. At 500ms/call sequential = 2.77 hours — too slow. Architecture: (1) Split into N workers, each with an asyncio event loop. Use multiprocessing.Pool with N = CPU cores (4-8). Each worker handles a shard of documents with asyncio.Semaphore(50) for rate limiting. (2) Checkpointing: write completed batches to a results file every 1000 calls. If the job fails, resume from the checkpoint. (3) Backpressure: monitor TPM consumption. If approaching TPM limit, dynamically reduce semaphore count. (4) Use OpenAI's Batch API for the embedding calls to get 50% cost reduction and parallel GPU processing on OpenAI's side. With 4 workers × 50 concurrent each = 200 concurrent calls × 2 calls/second = 400 docs/second → 2M docs in 5000 seconds (~83 minutes). Add 20% buffer for retries = ~100 minutes.",
+          "followUps": ["How do you validate that all 2M documents were embedded correctly?"]
+        }
+      ],
+      "wrongAnswers": [
+        "asyncio.gather runs tasks in separate threads — it runs coroutines on a single thread using cooperative multitasking",
+        "The Batch API processes requests in the order submitted and always returns within 1 hour — ordering is not guaranteed and completion time is up to 24 hours",
+        "Using asyncio.sleep(0) between requests is an effective rate limiting strategy — use asyncio.Semaphore for proper concurrency control"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d35q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the main benefit of using AsyncOpenAI over OpenAI for batch processing?",
+          "options": {
+            "A": "AsyncOpenAI has no rate limits",
+            "B": "Multiple API calls can be in-flight simultaneously without blocking, dramatically improving throughput",
+            "C": "AsyncOpenAI automatically retries failed requests",
+            "D": "AsyncOpenAI responses are returned faster"
+          },
+          "answer": "B",
+          "explanation": "AsyncOpenAI uses asyncio to send many requests without waiting for each one to complete before starting the next. For I/O-bound LLM calls, this can provide 10-50× speedup over sequential processing."
+        },
+        {
+          "id": "d35q2",
+          "level": "intermediate",
+          "category": "code",
+          "question": "What does `asyncio.Semaphore(20)` control in an LLM processing pipeline?",
+          "options": {
+            "A": "The number of CPU threads available",
+            "B": "The maximum number of concurrent API requests in-flight at any time",
+            "C": "The maximum batch size for a single API call",
+            "D": "The timeout for each API request in seconds"
+          },
+          "answer": "B",
+          "explanation": "Semaphore(20) allows at most 20 coroutines to be inside the `async with sem` block simultaneously. This prevents firing all requests at once, avoiding rate limit errors (429)."
+        },
+        {
+          "id": "d35q3",
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "Your async pipeline has RPM = 60 (within limit) but keeps getting 429 errors. What is likely the issue?",
+          "options": {
+            "A": "The semaphore value is too low",
+            "B": "You are hitting the Tokens Per Minute (TPM) limit, not the RPM limit",
+            "C": "AsyncOpenAI has a maximum of 10 concurrent connections",
+            "D": "The retry logic is creating duplicate requests"
+          },
+          "answer": "B",
+          "explanation": "Rate limiting has two axes: RPM and TPM. Large context windows (e.g., 8K tokens each × 60 requests/min = 480K tokens/min) can exceed TPM limits even when well within RPM limits. Monitor both dimensions."
+        },
+        {
+          "id": "d35q4",
+          "level": "advanced",
+          "category": "theory",
+          "question": "When does the OpenAI Batch API make economic sense vs the real-time API?",
+          "options": {
+            "A": "Always — it is always 50% cheaper",
+            "B": "For offline jobs with 24-hour acceptable latency where cost matters more than speed",
+            "C": "For user-facing requests that are not time-sensitive",
+            "D": "Only for embedding generation, not chat completions"
+          },
+          "answer": "B",
+          "explanation": "Batch API = 50% cheaper + up to 24h latency. Real-time API = full price + millisecond latency. The Batch API is correct for evaluation runs, nightly processing, bulk generation — never for user-facing real-time interactions."
+        },
+        {
+          "id": "d35q5",
+          "level": "basic",
+          "category": "code",
+          "question": "What is wrong with calling `time.sleep(1)` inside an async function?",
+          "options": {
+            "A": "time.sleep is not available in async functions",
+            "B": "It blocks the event loop, preventing all other coroutines from running during that second",
+            "C": "It causes a memory leak in long-running async applications",
+            "D": "Nothing — time.sleep works correctly in async functions"
+          },
+          "answer": "B",
+          "explanation": "time.sleep is a blocking call. When called in an async function, it freezes the entire event loop for that duration, effectively making the code sequential. Use `await asyncio.sleep(1)` instead, which yields control to the event loop."
+        }
+      ]
+    }
+  ]
+}

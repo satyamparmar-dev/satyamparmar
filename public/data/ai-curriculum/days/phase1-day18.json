@@ -1,0 +1,172 @@
+{
+  "day": 18,
+  "phase": 1,
+  "title": "Structured Output & JSON Mode",
+  "description": "Master reliable structured output from LLMs: JSON mode, response schemas, Pydantic validation, output repair, and the patterns that make AI output safe to parse in production code.",
+  "estimatedHours": 3,
+  "difficulty": "Beginner",
+  "level": "Fresher",
+  "track": "Fresher",
+  "tags": ["structured-output", "json-mode", "pydantic", "schema", "output-parsing", "validation"],
+  "prerequisites": ["phase1-day15", "phase1-day16"],
+  "learningObjectives": [
+    "Use OpenAI's JSON mode and response_format to guarantee valid JSON output",
+    "Define Pydantic schemas and use structured output with parse() method",
+    "Validate and repair malformed LLM JSON output",
+    "Handle nested schemas and optional fields reliably",
+    "Understand why structured output is critical for production AI systems",
+    "Compare JSON mode vs schema-constrained generation"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "Unstructured LLM output is a production liability. When your code does `json.loads(response)` and it fails at 3am because the model added a markdown code fence, your app crashes. Structured output — enforced at the API level — is non-negotiable for any AI feature that feeds data to downstream code."
+    },
+    {
+      "type": "theory",
+      "content": "## The Problem with Free-Form Output\n\nAsk a model for JSON and you might get:\n```\nHere is the JSON you requested:\n```json\n{\"name\": \"Alice\", \"age\": 30}\n```\nLet me know if you need anything else!\n```\n\nThat's not parseable. Free-form output adds: markdown fences, explanatory text, trailing commas, single quotes instead of double quotes, truncated JSON when hitting max_tokens.\n\n---\n\n## OpenAI JSON Mode\n\nForce the model to output only valid JSON:\n\n```python\nresponse = client.chat.completions.create(\n    model=\"gpt-4o\",\n    messages=[\n        {\"role\": \"system\", \"content\": \"Extract user info as JSON.\"},\n        {\"role\": \"user\",   \"content\": \"My name is Alice and I'm 30.\"}\n    ],\n    response_format={\"type\": \"json_object\"},  # JSON mode\n    temperature=0.0,\n)\ndata = json.loads(response.choices[0].message.content)\n```\n\n**Requirement**: You must mention JSON in the system or user prompt — otherwise the API returns an error.\n\n**Limitation**: Validates that output is JSON, but doesn't enforce a specific schema. The model decides the keys.\n\n---\n\n## OpenAI Structured Output (Schema-Constrained)\n\nEnforce an exact schema using `response_format` with a JSON Schema:\n\n```python\nfrom pydantic import BaseModel\n\nclass UserInfo(BaseModel):\n    name: str\n    age: int\n    email: str | None = None\n\ncompletion = client.beta.chat.completions.parse(\n    model=\"gpt-4o\",\n    messages=[\n        {\"role\": \"system\", \"content\": \"Extract user information.\"},\n        {\"role\": \"user\",   \"content\": \"Alice is 30, alice@example.com\"}\n    ],\n    response_format=UserInfo,\n)\nuser = completion.choices[0].message.parsed  # UserInfo instance, not string!\nprint(user.name)   # 'Alice'\nprint(user.age)    # 30\n```\n\nThis uses **grammar-constrained decoding** — the model's token generation is restricted to only produce tokens that match the schema. It cannot produce invalid output.\n\n---\n\n## Pydantic for Output Validation\n\n```python\nfrom pydantic import BaseModel, Field, validator\nfrom typing import Literal\n\nclass SentimentResult(BaseModel):\n    sentiment: Literal[\"positive\", \"negative\", \"neutral\"]\n    confidence: float = Field(ge=0.0, le=1.0)  # 0.0 to 1.0\n    key_phrases: list[str] = Field(max_items=5)\n    language: str = Field(default=\"en\")\n\n# Parse and validate:\ntry:\n    result = SentimentResult.model_validate_json(response_text)\nexcept Exception as e:\n    print(f\"Invalid output: {e}\")\n    # trigger repair\n```\n\n---\n\n## Output Repair Pattern\n\nWhen JSON is malformed, use a second LLM call to fix it:\n\n```python\ndef repair_json(broken_json: str, schema_description: str) -> str:\n    response = client.chat.completions.create(\n        model=\"gpt-4o-mini\",\n        messages=[\n            {\"role\": \"system\", \"content\": f\"Fix this malformed JSON to match schema: {schema_description}. Return ONLY valid JSON.\"},\n            {\"role\": \"user\",   \"content\": broken_json}\n        ],\n        response_format={\"type\": \"json_object\"},\n        temperature=0.0,\n    )\n    return response.choices[0].message.content\n```\n\n---\n\n## Nested Schemas\n\n```python\nclass Address(BaseModel):\n    street: str\n    city: str\n    country: str = \"US\"\n\nclass Customer(BaseModel):\n    name: str\n    email: str\n    address: Address\n    tags: list[str] = []\n    account_type: Literal[\"free\", \"pro\", \"enterprise\"] = \"free\"\n```\n\n---\n\n## Schema Design Rules\n\n1. **Use Literal types** for enums — prevents hallucinated values\n2. **Use Field(ge=, le=)** for numeric ranges — prevents impossible confidence=1.5\n3. **Make optional fields optional** — `field: str | None = None`\n4. **Keep schema flat when possible** — nested schemas are harder to validate\n5. **Always temperature=0** with structured extraction — you want determinism\n6. **Always check finish_reason='stop'** — truncated JSON is invalid JSON"
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "structured_output.py",
+      "level": "Beginner",
+      "code": "\"\"\"Structured output patterns: schema-constrained generation and validation.\"\"\"\nimport os\nimport json\nfrom typing import Literal\nfrom pydantic import BaseModel, Field\nfrom openai import OpenAI\n\nclient = OpenAI(api_key=os.environ[\"OPENAI_API_KEY\"])\n\n\n# ── 1. Pydantic schemas ──────────────────────────────────────────\nclass SentimentResult(BaseModel):\n    sentiment: Literal[\"positive\", \"negative\", \"neutral\"]\n    confidence: float = Field(ge=0.0, le=1.0)\n    key_phrase: str\n    language: str = \"en\"\n\n\nclass ContactInfo(BaseModel):\n    name: str\n    email: str | None = None\n    phone: str | None = None\n    company: str | None = None\n\n\nclass ExtractionResult(BaseModel):\n    contacts: list[ContactInfo]\n    total_found: int\n\n\n# ── 2. Schema-constrained extraction (OpenAI .parse()) ───────────\ndef extract_sentiment(text: str) -> SentimentResult:\n    \"\"\"Extract sentiment with guaranteed valid schema output.\"\"\"\n    completion = client.beta.chat.completions.parse(\n        model=\"gpt-4o\",\n        messages=[\n            {\"role\": \"system\", \"content\": \"Analyze sentiment of the given text.\"},\n            {\"role\": \"user\",   \"content\": text}\n        ],\n        response_format=SentimentResult,\n        temperature=0.0,\n    )\n    return completion.choices[0].message.parsed\n\n\ndef extract_contacts(text: str) -> ExtractionResult:\n    \"\"\"Extract all contacts from text with nested schema.\"\"\"\n    completion = client.beta.chat.completions.parse(\n        model=\"gpt-4o\",\n        messages=[\n            {\"role\": \"system\", \"content\": \"Extract all contact information from the text.\"},\n            {\"role\": \"user\",   \"content\": text}\n        ],\n        response_format=ExtractionResult,\n        temperature=0.0,\n    )\n    return completion.choices[0].message.parsed\n\n\n# ── 3. JSON mode (less strict, keys not enforced) ────────────────\ndef extract_json_mode(text: str, instructions: str) -> dict:\n    \"\"\"JSON mode: guarantees valid JSON but not specific keys.\"\"\"\n    response = client.chat.completions.create(\n        model=\"gpt-4o\",\n        messages=[\n            {\"role\": \"system\", \"content\": f\"{instructions} Return as JSON.\"},\n            {\"role\": \"user\",   \"content\": text}\n        ],\n        response_format={\"type\": \"json_object\"},\n        temperature=0.0,\n        max_tokens=500,\n    )\n    if response.choices[0].finish_reason == \"length\":\n        raise ValueError(\"Response truncated — JSON will be invalid. Increase max_tokens.\")\n    return json.loads(response.choices[0].message.content)\n\n\n# ── 4. Repair pipeline ───────────────────────────────────────────\ndef safe_parse_with_repair(text: str, schema: type[BaseModel]) -> BaseModel:\n    \"\"\"Try to parse, then repair and retry if it fails.\"\"\"\n    try:\n        return schema.model_validate_json(text)\n    except Exception as original_error:\n        print(f\"Parse failed: {original_error}. Attempting repair...\")\n        schema_desc = str(schema.model_json_schema())\n        repair_response = client.chat.completions.create(\n            model=\"gpt-4o-mini\",\n            messages=[\n                {\"role\": \"system\", \"content\": f\"Fix this JSON to match schema: {schema_desc}. Return ONLY valid JSON.\"},\n                {\"role\": \"user\",   \"content\": text}\n            ],\n            response_format={\"type\": \"json_object\"},\n            temperature=0.0,\n        )\n        repaired = repair_response.choices[0].message.content\n        return schema.model_validate_json(repaired)\n\n\n# ── 5. Batch extraction ─────────────────────────────────────────\ndef batch_extract_sentiment(texts: list[str]) -> list[SentimentResult]:\n    \"\"\"Process multiple texts efficiently.\"\"\"\n    return [extract_sentiment(t) for t in texts]\n\n\nif __name__ == \"__main__\":\n    # Test sentiment extraction\n    result = extract_sentiment(\"This product is absolutely fantastic! Best purchase ever.\")\n    print(f\"Sentiment: {result.sentiment} ({result.confidence:.0%}) — '{result.key_phrase}'\")\n\n    # Test contact extraction\n    text = \"Call John Smith at john@acme.com or +1-555-0100. Also reach Sarah Lee (sarah@corp.io).\"\n    contacts = extract_contacts(text)\n    print(f\"\\nFound {contacts.total_found} contacts:\")\n    for c in contacts.contacts:\n        print(f\"  {c.name}: {c.email}\")\n\n    # Test repair\n    broken = '{\"sentiment\": \"positive\" \"confidence\": 0.9}'  # missing comma\n    fixed = safe_parse_with_repair(broken, SentimentResult)\n    print(f\"\\nRepaired: sentiment={fixed.sentiment}\")",
+      "output": "Sentiment: positive (97%) — 'absolutely fantastic'\n\nFound 2 contacts:\n  John Smith: john@acme.com\n  Sarah Lee: sarah@corp.io\n\nRepaired: sentiment=positive"
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Using JSON mode without mentioning 'JSON' in the prompt — OpenAI's JSON mode will return a 400 error if the prompt doesn't contain the word 'JSON'. Always include it in the system or user message.",
+        "Assuming JSON mode enforces your schema — JSON mode only guarantees syntactically valid JSON, not your specific keys. The model still chooses field names. Use .parse() with a Pydantic model for schema enforcement.",
+        "Not checking finish_reason='length' with JSON mode — a truncated JSON string is invalid JSON. json.loads() will throw. Always verify finish_reason='stop' before parsing.",
+        "Using mutable default values in Pydantic models — `tags: list[str] = []` works in Pydantic v2 but causes shared-state bugs in plain Python dataclasses. Use `Field(default_factory=list)` if outside Pydantic.",
+        "Not handling the refusal field — with .parse(), if the model refuses to generate structured output, completion.choices[0].message.refusal contains the reason and .parsed is None. Always check for refusal."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Resume Parser",
+      "problem": "Build a `ResumeParser` that uses structured output to extract: candidate name, email, years of experience (int), skills (list of strings), and education (list of dicts with degree and institution). Use Pydantic models. Process 3 sample resume texts and return a list of parsed results. Handle cases where some fields are missing (optional fields).",
+      "hints": [
+        "Define nested Pydantic models: Education(degree, institution) and ResumeData(name, email, years_experience, skills, education)",
+        "Make email and years_experience optional with default None",
+        "Use client.beta.chat.completions.parse() with response_format=ResumeData",
+        "Process the list with a list comprehension calling parse_resume(text) for each"
+      ],
+      "solution": "from pydantic import BaseModel\nfrom typing import Optional\n\nclass Education(BaseModel):\n    degree: str\n    institution: str\n\nclass ResumeData(BaseModel):\n    name: str\n    email: Optional[str] = None\n    years_experience: Optional[int] = None\n    skills: list[str] = []\n    education: list[Education] = []\n\nclass ResumeParser:\n    def __init__(self):\n        self.client = OpenAI()\n\n    def parse(self, resume_text: str) -> ResumeData:\n        completion = self.client.beta.chat.completions.parse(\n            model='gpt-4o',\n            messages=[\n                {'role': 'system', 'content': 'Extract structured information from this resume.'},\n                {'role': 'user',   'content': resume_text}\n            ],\n            response_format=ResumeData,\n            temperature=0.0,\n        )\n        if completion.choices[0].message.refusal:\n            raise ValueError(f'Model refused: {completion.choices[0].message.refusal}')\n        return completion.choices[0].message.parsed\n\n    def parse_batch(self, texts: list[str]) -> list[ResumeData]:\n        return [self.parse(t) for t in texts]",
+      "difficulty": "Beginner"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "What is the difference between JSON mode and schema-constrained structured output?",
+          "answer": "JSON mode (`response_format={\"type\": \"json_object\"}`) guarantees syntactically valid JSON but lets the model choose any keys it wants. Schema-constrained output (OpenAI's `.parse()` with a Pydantic model) uses grammar-constrained decoding — the token generation is restricted to only produce tokens that conform to the exact schema. You get a typed Python object, not a string to parse. Schema-constrained is strictly stronger: it's impossible for the model to produce output that violates the schema.",
+          "followUps": [
+            "What is grammar-constrained decoding and how does it work?",
+            "Does schema-constrained output work with all models?"
+          ]
+        },
+        {
+          "question": "Why should you always check finish_reason when using JSON mode?",
+          "answer": "JSON mode guarantees the response is valid JSON — but only if it completed. If the response hits max_tokens and gets truncated mid-generation, the result is incomplete JSON that json.loads() will throw on. finish_reason='length' means the response was cut off; finish_reason='stop' means it completed naturally. Always validate before parsing, and set max_tokens high enough for the schema you expect.",
+          "followUps": [
+            "What should your code do when finish_reason='length' in a JSON extraction pipeline?",
+            "How would you log and monitor structured output failure rates in production?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write a function that wraps an LLM JSON extraction call and returns None gracefully on any parse failure, logging the error.",
+          "answer": "import json\nimport logging\nfrom pydantic import BaseModel\n\nlog = logging.getLogger(__name__)\n\ndef safe_extract(text: str, schema: type[BaseModel], client, model: str = 'gpt-4o') -> BaseModel | None:\n    try:\n        completion = client.beta.chat.completions.parse(\n            model=model,\n            messages=[\n                {'role': 'system', 'content': 'Extract structured information.'},\n                {'role': 'user', 'content': text}\n            ],\n            response_format=schema,\n            temperature=0.0,\n        )\n        if completion.choices[0].message.refusal:\n            log.warning('Model refused structured output: %s', completion.choices[0].message.refusal)\n            return None\n        return completion.choices[0].message.parsed\n    except Exception as e:\n        log.error('Structured extraction failed: %s', e)\n        return None",
+          "followUps": [
+            "How would you add retry logic with backoff to this function?",
+            "How would you alert when the None rate exceeds a threshold?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your team is building a document processing pipeline that extracts 15 fields from invoices. The pipeline fails 8% of the time due to parse errors. How do you fix this?",
+          "answer": "Multi-layer approach: (1) Switch from JSON mode to schema-constrained output (OpenAI .parse() or equivalent) — eliminates parse errors from invalid JSON and schema violations at the generation level. (2) For remaining failures (model refusals, timeouts), implement a repair pipeline: detect the failure type, use a second LLM call with the broken output and schema to repair it. (3) Add output validation with Pydantic after parsing — even with schema-constrained generation, validate business rules (e.g., total = subtotal + tax). (4) Log every failure with the raw output for analysis — categorize failure modes to prioritize fixes. (5) Set alerts on failure rate — if > 2%, page on-call. Target: < 0.5% failure rate with these defenses.",
+          "followUps": [
+            "How would you handle extraction when a required field is genuinely missing from the document?",
+            "What would you use to evaluate extraction accuracy against a gold-standard dataset?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "JSON mode guarantees the output matches your specific schema with the exact keys you defined",
+        "You don't need to check finish_reason in JSON mode — the API only returns complete JSON",
+        "Pydantic validation is unnecessary when using schema-constrained structured output"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "What does OpenAI's JSON mode guarantee?",
+          "options": {
+            "A": "Output matches your exact Pydantic schema with all required fields",
+            "B": "Output is syntactically valid JSON (but key names are not enforced)",
+            "C": "Output is always complete and never truncated",
+            "D": "Output contains no hallucinated values"
+          },
+          "answer": "B",
+          "explanation": "JSON mode only guarantees syntactically valid JSON — the model can still choose any key names, include extra fields, or omit fields you expected. For schema enforcement, use OpenAI's structured output (.parse()) with a Pydantic model."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "How do you use OpenAI's schema-constrained structured output with a Pydantic model?",
+          "options": {
+            "A": "client.chat.completions.create(response_format={\"type\": \"json_object\"})",
+            "B": "client.beta.chat.completions.parse(response_format=MyModel)",
+            "C": "client.chat.completions.create(schema=MyModel.schema())",
+            "D": "json.loads(response.choices[0].message.content)"
+          },
+          "answer": "B",
+          "explanation": "client.beta.chat.completions.parse() with response_format=MyPydanticModel uses grammar-constrained decoding to guarantee the output matches the schema. The result is available as completion.choices[0].message.parsed — a Python object, not a string."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "A JSON extraction pipeline has a 5% parse failure rate. Which fix eliminates the most failures?",
+          "options": {
+            "A": "Increase max_tokens so JSON is never truncated",
+            "B": "Switch from JSON mode to schema-constrained output (.parse())",
+            "C": "Add try/except around json.loads()",
+            "D": "Lower temperature to 0.0"
+          },
+          "answer": "B",
+          "explanation": "Schema-constrained output eliminates parse failures at the source by restricting token generation to valid schema output — the model physically cannot produce invalid JSON or wrong field names. try/except handles failures but doesn't prevent them. Increasing max_tokens only fixes truncation errors. Temperature=0 reduces variation but doesn't enforce schema."
+        },
+        {
+          "id": 4,
+          "level": "intermediate",
+          "category": "code",
+          "question": "In Pydantic, how do you define a field that must be between 0.0 and 1.0 (inclusive)?",
+          "options": {
+            "A": "confidence: float = 0.5",
+            "B": "confidence: float = Field(min=0.0, max=1.0)",
+            "C": "confidence: float = Field(ge=0.0, le=1.0)",
+            "D": "confidence: float = Field(range=(0.0, 1.0))"
+          },
+          "answer": "C",
+          "explanation": "Pydantic v2 uses ge (greater-than-or-equal) and le (less-than-or-equal) as Field constraints: Field(ge=0.0, le=1.0). This raises a ValidationError if the value is outside range, catching hallucinated values like confidence=1.5 before they propagate."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## Structured Output & JSON Mode — Quick Reference\n\n### JSON Mode (valid JSON, any keys)\n```python\nresponse = client.chat.completions.create(\n    model='gpt-4o',\n    messages=[{'role': 'system', 'content': '...return as JSON'},\n              {'role': 'user', 'content': text}],\n    response_format={'type': 'json_object'},\n    temperature=0.0\n)\ndata = json.loads(response.choices[0].message.content)\n```\n**Always**: mention 'JSON' in prompt, check finish_reason='stop'\n\n### Schema-Constrained Output (exact schema enforced)\n```python\nfrom pydantic import BaseModel\n\nclass MySchema(BaseModel):\n    name: str\n    score: float\n\ncompletion = client.beta.chat.completions.parse(\n    model='gpt-4o',\n    messages=[...],\n    response_format=MySchema,\n    temperature=0.0\n)\nresult = completion.choices[0].message.parsed  # MySchema instance\n```\n\n### Pydantic Field Constraints\n```python\nfrom pydantic import BaseModel, Field\nfrom typing import Literal\n\nclass Result(BaseModel):\n    label: Literal['a', 'b', 'c']    # enum\n    score: float = Field(ge=0, le=1)  # 0-1 range\n    items: list[str] = []             # optional list\n    note: str | None = None           # optional string\n```\n\n### Repair Pattern\n```python\ndef repair_json(broken: str, schema: type[BaseModel]) -> BaseModel:\n    # Call LLM with broken JSON + schema to fix it\n    # Then model_validate_json(repaired_text)\n```\n\n### Decision: JSON Mode vs Schema-Constrained\n- Need exact fields/types → schema-constrained (.parse())\n- Need valid JSON, flexible keys → JSON mode\n- Downstream code parses result → always schema-constrained"
+    }
+  ]
+}

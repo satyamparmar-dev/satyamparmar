@@ -11,6 +11,7 @@ import PathCard from '../../components/pro/PathCard'
 import ProStatCard from '../../components/pro/ProStatCard'
 import { PRO_CURRICULUM, findProLesson } from '../../constants/proCurriculum'
 import { PRO_UI } from '../../constants/proUi'
+import { usePageTitle } from '../../hooks/usePageTitle'
 import type { ProPathId } from '../../types/pro.types'
 
 function nextIncompleteLesson(activePaths: ProPathId[], completed: string[]): string | null {
@@ -27,6 +28,7 @@ function nextIncompleteLesson(activePaths: ProPathId[], completed: string[]): st
 }
 
 const ProHome: React.FC = () => {
+  usePageTitle('Pro Track')
   const navigate = useNavigate()
   const { profile, progress, hasProProfile, enrollPath } = useProProgress()
 

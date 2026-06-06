@@ -32,6 +32,7 @@ import AssignmentBlock from '../components/AssignmentBlock';
 import { useContentAccess } from '../auth/ContentAccessContext';
 import SignInToContinueCallout from '../components/SignInToContinueCallout';
 import McqSectionBlock from '../components/McqSectionBlock';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 type SectionTab = 'why' | 'theory' | 'code' | 'diagram' | 'pitfalls' | 'exercise' | 'useCases' | 'interview' | 'mcq' | 'cheatsheet' | 'assignment' | 'video';
 
@@ -105,6 +106,8 @@ const Learn: React.FC = () => {
 
   const { hasFullAccess } = useContentAccess();
 
+  usePageTitle(dayData ? `Day ${dayNum}: ${dayData.title}` : `Day ${dayNum}`);
+
   // After sign-out, move to a tab that still shows free preview (Why / Theory excerpt),
   // not Code/Cheatsheet/etc. where the panel is only "Sign in to continue".
   useEffect(() => {
@@ -156,7 +159,7 @@ const Learn: React.FC = () => {
 
       // Find which phase contains this day
       const phase = curr.phases.find((p) => {
-        const [s, e] = p.days.split('–').map(Number);
+        const [s, e] = (p.days ?? '0–0').split('–').map(Number);
         return dayNum >= s && dayNum <= e;
       });
 
@@ -249,7 +252,7 @@ const Learn: React.FC = () => {
   const assignmentSection = assignmentData ?? dayData.sections.find((s): s is AssignmentSection => s.type === 'assignment') ?? null;
 
   const currentPhase = curriculum?.phases.find((p) => {
-    const [s, e] = p.days.split('–').map(Number);
+    const [s, e] = (p.days ?? '0–0').split('–').map(Number);
     return dayNum >= s && dayNum <= e;
   });
 

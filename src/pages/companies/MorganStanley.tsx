@@ -35,6 +35,7 @@ import MenuBookIcon from '@mui/icons-material/MenuBook';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import { useNavigate } from 'react-router-dom';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1276,6 +1277,7 @@ const DeepDiveTab: React.FC<{ data: RoadmapData }> = ({ data }) => (
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 const MorganStanley: React.FC = () => {
+  usePageTitle('Morgan Stanley — Company Guide');
   const navigate = useNavigate();
   const [tab, setTab] = useState(0);
   const [data, setData] = useState<RoadmapData | null>(null);

@@ -1,0 +1,171 @@
+{
+  "day": 13,
+  "phase": 1,
+  "title": "Temperature, Parameters & Model Settings",
+  "description": "Master every inference parameter that controls LLM output quality: temperature, top-p, top-k, max tokens, stop sequences, frequency penalty, and presence penalty. Know what to set and when.",
+  "estimatedHours": 2.5,
+  "difficulty": "Beginner",
+  "level": "Fresher",
+  "track": "Fresher",
+  "tags": ["temperature", "top-p", "sampling", "inference-parameters", "model-settings", "determinism"],
+  "prerequisites": ["phase1-day12"],
+  "learningObjectives": [
+    "Explain how temperature reshapes the probability distribution over tokens",
+    "Distinguish top-p (nucleus sampling) from top-k sampling",
+    "Set max_tokens correctly without truncating responses",
+    "Use stop sequences to control where generation ends",
+    "Apply frequency and presence penalties to reduce repetition",
+    "Choose the right parameter combination for code, chat, and creative tasks"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "Wrong parameter settings are responsible for a huge class of production bugs: responses cut off mid-sentence (wrong max_tokens), infinite loops (no stop sequences), responses that repeat the same phrase ten times (missing penalties), or outputs so random they're useless (temperature too high). This day gives you full control over the generation process."
+    },
+    {
+      "type": "theory",
+      "content": "## Temperature\n\nTemperature scales the logits (raw scores) before softmax, reshaping the probability distribution.\n\n**Low temperature** → high-probability tokens dominate → focused, deterministic output\n**High temperature** → distribution flattens → diverse, creative, unpredictable output\n\n| Temperature | Distribution | Best for |\n|-------------|-------------|----------|\n| 0.0 | Greedy (always top-1) | Factual Q&A, data extraction |\n| 0.1–0.3 | Very focused | Code generation, SQL, JSON |\n| 0.5–0.7 | Balanced | Chat assistants, summarization |\n| 0.9–1.0 | Natural sampling | Creative writing, brainstorming |\n| 1.5–2.0 | Chaotic | Experimental only |\n\n**Important**: Temperature 0 is NOT always best — for code that needs creativity (algorithm design), 0.2–0.4 works better.\n\n---\n\n## Top-P (Nucleus Sampling)\n\nTop-p limits which tokens are eligible: select the smallest set of tokens whose cumulative probability ≥ p, then sample from that set.\n\n```\ntop_p = 0.9:\n  Token probabilities sorted: [0.35, 0.25, 0.20, 0.12, 0.05, 0.03, ...]\n  Cumulative:                 [0.35, 0.60, 0.80, 0.92 ← stop here]\n  Sample only from top 4 tokens (cumulative = 0.92 ≥ 0.90)\n```\n\n**Rule**: Use temperature OR top-p, not both extremes. Most providers recommend:\n- For focused tasks: `temperature=0.2, top_p=1.0`\n- For creative tasks: `temperature=1.0, top_p=0.95`\n\n---\n\n## Top-K\n\nTop-k limits sampling to the K highest-probability tokens regardless of their probabilities. Less adaptive than top-p.\n\n```\ntop_k = 40 → only sample from the 40 most likely next tokens\n```\n\nLess commonly used directly in API calls (OpenAI doesn't expose it), but important in open-source inference (llama.cpp, vLLM).\n\n---\n\n## max_tokens / max_completion_tokens\n\nSets the **maximum** tokens the model will generate. It will stop earlier if it generates a natural stopping point.\n\n**Common mistake**: Setting this too low causes mid-sentence cutoffs. The response has no `finish_reason: stop` — it has `finish_reason: length`.\n\nAlways check `finish_reason`:\n```python\nresponse.choices[0].finish_reason  # 'stop' = good, 'length' = increase max_tokens\n```\n\n---\n\n## Stop Sequences\n\nStrings that immediately terminate generation. Useful for:\n- Structured output: `stop=[\"\\n\\n\"]` (stop at double newline)\n- Dialogue: `stop=[\"User:\", \"Human:\"]` (stop before next turn)\n- Code blocks: `stop=[\"```\"]` (stop at closing code fence)\n\n```python\nresponse = client.chat.completions.create(\n    model=\"gpt-4o\",\n    messages=[...],\n    stop=[\"DONE\", \"---END---\"]\n)\n```\n\n---\n\n## Frequency Penalty & Presence Penalty\n\nBoth reduce repetition, but differently:\n\n**Frequency penalty** (0.0–2.0): Penalizes tokens proportional to how many times they've appeared so far. Higher = stronger discourage of repeated tokens.\n\n**Presence penalty** (0.0–2.0): Penalizes any token that has appeared at least once, regardless of frequency. Encourages topic diversity.\n\n| Setting | Effect |\n|---------|--------|\n| frequency_penalty=0 | No penalty (default) |\n| frequency_penalty=0.5 | Mild repetition reduction |\n| frequency_penalty=1.5 | Strong repetition avoidance |\n| presence_penalty=0.6 | Encourages new topics/words |\n\n---\n\n## Parameter Quick-Reference by Use Case\n\n| Task | temperature | top_p | max_tokens | frequency_penalty |\n|------|-------------|-------|------------|------------------|\n| SQL/JSON extraction | 0.0 | 1.0 | 500 | 0.0 |\n| Code generation | 0.2 | 1.0 | 2000 | 0.1 |\n| Chat assistant | 0.7 | 1.0 | 1000 | 0.3 |\n| Summarization | 0.3 | 1.0 | 500 | 0.2 |\n| Creative writing | 1.0 | 0.95 | 4000 | 0.5 |\n| Brainstorming | 0.9 | 0.95 | 1000 | 0.8 |"
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "inference_parameters.py",
+      "level": "Beginner",
+      "code": "\"\"\"Demonstrate inference parameter effects with OpenAI API.\"\"\"\nimport os\nfrom openai import OpenAI\n\nclient = OpenAI(api_key=os.environ[\"OPENAI_API_KEY\"])\n\n\n# ── 1. Temperature comparison ────────────────────────────────────\ndef compare_temperatures(prompt: str, temperatures: list[float]) -> dict:\n    results = {}\n    for temp in temperatures:\n        response = client.chat.completions.create(\n            model=\"gpt-4o\",\n            messages=[{\"role\": \"user\", \"content\": prompt}],\n            temperature=temp,\n            max_tokens=100,\n        )\n        results[temp] = response.choices[0].message.content\n    return results\n\n\n# ── 2. Safe API call with finish_reason check ────────────────────\ndef safe_completion(\n    messages: list[dict],\n    max_tokens: int = 1000,\n    temperature: float = 0.7,\n) -> str:\n    response = client.chat.completions.create(\n        model=\"gpt-4o\",\n        messages=messages,\n        max_tokens=max_tokens,\n        temperature=temperature,\n    )\n    choice = response.choices[0]\n    if choice.finish_reason == \"length\":\n        print(f\"WARNING: response truncated at {max_tokens} tokens. Increase max_tokens.\")\n    return choice.message.content\n\n\n# ── 3. Structured extraction (temperature=0) ─────────────────────\ndef extract_json(text: str) -> str:\n    \"\"\"Extract structured data with near-zero temperature for determinism.\"\"\"\n    response = client.chat.completions.create(\n        model=\"gpt-4o\",\n        messages=[\n            {\"role\": \"system\", \"content\": \"Extract data as JSON. Return only valid JSON, no markdown.\"},\n            {\"role\": \"user\", \"content\": f\"Extract: {text}\"}\n        ],\n        temperature=0.0,\n        max_tokens=500,\n        stop=[\"\\n\\n\"],  # stop at blank line after JSON\n    )\n    return response.choices[0].message.content\n\n\n# ── 4. Creative writing (high temperature + penalties) ───────────\ndef creative_story(prompt: str) -> str:\n    \"\"\"Generate diverse creative content with penalties to avoid repetition.\"\"\"\n    response = client.chat.completions.create(\n        model=\"gpt-4o\",\n        messages=[{\"role\": \"user\", \"content\": prompt}],\n        temperature=1.0,\n        top_p=0.95,\n        max_tokens=500,\n        frequency_penalty=0.5,\n        presence_penalty=0.3,\n    )\n    return response.choices[0].message.content\n\n\n# ── 5. Parameter configuration builder ──────────────────────────\ndef get_params_for_task(task: str) -> dict:\n    \"\"\"Return recommended inference parameters for common tasks.\"\"\"\n    PRESETS = {\n        \"sql\":        {\"temperature\": 0.0, \"top_p\": 1.0, \"max_tokens\": 500,  \"frequency_penalty\": 0.0},\n        \"code\":       {\"temperature\": 0.2, \"top_p\": 1.0, \"max_tokens\": 2000, \"frequency_penalty\": 0.1},\n        \"chat\":       {\"temperature\": 0.7, \"top_p\": 1.0, \"max_tokens\": 1000, \"frequency_penalty\": 0.3},\n        \"summary\":    {\"temperature\": 0.3, \"top_p\": 1.0, \"max_tokens\": 500,  \"frequency_penalty\": 0.2},\n        \"creative\":   {\"temperature\": 1.0, \"top_p\": 0.95,\"max_tokens\": 4000, \"frequency_penalty\": 0.5},\n        \"extraction\": {\"temperature\": 0.0, \"top_p\": 1.0, \"max_tokens\": 500,  \"frequency_penalty\": 0.0},\n    }\n    return PRESETS.get(task, PRESETS[\"chat\"])\n\n\nif __name__ == \"__main__\":\n    # Show parameter presets\n    for task, params in [(\"sql\", {}), (\"chat\", {}), (\"creative\", {})]:\n        p = get_params_for_task(task)\n        print(f\"{task:10} → temp={p['temperature']}, max_tokens={p['max_tokens']}, freq_penalty={p['frequency_penalty']}\")\n\n    # Show finish_reason checking (no real API call needed)\n    print(\"\\nfinish_reason values:\")\n    print(\"  'stop'   → generation completed naturally\")\n    print(\"  'length' → hit max_tokens limit — increase max_tokens!\")\n    print(\"  'content_filter' → content policy triggered\")",
+      "output": "sql        → temp=0.0, max_tokens=500, freq_penalty=0.0\nchat       → temp=0.7, max_tokens=1000, freq_penalty=0.3\ncreative   → temp=1.0, max_tokens=4000, freq_penalty=0.5\n\nfinish_reason values:\n  'stop'   → generation completed naturally\n  'length' → hit max_tokens limit — increase max_tokens!\n  'content_filter' → content policy triggered"
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Using temperature=0 for all tasks — for code that requires design choices or creative problem solving, 0.0 produces the same mediocre answer every time. Use 0.1–0.3 instead.",
+        "Ignoring finish_reason='length' — this means your response was cut off. Your code must handle this case, not silently return incomplete output.",
+        "Setting both temperature and top_p to non-default values simultaneously — they interact in complex ways. Change one at a time. Most APIs recommend adjusting only temperature OR top_p.",
+        "Setting max_tokens to the context window limit — this reserves the full window for output even if the model would stop at 200 tokens. Set it to a reasonable maximum for your task.",
+        "Using high frequency_penalty (>1.5) for factual tasks — it will avoid repeating important terms even when repetition is correct (e.g., a technical explanation that legitimately uses the same term repeatedly)."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Parameter Tuner for Task Types",
+      "problem": "Build a `ParameterTuner` class that: (1) accepts a task description string, (2) classifies it into a task type using simple keyword matching, (3) returns recommended parameters. Task types: 'extraction' (keywords: json, extract, parse, structured), 'code' (keywords: write, function, class, implement, code), 'creative' (keywords: story, poem, creative, imagine), 'chat' (default). Test it with 3 different prompts.",
+      "hints": [
+        "Use simple str.lower() + 'in' checks for keyword matching",
+        "Return a dict with temperature, max_tokens, frequency_penalty, top_p",
+        "Check extraction keywords first (most specific), chat last (default fallback)"
+      ],
+      "solution": "class ParameterTuner:\n    PRESETS = {\n        'extraction': {'temperature': 0.0, 'max_tokens': 500,  'frequency_penalty': 0.0, 'top_p': 1.0},\n        'code':       {'temperature': 0.2, 'max_tokens': 2000, 'frequency_penalty': 0.1, 'top_p': 1.0},\n        'creative':   {'temperature': 1.0, 'max_tokens': 2000, 'frequency_penalty': 0.5, 'top_p': 0.95},\n        'chat':       {'temperature': 0.7, 'max_tokens': 1000, 'frequency_penalty': 0.3, 'top_p': 1.0},\n    }\n    KEYWORDS = {\n        'extraction': ['json', 'extract', 'parse', 'structured', 'field'],\n        'code':       ['write', 'function', 'class', 'implement', 'code', 'algorithm'],\n        'creative':   ['story', 'poem', 'creative', 'imagine', 'fiction'],\n    }\n\n    def classify(self, task_description: str) -> str:\n        lower = task_description.lower()\n        for task_type, keywords in self.KEYWORDS.items():\n            if any(kw in lower for kw in keywords):\n                return task_type\n        return 'chat'\n\n    def get_parameters(self, task_description: str) -> dict:\n        task_type = self.classify(task_description)\n        return {'task_type': task_type, **self.PRESETS[task_type]}\n\n\n# Test\ntuner = ParameterTuner()\nfor prompt in [\n    'Extract the name and email from this text as JSON',\n    'Write a Python function to sort a linked list',\n    'Tell me about the weather today'\n]:\n    params = tuner.get_parameters(prompt)\n    print(f\"'{prompt[:40]}...' → {params['task_type']}, temp={params['temperature']}\")",
+      "difficulty": "Beginner"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "What is the difference between temperature and top-p, and when would you adjust each?",
+          "answer": "Temperature scales the logit scores before softmax, making the distribution sharper (low temp) or flatter (high temp). Top-p (nucleus sampling) restricts sampling to the smallest set of tokens whose cumulative probability meets the threshold. Temperature controls overall randomness; top-p controls the vocabulary diversity independently of probabilities. In practice: adjust temperature for task randomness requirements, and set top-p to 0.95 for creative tasks to cut off the very long tail of improbable tokens. Don't tune both simultaneously.",
+          "followUps": [
+            "What is top-k and how does it differ from top-p?",
+            "Why does temperature 0 still sometimes produce different outputs?"
+          ]
+        },
+        {
+          "question": "A user reports that API responses are sometimes cut off mid-sentence. What parameter is likely wrong and how do you diagnose it?",
+          "answer": "The max_tokens parameter is too low. Diagnose by checking response.choices[0].finish_reason — if it's 'length' instead of 'stop', the model was cut off at the token limit. Fix by increasing max_tokens. As a general rule, set max_tokens to the realistic maximum for your task type (e.g., 2000 for code, 500 for summaries) rather than a small arbitrary number. Also check that you're not consuming input tokens unnecessarily — the context window is shared.",
+          "followUps": [
+            "How do you handle the case where you want a minimum response length?",
+            "What finish_reason indicates a content policy violation?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write code that calls the OpenAI API and raises an exception if the response was truncated instead of completing naturally.",
+          "answer": "from openai import OpenAI\n\nclient = OpenAI()\n\ndef complete_or_raise(messages: list[dict], **kwargs) -> str:\n    response = client.chat.completions.create(\n        model='gpt-4o',\n        messages=messages,\n        **kwargs\n    )\n    choice = response.choices[0]\n    if choice.finish_reason == 'length':\n        raise RuntimeError(\n            f'Response truncated at {kwargs.get(\"max_tokens\", \"?\")} tokens. '\n            'Increase max_tokens or reduce input.'\n        )\n    return choice.message.content",
+          "followUps": [
+            "How would you automatically retry with a higher max_tokens?",
+            "How would you handle finish_reason='content_filter'?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your team is building a code review bot. What parameters would you set and why?",
+          "answer": "For a code review bot: temperature=0.1 (deterministic, consistent reviews — the same code should get the same feedback), top_p=1.0 (don't restrict vocabulary — technical terms matter), max_tokens=2000 (reviews can be long), frequency_penalty=0.1 (slight penalty so it doesn't repeat 'this is good' repeatedly), no presence_penalty (we want it to repeat technical terms consistently). Also add stop sequences if the output format is structured (e.g., stop at '---END REVIEW---'). Most importantly, set system prompt to define review criteria so temperature=0.1 produces consistent application of those criteria.",
+          "followUps": [
+            "How would you handle very long files that exceed the context window?",
+            "Would you use streaming for this use case? Why or why not?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "Temperature 0 always produces the best quality output for any task",
+        "Setting a high max_tokens makes responses longer — the model will use all available tokens",
+        "Frequency penalty and presence penalty do the same thing"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "What does setting temperature=0 guarantee?",
+          "options": {
+            "A": "Factually correct output",
+            "B": "Always picking the highest-probability next token (greedy decoding)",
+            "C": "The shortest possible response",
+            "D": "No token repetition"
+          },
+          "answer": "B",
+          "explanation": "Temperature=0 makes the model deterministic by always selecting the highest-probability token (greedy decoding). It does NOT guarantee factual correctness — if the training distribution assigns high probability to false information, the model will confidently generate that false information."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "scenario",
+          "question": "You're building a JSON extraction feature that must return valid JSON every time. What temperature should you use?",
+          "options": {
+            "A": "1.0 — to encourage variety in the extracted format",
+            "B": "0.7 — the standard default for most tasks",
+            "C": "0.0 — for maximum determinism",
+            "D": "2.0 — to ensure all fields are considered"
+          },
+          "answer": "C",
+          "explanation": "Data extraction requiring valid, structured output benefits from temperature=0.0 (greedy decoding). You want the same input to always produce the same output. Creative variation would be counterproductive — you just need the model to reliably follow the extraction format."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "An API response has finish_reason='length'. What does this mean?",
+          "options": {
+            "A": "The model generated a very long, complete response",
+            "B": "The response was cut off because it hit the max_tokens limit",
+            "C": "The model detected that the prompt was too long",
+            "D": "The response passed a length validation check"
+          },
+          "answer": "B",
+          "explanation": "finish_reason='length' means generation stopped because it reached max_tokens, NOT because the model naturally completed its response. The output is likely incomplete. Fix: increase max_tokens. finish_reason='stop' indicates natural completion."
+        },
+        {
+          "id": 4,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is the key difference between frequency_penalty and presence_penalty?",
+          "options": {
+            "A": "frequency_penalty reduces all tokens equally; presence_penalty only affects rare tokens",
+            "B": "frequency_penalty penalizes tokens proportional to their count; presence_penalty penalizes any token that appeared at least once",
+            "C": "frequency_penalty affects input tokens; presence_penalty affects output tokens",
+            "D": "They are identical parameters with different names for legacy reasons"
+          },
+          "answer": "B",
+          "explanation": "frequency_penalty scales with how many times a token has appeared — the more times it's been used, the stronger the penalty. presence_penalty applies a fixed penalty to any token that appeared at all (binary: appeared or not). Presence penalty encourages topic diversity; frequency penalty specifically targets over-repetition of individual words."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## Inference Parameters — Quick Reference\n\n### Temperature\n- 0.0: deterministic, factual tasks\n- 0.2: code generation\n- 0.7: chat, conversation\n- 1.0: creative writing\n- > 1.0: experimental only\n\n### Top-P\n- 1.0: no restriction (use with temperature control)\n- 0.95: creative tasks (cuts extreme tokens)\n- Don't tune both temp AND top-p simultaneously\n\n### max_tokens\n- Always check: `finish_reason == 'length'` → increase it\n- Presets: SQL=500, code=2000, chat=1000, creative=4000\n\n### Penalties\n- frequency_penalty=0.3: mild word repetition fix\n- presence_penalty=0.3: encourages topic variety\n- Don't use >1.5 for factual/technical tasks\n\n### Stop Sequences\n```python\nstop=['\\n\\n']       # stop at blank line\nstop=['User:', 'Human:']  # stop before next speaker\nstop=['```']         # stop at code fence close\n```\n\n### By Task\n| Task | temp | max_tokens |\n|------|------|------------|\n| JSON extract | 0.0 | 500 |\n| Code | 0.2 | 2000 |\n| Chat | 0.7 | 1000 |\n| Creative | 1.0 | 4000 |"
+    }
+  ]
+}

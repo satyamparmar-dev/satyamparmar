@@ -12,9 +12,16 @@ import {
 } from '@mui/material';
 import ArticleIcon from '@mui/icons-material/Article';
 import { useNavigate } from 'react-router-dom';
-import { BLOG_POSTS } from '../content/blog/registry';
+import { BLOG_POSTS, blogMarkdownBySlug } from '../content/blog/registry';
+import { usePageTitle } from '../hooks/usePageTitle';
+
+const readingTime = (slug: string) => {
+  const words = (blogMarkdownBySlug[slug] ?? '').split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.ceil(words / 200));
+};
 
 const BlogIndex: React.FC = () => {
+  usePageTitle('Topics & Blog');
   const theme = useTheme();
   const navigate = useNavigate();
   const accent = theme.palette.mode === 'dark' ? '#a5b4fc' : '#667eea';
@@ -49,7 +56,7 @@ const BlogIndex: React.FC = () => {
             '& .MuiChip-icon': { color: accent },
           }}
         />
-        <Typography variant="h4" fontWeight={800} gutterBottom sx={{ letterSpacing: '-0.02em' }}>
+        <Typography variant="h4" component="h1" fontWeight={800} gutterBottom sx={{ letterSpacing: '-0.02em' }}>
           Extra topics
         </Typography>
         <Typography color="text.secondary" sx={{ maxWidth: 720, lineHeight: 1.75, fontSize: '0.95rem' }}>
@@ -103,9 +110,14 @@ const BlogIndex: React.FC = () => {
                 <Typography variant="body2" color="text.secondary" sx={{ flex: 1, lineHeight: 1.65 }}>
                   {post.description}
                 </Typography>
-                <Typography variant="caption" color="primary" fontWeight={600} sx={{ mt: 1.5 }}>
-                  Read →
-                </Typography>
+                <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mt: 1.5 }}>
+                  <Typography variant="caption" color="primary" fontWeight={600}>
+                    Read →
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {readingTime(post.slug)} min read
+                  </Typography>
+                </Box>
               </CardContent>
             </CardActionArea>
           </Card>

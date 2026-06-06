@@ -1,0 +1,172 @@
+{
+  "day": 24,
+  "phase": 2,
+  "title": "LangChain Core — Chains, Models & Prompts",
+  "description": "Master LangChain's foundational abstractions: LLMs, ChatModels, PromptTemplates, Chains, and the LCEL (LangChain Expression Language) pipe operator. Build composable AI workflows without reinventing the wheel.",
+  "estimatedHours": 3.5,
+  "difficulty": "Intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["langchain", "lcel", "chains", "prompt-templates", "runnables", "composability"],
+  "prerequisites": ["phase1-day15", "phase1-day14"],
+  "learningObjectives": [
+    "Understand LangChain's core value proposition and when to use it vs raw APIs",
+    "Use ChatOpenAI, ChatAnthropic, and ChatGoogleGenerativeAI models",
+    "Build PromptTemplates and ChatPromptTemplates with variables",
+    "Chain components with LCEL's pipe operator |",
+    "Parse outputs with StringOutputParser and StructuredOutputParser",
+    "Debug chains with LangSmith tracing"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "LangChain's value is composability — chain a prompt template, model call, and output parser into a single runnable that works the same way whether you're using GPT-4o, Claude, or Gemini. The LCEL pipe syntax makes complex pipelines readable. But LangChain also adds abstraction overhead — understanding what happens under the hood (Days 22-23) means you can debug it when it breaks."
+    },
+    {
+      "type": "theory",
+      "content": "## LangChain's Core Philosophy\n\nLangChain is built around **composable runnables** — components that implement a `.invoke()`, `.stream()`, and `.batch()` interface. They can be chained with the `|` pipe operator:\n\n```python\nchain = prompt | model | output_parser\nresult = chain.invoke({\"topic\": \"RAG\"})\n```\n\nThis is **LCEL** (LangChain Expression Language). Every component in a chain is a Runnable.\n\n---\n\n## Chat Models\n\n```python\nfrom langchain_openai import ChatOpenAI\nfrom langchain_anthropic import ChatAnthropic\nfrom langchain_google_genai import ChatGoogleGenerativeAI\n\n# All implement the same Runnable interface\ngpt   = ChatOpenAI(model=\"gpt-4o-mini\", temperature=0.7)\nclaude = ChatAnthropic(model=\"claude-haiku-4-5\")\ngemini = ChatGoogleGenerativeAI(model=\"gemini-2.5-flash\")\n\n# Invoke any the same way\nresponse = gpt.invoke(\"What is RAG?\")\nprint(response.content)\n```\n\n---\n\n## Prompt Templates\n\n```python\nfrom langchain_core.prompts import ChatPromptTemplate\n\nprompt = ChatPromptTemplate.from_messages([\n    (\"system\", \"You are an expert in {domain}. Answer concisely.\"),\n    (\"user\",   \"{question}\")\n])\n\n# Invoke directly (returns messages)\nmessages = prompt.invoke({\"domain\": \"RAG\", \"question\": \"How does chunking work?\"})\n\n# Or chain with model\nchain = prompt | gpt\nresult = chain.invoke({\"domain\": \"RAG\", \"question\": \"How does chunking work?\"})\nprint(result.content)\n```\n\n---\n\n## Output Parsers\n\n```python\nfrom langchain_core.output_parsers import StrOutputParser, JsonOutputParser\nfrom langchain_core.pydantic_v1 import BaseModel, Field\n\n# String parser — strips to plain text\nchain = prompt | gpt | StrOutputParser()\ntext: str = chain.invoke({...})\n\n# JSON parser with schema\nclass MovieReview(BaseModel):\n    title: str\n    rating: int = Field(description=\"1-10\")\n    summary: str\n\nparser = JsonOutputParser(pydantic_object=MovieReview)\nformat_instructions = parser.get_format_instructions()\n\nreview_prompt = ChatPromptTemplate.from_messages([\n    (\"system\", \"Review movies. {format_instructions}\"),\n    (\"user\", \"Review: {movie}\")\n]).partial(format_instructions=format_instructions)\n\nreview_chain = review_prompt | gpt | parser\nreview = review_chain.invoke({\"movie\": \"Inception\"})\nprint(review[\"rating\"])  # int\n```\n\n---\n\n## LCEL — Parallel Execution\n\nRun multiple chains in parallel with `RunnableParallel`:\n\n```python\nfrom langchain_core.runnables import RunnableParallel, RunnablePassthrough\n\nparallel = RunnableParallel(\n    summary  = summarize_chain,\n    keywords = keyword_chain,\n    sentiment= sentiment_chain,\n)\nresults = parallel.invoke({\"text\": article_text})\n# results = {\"summary\": ..., \"keywords\": ..., \"sentiment\": ...}\n```\n\n---\n\n## Streaming with LCEL\n\n```python\nfor chunk in chain.stream({\"domain\": \"AI\", \"question\": \"What is RLHF?\"}):\n    print(chunk, end=\"\", flush=True)\n```\n\nAll LCEL chains support `.stream()` automatically — the stream propagates through each component.\n\n---\n\n## Batch Processing\n\n```python\n# Process multiple inputs efficiently\nresults = chain.batch([\n    {\"domain\": \"NLP\", \"question\": \"What is BERT?\"},\n    {\"domain\": \"CV\",  \"question\": \"What is ResNet?\"},\n    {\"domain\": \"RL\",  \"question\": \"What is Q-learning?\"},\n], config={\"max_concurrency\": 5})\n```\n\n---\n\n## When to Use LangChain vs Raw APIs\n\n| Use LangChain | Use Raw APIs |\n|---------------|--------------|\n| Multi-model switching | Single provider |\n| Complex chains (RAG, agents) | Simple one-shot calls |\n| Rapid prototyping | Maximum control |\n| Built-in integrations (100+ tools) | Minimal dependencies |\n| Team familiar with LangChain | Full understanding needed |"
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "langchain_core_demo.py",
+      "level": "Intermediate",
+      "code": "\"\"\"LangChain core: prompt templates, chains, output parsers, LCEL.\"\"\"\nimport os\nfrom typing import Literal\nfrom langchain_openai import ChatOpenAI\nfrom langchain_core.prompts import ChatPromptTemplate\nfrom langchain_core.output_parsers import StrOutputParser, JsonOutputParser\nfrom langchain_core.runnables import RunnableParallel, RunnablePassthrough\nfrom pydantic import BaseModel, Field\n\nllm = ChatOpenAI(model=\"gpt-4o-mini\", temperature=0.7, api_key=os.environ[\"OPENAI_API_KEY\"])\n\n\n# ── 1. Basic chain: prompt → model → string ──────────────────────\nbasic_prompt = ChatPromptTemplate.from_messages([\n    (\"system\", \"You are an expert technical writer. Be concise.\"),\n    (\"user\",   \"Explain {concept} in 2 sentences for a {audience}.\")\n])\nbasic_chain = basic_prompt | llm | StrOutputParser()\n\n\n# ── 2. Structured output chain ───────────────────────────────────\nclass TechExplanation(BaseModel):\n    concept: str\n    one_liner: str = Field(description=\"One sentence explanation\")\n    analogy: str   = Field(description=\"Real-world analogy\")\n    use_case: str  = Field(description=\"When to use this\")\n    difficulty: Literal[\"beginner\", \"intermediate\", \"advanced\"]\n\nparser = JsonOutputParser(pydantic_object=TechExplanation)\n\nstruct_prompt = ChatPromptTemplate.from_messages([\n    (\"system\", \"You explain technical concepts clearly.\\n{format_instructions}\"),\n    (\"user\",   \"Explain: {concept}\")\n]).partial(format_instructions=parser.get_format_instructions())\n\nstruct_chain = struct_prompt | ChatOpenAI(model=\"gpt-4o-mini\", temperature=0.0, api_key=os.environ[\"OPENAI_API_KEY\"]) | parser\n\n\n# ── 3. Parallel chain ────────────────────────────────────────────\nsummary_prompt   = ChatPromptTemplate.from_messages([(\"user\", \"Summarize in 1 sentence: {text}\")])\nkeywords_prompt  = ChatPromptTemplate.from_messages([(\"user\", \"Extract 3 keywords from: {text}. Return as comma-separated list.\")])\nsentiment_prompt = ChatPromptTemplate.from_messages([(\"user\", \"Sentiment of this text (positive/negative/neutral): {text}. One word only.\")])\n\nfast_llm = ChatOpenAI(model=\"gpt-4o-mini\", temperature=0.0, api_key=os.environ[\"OPENAI_API_KEY\"])\n\nanalyze_chain = RunnableParallel(\n    summary   = summary_prompt   | fast_llm | StrOutputParser(),\n    keywords  = keywords_prompt  | fast_llm | StrOutputParser(),\n    sentiment = sentiment_prompt | fast_llm | StrOutputParser(),\n    original  = RunnablePassthrough(),  # pass input through unchanged\n)\n\n\n# ── 4. Multi-step chain (chain of chains) ────────────────────────\nclassify_prompt = ChatPromptTemplate.from_messages([\n    (\"system\", \"Classify questions as: technical, business, or general.\"),\n    (\"user\", \"Classify this question: {question}\\nAnswer with one word only.\")\n])\n\nroute_prompt = ChatPromptTemplate.from_messages([\n    (\"system\", \"You are a {category} expert. Answer concisely.\"),\n    (\"user\", \"{question}\")\n])\n\ndef route_to_expert(inputs: dict) -> dict:\n    category = inputs[\"category\"].strip().lower()\n    if category not in [\"technical\", \"business\", \"general\"]:\n        category = \"general\"\n    return {\"category\": category, \"question\": inputs[\"question\"]}\n\nrouting_chain = (\n    {\"category\": classify_prompt | fast_llm | StrOutputParser(), \"question\": RunnablePassthrough()}\n    | route_to_expert\n    | route_prompt | llm | StrOutputParser()\n)\n\n\nif __name__ == \"__main__\":\n    # 1. Basic chain\n    print(\"=== Basic Chain ===\")\n    result = basic_chain.invoke({\"concept\": \"vector embeddings\", \"audience\": \"software engineer\"})\n    print(result)\n\n    # 2. Structured output\n    print(\"\\n=== Structured Output ===\")\n    explanation = struct_chain.invoke({\"concept\": \"RAG\"})\n    print(f\"One-liner: {explanation['one_liner']}\")\n    print(f\"Analogy:   {explanation['analogy']}\")\n    print(f\"Difficulty: {explanation['difficulty']}\")\n\n    # 3. Parallel analysis\n    print(\"\\n=== Parallel Analysis ===\")\n    article = \"LangChain enables developers to build composable AI applications with 100+ integrations.\"\n    analysis = analyze_chain.invoke({\"text\": article})\n    print(f\"Summary:   {analysis['summary']}\")\n    print(f\"Keywords:  {analysis['keywords']}\")\n    print(f\"Sentiment: {analysis['sentiment']}\")\n\n    # 4. Streaming\n    print(\"\\n=== Streaming ===\")\n    for chunk in basic_chain.stream({\"concept\": \"attention mechanism\", \"audience\": \"beginner\"}):\n        print(chunk, end=\"\", flush=True)\n    print()",
+      "output": "=== Basic Chain ===\nVector embeddings are numerical representations of data (like text or images) as points in a high-dimensional space, where semantically similar items are positioned closer together. They allow AI systems to perform semantic search, recommendations, and clustering by measuring geometric distances between these representations.\n\n=== Structured Output ===\nOne-liner: RAG enhances LLMs by retrieving relevant documents from a knowledge base to ground responses in factual, up-to-date information.\nAnalogy:   Like a student using textbooks during an open-book exam instead of relying solely on memory.\nDifficulty: intermediate\n\n=== Parallel Analysis ===\nSummary:   LangChain helps developers build flexible AI apps with extensive integration support.\nKeywords:  LangChain, composable, integrations\nSentiment: positive\n\n=== Streaming ===\nThe attention mechanism allows neural networks to selectively focus on relevant parts of the input when generating each output token, similar to how humans pay selective attention."
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Using LangChain for simple single-provider, single-step API calls — the abstraction overhead adds complexity without benefit. Use raw OpenAI SDK for straightforward calls.",
+        "Ignoring LangChain version changes — LangChain breaks backwards compatibility frequently. Pin exact versions in requirements.txt and test upgrades carefully.",
+        "Mixing LangChain v0.1 and v0.2 APIs — v0.2 introduced LCEL and deprecated many old chain patterns. Always check which version your tutorial or snippet targets.",
+        "Not using .batch() for multiple inputs — calling chain.invoke() in a Python loop is slow and wastes concurrency. Always use .batch() with max_concurrency for bulk operations.",
+        "Expecting JsonOutputParser to be as reliable as Pydantic structured output — JsonOutputParser prompts the model to return JSON and then parses it, but the model can still deviate. For production, use OpenAI's .parse() with Pydantic for guaranteed schema compliance."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Multi-Language Code Explainer Chain",
+      "problem": "Build a LangChain chain that: (1) takes `{code, language}` as input, (2) uses a ChatPromptTemplate to explain what the code does, (3) outputs a structured dict with keys: explanation (str), complexity (Literal['O(1)','O(n)','O(n²)','O(log n)']), potential_bugs (list[str]), improved_version (str). Use JsonOutputParser with a Pydantic schema. Test with a Python bubble sort implementation.",
+      "hints": [
+        "Define a Pydantic BaseModel with the 4 fields and use JsonOutputParser(pydantic_object=...)",
+        "Add format_instructions to the prompt via .partial(format_instructions=parser.get_format_instructions())",
+        "Use temperature=0.1 for deterministic code analysis",
+        "Test with: 'def bubble_sort(arr): [for i in range(len(arr))...]'"
+      ],
+      "solution": "from langchain_openai import ChatOpenAI\nfrom langchain_core.prompts import ChatPromptTemplate\nfrom langchain_core.output_parsers import JsonOutputParser\nfrom pydantic import BaseModel, Field\nfrom typing import Literal\n\nclass CodeAnalysis(BaseModel):\n    explanation: str\n    complexity: Literal['O(1)', 'O(n)', 'O(n²)', 'O(log n)', 'O(n log n)']\n    potential_bugs: list[str] = Field(default_factory=list)\n    improved_version: str\n\nparser = JsonOutputParser(pydantic_object=CodeAnalysis)\n\nprompt = ChatPromptTemplate.from_messages([\n    ('system', 'You are a senior {language} engineer performing code analysis.\\n{format_instructions}'),\n    ('user', 'Analyze this code:\\n```{language}\\n{code}\\n```')\n]).partial(format_instructions=parser.get_format_instructions())\n\nllm = ChatOpenAI(model='gpt-4o-mini', temperature=0.1)\ncode_chain = prompt | llm | parser\n\n# Test\nbubble_sort = '''def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n):\n        for j in range(0, n-i-1):\n            if arr[j] > arr[j+1]:\n                arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr'''\n\nresult = code_chain.invoke({'code': bubble_sort, 'language': 'Python'})\nprint(f'Complexity: {result[\"complexity\"]}')\nprint(f'Bugs: {result[\"potential_bugs\"]}')",
+      "difficulty": "Intermediate"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "What is LCEL and what problem does it solve?",
+          "answer": "LCEL (LangChain Expression Language) is a declarative way to compose LangChain components using the | pipe operator. It solves the problem of boilerplate: instead of manually passing outputs between components, you declare the pipeline as `prompt | model | parser`. LCEL automatically propagates streaming, batching, and async across the entire chain — if you call chain.stream(), every component streams. Without LCEL, you'd have to implement streaming at every stage manually. The trade-off: LCEL is elegant for simple linear chains but becomes verbose for complex branching logic.",
+          "followUps": [
+            "How does RunnableParallel enable concurrent execution of multiple chains?",
+            "What is RunnablePassthrough and when would you use it?"
+          ]
+        },
+        {
+          "question": "When would you choose LangChain over raw API calls?",
+          "answer": "Use LangChain when: (1) You need multi-provider flexibility — same chain works with GPT-4o, Claude, or Gemini by swapping the model. (2) Building RAG or agent systems — LangChain provides 100+ document loaders, retrievers, and tools. (3) Teams want standardized patterns across a codebase. (4) Rapid prototyping where built-in integrations save days. Use raw APIs when: (1) Simple, single-provider calls where abstraction adds no value. (2) Maximum control and predictability — LangChain sometimes hides API behavior. (3) Minimal dependencies — LangChain installs dozens of packages. (4) You're debugging production issues and need full visibility.",
+          "followUps": [
+            "What are the performance implications of LangChain's abstraction layers?",
+            "How do you use LangSmith to debug a complex LangChain pipeline?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write an LCEL chain that classifies a user question and routes it to different prompt templates based on the classification.",
+          "answer": "from langchain_openai import ChatOpenAI\nfrom langchain_core.prompts import ChatPromptTemplate\nfrom langchain_core.output_parsers import StrOutputParser\nfrom langchain_core.runnables import RunnableLambda\n\nllm = ChatOpenAI(model='gpt-4o-mini')\nparser = StrOutputParser()\n\n# Classifier\nclassify = ChatPromptTemplate.from_messages([\n    ('user', 'Is this question about code, math, or other? One word: {question}')\n]) | llm | parser\n\n# Domain-specific prompts\nPROMPTS = {\n    'code':  ChatPromptTemplate.from_messages([('system', 'Expert Python developer.'), ('user', '{question}')]),\n    'math':  ChatPromptTemplate.from_messages([('system', 'Math tutor. Show steps.'),  ('user', '{question}')]),\n    'other': ChatPromptTemplate.from_messages([('system', 'Helpful assistant.'),       ('user', '{question}')]),\n}\n\ndef route(inputs):\n    domain = inputs['domain'].strip().lower()\n    prompt = PROMPTS.get(domain, PROMPTS['other'])\n    return prompt | llm | parser\n\nchain = ({'domain': classify, 'question': lambda x: x['question']} | RunnableLambda(route))\nprint(chain.invoke({'question': 'How do I sort a list in Python?'}))",
+          "followUps": [
+            "How would you add error handling for when the classifier returns an unexpected category?",
+            "How does this pattern scale with 10+ categories?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your team is debating whether to adopt LangChain for a new AI product. What are the key factors you'd evaluate?",
+          "answer": "Evaluation framework: (1) Complexity of the pipeline — simple prompt→generate→parse needs no LangChain; RAG + agents + tools benefit greatly. (2) Provider diversity — if you'll ever switch models or A/B test providers, LangChain's abstraction pays off. (3) Team experience — LangChain has a steep learning curve and frequent breaking changes; raw APIs are more stable and debuggable. (4) Maintenance burden — LangChain adds a transitive dependency tree of 50+ packages; each has its own security/update cycle. (5) Observability — LangSmith (LangChain's tracing tool) is excellent and hard to replicate with raw APIs. Decision: adopt LangChain for complex RAG/agent systems; use raw APIs for simple single-model integrations; always pin versions and test upgrades in staging before prod.",
+          "followUps": [
+            "What is LangSmith and how does it improve AI application observability?",
+            "How do you handle LangChain's frequent breaking changes in a production codebase?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "LCEL requires you to manually implement streaming for each component in the chain",
+        "LangChain only works with OpenAI — other providers require different framework",
+        "JsonOutputParser provides the same schema enforcement guarantees as OpenAI's structured output"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "code",
+          "question": "What does the | operator do in LangChain LCEL?",
+          "options": {
+            "A": "Performs a logical OR between two conditions",
+            "B": "Chains two Runnables so the output of the left becomes the input of the right",
+            "C": "Runs two chains in parallel and merges results",
+            "D": "Selects the faster of two model providers"
+          },
+          "answer": "B",
+          "explanation": "In LCEL, | is the pipe operator that chains Runnables sequentially. `prompt | model | parser` means: invoke prompt, pass its output to model, pass model's output to parser. It's equivalent to `parser.invoke(model.invoke(prompt.invoke(inputs)))` but more readable and enables streaming/batching propagation automatically."
+        },
+        {
+          "id": 2,
+          "level": "intermediate",
+          "category": "code",
+          "question": "What is the difference between StrOutputParser and JsonOutputParser in LangChain?",
+          "options": {
+            "A": "StrOutputParser is faster; JsonOutputParser is more accurate",
+            "B": "StrOutputParser extracts .content from the model response; JsonOutputParser parses the content as JSON",
+            "C": "They are identical — both return strings",
+            "D": "StrOutputParser works only with OpenAI; JsonOutputParser works with all providers"
+          },
+          "answer": "B",
+          "explanation": "StrOutputParser simply extracts response.content as a plain string. JsonOutputParser attempts to parse the string content as JSON (optionally validating against a Pydantic schema). Both work with any provider. JsonOutputParser prompts the model to produce JSON format via format_instructions injected into the prompt."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "You need to process 1,000 customer reviews through a LangChain sentiment chain. What is the most efficient approach?",
+          "options": {
+            "A": "Call chain.invoke() 1000 times in a for loop",
+            "B": "Use chain.batch(reviews, config={'max_concurrency': 10})",
+            "C": "Create 1000 separate chain instances and run them",
+            "D": "Concatenate all reviews into one prompt"
+          },
+          "answer": "B",
+          "explanation": "chain.batch() processes multiple inputs with configurable concurrency. With max_concurrency=10, it runs 10 concurrent API calls at a time — dramatically faster than sequential invoke() calls. It handles rate limiting, retries, and result ordering automatically. Concatenating reviews loses per-review attribution and may exceed context limits."
+        },
+        {
+          "id": 4,
+          "level": "advanced",
+          "category": "theory",
+          "question": "What is RunnablePassthrough and when would you use it in a chain?",
+          "options": {
+            "A": "A runnable that skips error handling and passes failures through",
+            "B": "A runnable that passes its input unchanged to the output — used to preserve original input alongside transformed values",
+            "C": "A runnable that bypasses the LLM and returns a cached response",
+            "D": "A runnable that converts synchronous chains to async"
+          },
+          "answer": "B",
+          "explanation": "RunnablePassthrough passes its input directly to its output without transformation. In a RunnableParallel, it's used to include the original input alongside processed outputs: {'original': RunnablePassthrough(), 'processed': some_chain} → output dict has both the original input and the chain result. Essential when you need the raw input later in the pipeline alongside derived values."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## LangChain LCEL — Quick Reference\n\n### Installation\n```bash\npip install langchain langchain-openai langchain-anthropic langchain-google-genai\n```\n\n### Chat Models\n```python\nfrom langchain_openai import ChatOpenAI\nllm = ChatOpenAI(model='gpt-4o-mini', temperature=0.7)\nresponse = llm.invoke('Hello')  # AIMessage\nresponse.content  # string\n```\n\n### Prompt Template\n```python\nfrom langchain_core.prompts import ChatPromptTemplate\nprompt = ChatPromptTemplate.from_messages([\n    ('system', 'You are a {role}.'),\n    ('user', '{question}')\n])\n```\n\n### LCEL Chain\n```python\nfrom langchain_core.output_parsers import StrOutputParser\nchain = prompt | llm | StrOutputParser()\nresult = chain.invoke({'role': 'tutor', 'question': 'Explain RAG'})\nchain.stream(...)    # streaming\nchain.batch([...])   # batch with concurrency\n```\n\n### Parallel Execution\n```python\nfrom langchain_core.runnables import RunnableParallel, RunnablePassthrough\nchain = RunnableParallel(\n    answer   = qa_chain,\n    original = RunnablePassthrough()\n)\n```\n\n### When to Use\n- Multi-provider → YES\n- RAG / Agents → YES  \n- Simple 1-provider call → NO (use raw SDK)\n- Requires full control → NO (use raw SDK)"
+    }
+  ]
+}

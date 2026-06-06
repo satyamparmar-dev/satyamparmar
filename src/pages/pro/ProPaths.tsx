@@ -8,8 +8,10 @@ import { PRO_CURRICULUM } from '../../constants/proCurriculum'
 import { PRO_ROLES } from '../../constants/proRoles'
 import { PRO_UI } from '../../constants/proUi'
 import type { ProRole } from '../../types/pro.types'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 const ProPaths: React.FC = () => {
+  usePageTitle('Pro Paths')
   const navigate = useNavigate()
   const { profile, progress, hasProProfile, enrollPath } = useProProgress()
   const [tab, setTab] = useState(0)

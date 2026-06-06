@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { JAVA_GITHUB_CURRICULUM } from '../../content/javaGithub/curriculum';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 const basePaperSx = {
   border: '1px solid',
@@ -20,6 +21,7 @@ const basePaperSx = {
 };
 
 const JavaGithubHome: React.FC = () => {
+  usePageTitle('Java Reference');
   const theme = useTheme();
   const navigate = useNavigate();
   const accent = theme.palette.mode === 'dark' ? '#a5b4fc' : '#667eea';
@@ -50,7 +52,7 @@ const JavaGithubHome: React.FC = () => {
             border: 'none',
           }}
         />
-        <Typography variant="h4" fontWeight={800} sx={{ letterSpacing: '-0.02em' }}>
+        <Typography variant="h4" component="h1" fontWeight={800} sx={{ letterSpacing: '-0.02em' }}>
           Java
         </Typography>
       </Paper>

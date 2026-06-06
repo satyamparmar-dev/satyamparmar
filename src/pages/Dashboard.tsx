@@ -45,6 +45,7 @@ import KPICard from '../components/KPICard';
 import LevelBadge from '../components/LevelBadge';
 import TrackBanner from '../components/TrackBanner';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const trackOptions: (Track | 'All')[] = ['All', 'Fresher', 'Mid-Level', 'Senior'];
 
@@ -256,6 +257,7 @@ function getPaidCourseProgressPercent(courseId: string): number | null {
 }
 
 const Dashboard: React.FC = () => {
+  usePageTitle('Dashboard');
   const navigate = useNavigate();
   const userId = useAuthStore((s) => s.currentUser?.userId ?? null);
   const purchasesForUser = usePaymentStore((s) => (userId ? s.purchasesByUser[userId] : undefined));
@@ -315,7 +317,7 @@ const Dashboard: React.FC = () => {
   );
 
   const currentPhase = curriculum.phases.find((p) => {
-    const [start, end] = p.days.split('–').map(Number);
+    const [start, end] = (p.days ?? '0–0').split('–').map(Number);
     return progress.currentDay >= start && progress.currentDay <= end;
   });
 
@@ -358,7 +360,7 @@ const Dashboard: React.FC = () => {
     <Box className="fade-in">
       {/* Greeting */}
       <Box mb={3}>
-        <Typography variant="h4" fontWeight={800} gutterBottom>
+        <Typography variant="h4" component="h1" fontWeight={800} gutterBottom>
           {getGreeting()}, learner! 👋
         </Typography>
         <Typography color="text.secondary">
@@ -636,7 +638,7 @@ const Dashboard: React.FC = () => {
           </Typography>
           <Grid container spacing={2}>
             {filteredPhases.map((phase) => {
-              const [startDay, endDay] = phase.days.split('–').map(Number);
+              const [startDay, endDay] = (phase.days ?? '0–0').split('–').map(Number);
               const phaseDays = endDay - startDay + 1;
               const phaseComplete = progress.completedDays.filter(
                 (d) => d >= startDay && d <= endDay
@@ -721,7 +723,7 @@ const Dashboard: React.FC = () => {
               );
               const dayData = phaseData?.days?.find((d) => d.day === dayNum);
               const phase = curriculum.phases.find((p) => {
-                const [s, e] = p.days.split('–').map(Number);
+                const [s, e] = (p.days ?? '0–0').split('–').map(Number);
                 return dayNum >= s && dayNum <= e;
               });
 

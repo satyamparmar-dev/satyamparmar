@@ -13,11 +13,14 @@ interface Props {
  * + per-page preview; see `/login` for sign-in.
  */
 const AuthGuard: React.FC<Props> = ({ children }) => {
-  const { validateSession, isAuthenticated } = useAuthStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [checking, setChecking] = useState(() => AUTH_LOGIN_ENABLED);
 
   useEffect(() => {
-    if (!AUTH_LOGIN_ENABLED || EMAIL_ALLOWLIST_GATE_ENABLED) return;
+    if (!AUTH_LOGIN_ENABLED || EMAIL_ALLOWLIST_GATE_ENABLED) {
+      setChecking(false);
+      return;
+    }
 
     let cancelled = false;
     const doneChecking = () => {
@@ -25,13 +28,17 @@ const AuthGuard: React.FC<Props> = ({ children }) => {
     };
 
     const runValidate = () => {
-      validateSession().finally(doneChecking);
+      void useAuthStore.getState().validateSession().finally(doneChecking);
     };
+
+    // Safety net if persist hydration never fires (e.g. Strict Mode race)
+    const safetyTimer = window.setTimeout(doneChecking, 8000);
 
     if (useAuthStore.persist.hasHydrated()) {
       runValidate();
       return () => {
         cancelled = true;
+        window.clearTimeout(safetyTimer);
       };
     }
 
@@ -42,8 +49,9 @@ const AuthGuard: React.FC<Props> = ({ children }) => {
     return () => {
       cancelled = true;
       unsub();
+      window.clearTimeout(safetyTimer);
     };
-  }, [validateSession]);
+  }, []);
 
   if (EMAIL_ALLOWLIST_GATE_ENABLED || !AUTH_LOGIN_ENABLED) {
     return <>{children}</>;
@@ -66,7 +74,13 @@ const AuthGuard: React.FC<Props> = ({ children }) => {
   }
 
   if (!isAuthenticated) {
-    return <LoginPage onSuccess={() => validateSession()} />;
+    return (
+      <LoginPage
+        onSuccess={() => {
+          void useAuthStore.getState().validateSession();
+        }}
+      />
+    );
   }
 
   return <>{children}</>;

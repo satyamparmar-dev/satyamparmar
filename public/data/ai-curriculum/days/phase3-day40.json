@@ -1,0 +1,173 @@
+{
+  "id": "phase3-day40",
+  "day": 40,
+  "phase": 3,
+  "title": "Code Agents — Writing, Executing & Debugging Code",
+  "estimatedHours": 5,
+  "difficulty": "advanced",
+  "level": "Senior",
+  "track": "Senior",
+  "tags": ["code-agents", "code-execution", "debugging", "sandboxing", "code-generation"],
+  "prerequisites": ["phase3-day37", "phase3-day39"],
+  "learningObjectives": [
+    "Build an agent that writes, executes, and debugs code iteratively",
+    "Implement safe code sandboxing with restricted execution environments",
+    "Use test-driven code generation (write tests first, then code)",
+    "Handle code execution errors and self-correct",
+    "Integrate static analysis into the code agent loop"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Code Agents Are Powerful",
+      "content": "A code agent is an LLM that can write code, execute it, observe the output, and fix any errors — iteratively, without human intervention. This is qualitatively different from code auto-complete: the agent runs the code against real inputs, sees actual errors (not predicted errors), and fixes them based on ground truth. Code agents can: write and run unit tests, benchmark implementations, compare algorithms by running them, generate and verify mathematical proofs, build data analysis pipelines, and even write code that writes more code. The execution feedback loop dramatically improves reliability compared to pure code generation."
+    },
+    {
+      "type": "theory",
+      "title": "Code Agent Architecture",
+      "content": "**The code-execute-debug loop:**\n```\n1. UNDERSTAND:  Parse the task requirements\n2. PLAN:        Outline the algorithmic approach\n3. WRITE:       Generate code with docstrings and tests\n4. EXECUTE:     Run the code in sandbox\n5. OBSERVE:     Read stdout, stderr, test results\n6. DEBUG:       If errors: analyze + fix code\n7. VERIFY:      Run tests, check output correctness\n8. REFINE:      If quality criteria not met: improve\n```\n\n**Code sandbox options:**\n\n| Sandbox | How | Security | Use case |\n|---------|-----|---------|----------|\n| `exec()` with restricted builtins | Pure Python | Low | Dev only |\n| `subprocess` with timeout | OS process | Medium | Controlled environments |\n| Docker container | Full isolation | High | Production |\n| e2b.dev | Cloud sandbox | High | Production, easy API |\n| Replit/Modal | Cloud compute | High | Complex environments |\n\n**Test-driven code generation:**\n1. Ask the model to write tests FIRST (based on spec)\n2. Run tests → all fail (red)\n3. Ask model to write code that passes the tests\n4. Run tests → should pass (green)\n5. Ask model to refactor while keeping tests passing\nBenefit: tests lock in the specification before code is written. The model can't 'cheat' by changing the spec to match broken code.\n\n**Error categorization:**\n```\nSyntaxError     → model wrote invalid Python → retry with error + hint\nNameError       → undefined variable → ask model to fix undefined reference\nTypeError       → wrong type passed → show traceback + ask for fix\nValueError      → invalid value → show input + expected vs actual\nTimeoutError    → infinite loop → ask model to add termination condition\nTestFailure     → test assertion failed → show expected vs actual + ask fix\n```\n\n**Static analysis integration:**\n```python\n# Use ast.parse() to check syntax before execution\nimport ast\ntry:\n    ast.parse(code)\nexcept SyntaxError as e:\n    return f'Syntax error at line {e.lineno}: {e.msg}'\n\n# Check for dangerous patterns before exec\nif any(p in code for p in ['import os', 'import subprocess', '__import__']):\n    return 'Dangerous pattern detected'\n```"
+    },
+    {
+      "type": "code",
+      "title": "Code Agent with Test-Driven Generation",
+      "language": "python",
+      "code": "from __future__ import annotations\nimport ast\nimport io\nimport json\nimport os\nimport re\nimport contextlib\nfrom dataclasses import dataclass, field\nfrom typing import Optional\nfrom openai import OpenAI\n\nclient = OpenAI(api_key=os.environ['OPENAI_API_KEY'])\nMODEL = 'gpt-4o'  # use GPT-4o for code tasks\n\n\n# ── Sandbox executor ──────────────────────────────────────────────────────────\n\n@dataclass\nclass ExecutionResult:\n    stdout: str\n    stderr: str\n    success: bool\n    test_results: Optional[dict] = None\n\n    def summary(self) -> str:\n        parts = []\n        if self.stdout:\n            parts.append(f'Output:\\n{self.stdout}')\n        if self.stderr:\n            parts.append(f'Errors:\\n{self.stderr}')\n        if self.test_results:\n            tr = self.test_results\n            parts.append(f'Tests: {tr[\"passed\"]}/{tr[\"total\"]} passed')\n        return '\\n'.join(parts) or '(no output)'\n\n\nSAFE_BUILTINS = {\n    'print': print, 'range': range, 'len': len, 'sum': sum, 'sorted': sorted,\n    'max': max, 'min': min, 'abs': abs, 'round': round, 'enumerate': enumerate,\n    'zip': zip, 'list': list, 'dict': dict, 'set': set, 'tuple': tuple,\n    'str': str, 'int': int, 'float': float, 'bool': bool, 'type': type,\n    'isinstance': isinstance, 'hasattr': hasattr, 'getattr': getattr,\n    'map': map, 'filter': filter, 'any': any, 'all': all,\n    'Exception': Exception, 'ValueError': ValueError, 'TypeError': TypeError,\n    'AssertionError': AssertionError,\n    '__builtins__': {},\n}\n\nALLOWED_IMPORTS = {'math', 'random', 'collections', 'itertools', 'functools', 'heapq', 'bisect'}\n\n\ndef extract_imports(code: str) -> set[str]:\n    tree = ast.parse(code)\n    imports = set()\n    for node in ast.walk(tree):\n        if isinstance(node, (ast.Import, ast.ImportFrom)):\n            if isinstance(node, ast.Import):\n                imports.update(alias.name.split('.')[0] for alias in node.names)\n            else:\n                if node.module:\n                    imports.add(node.module.split('.')[0])\n    return imports\n\n\ndef execute_code(code: str, timeout: int = 10) -> ExecutionResult:\n    # 1. Syntax check\n    try:\n        tree = ast.parse(code)\n    except SyntaxError as e:\n        return ExecutionResult(stdout='', stderr=f'SyntaxError at line {e.lineno}: {e.msg}', success=False)\n\n    # 2. Import safety check\n    imports = extract_imports(code)\n    blocked = imports - ALLOWED_IMPORTS\n    if blocked:\n        return ExecutionResult(stdout='', stderr=f'Blocked imports: {blocked}. Allowed: {ALLOWED_IMPORTS}', success=False)\n\n    # 3. Execute in restricted namespace\n    namespace = {**SAFE_BUILTINS}\n    for mod_name in imports:\n        import importlib\n        namespace[mod_name] = importlib.import_module(mod_name)\n\n    stdout_buf = io.StringIO()\n    stderr_buf = io.StringIO()\n    try:\n        with contextlib.redirect_stdout(stdout_buf):\n            exec(code, namespace)  # noqa: S102\n        return ExecutionResult(stdout=stdout_buf.getvalue(), stderr='', success=True)\n    except AssertionError as e:\n        failures = str(e)\n        return ExecutionResult(stdout=stdout_buf.getvalue(), stderr=f'AssertionError: {failures}', success=False)\n    except Exception as e:\n        return ExecutionResult(stdout=stdout_buf.getvalue(), stderr=f'{type(e).__name__}: {e}', success=False)\n\n\ndef run_tests(code: str, test_code: str) -> ExecutionResult:\n    \"\"\"Run tests against the generated code.\"\"\"\n    full_code = code + '\\n\\n' + test_code\n    result = execute_code(full_code)\n\n    # Count assertions\n    total = test_code.count('assert ')\n    if result.success:\n        return ExecutionResult(\n            stdout=result.stdout, stderr='', success=True,\n            test_results={'passed': total, 'total': total, 'failed': 0}\n        )\n    else:\n        # Try to count which test failed\n        failed_line = re.search(r'AssertionError.*', result.stderr)\n        return ExecutionResult(\n            stdout=result.stdout, stderr=result.stderr, success=False,\n            test_results={'passed': 0, 'total': total, 'failed': total, 'error': result.stderr}\n        )\n\n\n# ── Code agent ────────────────────────────────────────────────────────────────\n\nCODE_SYSTEM = \"\"\"You are an expert Python programmer. Write clean, correct code.\nOnly use Python standard library modules from: math, random, collections, itertools, functools, heapq, bisect.\nDo not use imports outside this list. Do not use file I/O or network calls.\nAlways include type hints. Return only code in a ```python ... ``` block.\"\"\"\n\nTEST_SYSTEM = \"\"\"You are writing unit tests for Python functions.\nWrite assertions using the `assert` statement (no pytest or unittest — just raw asserts).\nTest normal cases, edge cases, and error cases.\nReturn only test code in a ```python ... ``` block.\"\"\"\n\n\ndef extract_code_block(text: str) -> str:\n    match = re.search(r'```python\\n(.*?)```', text, re.DOTALL)\n    return match.group(1).strip() if match else text.strip()\n\n\ndef llm_generate_code(prompt: str, system: str = CODE_SYSTEM) -> str:\n    response = client.chat.completions.create(\n        model=MODEL,\n        messages=[{'role': 'system', 'content': system}, {'role': 'user', 'content': prompt}],\n        temperature=0.2,\n    )\n    return extract_code_block(response.choices[0].message.content)\n\n\ndef llm_fix_code(code: str, error: str, task: str) -> str:\n    prompt = f\"\"\"This code has an error. Fix it.\n\nTask: {task}\n\nCode:\n```python\n{code}\n```\n\nError:\n{error}\n\nProvide only the corrected code in a ```python ... ``` block.\"\"\"\n    return extract_code_block(client.chat.completions.create(\n        model=MODEL,\n        messages=[{'role': 'user', 'content': prompt}],\n        temperature=0,\n    ).choices[0].message.content)\n\n\n@dataclass\nclass CodeAgentResult:\n    task: str\n    final_code: str\n    test_code: str\n    iterations: int\n    test_passed: bool\n    execution_result: ExecutionResult\n\n\nclass CodeAgent:\n    def __init__(self, max_fix_attempts: int = 3, tdd_mode: bool = True):\n        self.max_fix_attempts = max_fix_attempts\n        self.tdd_mode = tdd_mode\n\n    def run(self, task: str) -> CodeAgentResult:\n        print(f'Task: {task}')\n\n        # Step 1: Generate tests (TDD mode)\n        if self.tdd_mode:\n            print('  Generating tests first (TDD)...')\n            test_code = llm_generate_code(\n                f'Write unit tests (using only assert statements) for this function: {task}',\n                system=TEST_SYSTEM,\n            )\n            print(f'  Tests generated ({test_code.count(\"assert\")} assertions)')\n        else:\n            test_code = ''\n\n        # Step 2: Generate initial code\n        print('  Generating code...')\n        code = llm_generate_code(task)\n\n        # Step 3: Execute and fix loop\n        for attempt in range(self.max_fix_attempts + 1):\n            if self.tdd_mode:\n                result = run_tests(code, test_code)\n            else:\n                result = execute_code(code)\n\n            if result.success:\n                print(f'  ✓ Tests passed on attempt {attempt + 1}')\n                return CodeAgentResult(\n                    task=task, final_code=code, test_code=test_code,\n                    iterations=attempt + 1, test_passed=True, execution_result=result,\n                )\n\n            if attempt < self.max_fix_attempts:\n                print(f'  ✗ Attempt {attempt + 1} failed: {result.stderr[:60]}...')\n                print(f'  → Fixing...')\n                code = llm_fix_code(code, result.summary(), task)\n\n        print(f'  ✗ Failed after {self.max_fix_attempts + 1} attempts')\n        return CodeAgentResult(\n            task=task, final_code=code, test_code=test_code,\n            iterations=self.max_fix_attempts + 1, test_passed=False, execution_result=result,\n        )\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    agent = CodeAgent(max_fix_attempts=3, tdd_mode=True)\n\n    tasks = [\n        'Write a function fibonacci(n: int) -> list[int] that returns the first n Fibonacci numbers.',\n        'Write a function is_palindrome(s: str) -> bool that ignores case and non-alphanumeric characters.',\n        'Write a function two_sum(nums: list[int], target: int) -> list[int] that returns indices of two numbers that add to target.',\n    ]\n\n    for task in tasks:\n        print(f'\\n{\"-\"*60}')\n        result = agent.run(task)\n        print(f'\\nResult: {\"PASSED\" if result.test_passed else \"FAILED\"} ({result.iterations} iteration(s))')\n        if result.test_passed:\n            print(f'Final code:\\n{result.final_code}')"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Code Agent Pitfalls",
+      "items": [
+        {
+          "mistake": "Using bare exec() without a restricted namespace",
+          "why": "exec() with full builtins allows the model-generated code to import os, read files, make network calls, or execute shell commands — a serious security risk.",
+          "fix": "Pass a restricted namespace: `exec(code, {'__builtins__': {}, 'print': print, ...})`. In production, use a proper sandbox (Docker, e2b.dev)."
+        },
+        {
+          "mistake": "No timeout on code execution",
+          "why": "The model may generate an infinite loop (`while True: pass`). Without a timeout, the agent hangs forever.",
+          "fix": "Use `threading.Timer` or `subprocess.run(..., timeout=10)` to enforce a hard execution time limit. Return 'TimeoutError' if exceeded."
+        },
+        {
+          "mistake": "Asking the model to fix code without showing the full error traceback",
+          "why": "A truncated error message ('Error occurred') gives the model no information to work with. It will guess the fix.",
+          "fix": "Pass the complete stderr (including stack trace, line numbers, and the error message) to the fix prompt. The model's fix quality is directly proportional to the quality of the error information."
+        },
+        {
+          "mistake": "Generating tests after code in TDD mode",
+          "why": "If you generate code first, then ask for tests, the model writes tests that match the code rather than the spec. This creates a 'testing the implementation' problem.",
+          "fix": "Always generate tests first from the specification. Run them against the code. If the code changes the spec to pass tests, reject the change."
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "Why is a code-execute-debug loop more reliable than pure code generation?",
+          "answer": "Pure code generation produces code that 'looks correct' but may have logic errors the model can't foresee without execution. The execute step provides ground truth: actual errors from the Python interpreter, actual test failures with expected vs actual values. This grounds the model's debugging in real evidence rather than predicted evidence. Studies show that code agents with execution feedback achieve 40-60% higher success rates on complex coding tasks compared to one-shot generation.",
+          "followUps": ["What types of bugs can the execution loop catch that the model's reasoning cannot?"]
+        },
+        {
+          "question": "How do you safely execute model-generated code in a production environment?",
+          "answer": "Sandboxing layers: (1) Input validation — scan for blocked imports and dangerous patterns before execution. (2) Restricted namespace — exec() with only whitelisted builtins, no file I/O or network access. (3) Resource limits — hard timeout (10s), memory cap. (4) Process isolation — run in a subprocess with OS-level resource limits (ulimit). (5) Full isolation — Docker container with no network access, read-only filesystem, non-root user. For production: e2b.dev or Modal provide managed sandboxes with all isolation layers. Never run model-generated code in the same process as your production application.",
+          "followUps": ["How do you handle persistent state across multiple code execution calls in one agent session?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "How do you detect if model-generated code contains potentially dangerous imports?",
+          "answer": "```python\nimport ast\n\nALLOWED_IMPORTS = {'math', 'random', 'collections', 'itertools'}\n\ndef is_safe_code(code: str) -> tuple[bool, str]:\n    try:\n        tree = ast.parse(code)\n    except SyntaxError as e:\n        return False, f'SyntaxError: {e}'\n    \n    for node in ast.walk(tree):\n        if isinstance(node, ast.Import):\n            for alias in node.names:\n                mod = alias.name.split('.')[0]\n                if mod not in ALLOWED_IMPORTS:\n                    return False, f'Blocked import: {mod}'\n        elif isinstance(node, ast.ImportFrom):\n            if node.module and node.module.split('.')[0] not in ALLOWED_IMPORTS:\n                return False, f'Blocked import from: {node.module}'\n    return True, 'safe'\n```\nUsing `ast.parse` is more reliable than string matching — `import\\nos` would fool a simple string check but not AST analysis."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You're building a code agent that writes and runs data analysis scripts on user-uploaded CSV files. What security and reliability measures would you implement?",
+          "answer": "Security: (1) Execute in isolated Docker container with no network access, time limit 30s, memory limit 256MB. Mount user's CSV file read-only. (2) Allowlist: only pandas, numpy, matplotlib, csv, io, collections allowed. Block os, subprocess, pickle, eval/exec. (3) Validate CSV before mounting: check for path traversal in headers, reasonable file size (<100MB). (4) Scan generated code with ast.parse before execution — reject if it tries to write files or access paths outside the mounted directory. Reliability: (5) Save generated code so users can inspect what ran. (6) Capture both stdout and stderr; show both in the agent's response. (7) If execution fails, the agent gets the full traceback and error, generates a fix, and retries up to 3 times. (8) On final failure, return the last code and error so a human developer can debug. (9) For long-running analysis (>30s), checkpoint partial results so the agent can resume.",
+          "followUps": ["How would you implement memory persistence so the agent can reference prior execution results?"]
+        }
+      ],
+      "wrongAnswers": [
+        "You can safely execute model-generated code using eval() for simple expressions — eval() evaluates arbitrary Python expressions and is vulnerable to injection; use a restricted exec() namespace or proper sandbox",
+        "Test-driven code generation only works for simple functions — TDD is especially valuable for complex functions where specification is clear but implementation is non-trivial",
+        "Once code passes syntax checking it is safe to execute — syntax validity doesn't prevent infinite loops, memory exhaustion, or accessing blocked resources"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d40q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the main advantage of the code-execute-debug loop over one-shot code generation?",
+          "options": {
+            "A": "It generates shorter code",
+            "B": "It grounds fixes in actual execution errors rather than predicted errors",
+            "C": "It uses fewer API calls",
+            "D": "It produces better variable names"
+          },
+          "answer": "B",
+          "explanation": "The execution step provides ground truth: real errors from the Python interpreter. The model debugs based on what actually happened, not what it thinks might happen — dramatically improving fix quality."
+        },
+        {
+          "id": "d40q2",
+          "level": "intermediate",
+          "category": "code",
+          "question": "Why is `ast.parse()` better than string pattern matching for detecting dangerous code?",
+          "options": {
+            "A": "ast.parse() is faster",
+            "B": "String matching can be evaded (e.g., 'import\\nos'), while AST analysis parses the actual program structure",
+            "C": "ast.parse() checks runtime behavior, not just syntax",
+            "D": "String matching doesn't work for Python 3"
+          },
+          "answer": "B",
+          "explanation": "Simple string matching for 'import os' can be bypassed with tricks like 'import\\nos' or '__import__(\"os\")'. AST analysis parses the actual syntax tree, catching all valid forms of an import regardless of whitespace or obfuscation."
+        },
+        {
+          "id": "d40q3",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "In TDD code generation, why should tests be generated before code?",
+          "options": {
+            "A": "Tests are shorter than code and cheaper to generate",
+            "B": "If code is generated first, the model will write tests that match the code rather than the specification",
+            "C": "Test generation is always faster than code generation",
+            "D": "It reduces the number of required fix iterations"
+          },
+          "answer": "B",
+          "explanation": "Tests written after code are biased toward the implementation, not the specification. They test what the code does, not what it should do. Tests from spec first lock in the requirements and expose any deviations in the code."
+        },
+        {
+          "id": "d40q4",
+          "level": "advanced",
+          "category": "scenario",
+          "question": "Your code agent is generating valid code but test assertions consistently fail on edge cases (empty list, zero input). What is the most effective fix?",
+          "options": {
+            "A": "Increase max_fix_attempts to 10",
+            "B": "Add explicit edge cases to the test generation prompt and show failing test output with expected vs actual values in the fix prompt",
+            "C": "Switch to GPT-4o from gpt-4o-mini",
+            "D": "Generate code at temperature=0 for determinism"
+          },
+          "answer": "B",
+          "explanation": "If edge cases are failing, the tests must explicitly include them. The fix prompt also needs to show the exact assertion that failed with expected vs actual values — vague 'tests failed' won't help the model target the right fix."
+        },
+        {
+          "id": "d40q5",
+          "level": "basic",
+          "category": "code",
+          "question": "What is the minimum safety measure before calling exec() on model-generated code?",
+          "options": {
+            "A": "Check that the code is shorter than 1000 lines",
+            "B": "Pass a restricted namespace with no access to dangerous builtins and blocked imports",
+            "C": "Run a spell checker on the code",
+            "D": "Make sure the code is commented"
+          },
+          "answer": "B",
+          "explanation": "exec(code) without a restricted namespace gives model-generated code access to all Python builtins including file I/O, network access, and subprocess execution. The minimum safety measure is exec(code, {'__builtins__': {}, ...}) with only whitelisted builtins."
+        }
+      ]
+    }
+  ]
+}

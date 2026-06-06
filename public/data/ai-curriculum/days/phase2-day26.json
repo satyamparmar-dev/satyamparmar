@@ -1,0 +1,172 @@
+{
+  "day": 26,
+  "phase": 2,
+  "title": "LlamaIndex — Index, Query & Data Agents",
+  "description": "Master LlamaIndex: the data framework for LLM applications. Build indexes over structured and unstructured data, use query engines with routing, implement sub-question decomposition, and create data agents that reason over multiple sources.",
+  "estimatedHours": 3.5,
+  "difficulty": "Intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["llamaindex", "query-engine", "data-agents", "sub-question", "router", "indexing"],
+  "prerequisites": ["phase2-day25"],
+  "learningObjectives": [
+    "Understand LlamaIndex's core abstractions: documents, nodes, indexes, query engines",
+    "Build VectorStoreIndex, SummaryIndex, and TreeIndex",
+    "Configure node chunking, metadata, and retrieval parameters",
+    "Use RouterQueryEngine to route questions to appropriate indexes",
+    "Implement SubQuestionQueryEngine for complex multi-hop questions",
+    "Compare LlamaIndex vs LangChain for different use cases"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "LlamaIndex is purpose-built for data-first AI applications — when your primary challenge is connecting LLMs to complex, heterogeneous data sources. Its query engine abstraction, router, and sub-question decomposer handle common RAG patterns that LangChain requires more custom code for. Learning both frameworks makes you effective in any AI engineering team."
+    },
+    {
+      "type": "theory",
+      "content": "## LlamaIndex Core Abstractions\n\n```\nDocuments (raw data)\n    ↓ parsing\nNodes (chunks with metadata & relationships)\n    ↓ indexing\nIndex (VectorStore, Summary, Tree, Keyword)\n    ↓\nQueryEngine (retrieval + synthesis)\n    ↓\nResponse (answer + source_nodes)\n```\n\n---\n\n## Installation & Setup\n\n```bash\npip install llama-index llama-index-llms-openai llama-index-embeddings-openai\n```\n\n```python\nfrom llama_index.core import Settings\nfrom llama_index.llms.openai import OpenAI\nfrom llama_index.embeddings.openai import OpenAIEmbedding\n\nSettings.llm = OpenAI(model=\"gpt-4o-mini\", temperature=0.0)\nSettings.embed_model = OpenAIEmbedding(model=\"text-embedding-3-small\")\n```\n\n---\n\n## Documents and Nodes\n\n```python\nfrom llama_index.core import Document, SimpleDirectoryReader\nfrom llama_index.core.node_parser import SentenceSplitter\n\n# Load documents\ndocuments = SimpleDirectoryReader(\"./docs\").load_data()\n# Or create manually:\ndoc = Document(text=\"...\", metadata={\"source\": \"wiki\", \"topic\": \"RAG\"})\n\n# Parse into nodes (chunks)\nparser = SentenceSplitter(chunk_size=512, chunk_overlap=50)\nnodes = parser.get_nodes_from_documents(documents)\nprint(f\"{len(nodes)} nodes, first: {nodes[0].text[:100]}\")\n```\n\n---\n\n## Index Types\n\n**VectorStoreIndex** — stores embeddings, enables semantic search:\n```python\nfrom llama_index.core import VectorStoreIndex\nindex = VectorStoreIndex.from_documents(documents)\n# or from pre-parsed nodes:\nindex = VectorStoreIndex(nodes)\n```\n\n**SummaryIndex** — stores all nodes, enables full-document synthesis:\n```python\nfrom llama_index.core import SummaryIndex\nindex = SummaryIndex(nodes)\n# Good for summarization tasks, bad for point lookups\n```\n\n**Persisting and loading:**\n```python\nindex.storage_context.persist(persist_dir=\"./index_store\")\n\nfrom llama_index.core import StorageContext, load_index_from_storage\nstorage = StorageContext.from_defaults(persist_dir=\"./index_store\")\nindex = load_index_from_storage(storage)\n```\n\n---\n\n## Query Engines\n\n```python\n# Basic vector query engine\nquery_engine = index.as_query_engine(\n    similarity_top_k=5,\n    response_mode=\"compact\",  # tree_summarize, refine, simple_summarize\n)\nresponse = query_engine.query(\"What is RAG?\")\nprint(response)              # answer text\nprint(response.source_nodes)  # retrieved nodes with scores\n```\n\n**Response modes:**\n- `compact` — concatenate chunks, single LLM call\n- `refine` — iterative refinement over each chunk\n- `tree_summarize` — hierarchical summarization tree\n\n---\n\n## RouterQueryEngine\n\nRoute questions to the best index automatically:\n\n```python\nfrom llama_index.core.query_engine import RouterQueryEngine\nfrom llama_index.core.selectors import LLMSingleSelector\nfrom llama_index.core.tools import QueryEngineTool\n\nvector_tool = QueryEngineTool.from_defaults(\n    query_engine=vector_engine,\n    description=\"Useful for specific fact lookup questions\",\n)\nsummary_tool = QueryEngineTool.from_defaults(\n    query_engine=summary_engine,\n    description=\"Useful for summarization and overview questions\",\n)\nrouter = RouterQueryEngine(\n    selector=LLMSingleSelector.from_defaults(),\n    query_engine_tools=[vector_tool, summary_tool],\n)\nresponse = router.query(\"Summarize all the key findings\")\n```\n\n---\n\n## SubQuestionQueryEngine\n\nBreaks complex questions into sub-questions, queries each independently:\n\n```python\nfrom llama_index.core.query_engine import SubQuestionQueryEngine\nfrom llama_index.core.tools import QueryEngineTool\n\ntools = [\n    QueryEngineTool.from_defaults(query_engine=qa_engine, name=\"knowledge_base\",\n                                   description=\"General AI knowledge\"),\n]\nengine = SubQuestionQueryEngine.from_defaults(query_engine_tools=tools)\n# For \"Compare RAG vs fine-tuning costs and performance\"\n# Generates: [\"What is the cost of RAG?\", \"What is the cost of fine-tuning?\",\n#             \"What is RAG performance?\", \"What is fine-tuning performance?\"]\n# Then synthesizes into a comprehensive comparison\n```\n\n---\n\n## LlamaIndex vs LangChain\n\n| Aspect | LlamaIndex | LangChain |\n|--------|-----------|----------|\n| Primary focus | Data indexing and querying | Chain composability |\n| RAG patterns | Built-in (router, sub-Q) | Custom LCEL chains |\n| Data connectors | 100+ readers | 100+ loaders |\n| Agent support | Data agents | ReAct, OpenAI agents |\n| Learning curve | Moderate | High (LCEL) |\n| Best for | Data-heavy RAG | Multi-step workflows |"
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "llamaindex_demo.py",
+      "level": "Intermediate",
+      "code": "\"\"\"LlamaIndex: index types, query engines, router, sub-questions.\"\"\"\nimport os\nfrom llama_index.core import (\n    Document, VectorStoreIndex, SummaryIndex,\n    Settings, StorageContext, load_index_from_storage\n)\nfrom llama_index.core.node_parser import SentenceSplitter\nfrom llama_index.core.query_engine import RouterQueryEngine, SubQuestionQueryEngine\nfrom llama_index.core.selectors import LLMSingleSelector\nfrom llama_index.core.tools import QueryEngineTool\nfrom llama_index.llms.openai import OpenAI\nfrom llama_index.embeddings.openai import OpenAIEmbedding\n\n# Configure global settings\nSettings.llm = OpenAI(model=\"gpt-4o-mini\", temperature=0.0, api_key=os.environ[\"OPENAI_API_KEY\"])\nSettings.embed_model = OpenAIEmbedding(model=\"text-embedding-3-small\", api_key=os.environ[\"OPENAI_API_KEY\"])\n\n\n# ── Sample documents ─────────────────────────────────────────────\ndef get_sample_documents() -> list[Document]:\n    return [\n        Document(text=\"\"\"RAG Architecture Guide\nRAG (Retrieval-Augmented Generation) is a technique that combines retrieval systems with LLMs.\nThe four pipeline stages are: chunking, embedding, retrieval, and generation.\nRAG significantly reduces hallucinations by grounding answers in retrieved evidence.\nCost: RAG with gpt-4o-mini costs approximately $0.001 per query including embedding.\nAdvantage over fine-tuning: RAG is dynamic — knowledge can be updated without retraining.\"\"\",\n                 metadata={\"source\": \"rag_guide\", \"topic\": \"rag\", \"type\": \"technical\"}),\n        Document(text=\"\"\"Fine-Tuning Guide\nFine-tuning adapts a pre-trained model by training on task-specific labeled examples.\nCost: Fine-tuning GPT-4o-mini costs $0.008/1K tokens. Training a dataset of 10K examples costs ~$400.\nFine-tuning improves: style consistency, domain vocabulary, format adherence.\nFine-tuning does NOT update factual knowledge reliably — use RAG for that.\nWhen to use: when you need consistent output style, not updated knowledge.\"\"\",\n                 metadata={\"source\": \"finetune_guide\", \"topic\": \"fine-tuning\", \"type\": \"technical\"}),\n        Document(text=\"\"\"Vector Database Selection Guide\nChromaDB is best for local development and prototyping — free, easy setup, no cloud.\nPinecone is the leading managed vector database for production — handles billions of vectors.\npgvector adds vector search to PostgreSQL — best for teams already on Postgres.\nWeaviate and Qdrant are open-source options for self-hosted production deployments.\nKey metric: query latency should be <100ms p99 for most RAG applications.\"\"\",\n                 metadata={\"source\": \"vectordb_guide\", \"topic\": \"infrastructure\", \"type\": \"technical\"}),\n    ]\n\n\n# ── 1. Build indexes ─────────────────────────────────────────────\ndef build_indexes(documents: list[Document]) -> tuple:\n    parser = SentenceSplitter(chunk_size=512, chunk_overlap=50)\n    nodes  = parser.get_nodes_from_documents(documents)\n    print(f\"Parsed {len(nodes)} nodes\")\n\n    vector_index  = VectorStoreIndex(nodes)\n    summary_index = SummaryIndex(nodes)\n    return vector_index, summary_index\n\n\n# ── 2. Basic query engine ────────────────────────────────────────\ndef demo_basic_query(index: VectorStoreIndex) -> None:\n    engine = index.as_query_engine(similarity_top_k=3, response_mode=\"compact\")\n    response = engine.query(\"What is the cost of using RAG with gpt-4o-mini?\")\n    print(\"\\n=== Basic Query ===\")\n    print(f\"Answer: {response}\")\n    print(f\"Sources: {[n.node.metadata['source'] for n in response.source_nodes]}\")\n\n\n# ── 3. Router engine ─────────────────────────────────────────────\ndef build_router(vector_index, summary_index) -> RouterQueryEngine:\n    vector_tool = QueryEngineTool.from_defaults(\n        query_engine=vector_index.as_query_engine(similarity_top_k=3),\n        description=\"Use for specific fact lookups, cost figures, technical specs, and comparisons\",\n    )\n    summary_tool = QueryEngineTool.from_defaults(\n        query_engine=summary_index.as_query_engine(response_mode=\"tree_summarize\"),\n        description=\"Use for broad overviews, summaries of all content, and synthesis questions\",\n    )\n    return RouterQueryEngine(\n        selector=LLMSingleSelector.from_defaults(),\n        query_engine_tools=[vector_tool, summary_tool],\n        verbose=True,\n    )\n\n\n# ── 4. SubQuestion engine ────────────────────────────────────────\ndef build_subquestion(vector_index) -> SubQuestionQueryEngine:\n    tool = QueryEngineTool.from_defaults(\n        query_engine=vector_index.as_query_engine(similarity_top_k=5),\n        name=\"ai_knowledge_base\",\n        description=\"Contains technical guides about RAG, fine-tuning, and vector databases\",\n    )\n    return SubQuestionQueryEngine.from_defaults(\n        query_engine_tools=[tool],\n        verbose=True,\n    )\n\n\nif __name__ == \"__main__\":\n    docs = get_sample_documents()\n    vector_idx, summary_idx = build_indexes(docs)\n\n    # Basic query\n    demo_basic_query(vector_idx)\n\n    # Router — routes to vector vs summary based on question type\n    print(\"\\n=== Router Engine ===\")\n    router = build_router(vector_idx, summary_idx)\n    r1 = router.query(\"What is the cost of fine-tuning GPT-4o-mini?\")\n    print(f\"Cost question → {r1}\")\n    r2 = router.query(\"Give me a comprehensive overview of all three guides\")\n    print(f\"Overview question → {str(r2)[:200]}...\")\n\n    # SubQuestion — breaks complex questions\n    print(\"\\n=== SubQuestion Engine ===\")\n    subq = build_subquestion(vector_idx)\n    response = subq.query(\"Compare the cost and best use cases of RAG vs fine-tuning\")\n    print(f\"Final answer: {response}\")",
+      "output": "Parsed 3 nodes\n\n=== Basic Query ===\nAnswer: Using RAG with gpt-4o-mini costs approximately $0.001 per query including the embedding cost.\nSources: ['rag_guide', 'finetune_guide', 'vectordb_guide']\n\n=== Router Engine ===\nSelecting query engine 0 (vector) for cost question\nCost question → Fine-tuning GPT-4o-mini costs $0.008 per 1K tokens. Training a dataset of 10K examples costs approximately $400.\nSelecting query engine 1 (summary) for overview question\nOverview question → The three guides cover: RAG architecture (chunking, embedding, retrieval, generation stages), fine-tuning approaches...\n\n=== SubQuestion Engine ===\nSub questions generated:\n  1. What is the cost of RAG?\n  2. What is the cost of fine-tuning?\n  3. What are the best use cases of RAG?\n  4. What are the best use cases of fine-tuning?\nFinal answer: RAG costs ~$0.001/query and is best for dynamic knowledge that changes frequently. Fine-tuning costs ~$400 for 10K examples and is best for consistent output style and domain-specific formatting."
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Using SummaryIndex for point lookups — SummaryIndex iterates through all nodes to synthesize a response, which is expensive and slow. Use VectorStoreIndex for specific fact retrieval and SummaryIndex only for broad summarization.",
+        "Not persisting indexes — LlamaIndex rebuilds and re-embeds the entire index on every run unless you persist. Always persist to disk: index.storage_context.persist() and load with load_index_from_storage().",
+        "Misunderstanding response_mode costs — 'refine' calls the LLM once per retrieved node, multiplying cost by top_k. Use 'compact' for most cases; only use 'refine' when incremental refinement genuinely improves quality.",
+        "Ignoring Settings configuration — if Settings.llm and Settings.embed_model are not set globally, LlamaIndex uses its defaults which may not be the models you want. Always configure at the top of your script.",
+        "Using SubQuestionQueryEngine for simple factual questions — it generates multiple sub-questions and makes multiple LLM calls even when a single call would suffice. Reserve it for genuinely complex multi-hop questions."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Multi-Index Knowledge Base",
+      "problem": "Build a KnowledgeBase class with: (1) multiple VectorStoreIndexes, one per topic ('rag', 'infrastructure', 'prompting'), (2) a RouterQueryEngine that automatically routes to the right topic index, (3) a `add_document(doc, topic)` method that adds to the correct index, (4) a `query(question)` method that uses the router. Test with 3 documents across different topics.",
+      "hints": [
+        "Create a dict: {topic: VectorStoreIndex} for each topic",
+        "Build QueryEngineTool for each topic with description='Contains documents about {topic}'",
+        "RouterQueryEngine with LLMSingleSelector handles the routing automatically",
+        "For add_document, you'll need to store the nodes and insert into the existing index"
+      ],
+      "solution": "class KnowledgeBase:\n    def __init__(self):\n        self.indexes: dict[str, VectorStoreIndex] = {}\n        self.router: RouterQueryEngine | None = None\n        self.parser = SentenceSplitter(chunk_size=512, chunk_overlap=50)\n\n    def add_document(self, doc: Document, topic: str) -> None:\n        nodes = self.parser.get_nodes_from_documents([doc])\n        if topic not in self.indexes:\n            self.indexes[topic] = VectorStoreIndex(nodes)\n        else:\n            self.indexes[topic].insert_nodes(nodes)\n        self._rebuild_router()\n\n    def _rebuild_router(self) -> None:\n        tools = [\n            QueryEngineTool.from_defaults(\n                query_engine=idx.as_query_engine(similarity_top_k=3),\n                name=topic.replace('-', '_'),\n                description=f'Contains documents about {topic}'\n            )\n            for topic, idx in self.indexes.items()\n        ]\n        self.router = RouterQueryEngine(\n            selector=LLMSingleSelector.from_defaults(),\n            query_engine_tools=tools\n        )\n\n    def query(self, question: str) -> str:\n        if not self.router:\n            return 'No documents indexed yet.'\n        return str(self.router.query(question))",
+      "difficulty": "Intermediate"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "What are the main differences between LlamaIndex and LangChain for RAG applications?",
+          "answer": "LlamaIndex is data-first: its core abstraction is the Index (VectorStore, Summary, Tree) and QueryEngine. Built-in patterns like RouterQueryEngine and SubQuestionQueryEngine handle common RAG complexity out of the box. It excels at data agent patterns — reasoning over structured + unstructured data. LangChain is chain-first: LCEL composability is its core value, making it better for multi-step workflows, custom chains, and non-RAG patterns. LangChain has better ecosystem breadth (more integrations, agents, tools). In practice: use LlamaIndex when your complexity is in the data layer (multiple indexes, complex retrieval routing), use LangChain when your complexity is in the chain logic (multi-step prompting, conditional flows).",
+          "followUps": [
+            "Can you use LlamaIndex and LangChain together in the same application?",
+            "What is LlamaIndex's data agent and how does it differ from LangChain agents?"
+          ]
+        },
+        {
+          "question": "When would you use SubQuestionQueryEngine vs a regular query engine?",
+          "answer": "SubQuestionQueryEngine is designed for complex, multi-hop questions that require synthesizing information from multiple documents or perspectives. For example: 'Compare the cost, performance, and use cases of RAG vs fine-tuning' — this naturally decomposes into 4+ sub-questions. It generates sub-questions via an LLM call, queries each independently, then synthesizes. Cost: N+1 LLM calls (N sub-questions + synthesis). Use it when: questions span multiple distinct topics that need separate retrieval, or when you need comprehensive comparison across dimensions. Avoid for simple factual lookups — overhead isn't justified.",
+          "followUps": [
+            "How do you control the maximum number of sub-questions generated?",
+            "How would you implement sub-question decomposition without using LlamaIndex?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write LlamaIndex code to build a VectorStoreIndex, persist it, and reload it on subsequent runs.",
+          "answer": "import os\nfrom llama_index.core import VectorStoreIndex, StorageContext, load_index_from_storage\nfrom llama_index.core import Document\n\nPERSIST_DIR = './index_storage'\n\ndef get_or_build_index(documents: list[Document]) -> VectorStoreIndex:\n    if os.path.exists(PERSIST_DIR):\n        print('Loading existing index...')\n        storage = StorageContext.from_defaults(persist_dir=PERSIST_DIR)\n        return load_index_from_storage(storage)\n    else:\n        print('Building new index...')\n        index = VectorStoreIndex.from_documents(documents)\n        index.storage_context.persist(persist_dir=PERSIST_DIR)\n        return index",
+          "followUps": [
+            "How would you detect when documents have changed and the index needs to be rebuilt?",
+            "How do you add new documents to an existing persisted index?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "A user asks your RAG system: 'How do our Q4 sales compare to last year, and what AI features drove the most engagement?' This spans structured data (sales DB) and unstructured data (feature analytics docs). How do you architect this?",
+          "answer": "This is a classic multi-source, multi-hop question — perfect for LlamaIndex's data agent approach: (1) Create two query engine tools: SQLTableQueryEngine for the sales database (converts natural language to SQL) and VectorStoreIndex QueryEngine for feature analytics documents. (2) Use SubQuestionQueryEngine to decompose: 'What are Q4 sales this year?' (SQL tool), 'What are Q4 sales last year?' (SQL tool), 'Which AI features had highest engagement?' (vector tool). (3) Synthesize the three responses into a unified comparison. Alternative: OpenAI function-calling agent with SQL and vector search as tools. The agent decides which tool to call and in what order. Key considerations: SQL queries must be sanitized (read-only user), vector search needs access control, response synthesis prompt must handle structured + unstructured data together.",
+          "followUps": [
+            "How would you handle a case where SQL returns no data for the time period?",
+            "What caching strategy would you apply to reduce repeated SQL + embedding costs?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "SummaryIndex is faster than VectorStoreIndex for factual lookups because it doesn't need embeddings",
+        "SubQuestionQueryEngine makes only one LLM call to answer complex questions",
+        "LlamaIndex and LangChain cannot be used together in the same application"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "What is a 'Node' in LlamaIndex?",
+          "options": {
+            "A": "A server node in the LlamaIndex cloud infrastructure",
+            "B": "A chunk of a document with text, metadata, and relationships to other nodes",
+            "C": "A connection between two query engines",
+            "D": "A configuration parameter for the LLM"
+          },
+          "answer": "B",
+          "explanation": "In LlamaIndex, a Node is the atomic unit after parsing — a chunk of a document's content with metadata (source, position, topic) and relationships to parent documents and sibling nodes. Nodes are what get embedded and stored in indexes. Documents are parsed into Nodes by text splitters like SentenceSplitter."
+        },
+        {
+          "id": 2,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is the difference between 'compact' and 'refine' response modes in LlamaIndex?",
+          "options": {
+            "A": "compact is for short answers; refine is for long answers",
+            "B": "compact stuffs all retrieved nodes into one LLM call; refine calls the LLM once per node iteratively",
+            "C": "compact is faster but less accurate; refine is slower but always more accurate",
+            "D": "They produce identical results using different algorithms"
+          },
+          "answer": "B",
+          "explanation": "compact (default) concatenates all retrieved nodes and sends to the LLM in one call — 1 LLM call total. refine processes nodes iteratively: answers with first node, then refines with second node, etc. — top_k LLM calls total. refine is top_k times more expensive. Use compact for most cases; refine when the answer quality genuinely improves with iterative refinement."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "A user query 'Summarize all your documents' should route to SummaryIndex, while 'What is the cost of RAG?' should route to VectorStoreIndex. What LlamaIndex tool enables this?",
+          "options": {
+            "A": "SubQuestionQueryEngine",
+            "B": "RouterQueryEngine with LLMSingleSelector",
+            "C": "MultiIndexRetriever",
+            "D": "VectorStoreIndex with MMR search"
+          },
+          "answer": "B",
+          "explanation": "RouterQueryEngine uses a Selector (LLMSingleSelector uses an LLM to choose) to route each query to the appropriate QueryEngineTool. You describe each tool's purpose in the tool description, and the selector picks the most appropriate one. LLMSingleSelector picks one tool; LLMMultiSelector can pick multiple for queries spanning tools."
+        },
+        {
+          "id": 4,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Why must you call index.storage_context.persist() after building a LlamaIndex VectorStoreIndex?",
+          "options": {
+            "A": "To enable streaming queries",
+            "B": "To avoid re-embedding all documents and calling the embedding API on every run",
+            "C": "To enable metadata filtering",
+            "D": "To compress the index for faster queries"
+          },
+          "answer": "B",
+          "explanation": "Without persistence, VectorStoreIndex.from_documents() re-embeds every document on every script run — calling the embedding API, paying costs, and waiting for API calls. persist() saves the index to disk. load_index_from_storage() restores it without re-embedding. For 1000 documents, this is the difference between a 30-second cold start and an instant load."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## LlamaIndex — Quick Reference\n\n### Setup\n```python\npip install llama-index llama-index-llms-openai llama-index-embeddings-openai\n\nfrom llama_index.core import Settings\nfrom llama_index.llms.openai import OpenAI\nfrom llama_index.embeddings.openai import OpenAIEmbedding\nSettings.llm = OpenAI(model='gpt-4o-mini')\nSettings.embed_model = OpenAIEmbedding(model='text-embedding-3-small')\n```\n\n### Index Types\n```python\nVectorStoreIndex(nodes)  # semantic search\nSummaryIndex(nodes)      # full synthesis\n```\n\n### Persist & Load\n```python\nindex.storage_context.persist('./store')\nindex = load_index_from_storage(StorageContext.from_defaults(persist_dir='./store'))\n```\n\n### Query Engine\n```python\nengine = index.as_query_engine(similarity_top_k=5, response_mode='compact')\nresponse = engine.query('question')\nprint(response)             # answer\nprint(response.source_nodes)  # evidence\n```\n\n### Router\n```python\nrouter = RouterQueryEngine(\n    selector=LLMSingleSelector.from_defaults(),\n    query_engine_tools=[tool1, tool2]\n)\n```\n\n### LlamaIndex vs LangChain\n| | LlamaIndex | LangChain |\n|-|------------|----------|\n| Strength | Data/indexing | Chain composability |\n| RAG patterns | Built-in | Custom LCEL |\n| Best for | Complex data | Complex workflows |"
+    }
+  ]
+}

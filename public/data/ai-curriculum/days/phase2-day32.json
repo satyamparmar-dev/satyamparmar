@@ -1,0 +1,178 @@
+{
+  "id": "phase2-day32",
+  "day": 32,
+  "phase": 2,
+  "title": "Fine-tuning Fundamentals",
+  "estimatedHours": 5,
+  "difficulty": "advanced",
+  "level": "Senior",
+  "track": "Senior",
+  "tags": ["fine-tuning", "openai", "lora", "peft", "training", "model-adaptation"],
+  "prerequisites": ["phase1-day15", "phase1-day18", "phase2-day23"],
+  "learningObjectives": [
+    "Understand when fine-tuning is better than prompt engineering",
+    "Prepare training data in JSONL chat format",
+    "Run OpenAI fine-tuning jobs via API",
+    "Understand LoRA and parameter-efficient fine-tuning concepts",
+    "Evaluate fine-tuned models vs base models"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Fine-tune? Prompting First, Always",
+      "content": "Fine-tuning is the last resort, not the first tool. Before fine-tuning, try: better system prompts, few-shot examples in the prompt, RAG for knowledge, and structured output. Fine-tuning makes sense when: (1) you have a very specific style/tone that is hard to describe in a prompt; (2) you need to reduce prompt length (bake instructions into the model); (3) the task requires a distribution shift the base model can't achieve even with examples; (4) latency/cost — a small fine-tuned model can match a large prompted model at 10x lower cost. Rule of thumb: if 50 few-shot examples in a prompt don't solve it, fine-tuning probably will."
+    },
+    {
+      "type": "theory",
+      "title": "Fine-tuning Concepts",
+      "content": "**OpenAI fine-tuning supported models:** gpt-4o-mini, gpt-3.5-turbo, gpt-4o (2024+)\n\n**Training data format (JSONL — one JSON object per line):**\n```jsonl\n{\"messages\": [{\"role\": \"system\", \"content\": \"You are a SQL expert.\"}, {\"role\": \"user\", \"content\": \"List all customers\"}, {\"role\": \"assistant\", \"content\": \"SELECT * FROM customers;\"}]}\n{\"messages\": [{\"role\": \"system\", \"content\": \"You are a SQL expert.\"}, {\"role\": \"user\", \"content\": \"Find customers from NYC\"}, {\"role\": \"assistant\", \"content\": \"SELECT * FROM customers WHERE city = 'New York';\"}]}\n```\n\n**Data requirements:**\n- Minimum: 10 examples (but 50-100+ for good results)\n- Recommended: 200-1000 examples\n- Validation set: 10-20% of training set\n- Token limit: 4096 tokens per example (gpt-4o-mini)\n\n**OpenAI fine-tuning API flow:**\n```\n1. client.files.create(file, purpose='fine-tune') → file_id\n2. client.fine_tuning.jobs.create(training_file=file_id, model='gpt-4o-mini') → job_id\n3. client.fine_tuning.jobs.retrieve(job_id) → check status\n4. When status == 'succeeded': use fine_tuned_model ID\n5. client.chat.completions.create(model=fine_tuned_model_id, ...)\n```\n\n**Hyperparameters:**\n```python\nclient.fine_tuning.jobs.create(\n    training_file=file_id,\n    model='gpt-4o-mini',\n    hyperparameters={\n        'n_epochs': 3,              # default: auto (3-5)\n        'batch_size': 1,            # default: auto\n        'learning_rate_multiplier': 1.8,  # default: auto\n    },\n)\n```\n\n**LoRA (Low-Rank Adaptation) — for open-source fine-tuning:**\nFull fine-tuning updates all model weights (billions of parameters) — expensive. LoRA freezes the original weights and adds small trainable rank-decomposition matrices (A, B where rank r << model dim d). During training, only A and B are updated (millions instead of billions of parameters). At inference, the LoRA weights can be merged into the base model or kept separate for easy switching.\n\n```\nOriginal: W (d×d, frozen)\nLoRA:     W + AB  (A: d×r, B: r×d, trainable, r=8 or 16)\nTrainable params: 2 * d * r vs d * d → 2*r/d fraction\nFor d=4096, r=16: 0.78% of original params\n```\n\n**PEFT (Parameter-Efficient Fine-Tuning) methods comparison:**\n\n| Method | Trainable params | Quality | Speed |\n|--------|-----------------|---------|-------|\n| Full FT | 100% | Best | Slowest |\n| LoRA | 0.1-1% | Near-full | Fast |\n| QLoRA | 0.1-1% | Good | Fastest (4-bit) |\n| Prefix tuning | <0.1% | Lower | Very fast |\n| Prompt tuning | Tokens only | Lowest | Fastest |\n\n**Cost estimate (OpenAI gpt-4o-mini):**\n- Training: $0.003 per 1K training tokens\n- 1000 examples × 200 tokens avg = 200K tokens → $0.60 total training cost\n- Inference: $0.30/1M input + $1.20/1M output (vs $0.15/$0.60 base) — fine-tuned costs 2× more"
+    },
+    {
+      "type": "code",
+      "title": "OpenAI Fine-tuning Pipeline",
+      "language": "python",
+      "code": "# pip install openai tiktoken\nimport json\nimport os\nimport time\nfrom pathlib import Path\nfrom openai import OpenAI\nimport tiktoken\n\nclient = OpenAI(api_key=os.environ['OPENAI_API_KEY'])\n\n\n# ── 1. Prepare training data ───────────────────────────────────────────────────\n\n# Example: Fine-tune a SQL generation assistant\nRAW_EXAMPLES = [\n    ('List all users', 'SELECT * FROM users;'),\n    ('Find users over 30', 'SELECT * FROM users WHERE age > 30;'),\n    ('Count orders by status', 'SELECT status, COUNT(*) as count FROM orders GROUP BY status;'),\n    ('Get top 10 products by revenue', 'SELECT product_id, SUM(price * quantity) as revenue FROM order_items GROUP BY product_id ORDER BY revenue DESC LIMIT 10;'),\n    ('Find users who have not ordered', 'SELECT u.* FROM users u LEFT JOIN orders o ON u.id = o.user_id WHERE o.id IS NULL;'),\n    ('Average order value per user', 'SELECT user_id, AVG(total) as avg_order FROM orders GROUP BY user_id;'),\n    ('Orders in the last 7 days', \"SELECT * FROM orders WHERE created_at >= NOW() - INTERVAL '7 days';\"),\n    ('Update user email', \"UPDATE users SET email = 'new@email.com' WHERE id = 1;\"),\n    ('Delete cancelled orders older than 30 days', \"DELETE FROM orders WHERE status = 'cancelled' AND created_at < NOW() - INTERVAL '30 days';\"),\n    ('Create index on email column', 'CREATE INDEX idx_users_email ON users(email);'),\n]\n\nSYSTEM_MSG = 'You are a PostgreSQL expert. Generate clean, correct SQL for the given request. Return only the SQL query with no explanation.'\n\n\ndef create_training_example(user_request: str, sql_response: str) -> dict:\n    return {\n        'messages': [\n            {'role': 'system', 'content': SYSTEM_MSG},\n            {'role': 'user', 'content': user_request},\n            {'role': 'assistant', 'content': sql_response},\n        ]\n    }\n\n\ndef validate_training_data(examples: list[dict]) -> tuple[bool, list[str]]:\n    \"\"\"Validate JSONL format and token counts before uploading.\"\"\"\n    enc = tiktoken.get_encoding('cl100k_base')\n    errors = []\n    total_tokens = 0\n    \n    for i, ex in enumerate(examples):\n        if 'messages' not in ex:\n            errors.append(f'Example {i}: missing \"messages\" key')\n            continue\n        \n        for msg in ex['messages']:\n            if 'role' not in msg or 'content' not in msg:\n                errors.append(f'Example {i}: message missing role or content')\n            if msg['role'] not in ('system', 'user', 'assistant'):\n                errors.append(f'Example {i}: invalid role {msg[\"role\"]}')\n        \n        # Count tokens for this example\n        tokens = sum(len(enc.encode(m['content'])) for m in ex['messages'])\n        if tokens > 4096:\n            errors.append(f'Example {i}: {tokens} tokens exceeds 4096 limit')\n        total_tokens += tokens\n    \n    if len(examples) < 10:\n        errors.append(f'Only {len(examples)} examples — minimum is 10')\n    \n    print(f'Validation: {len(examples)} examples, ~{total_tokens:,} total tokens')\n    print(f'Estimated training cost: ${total_tokens * 0.003 / 1000:.4f} (gpt-4o-mini)')\n    return len(errors) == 0, errors\n\n\ndef save_jsonl(examples: list[dict], path: str) -> None:\n    Path(path).parent.mkdir(parents=True, exist_ok=True)\n    with open(path, 'w') as f:\n        for ex in examples:\n            f.write(json.dumps(ex) + '\\n')\n    print(f'Saved {len(examples)} examples to {path}')\n\n\n# ── 2. Training data split ─────────────────────────────────────────────────────\n\ndef split_train_val(examples: list[dict], val_ratio: float = 0.15):\n    val_size = max(1, int(len(examples) * val_ratio))\n    return examples[val_size:], examples[:val_size]  # train, val\n\n\n# ── 3. Upload and create fine-tuning job ──────────────────────────────────────\n\ndef upload_file(path: str, purpose: str = 'fine-tune') -> str:\n    with open(path, 'rb') as f:\n        response = client.files.create(file=f, purpose=purpose)\n    print(f'Uploaded {path} → file_id: {response.id}')\n    return response.id\n\n\ndef create_finetune_job(\n    training_file_id: str,\n    validation_file_id: str | None = None,\n    model: str = 'gpt-4o-mini',\n    n_epochs: int = 3,\n    suffix: str = 'sql-expert',\n) -> str:\n    params = {\n        'training_file': training_file_id,\n        'model': model,\n        'suffix': suffix,\n        'hyperparameters': {'n_epochs': n_epochs},\n    }\n    if validation_file_id:\n        params['validation_file'] = validation_file_id\n    \n    job = client.fine_tuning.jobs.create(**params)\n    print(f'Created fine-tuning job: {job.id} (status: {job.status})')\n    return job.id\n\n\n# ── 4. Monitor job ─────────────────────────────────────────────────────────────\n\ndef wait_for_job(job_id: str, poll_interval: int = 60) -> str:\n    \"\"\"Poll until job completes. Returns the fine-tuned model ID.\"\"\"\n    print(f'Waiting for job {job_id}...')\n    while True:\n        job = client.fine_tuning.jobs.retrieve(job_id)\n        print(f'  Status: {job.status} | Trained tokens: {job.trained_tokens}')\n        \n        if job.status == 'succeeded':\n            print(f'Fine-tuned model: {job.fine_tuned_model}')\n            return job.fine_tuned_model\n        if job.status in ('failed', 'cancelled'):\n            raise RuntimeError(f'Job {job_id} {job.status}: {job.error}')\n        \n        time.sleep(poll_interval)\n\n\n# ── 5. Evaluate fine-tuned model ───────────────────────────────────────────────\n\ndef evaluate_model(model_id: str, test_cases: list[tuple[str, str]]) -> dict:\n    \"\"\"Compare fine-tuned model output against expected SQL.\"\"\"\n    results = {'correct': 0, 'total': len(test_cases), 'details': []}\n    \n    for question, expected_sql in test_cases:\n        response = client.chat.completions.create(\n            model=model_id,\n            messages=[\n                {'role': 'system', 'content': SYSTEM_MSG},\n                {'role': 'user', 'content': question},\n            ],\n            temperature=0,\n            max_tokens=200,\n        )\n        actual_sql = response.choices[0].message.content.strip()\n        # Simple check: key words match (production would use AST comparison)\n        correct = expected_sql.lower().split() == actual_sql.lower().split()\n        if correct:\n            results['correct'] += 1\n        results['details'].append({\n            'question': question,\n            'expected': expected_sql,\n            'actual': actual_sql,\n            'correct': correct,\n        })\n    \n    results['accuracy'] = results['correct'] / results['total']\n    return results\n\n\n# ── Demo / Main ────────────────────────────────────────────────────────────────\n\ndef main():\n    # Prepare data\n    examples = [create_training_example(q, sql) for q, sql in RAW_EXAMPLES]\n    train_examples, val_examples = split_train_val(examples, val_ratio=0.2)\n    \n    # Validate\n    valid, errors = validate_training_data(train_examples)\n    if not valid:\n        for e in errors:\n            print(f'ERROR: {e}')\n        return\n    \n    # Save JSONL files\n    save_jsonl(train_examples, '/tmp/ft_train.jsonl')\n    save_jsonl(val_examples, '/tmp/ft_val.jsonl')\n    \n    # NOTE: Uncomment below to actually run the fine-tuning job (costs money)\n    # train_file_id = upload_file('/tmp/ft_train.jsonl')\n    # val_file_id = upload_file('/tmp/ft_val.jsonl')\n    # job_id = create_finetune_job(train_file_id, val_file_id, n_epochs=3)\n    # model_id = wait_for_job(job_id)\n    # results = evaluate_model(model_id, RAW_EXAMPLES[:3])\n    # print(f'Accuracy: {results[\"accuracy\"]*100:.1f}%')\n    \n    print('Data prepared. Uncomment the job creation lines to run fine-tuning.')\n    print(f'Training set: {len(train_examples)} examples')\n    print(f'Validation set: {len(val_examples)} examples')\n    print('Sample training example:')\n    print(json.dumps(train_examples[0], indent=2))\n\n\nif __name__ == '__main__':\n    main()"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Fine-tuning Mistakes",
+      "items": [
+        {
+          "mistake": "Fine-tuning when prompt engineering would suffice",
+          "why": "Fine-tuning takes time (hours), costs money, and produces a model frozen in time. A prompted base model can be updated instantly.",
+          "fix": "Always exhaust prompt engineering + few-shot + RAG first. Fine-tune only when you have 100+ examples and a clear quality gap that prompting can't close."
+        },
+        {
+          "mistake": "Training with fewer than 50 examples",
+          "why": "The model may memorize examples rather than generalize. 10 examples (the minimum) produces poor generalization.",
+          "fix": "Aim for 200+ high-quality examples. Quality matters more than quantity — 200 excellent examples beat 2000 noisy ones."
+        },
+        {
+          "mistake": "Inconsistent system prompts in training data",
+          "why": "If some examples have no system prompt and others have different ones, the model learns conflicting behavior. At inference, the system prompt produces unpredictable outputs.",
+          "fix": "Use the exact same system prompt in every training example. This is what will be used at inference."
+        },
+        {
+          "mistake": "Including the expected output in the user message",
+          "why": "The model should learn to generate the output, not copy it from the input. Including the answer in the user turn creates data leakage and a model that only works when the answer is provided.",
+          "fix": "User message = the input/question only. Assistant message = the target output/answer only."
+        },
+        {
+          "mistake": "Not setting a validation file",
+          "why": "Without validation data, you can't detect overfitting (training loss decreases but validation loss increases = the model memorized rather than generalizing).",
+          "fix": "Always split 10-20% of data for validation and pass it as validation_file in the job creation. Monitor both training_loss and validation_loss in the job events."
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "When would you choose fine-tuning over RAG for a knowledge-intensive task?",
+          "answer": "RAG is better when: the knowledge changes frequently, you need citations/sources, or the knowledge set is large. Fine-tuning is better when: the knowledge is stable, latency is critical (no retrieval step), the model needs to deeply internalize a style or format, or the task requires complex reasoning patterns that retrieval can't provide. In practice, combine both: fine-tune for style/format/behavior, use RAG for fresh knowledge.",
+          "followUps": ["What is 'catastrophic forgetting' in the context of fine-tuning?"]
+        },
+        {
+          "question": "What is LoRA and why is it preferred over full fine-tuning for open-source models?",
+          "answer": "LoRA (Low-Rank Adaptation) adds small trainable rank-decomposition matrices alongside frozen base weights. Instead of updating all 7B+ parameters, LoRA trains only ~0.1-1% of parameters. Benefits: GPU memory drops from 80GB+ to 16GB for a 7B model (enabling consumer GPUs), training is 3-5× faster, and LoRA weights are tiny (50-100MB) so you can maintain multiple task-specific adapters and switch them at inference time. Quality is near-identical to full fine-tuning for most tasks.",
+          "followUps": ["What is QLoRA and what problem does it solve?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write the code to check the status of a fine-tuning job and print all events.",
+          "answer": "```python\nimport openai\nclient = openai.OpenAI()\n\ndef check_job_status(job_id: str):\n    job = client.fine_tuning.jobs.retrieve(job_id)\n    print(f'Status: {job.status}')\n    print(f'Model: {job.fine_tuned_model}')\n    print(f'Trained tokens: {job.trained_tokens}')\n    \n    events = client.fine_tuning.jobs.list_events(fine_tuning_job_id=job_id, limit=20)\n    for event in reversed(list(events)):\n        print(f'  [{event.created_at}] {event.message}')\n    return job.status\n```"
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your fine-tuned model performs great on the test set but worse than the base model in production. What went wrong and how do you fix it?",
+          "answer": "This is distribution shift — training data doesn't represent real production inputs. Diagnose: log production queries and compare their distribution to training examples. Common causes: (1) Training examples were too clean/simple vs messy real user queries. (2) Training examples were synthetic/templated — model learned the templates, not the underlying task. (3) Overfitting — training loss < validation loss, model memorized examples. Fixes: (1) Collect actual production queries as the foundation of training data. (2) Add noise to training examples (typos, varied phrasing). (3) Reduce n_epochs or add more examples. (4) Check validation loss curves — if validation loss increases while training loss decreases, you've overfit. The best training data comes from logged production traffic with human-labeled correct outputs.",
+          "followUps": ["How would you set up an active learning loop to continuously improve the fine-tuned model?"]
+        }
+      ],
+      "wrongAnswers": [
+        "Fine-tuning permanently changes the base model's weights so you cannot use it for other tasks — fine-tuned models are separate; the base model is unchanged",
+        "You need thousands of examples before fine-tuning is worth attempting — 200 high-quality examples often outperform 2000 noisy ones",
+        "LoRA requires retraining the entire model — LoRA only trains tiny adapter matrices (0.1-1% of parameters), keeping the base model frozen"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d32q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "What file format does OpenAI require for fine-tuning training data?",
+          "options": {
+            "A": "JSON array file",
+            "B": "JSONL (one JSON object per line)",
+            "C": "CSV with columns: system, user, assistant",
+            "D": "Parquet file"
+          },
+          "answer": "B",
+          "explanation": "OpenAI fine-tuning requires JSONL format — each line is a complete JSON object with a 'messages' key containing the conversation. JSON arrays, CSV, and Parquet are not supported."
+        },
+        {
+          "id": "d32q2",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is the primary advantage of LoRA over full fine-tuning?",
+          "options": {
+            "A": "It produces better models with less data",
+            "B": "It trains only a tiny fraction of parameters (0.1-1%), drastically reducing GPU memory and training time",
+            "C": "It avoids catastrophic forgetting entirely",
+            "D": "It works with any file format, not just JSONL"
+          },
+          "answer": "B",
+          "explanation": "LoRA freezes the base model and trains only small rank-decomposition matrices. For a 7B model, this drops from updating 7B parameters to ~7M, enabling fine-tuning on consumer GPUs with near-full-FT quality."
+        },
+        {
+          "id": "d32q3",
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "You have 10 perfect training examples. What should you do before fine-tuning?",
+          "options": {
+            "A": "Proceed — 10 is the minimum required",
+            "B": "Generate more examples (aim for 200+) using the base model and human review",
+            "C": "Use n_epochs=50 to extract maximum learning from small data",
+            "D": "Add the same examples multiple times to pad the dataset"
+          },
+          "answer": "B",
+          "explanation": "10 examples meet the API minimum but produce poor generalization. The model will likely memorize rather than learn the pattern. Expand to 200+ examples using data augmentation (paraphrasing, synthetic generation via the base model + human review) before investing in fine-tuning."
+        },
+        {
+          "id": "d32q4",
+          "level": "advanced",
+          "category": "theory",
+          "question": "Your fine-tuning job shows training_loss = 0.05 but validation_loss = 1.8. What is happening?",
+          "options": {
+            "A": "The model is learning correctly — training loss should always be lower",
+            "B": "The model is overfitting — it memorized training examples but cannot generalize",
+            "C": "The validation set is too small to be meaningful",
+            "D": "The learning rate is too low"
+          },
+          "answer": "B",
+          "explanation": "When training loss is very low but validation loss is high, the model has memorized the training data rather than learning the underlying pattern. Solutions: reduce n_epochs, get more training data (especially diverse examples), or check if training data is too repetitive/templated."
+        },
+        {
+          "id": "d32q5",
+          "level": "basic",
+          "category": "code",
+          "question": "In an OpenAI fine-tuning JSONL example, where should the expected output (answer) be placed?",
+          "options": {
+            "A": "In the 'system' message",
+            "B": "At the end of the 'user' message",
+            "C": "In a separate 'expected' field",
+            "D": "In the 'assistant' message"
+          },
+          "answer": "D",
+          "explanation": "The target output is always the 'assistant' message. The model is trained to predict the assistant turn given the system + user context. Placing the answer anywhere else would corrupt the training signal."
+        }
+      ]
+    }
+  ]
+}

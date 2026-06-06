@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { AppProgress, CurriculumId, CurriculumMeta, PhaseData, Track } from '../types';
 import { format } from 'date-fns';
+import { APP_STORE_VERSION, migrateAppStore } from './persistMigration';
 
 // ─── Default Progress ─────────────────────────────────────────
 const defaultProgress: AppProgress = {
@@ -117,7 +118,7 @@ export const useAppStore = create<AppStore>()(
         const updatedPhaseProgress = { ...state.progress.phaseProgress };
         if (curriculum) {
           for (const phase of curriculum.phases) {
-            const [startDay, endDay] = phase.days
+            const [startDay, endDay] = (phase.days ?? '0–0')
               .split('–')
               .map((d) => parseInt(d));
             const phaseDays = Array.from(
@@ -322,7 +323,9 @@ export const useAppStore = create<AppStore>()(
         onboardingComplete: state.onboardingComplete,
         sidebarOpen: state.sidebarOpen,
       }),
-      /** Older persisted state may omit newer progress keys (e.g. assignmentsCompleted). */
+      version: APP_STORE_VERSION,
+      migrate: migrateAppStore,
+      /** Merge hydrated slice with live store defaults (non-persisted fields). */
       merge: (persisted, current) => {
         const p = persisted as Partial<AppStore> | undefined;
         const base = current as AppStore;
@@ -353,7 +356,7 @@ export const selectCompletionRate = (state: AppStore) => {
 export const selectPhaseForDay = (dayNumber: number) => (state: AppStore) => {
   const phases = state.curriculum?.phases ?? [];
   return phases.find((p) => {
-    const [start, end] = p.days.split('–').map(Number);
+    const [start, end] = (p.days ?? '0–0').split('–').map(Number);
     return dayNumber >= start && dayNumber <= end;
   });
 };

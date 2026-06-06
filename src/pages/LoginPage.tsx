@@ -33,6 +33,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import MarkEmailReadIcon from '@mui/icons-material/MarkEmailRead';
 import { useAuthStore } from '../auth/useAuthStore';
+import { mergePermanentUsers } from '../auth/ensurePermanentUsers';
 import { APP_DISPLAY_NAME } from '../constants/branding';
 import AccessEnquiryNotice from '../components/AccessEnquiryNotice';
 import { checkRateLimit, getRemainingAttempts } from '../auth/authUtils';
@@ -95,6 +96,10 @@ type RegStep = 'form' | 'otp';
 const LoginPage: React.FC<Props> = ({ onSuccess }) => {
   const { login, preRegister, markEmailVerified } = useAuthStore();
   const [tab, setTab] = useState<0 | 1>(0); // 0=Login, 1=Register
+
+  useEffect(() => {
+    useAuthStore.setState((s) => ({ users: mergePermanentUsers(s.users) }));
+  }, []);
   const [regStep, setRegStep] = useState<RegStep>('form');
 
   // Login fields

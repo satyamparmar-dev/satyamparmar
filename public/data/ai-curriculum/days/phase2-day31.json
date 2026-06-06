@@ -1,0 +1,178 @@
+{
+  "id": "phase2-day31",
+  "day": 31,
+  "phase": 2,
+  "title": "Document Processing Pipelines — PDF, HTML & Tables",
+  "estimatedHours": 4,
+  "difficulty": "intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["document-processing", "pdf", "html", "tables", "unstructured", "langchain"],
+  "prerequisites": ["phase2-day23", "phase2-day25"],
+  "learningObjectives": [
+    "Extract text from PDFs using PyPDF2 and pdfplumber",
+    "Parse HTML documents with BeautifulSoup and LangChain loaders",
+    "Extract and represent tabular data for LLM consumption",
+    "Build a multi-format document processing pipeline",
+    "Handle OCR for scanned documents"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Document Processing Is Non-Trivial",
+      "content": "Most enterprise data isn't in clean text files — it's in PDFs (with headers, footers, columns, embedded images), HTML (with nav menus, ads, nested tags), and tables (where structure carries meaning). A PDF parser that just concatenates all text loses the column layout of a financial table and intermixes page numbers with content. An HTML scraper that ignores structure extracts boilerplate navigation alongside the actual article. Real document pipelines must: extract clean content, preserve structure where it matters, handle encoding issues, and chunk intelligently without splitting sentences mid-thought."
+    },
+    {
+      "type": "theory",
+      "title": "Document Processing Libraries",
+      "content": "**PDF libraries comparison:**\n\n| Library | Strengths | Weaknesses |\n|---------|-----------|------------|\n| PyPDF2 | Simple, pure Python | No table extraction, layout may scramble |\n| pdfplumber | Table extraction, precise positions | Slower, more complex API |\n| pdfminer.six | Low-level control | Complex API |\n| pymupdf (fitz) | Fast, handles complex layouts | C binding, larger install |\n| unstructured | Handles PDF/DOCX/HTML/images | Heavy install, needs system deps |\n\n**Key PDF extraction challenges:**\n- **Multi-column layouts**: PDF stores text in reading order of visual columns — naive extraction scrambles them\n- **Headers/footers**: Repeated on every page; must detect and strip\n- **Page numbers**: Appear as standalone single-number paragraphs\n- **Tables**: PDF doesn't have a table concept — rows are just positioned text\n\n**HTML processing:**\n```python\nfrom bs4 import BeautifulSoup\nimport requests\n\nhtml = requests.get(url).text\nsoup = BeautifulSoup(html, 'html.parser')\n# Remove noise\nfor tag in soup(['script', 'style', 'nav', 'footer', 'header', 'aside']):\n    tag.decompose()\n# Extract main content\nmain = soup.find('main') or soup.find('article') or soup.find('body')\ntext = main.get_text(separator='\\n', strip=True)\n```\n\n**Table representation for LLMs:**\n```\n# Option 1: Markdown (best for LLMs)\n| Name | Revenue | YoY Growth |\n|------|---------|------------|\n| APAC | $1.2B   | +15%       |\n\n# Option 2: CSV-style\nName,Revenue,YoY Growth\nAPAC,$1.2B,+15%\n\n# Option 3: Natural language (for simple tables)\nAPAC had revenue of $1.2B, representing 15% year-over-year growth.\n```\n\n**Chunking strategy for structured documents:**\n1. Extract document sections by heading (H1/H2 → chunk boundaries)\n2. Tables as atomic chunks (never split a table)\n3. Paragraphs as natural chunks (split at sentence boundary if too long)\n4. Metadata: page_number, section_title, document_name on every chunk"
+    },
+    {
+      "type": "code",
+      "title": "Multi-Format Document Pipeline",
+      "language": "python",
+      "code": "# pip install pypdf pdfplumber beautifulsoup4 requests langchain langchain-openai\nimport re\nimport json\nfrom pathlib import Path\nfrom dataclasses import dataclass, field\nfrom typing import Optional\nimport pdfplumber\nfrom pypdf import PdfReader\nfrom bs4 import BeautifulSoup\n\n\n@dataclass\nclass DocumentChunk:\n    text: str\n    metadata: dict = field(default_factory=dict)\n\n    def token_estimate(self) -> int:\n        return len(self.text.split()) * 4 // 3  # rough: words * 1.33\n\n\n# ── PDF processing ─────────────────────────────────────────────────────────────\n\nclass PDFProcessor:\n    \n    @staticmethod\n    def extract_text_pypdf(path: str) -> list[DocumentChunk]:\n        \"\"\"Fast extraction — good for simple PDFs.\"\"\"\n        reader = PdfReader(path)\n        chunks = []\n        for i, page in enumerate(reader.pages):\n            text = page.extract_text() or ''\n            text = PDFProcessor._clean_text(text)\n            if text.strip():\n                chunks.append(DocumentChunk(\n                    text=text,\n                    metadata={'source': path, 'page': i + 1, 'type': 'text'},\n                ))\n        return chunks\n    \n    @staticmethod\n    def extract_with_tables(path: str) -> list[DocumentChunk]:\n        \"\"\"pdfplumber for precise text + table extraction.\"\"\"\n        chunks = []\n        with pdfplumber.open(path) as pdf:\n            for page_num, page in enumerate(pdf.pages, start=1):\n                # Extract tables first (remove them from text region)\n                tables = page.extract_tables()\n                table_chunks = []\n                for table in tables:\n                    md = PDFProcessor._table_to_markdown(table)\n                    if md:\n                        table_chunks.append(DocumentChunk(\n                            text=md,\n                            metadata={'source': path, 'page': page_num, 'type': 'table'},\n                        ))\n                \n                # Extract remaining text\n                # Bounding boxes of tables to exclude from text\n                table_bboxes = [t.bbox for t in page.find_tables()] if hasattr(page, 'find_tables') else []\n                text = page.extract_text(x_tolerance=3, y_tolerance=3) or ''\n                text = PDFProcessor._clean_text(text)\n                \n                if text.strip():\n                    chunks.append(DocumentChunk(\n                        text=text,\n                        metadata={'source': path, 'page': page_num, 'type': 'text'},\n                    ))\n                chunks.extend(table_chunks)\n        return chunks\n    \n    @staticmethod\n    def _table_to_markdown(table: list[list]) -> str:\n        \"\"\"Convert pdfplumber table (list of lists) to markdown.\"\"\"\n        if not table or not table[0]:\n            return ''\n        # Clean cells: replace None with empty string, strip whitespace\n        rows = [[(str(cell).strip() if cell else '') for cell in row] for row in table]\n        if not rows:\n            return ''\n        header = rows[0]\n        separator = ['---'] * len(header)\n        body = rows[1:]\n        lines = [\n            '| ' + ' | '.join(header) + ' |',\n            '| ' + ' | '.join(separator) + ' |',\n        ]\n        for row in body:\n            lines.append('| ' + ' | '.join(row) + ' |')\n        return '\\n'.join(lines)\n    \n    @staticmethod\n    def _clean_text(text: str) -> str:\n        \"\"\"Remove common PDF noise.\"\"\"\n        # Remove standalone page numbers (e.g., '\\n42\\n')\n        text = re.sub(r'\\n\\d+\\n', '\\n', text)\n        # Collapse multiple blank lines\n        text = re.sub(r'\\n{3,}', '\\n\\n', text)\n        # Fix hyphenated line breaks (word-\\nnext → wordnext)\n        text = re.sub(r'(\\w+)-\\n(\\w+)', r'\\1\\2', text)\n        return text.strip()\n\n\n# ── HTML processing ────────────────────────────────────────────────────────────\n\nclass HTMLProcessor:\n    NOISE_TAGS = ['script', 'style', 'nav', 'footer', 'header', 'aside',\n                  'advertisement', 'cookie', 'banner']\n    \n    @staticmethod\n    def extract(html_content: str, url: str = '') -> list[DocumentChunk]:\n        soup = BeautifulSoup(html_content, 'html.parser')\n        \n        # Strip noise\n        for tag in soup(HTMLProcessor.NOISE_TAGS):\n            tag.decompose()\n        \n        title = soup.find('title')\n        doc_title = title.get_text(strip=True) if title else 'Unknown'\n        \n        chunks = []\n        # Try to find structured content\n        main = soup.find('main') or soup.find('article') or soup.find(id='content') or soup.find('body')\n        if not main:\n            return []\n        \n        current_section = ''\n        current_heading = 'Introduction'\n        \n        for element in main.find_all(['h1', 'h2', 'h3', 'p', 'table', 'ul', 'ol']):\n            tag_name = element.name\n            \n            if tag_name in ['h1', 'h2', 'h3']:\n                # Save previous section\n                if current_section.strip():\n                    chunks.append(DocumentChunk(\n                        text=current_section.strip(),\n                        metadata={'source': url, 'title': doc_title, 'section': current_heading, 'type': 'text'},\n                    ))\n                current_heading = element.get_text(strip=True)\n                current_section = ''\n            \n            elif tag_name == 'table':\n                # Save current section first\n                if current_section.strip():\n                    chunks.append(DocumentChunk(\n                        text=current_section.strip(),\n                        metadata={'source': url, 'title': doc_title, 'section': current_heading, 'type': 'text'},\n                    ))\n                    current_section = ''\n                # Extract HTML table as markdown\n                md_table = HTMLProcessor._html_table_to_markdown(element)\n                if md_table:\n                    chunks.append(DocumentChunk(\n                        text=md_table,\n                        metadata={'source': url, 'title': doc_title, 'section': current_heading, 'type': 'table'},\n                    ))\n            \n            elif tag_name in ['p', 'ul', 'ol']:\n                text = element.get_text(separator=' ', strip=True)\n                if text:\n                    current_section += text + '\\n\\n'\n        \n        if current_section.strip():\n            chunks.append(DocumentChunk(\n                text=current_section.strip(),\n                metadata={'source': url, 'title': doc_title, 'section': current_heading, 'type': 'text'},\n            ))\n        \n        return chunks\n    \n    @staticmethod\n    def _html_table_to_markdown(table_element) -> str:\n        rows = []\n        for tr in table_element.find_all('tr'):\n            cells = [td.get_text(strip=True) for td in tr.find_all(['th', 'td'])]\n            rows.append(cells)\n        if not rows:\n            return ''\n        # Use first row as header\n        header = rows[0]\n        lines = ['| ' + ' | '.join(header) + ' |', '| ' + ' | '.join(['---'] * len(header)) + ' |']\n        for row in rows[1:]:\n            # Pad/trim row to match header length\n            row = (row + [''] * len(header))[:len(header)]\n            lines.append('| ' + ' | '.join(row) + ' |')\n        return '\\n'.join(lines)\n\n\n# ── Intelligent chunker (section-aware) ───────────────────────────────────────\n\ndef smart_chunk(chunks: list[DocumentChunk], max_tokens: int = 400) -> list[DocumentChunk]:\n    \"\"\"Split text chunks that exceed max_tokens; leave table chunks intact.\"\"\"\n    result = []\n    for chunk in chunks:\n        if chunk.metadata.get('type') == 'table':\n            result.append(chunk)  # never split tables\n            continue\n        \n        if chunk.token_estimate() <= max_tokens:\n            result.append(chunk)\n            continue\n        \n        # Split at sentence boundaries\n        sentences = re.split(r'(?<=[.!?])\\s+', chunk.text)\n        current, current_tokens = '', 0\n        for sentence in sentences:\n            s_tokens = len(sentence.split()) * 4 // 3\n            if current_tokens + s_tokens > max_tokens and current:\n                result.append(DocumentChunk(text=current.strip(), metadata=chunk.metadata.copy()))\n                current, current_tokens = sentence, s_tokens\n            else:\n                current += ' ' + sentence\n                current_tokens += s_tokens\n        if current.strip():\n            result.append(DocumentChunk(text=current.strip(), metadata=chunk.metadata.copy()))\n    return result\n\n\n# ── LangChain integration ──────────────────────────────────────────────────────\n\nfrom langchain_core.documents import Document\n\ndef chunks_to_langchain_docs(chunks: list[DocumentChunk]) -> list[Document]:\n    \"\"\"Convert our DocumentChunk objects to LangChain Documents for use with vectorstores.\"\"\"\n    return [Document(page_content=c.text, metadata=c.metadata) for c in chunks]\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    # Simulate HTML processing\n    sample_html = \"\"\"\n    <html><head><title>Q3 Earnings Report</title></head>\n    <body>\n    <nav>Home | About | Contact</nav>\n    <main>\n        <h1>Q3 2024 Financial Results</h1>\n        <p>Revenue grew 15% year-over-year driven by strong APAC performance.</p>\n        <h2>Revenue by Region</h2>\n        <table>\n            <tr><th>Region</th><th>Revenue</th><th>Growth</th></tr>\n            <tr><td>APAC</td><td>$1.2B</td><td>+22%</td></tr>\n            <tr><td>EMEA</td><td>$0.8B</td><td>+10%</td></tr>\n            <tr><td>Americas</td><td>$2.1B</td><td>+8%</td></tr>\n        </table>\n        <h2>Outlook</h2>\n        <p>We expect Q4 revenue of $4.5B, representing 12% annual growth.</p>\n    </main>\n    <footer>© 2024 Example Corp</footer>\n    </body></html>\n    \"\"\"\n    \n    html_chunks = HTMLProcessor.extract(sample_html, url='https://example.com/earnings')\n    chunked = smart_chunk(html_chunks, max_tokens=200)\n    \n    print(f'HTML chunks: {len(html_chunks)} → after smart_chunk: {len(chunked)}')\n    for c in chunked:\n        print(f'  [{c.metadata[\"type\"]}] {c.metadata[\"section\"]}: {c.text[:80]}...')\n    \n    lc_docs = chunks_to_langchain_docs(chunked)\n    print(f'\\nLangChain Documents ready for vectorstore: {len(lc_docs)}')"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Document Processing Pitfalls",
+      "items": [
+        {
+          "mistake": "Treating all PDFs the same way",
+          "why": "Text PDFs, scanned PDFs (images), and hybrid PDFs need completely different approaches. PyPDF2 returns empty strings for scanned PDFs.",
+          "fix": "Check if page text is non-empty. If a PDF has minimal text, it's likely scanned — use OCR (pytesseract or AWS Textract). Log extraction yield (chars/page) to detect scanned pages."
+        },
+        {
+          "mistake": "Not stripping headers/footers from PDFs",
+          "why": "Repeated headers like 'CONFIDENTIAL | Page X of Y | Company Name' appear on every page and pollute chunks with identical, useless text that reduces retrieval precision.",
+          "fix": "Detect repeated text blocks (appear on 80%+ of pages) and strip them. pdfplumber's y-coordinate lets you identify text in the top/bottom 10% of each page."
+        },
+        {
+          "mistake": "Splitting tables across chunks",
+          "why": "A table split in half loses its meaning — rows without headers make no sense to an LLM.",
+          "fix": "Treat tables as atomic chunks. If a table exceeds your max chunk size, keep it whole and note it's oversized — don't split."
+        },
+        {
+          "mistake": "Extracting HTML with all tags as single text blob",
+          "why": "Navigation, footers, cookie banners, and ads pollute the content. The LLM wastes context on noise.",
+          "fix": "Explicitly remove noise tags with BeautifulSoup decompose(). Try to identify the main content area (article, main, #content) before extracting."
+        },
+        {
+          "mistake": "Ignoring document metadata",
+          "why": "Chunks without source, page, and section metadata can't be cited in RAG responses and can't be filtered by document.",
+          "fix": "Every chunk must carry: source path/URL, page number (PDFs), section heading, document date, and content type (text/table)."
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "What is the difference between text PDFs and scanned PDFs, and how do you handle each?",
+          "answer": "Text PDFs have embedded font data — characters are stored as text vectors and can be extracted directly with libraries like pypdf or pdfplumber. Scanned PDFs are images of pages — the content is pixel data with no text layer. PyPDF2 returns empty or garbled text for them. Handle scanned PDFs with OCR: pytesseract for local processing, or cloud services like AWS Textract or Google Document AI for production. A robust pipeline checks both: if extraction yield (chars per page) is below a threshold (e.g., <50 chars/page), fall back to OCR.",
+          "followUps": ["How would you detect mixed documents (some scanned pages, some text pages)?"]
+        },
+        {
+          "question": "Why is 'section-aware chunking' better than fixed-size chunking for structured documents?",
+          "answer": "Fixed-size chunking (e.g., every 500 tokens) arbitrarily cuts through semantic boundaries — splitting a table in half, cutting a sentence mid-thought, or mixing content from different sections. Section-aware chunking uses document structure: headings define natural boundaries, tables stay atomic, and paragraph text is only split when necessary. This produces chunks where each piece has a single topic and complete information, dramatically improving retrieval precision.",
+          "followUps": ["How do you apply section-aware chunking to PDFs that lack explicit heading markup?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "How would you represent a financial table from a PDF for an LLM query?",
+          "answer": "Markdown table format is best: it preserves column structure, is readable to LLMs (trained on markdown), and is compact. Example:\n```\n| Region | Revenue | Growth |\n|--------|---------|--------|\n| APAC   | $1.2B   | +22%   |\n| EMEA   | $0.8B   | +10%   |\n```\nInclude a text description before the table if the heading is not obvious: 'Revenue by region for Q3 2024:'. Avoid serializing as JSON objects — the LLM must then parse JSON plus understand the meaning, whereas markdown is closer to natural language."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You're building a document pipeline that ingests 50,000 PDFs per month. Some are legal contracts (complex layout), some are financial reports (tables), some are scanned invoices. How do you architect this at scale?",
+          "answer": "Classify documents first: a lightweight ML classifier (or rule-based heuristics on filename/first-page text) routes to specialized extractors. Text-layer PDFs → pdfplumber for table-rich content, pypdf for simple text. Scanned → cloud OCR (AWS Textract for structured documents, preserves table structure). Process asynchronously: documents go into an SQS queue, Lambda workers extract and chunk, results land in S3 + index into OpenSearch/pgvector. Track extraction quality metrics per document type (chars/page, table count). Set up a review queue for documents with extraction yield below threshold. Store raw extracted text alongside chunks so you can re-chunk without re-extracting when your chunking strategy improves.",
+          "followUps": ["How do you handle PII in legal contracts before indexing?"]
+        }
+      ],
+      "wrongAnswers": [
+        "PyPDF2 and pdfplumber produce identical output — pdfplumber is much better for tables and precise text positioning",
+        "HTML can always be extracted with a simple regex — structured HTML parsing with BeautifulSoup handles encoding, nested tags, and malformed HTML correctly",
+        "Tables should always be split to fit the chunk size limit — tables must be treated as atomic units to preserve their meaning"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d31q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the best way to represent a data table when sending it to an LLM?",
+          "options": {
+            "A": "Raw HTML table tags",
+            "B": "Python dict/JSON object",
+            "C": "Markdown table format",
+            "D": "CSV with no headers"
+          },
+          "answer": "C",
+          "explanation": "LLMs are extensively trained on markdown, making markdown tables the most naturally readable format. Raw HTML adds noise tags. JSON requires an extra parsing step. CSV without headers loses column meaning."
+        },
+        {
+          "id": "d31q2",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why does PyPDF2 return empty strings for some PDFs?",
+          "options": {
+            "A": "The PDF uses an incompatible version",
+            "B": "The PDF is scanned (image-based) and has no text layer",
+            "C": "PyPDF2 only supports English text",
+            "D": "The file is too large for in-memory processing"
+          },
+          "answer": "B",
+          "explanation": "Scanned PDFs are images of pages. There is no text layer — only pixels. PyPDF2 can only read text that is actually encoded as text in the PDF. Scanned documents require OCR to extract text from the image."
+        },
+        {
+          "id": "d31q3",
+          "level": "intermediate",
+          "category": "code",
+          "question": "In BeautifulSoup, what does `soup.find('main')` return if no `<main>` tag exists?",
+          "options": {
+            "A": "An empty Tag object",
+            "B": "An empty string",
+            "C": "None",
+            "D": "Raises AttributeError"
+          },
+          "answer": "C",
+          "explanation": "soup.find() returns None if no matching element is found. That's why production code uses: `main = soup.find('main') or soup.find('article') or soup.find('body')` — chained fallbacks."
+        },
+        {
+          "id": "d31q4",
+          "level": "advanced",
+          "category": "scenario",
+          "question": "Your RAG system retrieves the wrong content when users query about financial tables. The table chunks have high relevance scores but wrong information. What is likely the cause?",
+          "options": {
+            "A": "The embedding model doesn't understand numbers",
+            "B": "Table chunks lack context — they have no heading or description indicating what the table is about",
+            "C": "Tables should not be embedded separately — always merge with surrounding text",
+            "D": "The retriever is returning too many results"
+          },
+          "answer": "B",
+          "explanation": "Tables without context are ambiguous. A table chunk showing just '| APAC | $1.2B | +22%' doesn't tell the retriever what year, metric, or document it came from. Prepend the table with its section heading and a one-line description: 'Q3 2024 Revenue by Region:\\n| Region | Revenue |...' for accurate retrieval."
+        },
+        {
+          "id": "d31q5",
+          "level": "basic",
+          "category": "code",
+          "question": "What does `tag.decompose()` do in BeautifulSoup?",
+          "options": {
+            "A": "Converts the tag to plain text",
+            "B": "Removes the tag and all its children from the parse tree permanently",
+            "C": "Moves the tag to a separate container",
+            "D": "Extracts all text content from the tag"
+          },
+          "answer": "B",
+          "explanation": "decompose() removes the element and its entire subtree from the BeautifulSoup tree in place. It's the correct way to strip noise elements like <nav>, <footer>, and <script> before extracting content."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "id": "phase2-day28",
+  "day": 28,
+  "phase": 2,
+  "title": "Function Calling & Tool Use",
+  "estimatedHours": 4,
+  "difficulty": "intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["function-calling", "tool-use", "openai", "anthropic", "api"],
+  "prerequisites": ["phase2-day22", "phase1-day15", "phase1-day16"],
+  "learningObjectives": [
+    "Understand what function calling is and why it matters",
+    "Implement OpenAI function calling with JSON Schema definitions",
+    "Implement Anthropic tool use with input_schema",
+    "Handle parallel tool calls and multiple tool results",
+    "Build a practical tool-augmented assistant"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Function Calling Changes Everything",
+      "content": "LLMs are text in, text out — they can't natively call APIs, query databases, or run code. Function calling (OpenAI) / tool use (Anthropic) solves this by letting the model emit a structured 'I want to call this function with these arguments' signal instead of free text. Your code executes the function and feeds the result back. This transforms LLMs from static knowledge stores into dynamic agents that interact with live systems: real-time weather, stock prices, database lookups, email sending — anything you can write a function for. It's the foundation of every agentic application."
+    },
+    {
+      "type": "theory",
+      "title": "Function Calling Mechanics",
+      "content": "**The request-execute-respond loop:**\n\n```\n1. You send: messages + tools definition (JSON Schema)\n2. Model responds: tool_calls (name + arguments as JSON string)\n3. You execute: call the actual function\n4. You send: result as a tool message\n5. Model responds: final natural-language answer\n```\n\n**OpenAI function schema structure:**\n```json\n{\n  \"type\": \"function\",\n  \"function\": {\n    \"name\": \"get_weather\",\n    \"description\": \"Get current weather for a city\",\n    \"parameters\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"city\": {\"type\": \"string\", \"description\": \"City name\"},\n        \"unit\": {\"type\": \"string\", \"enum\": [\"celsius\", \"fahrenheit\"]}\n      },\n      \"required\": [\"city\"]\n    }\n  }\n}\n```\n\n**Anthropic tool schema structure (very similar):**\n```json\n{\n  \"name\": \"get_weather\",\n  \"description\": \"Get current weather for a city\",\n  \"input_schema\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"city\": {\"type\": \"string\"},\n      \"unit\": {\"type\": \"string\", \"enum\": [\"celsius\", \"fahrenheit\"]}\n    },\n    \"required\": [\"city\"]\n  }\n}\n```\n\n**Key differences:**\n| Aspect | OpenAI | Anthropic |\n|--------|--------|----------|\n| Schema key | `parameters` | `input_schema` |\n| Wrapper | `{type:'function', function:{...}}` | Direct object |\n| Tool call access | `response.choices[0].message.tool_calls` | `response.content[i]` where `type=='tool_use'` |\n| Arguments | JSON string → `json.loads()` | Already a dict |\n| Result message | `{role:'tool', tool_call_id, content}` | `{role:'user', content:[{type:'tool_result', tool_use_id, content}]}` |\n| Force tool | `tool_choice: {type:'function', function:{name}}` | `tool_choice: {type:'tool', name}` |\n\n**Parallel tool calls (OpenAI):** Model can emit multiple `tool_calls` in one response — execute all, then send all results before the next generation. Anthropic supports this too via multiple `tool_use` blocks in `content[]`.\n\n**tool_choice values:**\n- `'auto'` — model decides (default)\n- `'required'` — model MUST call a tool\n- `'none'` — no tools (pure text)\n- `{type:'function', function:{name:'X'}}` — force specific tool"
+    },
+    {
+      "type": "code",
+      "title": "Complete Function Calling Implementation",
+      "language": "python",
+      "code": "import json\nimport os\nfrom typing import Any, Callable\nfrom openai import OpenAI\nimport anthropic\n\nopenai_client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])\nanthropic_client = anthropic.Anthropic(api_key=os.environ['ANTHROPIC_API_KEY'])\n\n# ── Tool implementations ──────────────────────────────────────────────────────\n\ndef get_weather(city: str, unit: str = 'celsius') -> dict:\n    \"\"\"Simulated weather API.\"\"\"\n    data = {\n        'London': {'temp_c': 15, 'condition': 'cloudy'},\n        'Tokyo':  {'temp_c': 28, 'condition': 'sunny'},\n        'NYC':    {'temp_c': 22, 'condition': 'partly cloudy'},\n    }\n    info = data.get(city, {'temp_c': 20, 'condition': 'unknown'})\n    temp = info['temp_c'] if unit == 'celsius' else info['temp_c'] * 9/5 + 32\n    symbol = '°C' if unit == 'celsius' else '°F'\n    return {'city': city, 'temperature': f'{temp}{symbol}', 'condition': info['condition']}\n\ndef search_database(query: str, table: str = 'products') -> list[dict]:\n    \"\"\"Simulated DB query.\"\"\"\n    db = {\n        'products': [\n            {'id': 1, 'name': 'Widget Pro', 'price': 29.99, 'stock': 150},\n            {'id': 2, 'name': 'Gadget Plus', 'price': 49.99, 'stock': 0},\n            {'id': 3, 'name': 'Tool Deluxe', 'price': 99.99, 'stock': 42},\n        ]\n    }\n    rows = db.get(table, [])\n    q = query.lower()\n    return [r for r in rows if q in r.get('name', '').lower()] or rows[:3]\n\ndef calculate(expression: str) -> dict:\n    \"\"\"Safe expression evaluator.\"\"\"\n    allowed = set('0123456789+-*/.(). ')\n    if not all(c in allowed for c in expression):\n        return {'error': 'Invalid characters'}\n    try:\n        result = eval(expression, {'__builtins__': {}})  # noqa: S307 — safe subset only\n        return {'expression': expression, 'result': result}\n    except Exception as e:\n        return {'error': str(e)}\n\n# Registry maps name → callable\nTOOL_REGISTRY: dict[str, Callable] = {\n    'get_weather': get_weather,\n    'search_database': search_database,\n    'calculate': calculate,\n}\n\ndef dispatch_tool(name: str, arguments: dict) -> str:\n    fn = TOOL_REGISTRY.get(name)\n    if fn is None:\n        return json.dumps({'error': f'Unknown tool: {name}'})\n    return json.dumps(fn(**arguments))\n\n\n# ── OpenAI function calling ───────────────────────────────────────────────────\n\nOPENAI_TOOLS = [\n    {\n        'type': 'function',\n        'function': {\n            'name': 'get_weather',\n            'description': 'Get current weather for a city',\n            'parameters': {\n                'type': 'object',\n                'properties': {\n                    'city': {'type': 'string', 'description': 'City name, e.g. London'},\n                    'unit': {'type': 'string', 'enum': ['celsius', 'fahrenheit'], 'default': 'celsius'},\n                },\n                'required': ['city'],\n            },\n        },\n    },\n    {\n        'type': 'function',\n        'function': {\n            'name': 'search_database',\n            'description': 'Search the product database',\n            'parameters': {\n                'type': 'object',\n                'properties': {\n                    'query': {'type': 'string', 'description': 'Search term'},\n                    'table': {'type': 'string', 'enum': ['products', 'orders'], 'default': 'products'},\n                },\n                'required': ['query'],\n            },\n        },\n    },\n    {\n        'type': 'function',\n        'function': {\n            'name': 'calculate',\n            'description': 'Evaluate a mathematical expression',\n            'parameters': {\n                'type': 'object',\n                'properties': {\n                    'expression': {'type': 'string', 'description': 'Math expression, e.g. 2 + 2 * 3'},\n                },\n                'required': ['expression'],\n            },\n        },\n    },\n]\n\n\ndef openai_tool_loop(user_message: str, max_rounds: int = 5) -> str:\n    \"\"\"Full agentic loop: call tools until the model produces a text response.\"\"\"\n    messages = [{'role': 'user', 'content': user_message}]\n    \n    for _round in range(max_rounds):\n        response = openai_client.chat.completions.create(\n            model='gpt-4o-mini',\n            messages=messages,\n            tools=OPENAI_TOOLS,\n            tool_choice='auto',\n        )\n        msg = response.choices[0].message\n        messages.append(msg)  # append assistant message (may include tool_calls)\n        \n        if not msg.tool_calls:          # model produced final text\n            return msg.content\n        \n        # Execute every tool call (parallel support)\n        for tc in msg.tool_calls:\n            args = json.loads(tc.function.arguments)\n            result = dispatch_tool(tc.function.name, args)\n            print(f'  [tool] {tc.function.name}({args}) → {result}')\n            messages.append({\n                'role': 'tool',\n                'tool_call_id': tc.id,\n                'content': result,\n            })\n    \n    return 'Max rounds reached'\n\n\n# ── Anthropic tool use ────────────────────────────────────────────────────────\n\nANTHROPIC_TOOLS = [\n    {\n        'name': 'get_weather',\n        'description': 'Get current weather for a city',\n        'input_schema': {\n            'type': 'object',\n            'properties': {\n                'city': {'type': 'string'},\n                'unit': {'type': 'string', 'enum': ['celsius', 'fahrenheit']},\n            },\n            'required': ['city'],\n        },\n    },\n    {\n        'name': 'calculate',\n        'description': 'Evaluate a mathematical expression',\n        'input_schema': {\n            'type': 'object',\n            'properties': {\n                'expression': {'type': 'string'},\n            },\n            'required': ['expression'],\n        },\n    },\n]\n\n\ndef anthropic_tool_loop(user_message: str, max_rounds: int = 5) -> str:\n    \"\"\"Anthropic tool-use agentic loop.\"\"\"\n    messages = [{'role': 'user', 'content': user_message}]\n    \n    for _round in range(max_rounds):\n        response = anthropic_client.messages.create(\n            model='claude-haiku-4-5-20251001',\n            max_tokens=1024,\n            tools=ANTHROPIC_TOOLS,\n            messages=messages,\n        )\n        \n        # Append assistant turn (all content blocks)\n        messages.append({'role': 'assistant', 'content': response.content})\n        \n        if response.stop_reason == 'end_turn':   # no tool calls\n            text_blocks = [b.text for b in response.content if hasattr(b, 'text')]\n            return ' '.join(text_blocks)\n        \n        # stop_reason == 'tool_use' — execute tool_use blocks\n        tool_results = []\n        for block in response.content:\n            if block.type == 'tool_use':\n                result = dispatch_tool(block.name, block.input)  # input is already dict\n                print(f'  [tool] {block.name}({block.input}) → {result}')\n                tool_results.append({\n                    'type': 'tool_result',\n                    'tool_use_id': block.id,\n                    'content': result,\n                })\n        \n        messages.append({'role': 'user', 'content': tool_results})\n    \n    return 'Max rounds reached'\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    queries = [\n        'What is the weather in London and Tokyo?',\n        'What products do we have in stock? Also calculate 29.99 * 150.',\n    ]\n    \n    print('=== OpenAI Function Calling ===')\n    for q in queries:\n        print(f'Q: {q}')\n        answer = openai_tool_loop(q)\n        print(f'A: {answer}\\n')\n    \n    print('\\n=== Anthropic Tool Use ===')\n    for q in queries[:1]:\n        print(f'Q: {q}')\n        answer = anthropic_tool_loop(q)\n        print(f'A: {answer}\\n')"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Function Calling Mistakes",
+      "items": [
+        {
+          "mistake": "Forgetting to append the assistant message before tool results",
+          "why": "Both APIs require: [user] → [assistant w/ tool_calls] → [tool results]. Skipping the assistant message causes an API error or lost context.",
+          "fix": "Always `messages.append(msg)` or `messages.append({'role':'assistant', 'content': response.content})` before appending tool results."
+        },
+        {
+          "mistake": "Not JSON-parsing OpenAI tool arguments",
+          "why": "`tc.function.arguments` is a JSON *string*, not a dict. Calling the function with it will fail.",
+          "fix": "`args = json.loads(tc.function.arguments)` — always parse before dispatching."
+        },
+        {
+          "mistake": "Infinite tool call loop with no exit condition",
+          "why": "If the model keeps calling tools (due to bad tool design or prompt), the loop never terminates.",
+          "fix": "Always cap with `max_rounds`. Log rounds in production."
+        },
+        {
+          "mistake": "Tool descriptions too vague",
+          "why": "The model decides which tool to call based on description. Vague descriptions → wrong tool selection.",
+          "fix": "Descriptions should say WHEN to use the tool, what data it returns, and its limitations."
+        },
+        {
+          "mistake": "Returning complex objects directly instead of JSON strings",
+          "why": "Tool result content must be a string (serialized JSON is standard). Python dicts or lists cause API errors.",
+          "fix": "Always `return json.dumps(result)` from the dispatch function."
+        }
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Multi-Tool Assistant",
+      "problem": "Create a function-calling assistant that can:\n1. Look up a product by name (return name, price, stock)\n2. Check if an order can be placed (stock > 0)\n3. Calculate total price for quantity N\n\nThe assistant should handle: 'Can I order 5 Widget Pros and what will it cost?'",
+      "hints": [
+        "Define three tools: get_product, check_availability, calculate_total",
+        "check_availability takes product_name and quantity, returns {available: bool, reason: str}",
+        "calculate_total takes product_name and quantity, calls get_product internally",
+        "Run the full agentic loop — the model will call tools in order"
+      ],
+      "solution": "```python\ntools = [\n    {'type':'function','function':{\n        'name':'get_product',\n        'description':'Look up product details by name',\n        'parameters':{'type':'object','properties':{'name':{'type':'string'}},'required':['name']}\n    }},\n    {'type':'function','function':{\n        'name':'check_availability',\n        'description':'Check if a product can be ordered in given quantity',\n        'parameters':{'type':'object','properties':{\n            'product_name':{'type':'string'},'quantity':{'type':'integer'}\n        },'required':['product_name','quantity']}\n    }},\n    {'type':'function','function':{\n        'name':'calculate_total',\n        'description':'Calculate total price for product and quantity',\n        'parameters':{'type':'object','properties':{\n            'product_name':{'type':'string'},'quantity':{'type':'integer'}\n        },'required':['product_name','quantity']}\n    }},\n]\n\nproducts = {'widget pro':{'price':29.99,'stock':150},'gadget plus':{'price':49.99,'stock':0}}\n\ndef get_product(name):\n    p = products.get(name.lower())\n    return p or {'error':'Not found'}\n\ndef check_availability(product_name, quantity):\n    p = products.get(product_name.lower())\n    if not p: return {'available':False,'reason':'Product not found'}\n    if p['stock'] < quantity: return {'available':False,'reason':f'Only {p[\"stock\"]} in stock'}\n    return {'available':True,'reason':'In stock'}\n\ndef calculate_total(product_name, quantity):\n    p = products.get(product_name.lower())\n    if not p: return {'error':'Not found'}\n    return {'total': p['price'] * quantity, 'unit_price': p['price']}\n```",
+      "difficulty": "intermediate"
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "What is the difference between function calling and prompt engineering to get structured output?",
+          "answer": "Function calling is natively supported by the model — it's trained to emit structured tool_calls, making it reliable and schema-validated. JSON-in-prompt approaches rely on the model following instructions, which can drift. Function calling also enables the model to decide *whether* to call a tool vs respond directly, which prompting alone cannot do cleanly.",
+          "followUps": ["When would you use structured output (Day 18) vs function calling?"]
+        },
+        {
+          "question": "How do you handle a case where the model calls the wrong tool?",
+          "answer": "First, improve the tool description to be more specific about when to use it. Second, add examples to the system prompt showing correct tool selection. Third, use tool_choice to force a specific tool when you know which one is needed. Fourth, log tool call patterns in production to detect systematic misrouting.",
+          "followUps": ["What's the risk of using tool_choice='required'?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write the minimal code to make a single function call with OpenAI and get the result back.",
+          "answer": "```python\nimport json, os\nfrom openai import OpenAI\nclient = OpenAI()\n\ndef get_weather(city): return {'city': city, 'temp': '20°C'}\n\ntools = [{'type':'function','function':{\n    'name':'get_weather','description':'Get weather',\n    'parameters':{'type':'object','properties':{'city':{'type':'string'}},'required':['city']}\n}}]\n\nmsgs = [{'role':'user','content':'Weather in Paris?'}]\nresp = client.chat.completions.create(model='gpt-4o-mini', messages=msgs, tools=tools)\nmsg = resp.choices[0].message\nmsgs.append(msg)\n\nfor tc in (msg.tool_calls or []):\n    args = json.loads(tc.function.arguments)\n    result = json.dumps(get_weather(**args))\n    msgs.append({'role':'tool','tool_call_id':tc.id,'content':result})\n\nfinal = client.chat.completions.create(model='gpt-4o-mini', messages=msgs)\nprint(final.choices[0].message.content)\n```"
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You're building a tool-augmented agent that processes customer orders. A tool call to your payment API fails halfway through. How do you handle partial failures and ensure idempotency?",
+          "answer": "Each tool call should include an idempotency key (order_id + attempt_number). On failure, the tool returns an error JSON with error_code, retryable (bool), and message. The agent loop checks retryable: if true, retry up to N times with exponential backoff; if false, escalate to a human workflow. Store tool call state in a durable store (Redis/DB) keyed by session_id so that if the agent restarts mid-loop, it can replay from the last successful tool result rather than re-executing completed steps. The payment tool itself must implement idempotency server-side — same idempotency key = same outcome, no double charge.",
+          "followUps": ["How would you unit-test the tool dispatch logic?", "How do you prevent prompt injection via tool results?"]
+        }
+      ],
+      "wrongAnswers": [
+        "Function calling requires the model to actually execute the function — it does not, the model only emits the call intent",
+        "Tool results must be in a specific format the model understands — they are arbitrary strings/JSON the model simply reads as context",
+        "You can only call one tool per LLM request — parallel tool calls are fully supported by both OpenAI and Anthropic"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d28q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "In OpenAI's function calling, what does `tool_choice: 'required'` do?",
+          "options": {
+            "A": "Forces the model to call a specific named function",
+            "B": "Forces the model to call at least one tool (any tool)",
+            "C": "Disables text responses entirely",
+            "D": "Makes tool definitions mandatory in the request"
+          },
+          "answer": "B",
+          "explanation": "'required' forces the model to call at least one tool but lets it choose which. To force a specific tool, use `{type:'function', function:{name:'tool_name'}}`."
+        },
+        {
+          "id": "d28q2",
+          "level": "intermediate",
+          "category": "code",
+          "question": "After receiving a response with `tool_calls` from OpenAI, what is the correct next step before appending tool results?",
+          "options": {
+            "A": "Start a new conversation with the tool results",
+            "B": "Append the assistant message (with tool_calls) to the history first",
+            "C": "Re-send the original user message",
+            "D": "Set tool_choice to 'none' for the follow-up request"
+          },
+          "answer": "B",
+          "explanation": "The message history must be: [user] → [assistant with tool_calls] → [tool results]. Appending tool results without the assistant message causes an API error."
+        },
+        {
+          "id": "d28q3",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is the key structural difference in how Anthropic handles tool results vs OpenAI?",
+          "options": {
+            "A": "Anthropic uses a 'function' role; OpenAI uses 'tool'",
+            "B": "Anthropic tool results go inside a user message content array; OpenAI uses a standalone tool role message",
+            "C": "OpenAI requires XML wrapping; Anthropic uses plain JSON",
+            "D": "There is no difference — both use identical message formats"
+          },
+          "answer": "B",
+          "explanation": "OpenAI: `{role:'tool', tool_call_id, content}`. Anthropic: `{role:'user', content:[{type:'tool_result', tool_use_id, content}]}`. Anthropic bundles results inside a user turn."
+        },
+        {
+          "id": "d28q4",
+          "level": "advanced",
+          "category": "scenario",
+          "question": "Your agent's tool calls intermittently fail with timeout errors from an external API. The model retries endlessly. What is the best fix?",
+          "options": {
+            "A": "Increase max_rounds to 20 to allow more retries",
+            "B": "Return a structured error JSON from the tool with retryable:false, and have the agent surface an error to the user after N failures",
+            "C": "Remove the tool from the tool list on failure",
+            "D": "Switch to a different model that handles timeouts better"
+          },
+          "answer": "B",
+          "explanation": "The tool must communicate failure semantics via its return value. retryable:false tells the loop to stop retrying. Without this, the model sees a vague error and may retry forever. The agent should have explicit retry logic counting per-tool failures."
+        },
+        {
+          "id": "d28q5",
+          "level": "basic",
+          "category": "code",
+          "question": "In OpenAI function calling, `tc.function.arguments` is a:",
+          "options": {
+            "A": "Python dict ready to unpack with **",
+            "B": "JSON string that must be parsed with json.loads()",
+            "C": "List of argument name-value pairs",
+            "D": "Base64-encoded object"
+          },
+          "answer": "B",
+          "explanation": "OpenAI returns arguments as a JSON string. You must call `json.loads(tc.function.arguments)` to get a dict. Anthropic's `block.input` is already a dict."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,172 @@
+{
+  "day": 19,
+  "phase": 1,
+  "title": "Prompt Engineering Patterns",
+  "description": "Master the essential prompt engineering techniques every AI engineer uses: chain-of-thought, few-shot, role prompting, self-consistency, meta-prompting, and when to apply each. Learn to diagnose and fix bad prompts systematically.",
+  "estimatedHours": 3,
+  "difficulty": "Beginner",
+  "level": "Fresher",
+  "track": "Fresher",
+  "tags": ["prompt-engineering", "chain-of-thought", "few-shot", "self-consistency", "meta-prompting", "cot"],
+  "prerequisites": ["phase1-day14"],
+  "learningObjectives": [
+    "Apply zero-shot, one-shot, and few-shot prompting correctly",
+    "Use chain-of-thought (CoT) to improve reasoning on complex tasks",
+    "Implement self-consistency to get more reliable answers",
+    "Write role prompts that activate domain-specific behavior",
+    "Use meta-prompting to generate better prompts with AI",
+    "Diagnose failing prompts with a systematic debugging approach"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "Prompt engineering is not about magic words — it's a set of repeatable, evidence-based patterns backed by research. Engineers who know these patterns can unlock 30-50% better performance from existing models without fine-tuning or extra infrastructure. These techniques are the difference between a proof-of-concept and a production-quality AI feature."
+    },
+    {
+      "type": "theory",
+      "content": "## Pattern 1: Zero-Shot vs Few-Shot\n\n**Zero-shot**: Describe the task, no examples.\n```\nClassify the sentiment: 'The product broke in two days.'\n```\n\n**One-shot**: One example.\n```\nSentiment examples:\nInput: 'Loved it!' → positive\n\nClassify: 'The product broke in two days.'\n```\n\n**Few-shot**: Multiple examples showing the pattern you want.\n```\nInput: 'Amazing quality!' → positive\nInput: 'Broke after a week' → negative\nInput: 'It's okay' → neutral\n\nClassify: 'The product broke in two days.'\n```\n\n**When to use**: Use zero-shot for simple tasks. Add few-shot examples when output format must be exact, the task is ambiguous, or zero-shot underperforms.\n\n---\n\n## Pattern 2: Chain-of-Thought (CoT)\n\nAsk the model to reason step-by-step before answering. Dramatically improves performance on multi-step reasoning, math, and logic.\n\n```\nZero-shot CoT trigger: \"Let's think step by step.\"\n\nExample:\nQ: If a train leaves at 9am going 60mph and another at 10am going 80mph,\nwhen do they meet if they're 200 miles apart?\n\nLet's think step by step:\nStep 1: At 10am, Train 1 has traveled 60 miles, closing distance to 140 miles.\nStep 2: Both trains now move toward each other at combined 140mph.\nStep 3: Time to meet = 140/140 = 1 hour.\nStep 4: They meet at 11am.\n```\n\n**Variants:**\n- `\"Think carefully before answering.\"`\n- `\"Explain your reasoning.\"`\n- `\"First, identify the key facts. Then solve step by step.\"`\n\n**Cost tradeoff**: CoT uses more tokens. For simple tasks, it adds unnecessary cost.\n\n---\n\n## Pattern 3: Self-Consistency\n\nRun the same prompt multiple times with higher temperature, then majority-vote the answers.\n\n```python\nresponses = [ask_model(prompt, temperature=0.7) for _ in range(5)]\nfinal_answer = Counter(responses).most_common(1)[0][0]\n```\n\nImproves accuracy 5-15% on reasoning tasks by averaging out single-run errors. Expensive (5x tokens) — reserve for high-stakes decisions.\n\n---\n\n## Pattern 4: Role Prompting\n\nActivate domain expertise by assigning a specific role:\n\n```\n\"You are a senior SQL database engineer with 15 years of experience\n optimizing PostgreSQL queries for high-traffic systems.\"\n```\n\nVs:\n```\n\"You are a helpful assistant.\"\n```\n\nRole prompts improve depth, use domain-appropriate vocabulary, and activate knowledge the model associates with that persona.\n\n---\n\n## Pattern 5: Delimiters for Clarity\n\nSeparate different parts of the prompt clearly:\n\n```\nSummarize the following article:\n\n<article>\n{article_text}\n</article>\n\nConstraints:\n- Under 100 words\n- Highlight key numbers and facts\n```\n\nDelimiters (XML tags, triple quotes, ---) prevent the model from confusing instructions with content. Critical when user input is embedded in prompts (injection defense).\n\n---\n\n## Pattern 6: Output Scaffolding\n\nStart the model's response for it by including the beginning of the answer:\n\n```python\nmessages = [\n    {\"role\": \"user\",      \"content\": \"List 3 benefits of Python for AI:\"},\n    {\"role\": \"assistant\", \"content\": \"1.\"},  # prefill the start\n]\n```\n\nThis forces structured output format without lengthy format instructions.\n\n---\n\n## Pattern 7: Meta-Prompting\n\nUse the LLM to write or improve prompts:\n\n```\nYou are an expert prompt engineer. My current prompt is:\n\n<current_prompt>\n{my_weak_prompt}\n</current_prompt>\n\nThis prompt fails because:\n<failure>\n{description_of_failure}\n</failure>\n\nWrite an improved prompt that fixes these issues.\n```\n\n---\n\n## Prompt Debugging Framework\n\nWhen a prompt fails, diagnose in order:\n\n1. **Is the task clear?** Could a smart human follow this instruction?\n2. **Is format specified?** Does the prompt show an example output?\n3. **Are there contradictions?** e.g., 'be brief but thorough'\n4. **Is the model capable?** Is this task within the model's ability?\n5. **Is context sufficient?** Does the model have the information it needs?\n6. **Is temperature right?** Too high for factual → hallucinations. Too low for creative → repetitive.\n7. **Are there edge cases?** What happens with empty input, unusual characters?"
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "prompt_patterns.py",
+      "level": "Beginner",
+      "code": "\"\"\"Prompt engineering patterns: CoT, few-shot, self-consistency, meta-prompting.\"\"\"\nimport os\nfrom collections import Counter\nfrom openai import OpenAI\n\nclient = OpenAI(api_key=os.environ[\"OPENAI_API_KEY\"])\n\n\n# ── Helper ───────────────────────────────────────────────────────\ndef ask(prompt: str, system: str = \"\", temperature: float = 0.7, max_tokens: int = 500) -> str:\n    messages = []\n    if system:\n        messages.append({\"role\": \"system\", \"content\": system})\n    messages.append({\"role\": \"user\", \"content\": prompt})\n    r = client.chat.completions.create(\n        model=\"gpt-4o\", messages=messages, temperature=temperature, max_tokens=max_tokens\n    )\n    return r.choices[0].message.content.strip()\n\n\n# ── Pattern 1: Zero-shot vs Few-shot ────────────────────────────\ndef zero_shot_classify(text: str) -> str:\n    return ask(f\"Classify the sentiment (positive/negative/neutral):\\n{text}\", temperature=0.0)\n\n\ndef few_shot_classify(text: str) -> str:\n    examples = \"\"\"Examples:\nInput: 'Absolutely love it!' → positive\nInput: 'Worst purchase I ever made' → negative\nInput: 'It arrived on time, nothing special' → neutral\nInput: 'Broke after two days' → negative\n\n\"\"\"\n    return ask(f\"{examples}Classify: '{text}' →\", temperature=0.0)\n\n\n# ── Pattern 2: Chain-of-Thought ──────────────────────────────────\ndef cot_solve(problem: str) -> str:\n    prompt = f\"{problem}\\n\\nLet's think step by step:\"\n    return ask(prompt, temperature=0.0, max_tokens=800)\n\n\ndef cot_code_review(code: str) -> str:\n    \"\"\"Use CoT for thorough code review.\"\"\"\n    system = \"\"\"You are a senior engineer reviewing code.\nFirst, identify what the code does.\nThen, check for: bugs, edge cases, security issues, performance.\nFinally, summarize with a severity rating.\"\"\"\n    return ask(f\"Review:\\n```python\\n{code}\\n```\", system=system, temperature=0.1)\n\n\n# ── Pattern 3: Self-Consistency ──────────────────────────────────\ndef self_consistent_answer(question: str, n: int = 5) -> str:\n    \"\"\"Run N times, return majority vote answer.\"\"\"\n    prompt = f\"{question}\\nThink step by step and give your final answer in one word or number.\"\n    answers = [ask(prompt, temperature=0.8) for _ in range(n)]\n    # Extract last word/number as the answer\n    final_words = [a.split()[-1].strip(\".\") for a in answers]\n    winner, count = Counter(final_words).most_common(1)[0]\n    print(f\"Self-consistency: {Counter(final_words)} → {winner} ({count}/{n})\")\n    return winner\n\n\n# ── Pattern 4: Role prompt builder ──────────────────────────────\ndef with_role(role: str, expertise: str, task: str) -> str:\n    system = f\"You are a {role} with expertise in {expertise}. Be specific and technical.\"\n    return ask(task, system=system, temperature=0.3)\n\n\n# ── Pattern 5: Delimiter template ────────────────────────────────\ndef safe_summarize(article: str, max_words: int = 100) -> str:\n    \"\"\"Use delimiters to prevent injection from article content.\"\"\"\n    prompt = f\"\"\"Summarize the article below in under {max_words} words.\nFocus on key facts and numbers.\n\n<article>\n{article}\n</article>\n\nSummary:\"\"\"\n    return ask(prompt, temperature=0.3)\n\n\n# ── Pattern 6: Meta-prompting ────────────────────────────────────\ndef improve_prompt(weak_prompt: str, failure_description: str) -> str:\n    meta = f\"\"\"You are an expert prompt engineer.\n\nWeak prompt:\n<prompt>\n{weak_prompt}\n</prompt>\n\nThis fails because:\n<failure>\n{failure_description}\n</failure>\n\nWrite an improved prompt that fixes these issues. Return only the improved prompt.\"\"\"\n    return ask(meta, temperature=0.4)\n\n\nif __name__ == \"__main__\":\n    # Zero-shot vs few-shot\n    text = \"Decent product but the manual is confusing.\"\n    print(f\"Zero-shot: {zero_shot_classify(text)}\")\n    print(f\"Few-shot:  {few_shot_classify(text)}\")\n\n    # Chain-of-thought\n    problem = \"A store sells 3 types of coffee at $4, $6, and $8. They sell 50, 30, 20 units. Total revenue?\"\n    solution = cot_solve(problem)\n    print(f\"\\nCoT solution:\\n{solution}\")\n\n    # Meta-prompting\n    weak = \"Write good code.\"\n    improved = improve_prompt(weak, \"Too vague — model writes any code in any language.\")\n    print(f\"\\nImproved prompt:\\n{improved}\")",
+      "output": "Zero-shot: neutral\nFew-shot:  neutral\n\nCoT solution:\nStep 1: Coffee type 1: 50 × $4 = $200\nStep 2: Coffee type 2: 30 × $6 = $180\nStep 3: Coffee type 3: 20 × $8 = $160\nStep 4: Total = $200 + $180 + $160 = $540\n\nThe total revenue is $540.\n\nImproved prompt:\nWrite a Python function that [specific task]. Requirements:\n- Language: Python 3.11+\n- Include type hints\n- Handle edge cases [list them]\n- Follow PEP 8 style\nReturn only the function with a brief docstring."
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Using CoT for simple tasks — adding 'Let's think step by step' to a simple classification task wastes tokens and can make answers WORSE by overthinking. Use CoT only for multi-step reasoning.",
+        "Few-shot examples that demonstrate the wrong format — if your examples have inconsistency (e.g., sometimes include punctuation, sometimes not), the model learns the inconsistency. Make examples perfectly uniform.",
+        "Self-consistency on deterministic tasks — self-consistency with temperature > 0 on a task that has one correct answer (e.g., '2+2=?') adds cost with no benefit. Use it only for subjective or complex reasoning tasks.",
+        "Role prompts that contradict the task — 'You are a pirate. Extract JSON from this text.' The persona fights the task. Reserve role prompting for domain expertise alignment, not character play in business contexts.",
+        "Meta-prompting without specifying failure mode — 'Improve this prompt' is too vague. Always describe specifically how and why the current prompt fails. The more specific the failure description, the better the improvement."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Prompt Testing Suite",
+      "problem": "Build a `PromptTestSuite` class that: (1) takes a system prompt and list of test cases, (2) runs each test case through the model, (3) applies a validator function to check if the output is correct, (4) reports a pass rate. Then use it to compare a 'bad' prompt vs a 'good' prompt for sentiment classification, showing the improvement.",
+      "hints": [
+        "Each test case is a dict: {input, expected, validator}",
+        "validator is a function that takes (output: str) -> bool",
+        "Run with temperature=0.0 for consistent test results",
+        "Bad prompt: 'classify sentiment'. Good prompt: few-shot with 3 examples"
+      ],
+      "solution": "class PromptTestSuite:\n    def __init__(self, system_prompt: str, model: str = 'gpt-4o'):\n        self.system = system_prompt\n        self.model = model\n        self.client = OpenAI()\n\n    def run(self, test_cases: list[dict]) -> dict:\n        results = []\n        for case in test_cases:\n            response = self.client.chat.completions.create(\n                model=self.model,\n                messages=[\n                    {'role': 'system', 'content': self.system},\n                    {'role': 'user', 'content': case['input']}\n                ],\n                temperature=0.0, max_tokens=50\n            )\n            output = response.choices[0].message.content.strip().lower()\n            passed = case['validator'](output)\n            results.append({'input': case['input'], 'output': output, 'passed': passed})\n        pass_rate = sum(r['passed'] for r in results) / len(results)\n        return {'pass_rate': pass_rate, 'results': results}\n\n\n# Test cases\ntests = [\n    {'input': 'I love this!',            'validator': lambda o: 'positive' in o},\n    {'input': 'Terrible experience.',    'validator': lambda o: 'negative' in o},\n    {'input': \"It's okay, nothing wow.\", 'validator': lambda o: 'neutral' in o},\n    {'input': 'Works as advertised.',    'validator': lambda o: 'positive' in o or 'neutral' in o},\n]\n\nbad_suite  = PromptTestSuite('Classify sentiment.')\ngood_suite = PromptTestSuite('Classify sentiment as exactly one of: positive, negative, neutral.\\nExamples:\\n\"Great!\" → positive\\n\"Terrible\" → negative\\n\"It\\'s fine\" → neutral')\n\nbad_result  = bad_suite.run(tests)\ngood_result = good_suite.run(tests)\nprint(f'Bad prompt pass rate:  {bad_result[\"pass_rate\"]:.0%}')\nprint(f'Good prompt pass rate: {good_result[\"pass_rate\"]:.0%}')",
+      "difficulty": "Beginner"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "What is chain-of-thought prompting and when should you use it?",
+          "answer": "Chain-of-thought (CoT) prompting asks the model to reason step-by-step before giving a final answer, by appending phrases like 'Let's think step by step' or providing worked examples. It significantly improves performance on multi-step reasoning, math problems, logic puzzles, and complex code debugging — tasks where intermediate steps affect the final answer. Avoid CoT for simple classification or extraction tasks — it adds token cost without benefit and can sometimes cause overthinking that leads to wrong answers.",
+          "followUps": [
+            "What is the difference between zero-shot CoT and few-shot CoT?",
+            "How does self-consistency work with chain-of-thought?"
+          ]
+        },
+        {
+          "question": "How do you systematically debug a failing prompt?",
+          "answer": "Use a layered diagnostic: (1) Clarity — could a smart human follow this instruction exactly? (2) Format specification — is there an example of the expected output? (3) Contradictions — are any instructions mutually exclusive? (4) Model capability — is this genuinely within the model's ability? (5) Context sufficiency — does the model have all information needed? (6) Temperature — is it appropriate for the task type? (7) Edge cases — test empty input, adversarial input, very long input. Fix one variable at a time to isolate the cause.",
+          "followUps": [
+            "How do you decide between fixing the prompt vs fine-tuning the model?",
+            "How do you prevent prompt regressions as you iterate?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Implement a self-consistency function that runs a prompt N times and returns the most common response.",
+          "answer": "from collections import Counter\n\ndef self_consistent(prompt: str, n: int = 5, temperature: float = 0.8) -> str:\n    from openai import OpenAI\n    client = OpenAI()\n    answers = []\n    for _ in range(n):\n        response = client.chat.completions.create(\n            model='gpt-4o',\n            messages=[{'role': 'user', 'content': prompt + '\\nThink step by step. Final answer on last line.'}],\n            temperature=temperature,\n            max_tokens=500\n        )\n        text = response.choices[0].message.content\n        # Extract last line as the answer\n        final = text.strip().split('\\n')[-1].strip()\n        answers.append(final)\n    winner, count = Counter(answers).most_common(1)[0]\n    return winner",
+          "followUps": [
+            "What temperature would you use for self-consistency and why?",
+            "How many samples (n) are typically sufficient for self-consistency?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your team is building an AI feature to classify support tickets into 8 categories. Zero-shot accuracy is 72%. How do you improve it to 90%+?",
+          "answer": "Systematic improvement path: (1) Switch to few-shot — collect 3-5 examples per category (24-40 examples total) showing edge cases and ambiguous tickets. Few-shot typically adds 10-15% accuracy. (2) Add chain-of-thought — ask the model to first identify key signals (urgency, department, product), then classify. Improves accuracy on ambiguous tickets. (3) Add self-consistency for borderline cases — run 3x for low-confidence predictions, majority vote. (4) Decompose — for very similar categories, use a two-stage approach: first classify into broad groups, then refine. (5) Evaluate by category — identify which categories have lowest accuracy and fix those prompts specifically. (6) If still below target, consider fine-tuning on 500+ examples. Most teams reach 88-92% with few-shot + CoT without fine-tuning.",
+          "followUps": [
+            "How would you create the evaluation dataset to measure accuracy?",
+            "When does fine-tuning beat prompt engineering for classification?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "Chain-of-thought always produces better results — use it for every task",
+        "More few-shot examples always improve performance regardless of their quality",
+        "Self-consistency is free — it doesn't cost additional tokens"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "What phrase triggers zero-shot chain-of-thought reasoning in an LLM?",
+          "options": {
+            "A": "\"Give me the answer directly.\"",
+            "B": "\"Let's think step by step.\"",
+            "C": "\"Use your best judgment.\"",
+            "D": "\"Consider all possibilities.\""
+          },
+          "answer": "B",
+          "explanation": "\"Let's think step by step\" is the canonical zero-shot CoT trigger from the seminal research paper. It prompts the model to generate intermediate reasoning steps before producing the final answer, significantly improving performance on multi-step reasoning tasks."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the main purpose of delimiters (like XML tags) in prompts?",
+          "options": {
+            "A": "To reduce token count",
+            "B": "To clearly separate instructions from content, preventing confusion and injection",
+            "C": "To enable JSON mode",
+            "D": "To set the response format to XML"
+          },
+          "answer": "B",
+          "explanation": "Delimiters like <article>...</article> or triple quotes clearly separate the instruction part of the prompt from the content (e.g., user-supplied text). This prevents the model from confusing content for instructions and is a defense against prompt injection — malicious content claiming to be new instructions."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "A classification prompt has 72% accuracy. Which intervention is most likely to reach 90%?",
+          "options": {
+            "A": "Increasing temperature to 0.9",
+            "B": "Adding few-shot examples covering edge cases + chain-of-thought reasoning",
+            "C": "Switching to a smaller, faster model",
+            "D": "Adding more word count to the system prompt"
+          },
+          "answer": "B",
+          "explanation": "Few-shot examples teach the model the classification nuances through demonstration, and CoT helps with ambiguous cases by making reasoning explicit. Together they typically add 15-20% accuracy. Increasing temperature adds randomness (counterproductive for classification). Smaller models reduce accuracy. Longer prompts without concrete examples don't help."
+        },
+        {
+          "id": 4,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is the cost tradeoff of self-consistency?",
+          "options": {
+            "A": "Faster responses but lower accuracy",
+            "B": "N times more token cost, 5-15% accuracy improvement on reasoning tasks",
+            "C": "Same cost as a single call but with multiple outputs",
+            "D": "Higher cost only for the first call; subsequent calls are cached"
+          },
+          "answer": "B",
+          "explanation": "Self-consistency runs the same prompt N times (typically 5-10), costing N times the tokens. The accuracy improvement is 5-15% on complex reasoning tasks from averaging out single-run errors. This cost is justified for high-stakes decisions but not for bulk processing or simple tasks."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## Prompt Engineering Patterns — Quick Reference\n\n### Pattern Decision Guide\n| Task | Best Pattern |\n|------|--------------|\n| Simple classification | Zero-shot or few-shot |\n| Format-sensitive output | Few-shot with examples |\n| Math/logic/multi-step | Chain-of-thought |\n| High-stakes reasoning | Self-consistency |\n| Domain expertise needed | Role prompting |\n| User input embedded | Delimiters |\n| Prompt not working | Meta-prompting |\n\n### Zero-shot CoT Triggers\n- \"Let's think step by step.\"\n- \"First, identify the key facts. Then solve.\"\n- \"Think carefully before answering.\"\n\n### Few-Shot Template\n```\nInput: <example1> → <output1>\nInput: <example2> → <output2>\nInput: <example3> → <output3>\n\nInput: {actual_input} →\n```\n\n### Self-Consistency\n```python\nanswers = [ask(prompt, temp=0.8) for _ in range(5)]\nfinal = Counter(answers).most_common(1)[0][0]\n```\n\n### Delimiter Template\n```\nInstruction on {article} below:\n<article>\n{user_content}\n</article>\n```\n\n### Prompt Debug Checklist\n1. Task clear? (could a human follow it?)\n2. Format specified? (show example)\n3. Contradictions?\n4. Model capable?\n5. Context sufficient?\n6. Temperature right?\n7. Edge cases tested?"
+    }
+  ]
+}

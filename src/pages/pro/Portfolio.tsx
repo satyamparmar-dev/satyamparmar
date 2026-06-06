@@ -18,8 +18,10 @@ import { useProProgress } from '../../hooks/useProProgress'
 import ProShell from '../../components/pro/ProShell'
 import { PRO_CURRICULUM } from '../../constants/proCurriculum'
 import { PRO_UI } from '../../constants/proUi'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 const Portfolio: React.FC = () => {
+  usePageTitle('Portfolio')
   const navigate = useNavigate()
   const { profile, hasProProfile, saveProfile } = useProProgress()
   const [toast, setToast] = useState(false)

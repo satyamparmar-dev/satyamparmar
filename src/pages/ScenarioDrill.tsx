@@ -33,6 +33,7 @@ import {
 import { parseMarkdown } from '../utils/markdown';
 import { useContentAccess } from '../auth/ContentAccessContext';
 import SignInToContinueCallout from '../components/SignInToContinueCallout';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 function bundleByDayMap(data: ScenarioDrillData): Map<number, ScenarioDayBundle> {
   const m = new Map<number, ScenarioDayBundle>();
@@ -59,6 +60,7 @@ function previewMarkdownSlice(md: string, maxChars: number): string {
 }
 
 const ScenarioDrill: React.FC = () => {
+  usePageTitle('Scenario Drill');
   const { curriculum, setCurriculum, activeCurriculum } = useAppStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const [drill, setDrill] = useState<ScenarioDrillData | null>(null);
@@ -116,7 +118,7 @@ const ScenarioDrill: React.FC = () => {
         if (Number.isFinite(n) && n > 0) {
           setDayNum(n);
           const ph = curr.phases.find((p) => {
-            const [s, e] = p.days.split('–').map(Number);
+            const [s, e] = (p.days ?? '0–0').split('–').map(Number);
             return n >= s && n <= e;
           });
           if (ph) {
@@ -127,7 +129,7 @@ const ScenarioDrill: React.FC = () => {
         } else if (curr && !phaseParam) {
           const first = curr.phases[0];
           if (first) {
-            const start = Number(first.days.split('–')[0]);
+            const start = Number((first.days ?? '0–0').split('–')[0]);
             setPhaseId(first.id);
             setDayNum(start);
             resolvedPhase = first.id;
@@ -136,7 +138,7 @@ const ScenarioDrill: React.FC = () => {
         } else if (phaseParam && curr.phases.some((p) => p.id === phaseParam)) {
           setPhaseId(phaseParam);
           const p = curr.phases.find((x) => x.id === phaseParam)!;
-          const [start, end] = p.days.split('–').map(Number);
+          const [start, end] = (p.days ?? '0–0').split('–').map(Number);
           const dn = dayParam ? Number(dayParam) : NaN;
           if (Number.isFinite(dn) && dn >= start && dn <= end) {
             setDayNum(dn);
@@ -152,7 +154,7 @@ const ScenarioDrill: React.FC = () => {
           const f = curr.phases[0];
           if (f) {
             resolvedPhase = f.id;
-            resolvedDay = Number(f.days.split('–')[0]);
+            resolvedDay = Number((f.days ?? '0–0').split('–')[0]);
             setPhaseId(f.id);
             setDayNum(resolvedDay);
           }
@@ -179,7 +181,7 @@ const ScenarioDrill: React.FC = () => {
   const daysInPhase = useMemo(() => {
     const p = phases.find((x) => x.id === phaseId);
     if (!p) return [] as number[];
-    const [s, e] = p.days.split('–').map(Number);
+    const [s, e] = (p.days ?? '0–0').split('–').map(Number);
     return Array.from({ length: e - s + 1 }, (_, i) => s + i);
   }, [phases, phaseId]);
 
@@ -230,7 +232,7 @@ const ScenarioDrill: React.FC = () => {
     setPhaseId(id);
     const p = phases.find((x) => x.id === id);
     if (p) {
-      const start = Number(p.days.split('–')[0]);
+      const start = Number((p.days ?? '0–0').split('–')[0]);
       setDayNum(start);
       setSearchParams({ phase: id, day: String(start) });
     }
@@ -297,7 +299,7 @@ const ScenarioDrill: React.FC = () => {
       <Box display="flex" alignItems="flex-start" gap={2} mb={2} flexWrap="wrap">
         <RecordVoiceOverIcon sx={{ fontSize: 40, color: 'primary.main', mt: 0.5 }} />
         <Box flex={1} minWidth={240}>
-          <Typography variant="h4" fontWeight={800} gutterBottom>
+          <Typography variant="h4" component="h1" fontWeight={800} gutterBottom>
             Scenario interview drill
           </Typography>
           <Typography color="text.secondary" variant="body2" maxWidth={720}>

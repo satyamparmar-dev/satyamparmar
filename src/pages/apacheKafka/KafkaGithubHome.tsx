@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { KAFKA_CURRICULUM, kafkaKindLabel } from '../../content/apacheKafka/curriculum';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 const basePaperSx = {
   border: '1px solid',
@@ -20,6 +21,7 @@ const basePaperSx = {
 };
 
 const KafkaGithubHome: React.FC = () => {
+  usePageTitle('Apache Kafka Reference');
   const theme = useTheme();
   const navigate = useNavigate();
   const accent = theme.palette.mode === 'dark' ? '#7dd3fc' : '#0369a1';
@@ -50,7 +52,7 @@ const KafkaGithubHome: React.FC = () => {
             border: 'none',
           }}
         />
-        <Typography variant="h4" fontWeight={800} sx={{ letterSpacing: '-0.02em' }}>
+        <Typography variant="h4" component="h1" fontWeight={800} sx={{ letterSpacing: '-0.02em' }}>
           Apache Kafka
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>

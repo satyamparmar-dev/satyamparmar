@@ -13,6 +13,7 @@ import { buildLlmTabSections, llmOverviewFullMarkdown } from '../content/llm/bun
 import plainLanguageScript from '../content/llm/plain-language-script.md?raw';
 import { parseMarkdown } from '../utils/markdown';
 import ConceptsGlossarySection from '../components/llm/ConceptsGlossarySection';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const baseMdSx = {
   lineHeight: 1.8,
@@ -32,6 +33,7 @@ const baseMdSx = {
 };
 
 const LlmOverview: React.FC = () => {
+  usePageTitle('LLM & GenAI');
   const theme = useTheme();
   const accent = theme.palette.mode === 'dark' ? '#a5b4fc' : '#667eea';
   const accentSoft = alpha(accent, theme.palette.mode === 'dark' ? 0.14 : 0.1);
@@ -81,7 +83,7 @@ const LlmOverview: React.FC = () => {
             border: 'none',
           }}
         />
-        <Typography variant="h4" fontWeight={800} gutterBottom sx={{ letterSpacing: '-0.02em' }}>
+        <Typography variant="h4" component="h1" fontWeight={800} gutterBottom sx={{ letterSpacing: '-0.02em' }}>
           Overview for interviews
         </Typography>
         <Typography color="text.secondary" sx={{ maxWidth: 820, lineHeight: 1.75, fontSize: '0.95rem' }}>

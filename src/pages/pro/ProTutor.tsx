@@ -6,10 +6,12 @@ import { useProProgress } from '../../hooks/useProProgress'
 import ProShell from '../../components/pro/ProShell'
 import { findProLesson } from '../../constants/proCurriculum'
 import { PRO_UI } from '../../constants/proUi'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 type Msg = { role: 'user' | 'assistant'; text: string }
 
 const ProTutor: React.FC = () => {
+  usePageTitle('Pro AI Tutor')
   const { lessonId } = useParams<{ lessonId?: string }>()
   const navigate = useNavigate()
   const { hasProProfile } = useProProgress()

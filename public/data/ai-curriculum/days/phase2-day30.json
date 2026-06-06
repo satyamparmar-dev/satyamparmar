@@ -1,0 +1,191 @@
+{
+  "id": "phase2-day30",
+  "day": 30,
+  "phase": 2,
+  "title": "Memory in AI Applications",
+  "estimatedHours": 4,
+  "difficulty": "intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["memory", "langchain", "conversation", "state-management", "ai-applications"],
+  "prerequisites": ["phase2-day29", "phase1-day15"],
+  "learningObjectives": [
+    "Understand the four types of memory in AI systems",
+    "Implement ConversationBufferMemory and ConversationSummaryMemory",
+    "Use VectorStoreRetrieverMemory for semantic long-term memory",
+    "Build token-aware memory with ConversationTokenBufferMemory",
+    "Implement custom memory for production applications"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Memory Is Hard in LLMs",
+      "content": "LLMs are stateless — every API call is a blank slate. If you want the model to remember that a user said their name is Sarah three messages ago, you must manually include those messages in the context window. This is fine for short conversations, but breaks at scale: context windows have token limits (and cost money per token), old messages push out new ones, and naive 'keep everything' approaches spend most of the context on irrelevant history. Memory management is the discipline of deciding *what* to include in context and *how* to represent it efficiently — buffer for recent turns, summary for compressed history, vector store for semantic retrieval."
+    },
+    {
+      "type": "theory",
+      "title": "Four Memory Types",
+      "content": "**Memory taxonomy:**\n\n| Type | What it stores | Token cost | Best for |\n|------|---------------|------------|----------|\n| Buffer | All messages verbatim | Grows linearly | Short conversations (<20 turns) |\n| Token Buffer | Messages up to token limit, drops oldest | Bounded | Medium conversations, token control |\n| Summary | Compressed summary + recent messages | Low | Long conversations |\n| Vector Store | Semantic embeddings of past content | Query-time only | Long-term facts, user preferences |\n\n**LangChain memory classes:**\n\n```python\nfrom langchain.memory import (\n    ConversationBufferMemory,          # all messages\n    ConversationBufferWindowMemory,    # last k messages\n    ConversationTokenBufferMemory,     # last n tokens\n    ConversationSummaryMemory,         # rolling summary\n    ConversationSummaryBufferMemory,   # summary + recent buffer\n    VectorStoreRetrieverMemory,        # semantic retrieval\n)\n```\n\n**Memory key params:**\n```python\nConversationBufferMemory(\n    memory_key='chat_history',    # variable name in prompt\n    return_messages=True,         # return Message objects vs string\n    human_prefix='User',          # label for human turns\n    ai_prefix='Assistant',        # label for AI turns\n    output_key='output',          # which chain output to store\n)\n```\n\n**ConversationSummaryMemory mechanics:**\n1. After each turn, call LLM to produce updated summary: `'Summarize the conversation adding the new turns'`\n2. Store only the summary (not full history)\n3. On retrieval, return summary + optionally the last K raw messages\n4. Cost: extra LLM call per turn, but context stays bounded\n\n**VectorStoreRetrieverMemory mechanics:**\n1. Each message/fact is embedded and stored in a vector DB\n2. On each new turn, retrieve the top-K semantically relevant past memories\n3. No recency bias — finds semantically matching memories regardless of when they occurred\n4. Ideal for user profiles: `'User mentioned they are vegetarian'` retrieved when food is mentioned\n\n**ChatMessageHistory vs Memory:**\n- `ChatMessageHistory`: raw message store (in-memory, Redis, DynamoDB) — just stores messages\n- `Memory`: wraps a history store + logic for what to inject into context\n\n**Session persistence:**\n```python\nfrom langchain_community.chat_message_histories import RedisChatMessageHistory\n\nhistory = RedisChatMessageHistory(session_id='user-123', url='redis://localhost:6379')\nmemory = ConversationBufferMemory(chat_memory=history, return_messages=True)\n# Messages persist across process restarts\n```"
+    },
+    {
+      "type": "code",
+      "title": "Complete Memory Implementations",
+      "language": "python",
+      "code": "# pip install langchain langchain-openai langchain-community chromadb\nimport os\nfrom datetime import datetime\nfrom langchain.memory import (\n    ConversationBufferMemory,\n    ConversationTokenBufferMemory,\n    ConversationSummaryBufferMemory,\n    VectorStoreRetrieverMemory,\n)\nfrom langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder\nfrom langchain_core.messages import HumanMessage, AIMessage\nfrom langchain_openai import ChatOpenAI, OpenAIEmbeddings\nfrom langchain_community.vectorstores import Chroma\nfrom langchain_core.runnables import RunnablePassthrough, RunnableLambda\nfrom langchain_core.output_parsers import StrOutputParser\nfrom langchain.chains import LLMChain\n\nllm = ChatOpenAI(model='gpt-4o-mini', temperature=0.7)\n\n\n# ── 1. ConversationBufferMemory ────────────────────────────────────────────────\n\ndef demo_buffer_memory():\n    memory = ConversationBufferMemory(return_messages=True)\n    \n    # Manually add messages (simulating a conversation)\n    memory.chat_memory.add_user_message('My name is Alice')\n    memory.chat_memory.add_ai_message('Hello Alice! How can I help you today?')\n    memory.chat_memory.add_user_message('I prefer Python over Java')\n    memory.chat_memory.add_ai_message('Noted! Python is great for AI/ML work.')\n    \n    print('=== Buffer Memory ===')\n    print(f'Messages stored: {len(memory.chat_memory.messages)}')\n    print(f'Memory variables: {memory.load_memory_variables({})}')\n\n\n# ── 2. Token-bounded memory ────────────────────────────────────────────────────\n\ndef demo_token_memory():\n    # Keeps messages up to max_token_limit, drops oldest when exceeded\n    memory = ConversationTokenBufferMemory(\n        llm=llm,                 # needed to count tokens\n        max_token_limit=500,     # hard token cap\n        return_messages=True,\n    )\n    \n    msgs = [\n        ('human', 'Tell me about Python'),\n        ('ai', 'Python is a high-level, interpreted language known for its clean syntax.'),\n        ('human', 'What about Java?'),\n        ('ai', 'Java is a statically-typed, compiled language running on the JVM.'),\n        ('human', 'Which is better for AI?'),\n        ('ai', 'Python dominates AI/ML due to NumPy, PyTorch, and TensorFlow.'),\n    ]\n    for role, content in msgs:\n        if role == 'human':\n            memory.chat_memory.add_user_message(content)\n        else:\n            memory.chat_memory.add_ai_message(content)\n    \n    print('\\n=== Token Buffer Memory ===')\n    vars_ = memory.load_memory_variables({})\n    remaining_msgs = vars_['history']\n    print(f'Messages remaining within token limit: {len(remaining_msgs)}')\n\n\n# ── 3. Summary + Buffer memory ─────────────────────────────────────────────────\n\ndef demo_summary_memory():\n    memory = ConversationSummaryBufferMemory(\n        llm=llm,\n        max_token_limit=200,      # summarize when buffer exceeds this\n        return_messages=True,\n        memory_key='chat_history',\n    )\n    \n    # Simulate a long conversation\n    conversation_pairs = [\n        ('I am building an e-commerce app', 'Great! What tech stack are you planning to use?'),\n        ('Python FastAPI backend and React frontend', 'Good choices. Will you need a database?'),\n        ('PostgreSQL for main data, Redis for sessions', 'Solid architecture. What about payments?'),\n        ('Stripe integration', 'Stripe is excellent. Will you need subscriptions or one-time payments?'),\n        ('Both, actually', 'Stripe handles both well. What is your expected traffic at launch?'),\n    ]\n    for human, ai in conversation_pairs:\n        memory.save_context({'input': human}, {'output': ai})\n    \n    vars_ = memory.load_memory_variables({})\n    messages = vars_['chat_history']\n    summaries = [m for m in messages if 'SystemMessage' in type(m).__name__]\n    recents = [m for m in messages if 'SystemMessage' not in type(m).__name__]\n    \n    print('\\n=== Summary + Buffer Memory ===')\n    if summaries:\n        print(f'Summary: {summaries[0].content[:150]}...')\n    print(f'Recent messages kept verbatim: {len(recents)}')\n\n\n# ── 4. VectorStoreRetrieverMemory (semantic long-term memory) ──────────────────\n\ndef demo_vector_memory():\n    embeddings = OpenAIEmbeddings()\n    # Use in-memory Chroma for demo (production: use PersistentClient)\n    vectorstore = Chroma(embedding_function=embeddings, collection_name='user_memory')\n    \n    retriever = vectorstore.as_retriever(search_kwargs={'k': 2})\n    memory = VectorStoreRetrieverMemory(retriever=retriever)\n    \n    # Store user facts as memories\n    facts = [\n        ('I work as a backend engineer at a fintech company', 'Interesting! How long have you been in fintech?'),\n        ('About 3 years, mostly working with Java and Kafka', 'Great experience with event-driven systems.'),\n        ('I am now learning Python and AI', 'Transitioning from Java to Python AI is a great move.'),\n        ('My company uses AWS and Kubernetes', 'AWS + K8s is a very common production stack.'),\n        ('I prefer dark mode and vim keybindings', 'Classic developer preferences!'),\n    ]\n    for human, ai in facts:\n        memory.save_context({'input': human}, {'output': ai})\n    \n    # Semantic retrieval: 'cloud infrastructure' should surface AWS/K8s memory\n    relevant = memory.load_memory_variables({'prompt': 'Tell me about cloud infrastructure'})\n    print('\\n=== Vector Memory (semantic retrieval) ===')\n    print(f'Retrieved for \"cloud infrastructure\":\\n{relevant[\"history\"][:300]}')\n\n\n# ── 5. Production-ready memory with LCEL ──────────────────────────────────────\n\nclass SessionMemory:\n    \"\"\"Manages per-session memory with token limits and persistence hooks.\"\"\"\n\n    def __init__(self, session_id: str, max_tokens: int = 2000):\n        self.session_id = session_id\n        self.memory = ConversationTokenBufferMemory(\n            llm=llm,\n            max_token_limit=max_tokens,\n            return_messages=True,\n            memory_key='chat_history',\n        )\n        self._turn_count = 0\n\n    def add_turn(self, user_input: str, ai_response: str) -> None:\n        self.memory.save_context(\n            {'input': user_input},\n            {'output': ai_response},\n        )\n        self._turn_count += 1\n\n    def get_history(self) -> list:\n        return self.memory.load_memory_variables({})['chat_history']\n\n    @property\n    def stats(self) -> dict:\n        messages = self.get_history()\n        return {\n            'session_id': self.session_id,\n            'turns': self._turn_count,\n            'messages_in_context': len(messages),\n        }\n\n\ndef build_memory_chain(session: SessionMemory):\n    prompt = ChatPromptTemplate.from_messages([\n        ('system', 'You are a helpful assistant. Be concise.'),\n        MessagesPlaceholder('chat_history'),\n        ('human', '{input}'),\n    ])\n    \n    def get_history(_):\n        return session.get_history()\n    \n    chain = (\n        RunnablePassthrough.assign(chat_history=RunnableLambda(get_history))\n        | prompt\n        | llm\n        | StrOutputParser()\n    )\n    return chain\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    demo_buffer_memory()\n    demo_token_memory()\n    demo_summary_memory()\n    # demo_vector_memory()  # requires OpenAI API — uncomment to run\n    \n    print('\\n=== Production Memory Chain ===')\n    session = SessionMemory(session_id='user-456', max_tokens=1000)\n    chain = build_memory_chain(session)\n    \n    turns = [\n        'My name is Bob and I am learning machine learning',\n        'I want to focus on NLP specifically',\n        'What should I study next given my interests?',\n    ]\n    for turn in turns:\n        response = chain.invoke({'input': turn})\n        session.add_turn(turn, response)\n        print(f'User: {turn}')\n        print(f'AI: {response}')\n    \n    print(f'\\nSession stats: {session.stats}')"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Memory Mistakes",
+      "items": [
+        {
+          "mistake": "Using ConversationBufferMemory for long conversations without a token limit",
+          "why": "Buffer memory grows without bound. A 100-turn conversation at 50 tokens/turn = 5000 tokens of context history — expensive and often pushing out the actual question.",
+          "fix": "Use ConversationTokenBufferMemory with a reasonable max_token_limit (500-2000 tokens is typical)."
+        },
+        {
+          "mistake": "Not setting return_messages=True when using ChatPromptTemplate",
+          "why": "return_messages=False returns a plain string. ChatPromptTemplate with MessagesPlaceholder expects a list of Message objects. Type mismatch causes a runtime error.",
+          "fix": "When your prompt uses MessagesPlaceholder, always set return_messages=True."
+        },
+        {
+          "mistake": "Storing sensitive user information in memory without encryption",
+          "why": "Memory often stores PII (names, preferences, sensitive queries). Plain-text storage in Redis or a vector DB creates a compliance risk.",
+          "fix": "Encrypt memory values at rest. Tag user data so it can be deleted on request (GDPR right to erasure)."
+        },
+        {
+          "mistake": "Not using separate memory per user session",
+          "why": "Sharing a single memory object across users causes cross-contamination — user A's history pollutes user B's context.",
+          "fix": "Instantiate one memory object per session_id. Use Redis or DynamoDB as the backing store, keyed by session_id."
+        },
+        {
+          "mistake": "ConversationSummaryMemory calling LLM too frequently",
+          "why": "SummaryMemory calls the LLM to update the summary after every turn. For high-traffic apps, this doubles your LLM call volume.",
+          "fix": "Use ConversationSummaryBufferMemory with a token threshold — summary is only triggered when the buffer fills up, not every turn."
+        }
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Stateful Customer Support Bot",
+      "problem": "Build a customer support chatbot that:\n1. Remembers the user's name and issue from earlier in the conversation\n2. Uses ConversationTokenBufferMemory with max 800 tokens\n3. Has a system prompt that says: 'You are a helpful customer support agent. Refer to past context when relevant.'\n\nTest with a 5-turn conversation where the user mentions their order number early, then asks about it later.",
+      "hints": [
+        "Create memory with return_messages=True and memory_key='chat_history'",
+        "Use ChatPromptTemplate with MessagesPlaceholder('chat_history')",
+        "Call memory.save_context({'input': user_msg}, {'output': ai_response}) after each turn",
+        "The model should reference the order number in later turns from context"
+      ],
+      "solution": "```python\nfrom langchain.memory import ConversationTokenBufferMemory\nfrom langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder\nfrom langchain_core.output_parsers import StrOutputParser\nfrom langchain_core.runnables import RunnablePassthrough, RunnableLambda\nfrom langchain_openai import ChatOpenAI\n\nllm = ChatOpenAI(model='gpt-4o-mini', temperature=0.5)\nmemory = ConversationTokenBufferMemory(llm=llm, max_token_limit=800, return_messages=True, memory_key='chat_history')\n\nprompt = ChatPromptTemplate.from_messages([\n    ('system', 'You are a helpful customer support agent. Refer to past context when relevant.'),\n    MessagesPlaceholder('chat_history'),\n    ('human', '{input}'),\n])\n\nchain = (RunnablePassthrough.assign(chat_history=RunnableLambda(lambda _: memory.load_memory_variables({})['chat_history'])) | prompt | llm | StrOutputParser())\n\nconversation = [\n    'Hi, my name is Carlos. My order #ORD-7891 arrived damaged.',\n    'The box was crushed and the screen is cracked.',\n    'I have photos of the damage.',\n    'What are my options for a replacement?',\n    'Can you confirm you are processing a replacement for order #ORD-7891?',\n]\n\nfor msg in conversation:\n    response = chain.invoke({'input': msg})\n    memory.save_context({'input': msg}, {'output': response})\n    print(f'Customer: {msg}')\n    print(f'Agent: {response}\\n')\n```",
+      "difficulty": "intermediate"
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "What are the four main types of memory in LLM applications and when would you use each?",
+          "answer": "Buffer memory: keep all messages verbatim — for short conversations where full context matters. Token buffer: keep the most recent N tokens — for cost control with bounded context. Summary memory: LLM-generated rolling summary — for long conversations where exact wording doesn't matter. Vector store memory: semantic retrieval of relevant past facts — for user profiles and long-term personalization where recency doesn't predict relevance. Most production systems combine 2-3 types: recent buffer for short-term + vector store for long-term.",
+          "followUps": ["How do you handle memory for users across multiple sessions (days/weeks)?"]
+        },
+        {
+          "question": "How does ConversationSummaryMemory decide when to summarize?",
+          "answer": "In plain ConversationSummaryMemory, it summarizes after every single turn — expensive. ConversationSummaryBufferMemory is better: it buffers raw messages up to a token limit, then triggers an LLM summarization call when the buffer overflows. The summary replaces old messages, and recent messages stay verbatim in the buffer. This balances cost (infrequent summarization) with accuracy (recent messages kept intact).",
+          "followUps": ["What model would you use for the summarization call? Does it need to be the same as the chat model?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Why might `memory.load_memory_variables({})` return an empty history even after adding messages?",
+          "answer": "Three common reasons: (1) The memory_key doesn't match — if memory has `memory_key='chat_history'` but you're reading `memory.load_memory_variables({})['history']`, KeyError. Check the memory_key parameter. (2) Token limit too low — ConversationTokenBufferMemory with max_token_limit=50 and 200-token messages drops everything. (3) The input dict is wrong — some memory types (like VectorStoreRetrieverMemory) need `{'prompt': query}` not `{}` to retrieve relevant memories."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You're building a multi-user AI assistant with 10,000 daily active users. Each user has conversation history. How do you architect the memory layer?",
+          "answer": "Tiered memory architecture: (1) Hot tier — Redis with 24hr TTL stores the last 20 messages per session. Fast reads/writes, handles active sessions. (2) Warm tier — on session end or after 24hrs, compress with ConversationSummaryMemory and store the summary in PostgreSQL keyed by user_id. (3) Cold tier — extract user preferences/facts from summaries, embed them, store in pgvector for semantic retrieval. On each new session: load recent Redis messages (if active) or the PostgreSQL summary + retrieve top-3 relevant facts from pgvector. This keeps hot-path latency low (Redis), cost bounded (summaries not raw logs), and enables personalization (vector retrieval).",
+          "followUps": ["How do you handle GDPR memory deletion requests?"]
+        }
+      ],
+      "wrongAnswers": [
+        "ConversationBufferMemory stores messages in the model's weights — it uses a Python list/backing store, nothing is stored in model weights",
+        "You must use the same LLM for summarization as for chat — any capable LLM works for summarization, a cheaper model is often preferred",
+        "VectorStoreRetrieverMemory always retrieves the most recent messages — it retrieves semantically relevant messages, not chronologically recent ones"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d30q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "Which memory type is best for a long customer support conversation where you need to remember the customer's name but not every word exchanged?",
+          "options": {
+            "A": "ConversationBufferMemory",
+            "B": "ConversationSummaryBufferMemory",
+            "C": "VectorStoreRetrieverMemory",
+            "D": "ConversationTokenBufferMemory with max 50 tokens"
+          },
+          "answer": "B",
+          "explanation": "ConversationSummaryBufferMemory keeps a compressed summary of old turns (preserving key facts like name) plus recent messages verbatim. Buffer alone would overflow; token buffer with 50 tokens loses everything; vector memory is for semantic retrieval, not conversation flow."
+        },
+        {
+          "id": "d30q2",
+          "level": "intermediate",
+          "category": "code",
+          "question": "What does `memory.save_context({'input': user_msg}, {'output': ai_msg})` do?",
+          "options": {
+            "A": "Sends the messages to the LLM and stores the response",
+            "B": "Adds the user and AI messages to the memory's backing store",
+            "C": "Saves memory to a file for persistence",
+            "D": "Configures the memory's input and output variable names"
+          },
+          "answer": "B",
+          "explanation": "save_context() adds a human message (from 'input') and an AI message (from 'output') to the in-memory store. It's how you record completed turns after generating a response."
+        },
+        {
+          "id": "d30q3",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why must return_messages=True be set when using memory with ChatPromptTemplate and MessagesPlaceholder?",
+          "options": {
+            "A": "It enables streaming of memory contents",
+            "B": "MessagesPlaceholder expects a list of Message objects, not a plain string",
+            "C": "It tells the memory to include timestamps with each message",
+            "D": "It is required by the OpenAI API"
+          },
+          "answer": "B",
+          "explanation": "When return_messages=False, memory returns a formatted string like 'Human: ...\\nAI: ...'. ChatPromptTemplate's MessagesPlaceholder expects a list of Message objects (HumanMessage, AIMessage). Setting return_messages=True ensures the right type."
+        },
+        {
+          "id": "d30q4",
+          "level": "advanced",
+          "category": "scenario",
+          "question": "A user asks 'Can you remind me what I told you about my project last month?' Your current memory only holds 20 recent messages. What memory architecture would handle this?",
+          "options": {
+            "A": "Increase ConversationBufferMemory size to hold unlimited messages",
+            "B": "Use VectorStoreRetrieverMemory with past sessions stored as embeddings for semantic search across all history",
+            "C": "Use ConversationSummaryMemory to summarize last month's conversation on demand",
+            "D": "Store all messages in a relational database and do a full-text search"
+          },
+          "answer": "B",
+          "explanation": "VectorStoreRetrieverMemory can store embeddings of past session summaries or facts. When the user asks 'what did I tell you about my project', semantic search retrieves relevant memories regardless of when they occurred — ideal for long-term personalization across sessions."
+        },
+        {
+          "id": "d30q5",
+          "level": "basic",
+          "category": "code",
+          "question": "What is the difference between ChatMessageHistory and ConversationBufferMemory?",
+          "options": {
+            "A": "ChatMessageHistory stores to disk; ConversationBufferMemory stores in RAM",
+            "B": "ChatMessageHistory is the raw message store; ConversationBufferMemory wraps it and controls what gets injected into prompts",
+            "C": "They are identical — one is the old API, one is the new API",
+            "D": "ChatMessageHistory is for OpenAI; ConversationBufferMemory is for Anthropic"
+          },
+          "answer": "B",
+          "explanation": "ChatMessageHistory is a simple message store (add/get messages). ConversationBufferMemory wraps a ChatMessageHistory and adds the logic of how to format and inject that history into an LLM prompt via load_memory_variables(). You can swap in different backing stores (Redis, DynamoDB) by replacing the ChatMessageHistory."
+        }
+      ]
+    }
+  ]
+}

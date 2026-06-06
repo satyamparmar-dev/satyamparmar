@@ -16,6 +16,7 @@ import {
   javaGithubAssetUrl,
 } from '../../content/javaGithub/curriculum';
 import { parseMarkdown, highlightCode } from '../../utils/markdown';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 const baseMdSx = {
   lineHeight: 1.8,
@@ -35,6 +36,7 @@ const baseMdSx = {
 };
 
 const JavaGithubTopic: React.FC = () => {
+  usePageTitle('Java Reference');
   const { step } = useParams<{ step: string }>();
   const navigate = useNavigate();
   const theme = useTheme();
@@ -135,7 +137,7 @@ const JavaGithubTopic: React.FC = () => {
         <Typography variant="overline" color="text.secondary" display="block">
           Step {row.step}
         </Typography>
-        <Typography variant="h4" fontWeight={800} sx={{ letterSpacing: '-0.02em' }}>
+        <Typography variant="h4" component="h1" fontWeight={800} sx={{ letterSpacing: '-0.02em' }}>
           {row.displayName}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontFamily: 'JetBrains Mono, monospace' }}>

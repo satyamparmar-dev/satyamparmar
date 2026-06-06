@@ -32,6 +32,7 @@ import { findProLesson, getProPath } from '../../constants/proCurriculum'
 import type { ProPathId } from '../../types/pro.types'
 import { getProInterviewAnswer } from '../../constants/proRoles'
 import { PRO_UI } from '../../constants/proUi'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 function flattenLessons(pathId: ProPathId) {
   const path = getProPath(pathId)
@@ -52,6 +53,8 @@ const ProLesson: React.FC = () => {
   } = useProProgress()
   const lesson = lessonId ? findProLesson(lessonId) : null
   const path = lesson ? getProPath(lesson.pathId) : null
+
+  usePageTitle(lesson?.title ?? 'Pro Lesson')
 
   const [noteDraft, setNoteDraft] = useState('')
 

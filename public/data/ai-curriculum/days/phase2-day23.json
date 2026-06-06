@@ -1,0 +1,172 @@
+{
+  "day": 23,
+  "phase": 2,
+  "title": "Building RAG Pipelines from Scratch",
+  "description": "Build a complete Retrieval-Augmented Generation pipeline from the ground up — no frameworks. Master chunking, embedding, retrieval, context assembly, and generation. Understand every component before using LangChain abstractions.",
+  "estimatedHours": 4,
+  "difficulty": "Intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["rag", "retrieval-augmented-generation", "chunking", "embeddings", "context-assembly", "grounding"],
+  "prerequisites": ["phase2-day22", "phase1-day12"],
+  "learningObjectives": [
+    "Explain the four-stage RAG pipeline: chunk, embed, retrieve, generate",
+    "Implement fixed-size and sentence-aware chunking strategies",
+    "Embed document chunks and store them in a vector database",
+    "Retrieve relevant chunks and assemble context with citations",
+    "Build a prompt that grounds the LLM in retrieved context only",
+    "Measure retrieval quality with precision and recall metrics"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "RAG is the #1 technique for making LLMs accurate on your specific data. Fine-tuning is expensive and requires retraining when data changes. RAG is dynamic, cheap, and auditable. Every AI engineer needs to build one from scratch before using frameworks — frameworks hide bugs that only make sense when you understand the pipeline end to end."
+    },
+    {
+      "type": "theory",
+      "content": "## The RAG Pipeline\n\n```\nDocuments\n    │\n    ▼\n[1. CHUNK] Split into manageable pieces\n    │\n    ▼\n[2. EMBED] Convert chunks to vectors (offline)\n    │\n    ▼\n[3. STORE] Vector database index\n\n─── At Query Time ───────────────────────────\n\nUser Query\n    │\n    ▼\n[4. EMBED QUERY] Same embedding model\n    │\n    ▼\n[5. RETRIEVE] Top-K similar chunks\n    │\n    ▼\n[6. ASSEMBLE] Format context + query\n    │\n    ▼\n[7. GENERATE] LLM answers grounded in context\n    │\n    ▼\nCited Answer\n```\n\n---\n\n## Step 1: Chunking\n\nChunking strategy is the most impactful RAG parameter — poor chunking produces poor retrieval.\n\n**Fixed-size chunking** (simplest):\n```python\ndef chunk_fixed(text: str, size: int = 512, overlap: int = 50) -> list[str]:\n    chunks = []\n    start = 0\n    while start < len(text):\n        end = start + size\n        chunks.append(text[start:end])\n        start += size - overlap\n    return chunks\n```\n\n**Sentence-aware chunking** (better):\nDon't cut mid-sentence. Split on sentence boundaries, then group until size limit.\n\n**Markdown/structure-aware chunking** (best for docs):\nSplit on headers, code blocks, and paragraphs to preserve semantic units.\n\n---\n\n## Step 2: Embedding\n\nEmbed each chunk with an embedding model. Use the SAME model at query time.\n\n```python\nfrom openai import OpenAI\nclient = OpenAI()\n\ndef embed(texts: list[str]) -> list[list[float]]:\n    response = client.embeddings.create(\n        model=\"text-embedding-3-small\",\n        input=texts,\n    )\n    return [item.embedding for item in response.data]\n```\n\nBatch embedding is far cheaper — embed all chunks in one call, not one per chunk.\n\n---\n\n## Step 3 & 4: Store and Retrieve\n\nStore chunk vectors + metadata. At query time, embed the query and find top-K.\n\nCritical metadata to store:\n- `chunk_id`, `doc_id`, `source` (URL/filename)\n- `chunk_index` (position in document)\n- `text` (the original chunk text)\n\n---\n\n## Step 5: Context Assembly\n\nAssemble retrieved chunks into a prompt context:\n\n```python\ndef assemble_context(chunks: list[dict]) -> str:\n    parts = []\n    for i, chunk in enumerate(chunks, 1):\n        parts.append(f\"[Source {i}: {chunk['source']}]\\n{chunk['text']}\")\n    return \"\\n\\n\".join(parts)\n```\n\n---\n\n## Step 6: Grounded Generation\n\nSystem prompt forces the model to answer only from context:\n\n```python\nSYSTEM = \"\"\"You are a helpful assistant. Answer questions using ONLY the provided context.\nIf the context does not contain the answer, say 'I don't have that information.'\nAlways cite the source number [Source N] for each fact you state.\"\"\"\n\ndef generate(query: str, context: str) -> str:\n    return client.chat.completions.create(\n        model=\"gpt-4o-mini\",\n        messages=[\n            {\"role\": \"system\", \"content\": SYSTEM},\n            {\"role\": \"user\", \"content\": f\"Context:\\n{context}\\n\\nQuestion: {query}\"}\n        ],\n        temperature=0.1,  # low temp for factual grounded answers\n        max_tokens=800,\n    ).choices[0].message.content\n```\n\n---\n\n## Retrieval Quality Metrics\n\n| Metric | Formula | Measures |\n|--------|---------|----------|\n| Precision@K | relevant_retrieved / K | Are retrieved docs useful? |\n| Recall@K | relevant_retrieved / total_relevant | Did we miss any? |\n| MRR | 1 / rank_of_first_relevant | How quickly do we find one? |\n| NDCG | Weighted rank quality | Full ranking quality |\n\nStart with Precision@5 — it's the most intuitive and easiest to evaluate manually."
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "rag_pipeline.py",
+      "level": "Intermediate",
+      "code": "\"\"\"RAG pipeline from scratch: chunk → embed → store → retrieve → generate.\"\"\"\nimport os\nimport re\nimport hashlib\nfrom dataclasses import dataclass, field\nfrom openai import OpenAI\nimport chromadb\n\nclient = OpenAI(api_key=os.environ[\"OPENAI_API_KEY\"])\n\n\n# ── 1. Chunking ──────────────────────────────────────────────────\n@dataclass\nclass Chunk:\n    text: str\n    doc_id: str\n    chunk_index: int\n    source: str\n    chunk_id: str = field(init=False)\n\n    def __post_init__(self):\n        self.chunk_id = hashlib.md5(f\"{self.doc_id}_{self.chunk_index}\".encode()).hexdigest()[:12]\n\n\ndef chunk_sentences(text: str, max_tokens: int = 400, overlap_sentences: int = 1) -> list[str]:\n    \"\"\"Split on sentence boundaries, group until max_tokens estimate.\"\"\"\n    sentences = re.split(r'(?<=[.!?])\\s+', text.strip())\n    chunks, current, current_tokens = [], [], 0\n    for sent in sentences:\n        sent_tokens = len(sent) // 4  # rough estimate\n        if current_tokens + sent_tokens > max_tokens and current:\n            chunks.append(\" \".join(current))\n            # Overlap: keep last N sentences for context continuity\n            current = current[-overlap_sentences:]\n            current_tokens = sum(len(s) // 4 for s in current)\n        current.append(sent)\n        current_tokens += sent_tokens\n    if current:\n        chunks.append(\" \".join(current))\n    return chunks\n\n\ndef chunk_document(text: str, doc_id: str, source: str) -> list[Chunk]:\n    raw_chunks = chunk_sentences(text)\n    return [Chunk(text=c, doc_id=doc_id, chunk_index=i, source=source) for i, c in enumerate(raw_chunks)]\n\n\n# ── 2. Embedding ─────────────────────────────────────────────────\ndef embed_texts(texts: list[str], model: str = \"text-embedding-3-small\") -> list[list[float]]:\n    \"\"\"Batch embed — one API call for all texts.\"\"\"\n    if not texts:\n        return []\n    response = client.embeddings.create(model=model, input=texts)\n    return [item.embedding for item in response.data]\n\n\n# ── 3. Vector Store wrapper ──────────────────────────────────────\nclass RAGVectorStore:\n    def __init__(self, collection_name: str = \"rag_docs\"):\n        chroma = chromadb.PersistentClient(\"./rag_chroma\")\n        self.col = chroma.get_or_create_collection(collection_name, metadata={\"hnsw:space\": \"cosine\"})\n\n    def add_chunks(self, chunks: list[Chunk], embeddings: list[list[float]]) -> None:\n        self.col.add(\n            ids=[c.chunk_id for c in chunks],\n            embeddings=embeddings,\n            documents=[c.text for c in chunks],\n            metadatas=[{\"doc_id\": c.doc_id, \"source\": c.source, \"chunk_index\": c.chunk_index} for c in chunks],\n        )\n\n    def retrieve(self, query_embedding: list[float], top_k: int = 5, filters: dict | None = None) -> list[dict]:\n        kwargs = {\"query_embeddings\": [query_embedding], \"n_results\": top_k, \"include\": [\"documents\", \"metadatas\", \"distances\"]}\n        if filters:\n            kwargs[\"where\"] = filters\n        res = self.col.query(**kwargs)\n        return [\n            {\"text\": doc, \"source\": meta[\"source\"], \"score\": 1 - dist, \"doc_id\": meta[\"doc_id\"]}\n            for doc, meta, dist in zip(res[\"documents\"][0], res[\"metadatas\"][0], res[\"distances\"][0])\n        ]\n\n    def count(self) -> int:\n        return self.col.count()\n\n\n# ── 4. Context assembly ──────────────────────────────────────────\ndef assemble_context(retrieved: list[dict]) -> str:\n    parts = [f\"[Source {i+1} — {r['source']}]\\n{r['text']}\" for i, r in enumerate(retrieved)]\n    return \"\\n\\n\".join(parts)\n\n\n# ── 5. Grounded generation ───────────────────────────────────────\nRAG_SYSTEM = \"\"\"You are a precise question-answering assistant.\nAnswer questions using ONLY the provided context sources.\nIf the context does not contain enough information, say: 'I don't have that information in my knowledge base.'\nCite sources using [Source N] inline for every fact you state.\"\"\"\n\ndef generate_answer(query: str, context: str) -> str:\n    response = client.chat.completions.create(\n        model=\"gpt-4o-mini\",\n        messages=[\n            {\"role\": \"system\", \"content\": RAG_SYSTEM},\n            {\"role\": \"user\",   \"content\": f\"Context:\\n{context}\\n\\nQuestion: {query}\"}\n        ],\n        temperature=0.0,\n        max_tokens=800,\n    )\n    return response.choices[0].message.content\n\n\n# ── 6. Full RAG pipeline ─────────────────────────────────────────\nclass RAGPipeline:\n    def __init__(self):\n        self.store = RAGVectorStore()\n\n    def index(self, documents: list[dict]) -> None:\n        \"\"\"Each doc: {text, doc_id, source}.\"\"\"\n        all_chunks: list[Chunk] = []\n        for doc in documents:\n            all_chunks.extend(chunk_document(doc[\"text\"], doc[\"doc_id\"], doc[\"source\"]))\n\n        print(f\"Chunked into {len(all_chunks)} chunks. Embedding...\")\n        embeddings = embed_texts([c.text for c in all_chunks])\n        self.store.add_chunks(all_chunks, embeddings)\n        print(f\"Indexed {self.store.count()} chunks total.\")\n\n    def query(self, question: str, top_k: int = 5) -> dict:\n        query_emb = embed_texts([question])[0]\n        retrieved  = self.store.retrieve(query_emb, top_k=top_k)\n        context    = assemble_context(retrieved)\n        answer     = generate_answer(question, context)\n        return {\"answer\": answer, \"sources\": retrieved, \"context_used\": context}\n\n\nif __name__ == \"__main__\":\n    rag = RAGPipeline()\n\n    rag.index([\n        {\"doc_id\": \"rag_paper\", \"source\": \"Lewis et al. 2020\",\n         \"text\": \"Retrieval-Augmented Generation (RAG) is a method that combines retrieval of relevant documents with generative language models. RAG reduces hallucinations by grounding responses in retrieved evidence. The model retrieves top-K documents from a corpus using dense retrieval, then uses them as context for generation.\"},\n        {\"doc_id\": \"attention\", \"source\": \"Vaswani et al. 2017\",\n         \"text\": \"The transformer architecture uses self-attention to process sequences in parallel. The attention mechanism computes query, key, and value matrices. Multi-head attention allows the model to attend to information from different representation subspaces.\"},\n        {\"doc_id\": \"gpt3\", \"source\": \"Brown et al. 2020\",\n         \"text\": \"GPT-3 is a language model with 175 billion parameters trained on 300 billion tokens. It demonstrates few-shot learning capabilities without gradient updates. GPT-3 achieves strong results on NLP benchmarks using only a few examples in the prompt.\"},\n    ])\n\n    result = rag.query(\"How does RAG reduce hallucinations?\")\n    print(\"\\n=== Answer ===\")\n    print(result[\"answer\"])\n    print(\"\\n=== Retrieved Sources ===\")\n    for s in result[\"sources\"]:\n        print(f\"  [{s['score']:.3f}] {s['source']}: {s['text'][:60]}...\")",
+      "output": "Chunked into 6 chunks. Embedding...\nIndexed 6 chunks total.\n\n=== Answer ===\nRAG reduces hallucinations by grounding responses in retrieved evidence [Source 1]. Instead of relying on the model's parametric knowledge, RAG retrieves relevant documents from a corpus and uses them as context for generation [Source 1]. This ensures that the model's answers are based on actual retrieved information rather than potentially incorrect memorized facts.\n\n=== Retrieved Sources ===\n  [0.891] Lewis et al. 2020: Retrieval-Augmented Generation (RAG) is a method that...\n  [0.743] Brown et al. 2020: GPT-3 is a language model with 175 billion parameters...\n  [0.641] Vaswani et al. 2017: The transformer architecture uses self-attention..."
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Chunking too large — 2000+ token chunks retrieve too much irrelevant text, diluting the relevant signal. Start at 400-512 tokens and measure retrieval precision.",
+        "Chunking too small — 50-token chunks lose context needed to understand the content. A sentence like 'It was 42' is meaningless without surrounding context.",
+        "Embedding the query with a different model than the chunks — if you index with text-embedding-3-small and query with text-embedding-3-large, similarity scores are meaningless.",
+        "Generating answers from context without grounding instructions — without explicit 'answer ONLY from context' instructions, the model supplements retrieved content with its parametric knowledge, defeating the purpose of RAG.",
+        "Not storing the original chunk text in the vector database — if you only store IDs, you need a separate lookup to get text back. Always store text in metadata for retrieval."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Add Relevance Score Filtering",
+      "problem": "Extend the RAGPipeline to filter out low-relevance chunks before passing them to the LLM. Add a `min_score` parameter to `query()`. If no chunks meet the threshold, return a 'no relevant information found' response without calling the LLM (saves cost). Also add a `citation_count` to the returned dict showing how many sources were actually cited in the answer.",
+      "hints": [
+        "Filter retrieved list: [r for r in retrieved if r['score'] >= min_score]",
+        "If filtered list is empty, return without calling generate_answer()",
+        "Count citations by counting '[Source' occurrences in the answer string",
+        "Typical good threshold: 0.75-0.80 for cosine similarity"
+      ],
+      "solution": "def query(self, question: str, top_k: int = 5, min_score: float = 0.70) -> dict:\n    query_emb = embed_texts([question])[0]\n    retrieved = self.store.retrieve(query_emb, top_k=top_k)\n\n    # Filter by relevance threshold\n    relevant = [r for r in retrieved if r['score'] >= min_score]\n    if not relevant:\n        return {\n            'answer': 'I don\\'t have relevant information in my knowledge base for this question.',\n            'sources': [],\n            'context_used': '',\n            'citation_count': 0,\n            'chunks_retrieved': len(retrieved),\n            'chunks_used': 0,\n        }\n\n    context = assemble_context(relevant)\n    answer  = generate_answer(question, context)\n    citations = answer.count('[Source')\n    return {\n        'answer': answer,\n        'sources': relevant,\n        'context_used': context,\n        'citation_count': citations,\n        'chunks_retrieved': len(retrieved),\n        'chunks_used': len(relevant),\n    }",
+      "difficulty": "Intermediate"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "Explain the four stages of a RAG pipeline and what can go wrong at each stage.",
+          "answer": "Stage 1 — Chunking: split documents into pieces. Wrong: too large (noisy retrieval), too small (lost context), cutting mid-sentence (broken semantic units). Stage 2 — Embedding: convert chunks to vectors. Wrong: mismatched embedding model at query time, embedding stale content without re-indexing. Stage 3 — Retrieval: find similar chunks. Wrong: not enough chunks retrieved (missed context), too many (diluted context), no metadata filters (irrelevant sources). Stage 4 — Generation: LLM answers from context. Wrong: no grounding instruction (model adds hallucinated info), context too long (model loses track of early sources), no citation requirement (unverifiable answers).",
+          "followUps": [
+            "What is HyDE (Hypothetical Document Embeddings) and how does it improve retrieval?",
+            "How do you evaluate RAG quality automatically?"
+          ]
+        },
+        {
+          "question": "Why is chunk overlap important and what happens without it?",
+          "answer": "Chunk overlap (e.g., last 50 tokens of one chunk are the first 50 of the next) ensures that content at chunk boundaries doesn't get split and lose context. Without overlap, a sentence like 'Therefore, the conclusion is...' at the start of chunk 2 has no context from chunk 1. Overlap creates redundancy: relevant context near boundaries appears in two adjacent chunks, increasing the chance that at least one is retrieved. Typical overlap: 10-15% of chunk size (e.g., 50-token overlap for 400-token chunks).",
+          "followUps": [
+            "How does overlap affect total storage and cost?",
+            "What is parent-child chunking and how does it improve on simple overlap?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write a function that evaluates RAG retrieval precision: given a query, the ground-truth relevant doc IDs, and retrieved doc IDs, compute Precision@K.",
+          "answer": "def precision_at_k(retrieved_ids: list[str], relevant_ids: set[str], k: int) -> float:\n    top_k = retrieved_ids[:k]\n    hits = sum(1 for doc_id in top_k if doc_id in relevant_ids)\n    return hits / k if k > 0 else 0.0\n\ndef evaluate_retrieval(test_cases: list[dict], rag_store, embed_fn, k: int = 5) -> dict:\n    precisions = []\n    for case in test_cases:\n        q_emb = embed_fn([case['query']])[0]\n        retrieved = rag_store.retrieve(q_emb, top_k=k)\n        retrieved_ids = [r['doc_id'] for r in retrieved]\n        p = precision_at_k(retrieved_ids, set(case['relevant_doc_ids']), k)\n        precisions.append(p)\n    return {'mean_precision_at_k': sum(precisions) / len(precisions), 'k': k}",
+          "followUps": [
+            "How would you compute Recall@K in addition to Precision@K?",
+            "What is NDCG and when is it more informative than Precision@K?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your RAG system retrieves correct chunks 85% of the time but the final answer quality is still poor. What do you investigate?",
+          "answer": "If retrieval is good but answers are poor, the problem is in context assembly or generation: (1) Context too long — check if the combined chunks exceed 50% of context window; the model may lose early sources. (2) Context ordering — most models perform better with most-relevant chunks first (or last — 'lost in the middle' phenomenon). (3) Grounding prompt insufficient — the model is supplementing retrieved context with parametric knowledge. Strengthen the 'ONLY use provided context' instruction. (4) Chunk content quality — retrieve the actual chunks and read them. Are they coherent? Do they actually contain the answer? (5) Generation parameters — low temperature (0.0-0.1) is essential for factual grounded answering. (6) LLM capability — some questions require reasoning across multiple chunks; smaller models fail at this. Test with a stronger model.",
+          "followUps": [
+            "What is the 'lost in the middle' phenomenon and how do you mitigate it?",
+            "How would you add a faithfulness evaluator to automatically detect when answers drift from context?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "Larger chunks always produce better RAG results because they contain more information",
+        "You can use any embedding model to query an index built with a different embedding model",
+        "RAG eliminates hallucinations completely because the model only sees the retrieved context"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the purpose of chunk overlap in RAG chunking?",
+          "options": {
+            "A": "To reduce the number of API calls needed for embedding",
+            "B": "To ensure content at chunk boundaries is not split and loses context",
+            "C": "To increase the total number of chunks for better coverage",
+            "D": "To prevent duplicate documents from being indexed"
+          },
+          "answer": "B",
+          "explanation": "Chunk overlap ensures that content near chunk boundaries appears in both adjacent chunks. Without overlap, a sentence split across chunk boundaries loses its surrounding context. With 50-token overlap, the boundary content exists in two chunks, increasing retrieval chances and preserving semantic coherence."
+        },
+        {
+          "id": 2,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why should you use temperature=0.0 for the generation step in a RAG pipeline?",
+          "options": {
+            "A": "High temperature makes the model ignore the provided context",
+            "B": "Low temperature produces deterministic, factual answers grounded in context",
+            "C": "Temperature 0 makes the model cite sources automatically",
+            "D": "The context window is smaller at low temperatures"
+          },
+          "answer": "B",
+          "explanation": "RAG's value is factual accuracy grounded in retrieved sources. Temperature=0.0 (greedy decoding) minimizes creativity/randomness and maximizes faithfulness to the provided context. Higher temperatures increase the chance the model deviates from the context to add information from its parametric knowledge, defeating the purpose of RAG."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "Your RAG retrieval precision@5 is 0.6 — only 3 of 5 retrieved chunks are relevant. What is the most impactful fix?",
+          "options": {
+            "A": "Use a more expensive LLM for generation",
+            "B": "Reduce chunk size to get more specific chunks and tune embedding model",
+            "C": "Increase top_k from 5 to 20",
+            "D": "Switch from cosine similarity to Euclidean distance"
+          },
+          "answer": "B",
+          "explanation": "Precision@5=0.6 indicates retrieval quality issues. Smaller, more focused chunks improve precision because each chunk contains less mixed content. Also consider: does your embedding model capture domain-specific semantics? Fine-tuned or specialized embedding models often outperform general models for domain-specific corpora. Increasing top_k improves recall but hurts precision further."
+        },
+        {
+          "id": 4,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "A RAG system answers 'I don't know' even when relevant documents exist in the index. What is the most likely cause?",
+          "options": {
+            "A": "The LLM's temperature is set too low",
+            "B": "The similarity threshold is too high, filtering out relevant chunks",
+            "C": "The system prompt is too long",
+            "D": "The embedding model is returning zero vectors"
+          },
+          "answer": "B",
+          "explanation": "If you filter retrieved chunks by a minimum similarity score and that threshold is too high, relevant chunks get filtered out before reaching the LLM, which then truthfully reports 'I don't have that information.' Debug by logging retrieved chunks BEFORE filtering and checking their scores. Lower the threshold or remove it and evaluate on retrieval quality separately."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## RAG Pipeline — Quick Reference\n\n### Pipeline Stages\n```\nDocuments → Chunk → Embed → Store → [Query Time] → Embed Query → Retrieve → Assemble → Generate\n```\n\n### Chunking Guidelines\n- Size: 400-512 tokens (start here)\n- Overlap: 10-15% of chunk size (50 tokens)\n- Strategy: sentence-aware > fixed-size > character\n\n### Embedding\n```python\n# Batch embed — ONE API call for all chunks\nresponse = client.embeddings.create(model='text-embedding-3-small', input=texts)\nembeddings = [item.embedding for item in response.data]\n```\n**Rule: Same model for indexing AND querying**\n\n### Context Assembly\n```python\n'[Source 1 — filename.pdf]\\n{chunk_text}\\n\\n[Source 2 — ...]'\n```\n\n### Grounding Prompt\n```\n'Answer using ONLY the provided context.\nCite [Source N] for every fact.\nIf context is insufficient, say so.'\n```\n\n### Retrieval Quality\n- Precision@5 = relevant_in_top5 / 5\n- Recall@5 = relevant_in_top5 / total_relevant\n- Target: Precision@5 > 0.80\n\n### Common Failure Modes\n| Symptom | Likely cause |\n|---------|-------------|\n| Wrong answers | No grounding prompt |\n| I don't know | Threshold too high |\n| Slow | Not batching embeddings |\n| Stale answers | Index not updated |"
+    }
+  ]
+}

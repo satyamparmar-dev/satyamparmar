@@ -1,0 +1,173 @@
+{
+  "id": "phase3-day39",
+  "day": 39,
+  "phase": 3,
+  "title": "Tool Design & Custom Tool Development",
+  "estimatedHours": 4,
+  "difficulty": "intermediate",
+  "level": "Senior",
+  "track": "Senior",
+  "tags": ["tools", "tool-design", "function-calling", "agent-tools", "api-integration"],
+  "prerequisites": ["phase2-day28", "phase3-day37"],
+  "learningObjectives": [
+    "Design effective tool interfaces for agents",
+    "Build tools that are robust, informative on failure, and safe",
+    "Create compound tools and tool pipelines",
+    "Implement tool with authentication and rate limiting",
+    "Write tool schemas that guide correct model behavior"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Tool Design Is Agent Design",
+      "content": "The quality of your agent is largely determined by the quality of its tools. A poorly designed tool — vague description, unhelpful error messages, wrong return format — will cause the model to misuse it, leading to cascading failures. A well-designed tool is like a well-designed API: clear contract, predictable behavior, rich error information, and safe by default. This day focuses on the craft of tool design: what makes a tool agent-friendly, how to handle errors in a way the model can recover from, and how to build compound tools that reduce the number of calls needed."
+    },
+    {
+      "type": "theory",
+      "title": "Principles of Agent-Friendly Tool Design",
+      "content": "**The 6 rules of agent-friendly tools:**\n\n1. **Description is everything** — the model selects tools based on description. Describe: WHEN to use it, WHAT it returns, its LIMITATIONS.\n   ```\n   Bad:  'Search for information'\n   Good: 'Search the web for current facts, news, and public data. Returns up to 5 \n          result snippets with titles and URLs. Do NOT use for internal company data.'\n   ```\n\n2. **Return structured data, not prose** — JSON with labeled fields lets the model reliably extract values. Prose requires the model to parse natural language.\n   ```python\n   # Bad:  return 'The weather in Paris is 15°C and cloudy'\n   # Good: return json.dumps({'city': 'Paris', 'temp_c': 15, 'condition': 'cloudy'})\n   ```\n\n3. **Fail informatively** — errors must tell the model how to recover, not just that something failed.\n   ```python\n   # Bad:  return 'Error'\n   # Good: return json.dumps({'error': 'Product not found', 'suggestion': 'Try searching by SKU instead of name'})\n   ```\n\n4. **Be idempotent where possible** — calling the tool twice with the same input should produce the same result (or harmlessly fail). Avoids double-mutations if the model retries.\n\n5. **One tool, one responsibility** — a tool that does 5 things requires complex argument handling and confuses the model.\n\n6. **Guard against misuse** — validate inputs, limit scope (no SQL injection, no path traversal), log every call.\n\n**Tool schema best practices:**\n```python\n# Use enums to constrain choices\n'status': {'type': 'string', 'enum': ['pending', 'shipped', 'delivered']}\n\n# Use descriptions in every property\n'user_id': {'type': 'string', 'description': 'UUID of the user, e.g. \"user_abc123\"'}\n\n# Mark required fields explicitly\n'required': ['product_id']  # don't list optional fields here\n\n# Use number with constraints\n'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100, 'default': 10}\n```\n\n**Tool result format standards:**\n```python\n# Success: always include what was found/done\n{'success': True, 'data': {...}, 'count': N}\n\n# Error: always include error_code + human message + recovery hint\n{'success': False, 'error_code': 'NOT_FOUND', 'message': 'Order ORD-123 does not exist', 'suggestion': 'Check the order ID and try again'}\n\n# Partial success: clearly distinguish available vs missing data\n{'success': True, 'data': {...}, 'warnings': ['Price data unavailable — showing last known price from 2024-01-01']}\n```"
+    },
+    {
+      "type": "code",
+      "title": "Production-Grade Tool Library",
+      "language": "python",
+      "code": "from __future__ import annotations\nimport json\nimport os\nimport re\nimport time\nimport logging\nfrom abc import ABC, abstractmethod\nfrom dataclasses import dataclass, field\nfrom functools import wraps\nfrom typing import Any, Callable, Optional\nfrom datetime import datetime, timedelta\n\nlog = logging.getLogger(__name__)\n\n\n# ── Tool result helpers ────────────────────────────────────────────────────────\n\ndef success(data: Any, **extras) -> str:\n    return json.dumps({'success': True, 'data': data, **extras})\n\ndef failure(error_code: str, message: str, suggestion: str = '') -> str:\n    return json.dumps({'success': False, 'error_code': error_code, 'message': message, 'suggestion': suggestion})\n\n\n# ── Rate limiter ───────────────────────────────────────────────────────────────\n\nclass RateLimiter:\n    def __init__(self, max_calls: int, window_seconds: int = 60):\n        self.max_calls = max_calls\n        self.window = timedelta(seconds=window_seconds)\n        self._calls: list[datetime] = []\n\n    def check(self) -> bool:\n        now = datetime.utcnow()\n        self._calls = [t for t in self._calls if now - t < self.window]\n        if len(self._calls) >= self.max_calls:\n            return False\n        self._calls.append(now)\n        return True\n\n\n# ── Base tool with built-in safety ────────────────────────────────────────────\n\nclass SafeTool(ABC):\n    rate_limit: int = 100  # calls per minute\n\n    def __init__(self):\n        self._limiter = RateLimiter(self.rate_limit)\n        self._call_count = 0\n        self._error_count = 0\n\n    @property\n    @abstractmethod\n    def name(self) -> str: ...\n\n    @property\n    @abstractmethod\n    def description(self) -> str: ...\n\n    @property\n    @abstractmethod\n    def schema(self) -> dict: ...\n\n    @abstractmethod\n    def _execute(self, **kwargs) -> str: ...\n\n    def execute(self, **kwargs) -> str:\n        if not self._limiter.check():\n            return failure('RATE_LIMIT', f'Tool {self.name} rate limit exceeded ({self.rate_limit}/min)', 'Wait 60 seconds before retrying')\n        self._call_count += 1\n        try:\n            log.info('Tool call: %s(%s)', self.name, {k: str(v)[:50] for k, v in kwargs.items()})\n            result = self._execute(**kwargs)\n            return result\n        except Exception as e:\n            self._error_count += 1\n            log.error('Tool error: %s: %s', self.name, e)\n            return failure('INTERNAL_ERROR', str(e), 'Check your inputs and try again')\n\n    def to_openai_spec(self) -> dict:\n        return {'type': 'function', 'function': {'name': self.name, 'description': self.description, 'parameters': self.schema}}\n\n    @property\n    def stats(self) -> dict:\n        return {'calls': self._call_count, 'errors': self._error_count, 'error_rate': f'{self._error_count/max(1,self._call_count):.1%}'}\n\n\n# ── Concrete tools ─────────────────────────────────────────────────────────────\n\nclass DatabaseQueryTool(SafeTool):\n    rate_limit = 60\n    name = 'query_database'\n    description = (\n        'Query the product and order database. Returns structured records. '\n        'Use for: product details, order history, inventory levels. '\n        'Do NOT use for: user authentication, financial transactions.'\n    )\n    schema = {\n        'type': 'object',\n        'properties': {\n            'table': {\n                'type': 'string',\n                'enum': ['products', 'orders', 'customers'],\n                'description': 'Database table to query',\n            },\n            'filter': {\n                'type': 'object',\n                'description': 'Key-value pairs to filter records, e.g. {\"status\": \"shipped\"}',\n            },\n            'limit': {\n                'type': 'integer',\n                'minimum': 1, 'maximum': 50,\n                'description': 'Maximum records to return (default: 10)',\n            },\n        },\n        'required': ['table'],\n    }\n\n    # Simulated DB\n    _DB = {\n        'products': [\n            {'id': 'P001', 'name': 'Widget Pro', 'price': 29.99, 'stock': 150, 'category': 'hardware'},\n            {'id': 'P002', 'name': 'Gadget Plus', 'price': 49.99, 'stock': 0, 'category': 'electronics'},\n            {'id': 'P003', 'name': 'Tool Deluxe', 'price': 99.99, 'stock': 42, 'category': 'equipment'},\n        ],\n        'orders': [\n            {'id': 'ORD-001', 'customer_id': 'C001', 'total': 89.97, 'status': 'shipped', 'product_ids': ['P001', 'P003']},\n            {'id': 'ORD-002', 'customer_id': 'C002', 'total': 49.99, 'status': 'pending', 'product_ids': ['P002']},\n        ],\n        'customers': [\n            {'id': 'C001', 'name': 'Alice Johnson', 'email': 'alice@example.com', 'tier': 'gold'},\n            {'id': 'C002', 'name': 'Bob Smith', 'email': 'bob@example.com', 'tier': 'standard'},\n        ],\n    }\n\n    def _execute(self, table: str, filter: Optional[dict] = None, limit: int = 10) -> str:\n        rows = self._DB.get(table, [])\n        if not rows:\n            return failure('TABLE_EMPTY', f'Table {table} has no records')\n\n        if filter:\n            rows = [r for r in rows if all(str(r.get(k, '')).lower() == str(v).lower() for k, v in filter.items())]\n\n        rows = rows[:limit]\n        if not rows:\n            return failure('NO_RESULTS', f'No records in {table} match filter {filter}', 'Try different filter values or remove filters')\n\n        return success({'table': table, 'records': rows, 'count': len(rows)})\n\n\nclass EmailDraftTool(SafeTool):\n    \"\"\"Creates email drafts — NEVER sends automatically.\"\"\"\n    rate_limit = 20\n    name = 'draft_email'\n    description = (\n        'Draft an email. Returns a preview for human review. '\n        'NEVER sends automatically — a human must approve and send. '\n        'Use for: customer communications, support responses, notifications.'\n    )\n    schema = {\n        'type': 'object',\n        'properties': {\n            'to': {'type': 'string', 'description': 'Recipient email address'},\n            'subject': {'type': 'string', 'description': 'Email subject line'},\n            'body': {'type': 'string', 'description': 'Email body content (plain text or markdown)'},\n            'priority': {'type': 'string', 'enum': ['normal', 'high'], 'description': 'Email priority'},\n        },\n        'required': ['to', 'subject', 'body'],\n    }\n\n    def _execute(self, to: str, subject: str, body: str, priority: str = 'normal') -> str:\n        # Validate email format\n        if not re.match(r'^[\\w.+-]+@[\\w-]+\\.[\\w.]+$', to):\n            return failure('INVALID_EMAIL', f'Invalid email address: {to}', 'Use format: user@domain.com')\n\n        draft = {\n            'draft_id': f'draft_{int(time.time())}',\n            'to': to,\n            'subject': subject,\n            'body': body,\n            'priority': priority,\n            'status': 'DRAFT — awaiting human approval',\n            'created_at': datetime.utcnow().isoformat(),\n        }\n        log.warning('EMAIL DRAFT CREATED — requires human review: to=%s subject=%s', to, subject)\n        return success(draft, message='Draft created. Human review required before sending.')\n\n\nclass CodeExecutionTool(SafeTool):\n    rate_limit = 30\n    name = 'run_python'\n    description = (\n        'Execute Python code in a sandboxed environment. '\n        'Returns stdout output or error. '\n        'Available builtins: print, range, len, sum, sorted, max, min, abs, round, enumerate, zip, list, dict, set, str, int, float. '\n        'No file system, network, or import access.'\n    )\n    schema = {\n        'type': 'object',\n        'properties': {\n            'code': {'type': 'string', 'description': 'Python code to execute'},\n            'timeout_seconds': {'type': 'integer', 'minimum': 1, 'maximum': 30, 'description': 'Execution timeout (default: 10)'},\n        },\n        'required': ['code'],\n    }\n\n    SAFE_BUILTINS = {\n        'print': print, 'range': range, 'len': len, 'sum': sum,\n        'sorted': sorted, 'max': max, 'min': min, 'abs': abs,\n        'round': round, 'enumerate': enumerate, 'zip': zip,\n        'list': list, 'dict': dict, 'set': set,\n        'str': str, 'int': int, 'float': float, 'bool': bool,\n        '__builtins__': {},\n    }\n\n    def _execute(self, code: str, timeout_seconds: int = 10) -> str:\n        import io\n        import contextlib\n        import signal\n\n        # Block dangerous patterns\n        blocked = ['import ', '__import__', 'open(', 'os.', 'subprocess', 'exec(', 'eval(']\n        for pattern in blocked:\n            if pattern in code:\n                return failure('UNSAFE_CODE', f'Code contains blocked pattern: {pattern}', 'Only pure computation is allowed — no imports or system calls')\n\n        stdout = io.StringIO()\n        try:\n            with contextlib.redirect_stdout(stdout):\n                exec(code, self.SAFE_BUILTINS.copy())  # noqa: S102\n            output = stdout.getvalue()\n            return success({'output': output or '(no output)', 'lines': output.count('\\n') + 1 if output else 0})\n        except SyntaxError as e:\n            return failure('SYNTAX_ERROR', f'Syntax error: {e}', 'Check your Python syntax')\n        except Exception as e:\n            return failure('RUNTIME_ERROR', f'{type(e).__name__}: {e}', 'Review the code logic')\n\n\n# ── Compound tool: wraps multiple tools ───────────────────────────────────────\n\nclass OrderLookupTool(SafeTool):\n    \"\"\"Compound tool: looks up order AND related customer and product info.\"\"\"\n    rate_limit = 30\n    name = 'get_order_details'\n    description = (\n        'Get full order details including customer info and product list. '\n        'Use when you need complete order context — saves multiple separate tool calls.'\n    )\n    schema = {\n        'type': 'object',\n        'properties': {\n            'order_id': {'type': 'string', 'description': 'Order ID, e.g. \"ORD-001\"'},\n        },\n        'required': ['order_id'],\n    }\n\n    def __init__(self):\n        super().__init__()\n        self._db = DatabaseQueryTool()\n\n    def _execute(self, order_id: str) -> str:\n        # Fetch order\n        order_result = json.loads(self._db.execute(table='orders', filter={'id': order_id}))\n        if not order_result['success']:\n            return failure('ORDER_NOT_FOUND', f'Order {order_id} not found', 'Check the order ID format: ORD-XXX')\n\n        order = order_result['data']['records'][0]\n\n        # Fetch customer\n        cust_result = json.loads(self._db.execute(table='customers', filter={'id': order['customer_id']}))\n        customer = cust_result['data']['records'][0] if cust_result['success'] else {'name': 'Unknown'}\n\n        # Fetch products\n        products = []\n        for pid in order.get('product_ids', []):\n            prod_result = json.loads(self._db.execute(table='products', filter={'id': pid}))\n            if prod_result['success']:\n                products.extend(prod_result['data']['records'])\n\n        return success({\n            'order': order,\n            'customer': customer,\n            'products': products,\n        })\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    print('=== Tool Library Demo ===')\n\n    db = DatabaseQueryTool()\n    print('DB query (all products):', db.execute(table='products', limit=2))\n    print('DB query (no results):', db.execute(table='products', filter={'category': 'nonexistent'}))\n\n    code = CodeExecutionTool()\n    print('\\nCode execution:')\n    print(code.execute(code='result = sum(range(1, 11))\\nprint(f\"Sum 1-10: {result}\")'))\n    print(code.execute(code='import os'))  # blocked\n\n    email = EmailDraftTool()\n    print('\\nEmail draft:')\n    print(email.execute(to='customer@example.com', subject='Order Update', body='Your order has shipped.'))\n    print(email.execute(to='bad-email', subject='Test', body='Test'))  # validation error\n\n    order = OrderLookupTool()\n    print('\\nCompound order lookup:')\n    result = json.loads(order.execute(order_id='ORD-001'))\n    if result['success']:\n        data = result['data']\n        print(f'Order {data[\"order\"][\"id\"]} for {data[\"customer\"][\"name\"]}: {len(data[\"products\"])} products')\n\n    print('\\nTool stats:')\n    for tool in [db, code, email, order]:\n        print(f'  {tool.name}: {tool.stats}')"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Tool Design Pitfalls",
+      "items": [
+        {
+          "mistake": "Generic error returns like 'Error: Something went wrong'",
+          "why": "The model cannot recover from a vague error. It doesn't know whether to retry, try a different tool, or ask the user.",
+          "fix": "Every error must include: error_code (machine-readable), message (human-readable), suggestion (how to recover). Example: {error_code: 'NOT_FOUND', message: 'Customer C999 does not exist', suggestion: 'Verify the customer ID. Use list_customers tool to see valid IDs.'}"
+        },
+        {
+          "mistake": "Tools that accept free-form strings for constrained choices",
+          "why": "If your tool accepts any string for 'status' but only processes 'pending', 'shipped', 'delivered', the model may pass 'in-transit' and get a silent failure.",
+          "fix": "Use JSON Schema enums for constrained fields. The model will only choose valid values: `'status': {'type': 'string', 'enum': ['pending', 'shipped', 'delivered']}`"
+        },
+        {
+          "mistake": "Side-effectful tools with no safety guards",
+          "why": "A tool that sends emails or modifies a database can cause damage if called incorrectly (wrong recipient, wrong data).",
+          "fix": "Implement dry_run mode. Validate all inputs before executing side effects. Log all calls. For irreversible actions, require explicit confirmation parameter: `'confirm': {'type': 'boolean', 'description': 'Must be true to execute'}'"
+        },
+        {
+          "mistake": "Tool description says nothing about when NOT to use the tool",
+          "why": "The model may use a tool in situations it wasn't designed for, producing wrong results or unexpected side effects.",
+          "fix": "Add explicit 'Do NOT use for...' clauses to tool descriptions. Example: 'Do NOT use for real-time data — results may be cached up to 1 hour.'"
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "What makes a good tool description for an agent?",
+          "answer": "A good tool description answers: (1) WHAT it does — the primary action. (2) WHEN to use it — specific scenarios where it's appropriate. (3) WHEN NOT to use it — explicit anti-cases to prevent misuse. (4) WHAT it returns — the shape and meaning of the output. (5) LIMITATIONS — latency, data freshness, rate limits. Example: 'Search the product catalog by name or SKU. Returns price, stock level, and category. Use for: product lookups, inventory checks. Do NOT use for: order history or customer data — use query_database instead. Returns cached data (up to 10 min stale).'",
+          "followUps": ["How does the length of a tool description affect model behavior?"]
+        },
+        {
+          "question": "Why should tool return values be structured JSON rather than natural language prose?",
+          "answer": "Structured JSON lets the model reliably extract specific values using field names: `result['stock']` is unambiguous. Prose requires the model to parse natural language like 'There are 150 units of Widget Pro available at $29.99' — which may be misread or requires an extra parsing step. JSON also makes it easy to programmatically validate, log, and test tool outputs. For tools in a pipeline (tool A's output feeds tool B), structured data avoids lossy text-to-text conversion.",
+          "followUps": ["Are there cases where natural language tool output is better?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "How would you implement idempotency in a 'place_order' tool?",
+          "answer": "```python\ndef place_order(product_id: str, quantity: int, idempotency_key: str) -> str:\n    # Check if this key was already processed\n    existing = order_log.get(idempotency_key)\n    if existing:\n        return json.dumps({'success': True, 'data': existing, 'idempotent': True,\n                           'message': 'Returning existing order (duplicate request)'})\n    \n    # Process new order\n    order = process_order(product_id, quantity)\n    order_log[idempotency_key] = order\n    return json.dumps({'success': True, 'data': order, 'idempotent': False})\n```\nThe idempotency_key (e.g., session_id + step_number) ensures that if the agent retries the call after a network error, it gets the original order back rather than creating a duplicate."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You're designing a suite of 20 tools for a customer support agent. How do you ensure the agent selects the right tool without getting confused?",
+          "answer": "Tool taxonomy and design: (1) Group tools by domain: order tools (get_order, list_orders, cancel_order), customer tools (get_customer, update_customer), product tools (search_products, check_inventory). Name them with domain prefix so the agent understands the grouping. (2) Mutual exclusion in descriptions: each tool explicitly states what it does NOT cover and what other tool to use instead. (3) A 'router' tool as first call: 'classify_query' returns the best domain + tool to use, reducing the 20-choice decision to 2 steps. (4) Reduce the tool list: combine tools that are always used together into compound tools (get_order_details = order + customer + products in one call). Goal: 20 tools → 10 focused tools + 1 router. (5) Test tool selection separately: run 100 sample queries through the agent, check which tool was selected, measure correct-tool rate. Iterate on descriptions until correct-tool rate > 95%.",
+          "followUps": ["How do you handle a user query that requires multiple tools from different domains?"]
+        }
+      ],
+      "wrongAnswers": [
+        "Tools should accept natural language instructions instead of structured parameters for flexibility — structured parameters with clear schemas produce more reliable model behavior",
+        "Compound tools are always better than separate tools because they reduce API calls — compound tools increase complexity and make it harder for the model to understand what each tool does; use them only for commonly co-accessed data",
+        "Rate limiting tools is unnecessary since the model will naturally space out calls — without rate limiting, an agent processing 100 queries concurrently will overwhelm the tool's backend"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d39q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the most important element of a tool's schema for correct model behavior?",
+          "options": {
+            "A": "The function name (must match exactly)",
+            "B": "The description — it determines when and how the model chooses to call the tool",
+            "C": "The return type — the model parses it differently based on type",
+            "D": "The parameter names — longer names are better"
+          },
+          "answer": "B",
+          "explanation": "The model selects and uses tools based entirely on their descriptions. A perfect schema with a vague description produces poor tool selection. Descriptions are the primary interface between the tool and the model's decision-making."
+        },
+        {
+          "id": "d39q2",
+          "level": "intermediate",
+          "category": "code",
+          "question": "A tool call fails and returns 'Error: Database connection failed'. What should the agent do?",
+          "options": {
+            "A": "Stop the task and report failure",
+            "B": "Retry immediately without changes",
+            "C": "Use the error to decide whether to retry, try an alternative, or ask for help — but the vague error doesn't give enough information",
+            "D": "Call a different tool that also connects to the database"
+          },
+          "answer": "C",
+          "explanation": "Vague error messages prevent recovery. The agent doesn't know if it's a transient failure (retry), a credential issue (can't retry), or a wrong input (fix the query). Well-designed tools return {error_code, message, suggestion} to enable targeted recovery."
+        },
+        {
+          "id": "d39q3",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is an idempotent tool and why does it matter for agents?",
+          "options": {
+            "A": "A tool that runs in constant time",
+            "B": "A tool that produces the same result when called multiple times with the same input",
+            "C": "A tool that doesn't require authentication",
+            "D": "A tool that caches all its results"
+          },
+          "answer": "B",
+          "explanation": "Idempotent tools are safe to retry — if the agent calls place_order twice due to a network error, an idempotent implementation returns the original order rather than creating a duplicate. Critical for reliability in agentic systems where network failures and retries are common."
+        },
+        {
+          "id": "d39q4",
+          "level": "advanced",
+          "category": "scenario",
+          "question": "Your agent keeps calling search_products when it should call get_order. Both have similar descriptions. What's the fix?",
+          "options": {
+            "A": "Rename the tools to avoid similar words",
+            "B": "Add explicit 'Do NOT use for orders' to search_products and 'Do NOT use for catalog search' to get_order",
+            "C": "Combine both tools into one",
+            "D": "Force the model to use get_order with tool_choice"
+          },
+          "answer": "B",
+          "explanation": "Explicit negative clauses ('Do NOT use for X') are the most effective way to prevent cross-tool confusion. They tell the model precisely when not to use a tool and implicitly guide it to the alternative."
+        },
+        {
+          "id": "d39q5",
+          "level": "basic",
+          "category": "theory",
+          "question": "Why should a 'send_email' tool always create a draft rather than send immediately?",
+          "options": {
+            "A": "Draft creation is faster than sending",
+            "B": "Email sending is an irreversible, externally-visible action that requires human review before execution",
+            "C": "Draft mode reduces API costs",
+            "D": "Most email providers don't support direct sending via API"
+          },
+          "answer": "B",
+          "explanation": "Sending an email is irreversible — you can't un-send it. An agent may compose an incorrect or inappropriate email. Always surface drafts for human review before sending. This is the 'minimal footprint, prefer reversible actions' safety principle."
+        }
+      ]
+    }
+  ]
+}

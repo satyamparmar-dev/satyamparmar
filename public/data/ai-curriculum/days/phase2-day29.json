@@ -1,0 +1,191 @@
+{
+  "id": "phase2-day29",
+  "day": 29,
+  "phase": 2,
+  "title": "LangChain Agents — ReAct Pattern",
+  "estimatedHours": 4,
+  "difficulty": "intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["langchain", "agents", "react", "tool-use", "agentic-ai"],
+  "prerequisites": ["phase2-day24", "phase2-day28"],
+  "learningObjectives": [
+    "Understand the ReAct (Reasoning + Acting) prompting pattern",
+    "Build LangChain agents with AgentExecutor",
+    "Create custom tools with @tool decorator and BaseTool",
+    "Add memory to agents for multi-turn conversations",
+    "Debug and observe agent reasoning traces"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why ReAct Agents Matter",
+      "content": "Pure LLM calls answer from training data — they can't fetch today's news, run code, or look up your database. Function calling (Day 28) gave us the mechanics. ReAct gives us the *reasoning framework*: the model alternates between Thought (reasoning about what to do), Action (calling a tool), and Observation (reading the result) until it reaches a final answer. LangChain's AgentExecutor automates this loop, handles parsing, retries on format errors, and plugs in any tools you define. This is how ChatGPT plugins, Copilot, and most production AI assistants work under the hood."
+    },
+    {
+      "type": "theory",
+      "title": "ReAct: Reasoning + Acting",
+      "content": "**ReAct trace format:**\n```\nThought: I need to find the current price of Bitcoin.\nAction: web_search\nAction Input: {\"query\": \"Bitcoin price today\"}\nObservation: Bitcoin is currently $67,234.\nThought: I have the price. I can now answer the user.\nFinal Answer: Bitcoin is currently trading at $67,234.\n```\n\nThe model emits this trace as text; LangChain parses it to extract Action/Action Input, runs the tool, injects the Observation, and repeats until `Final Answer:` appears.\n\n**LangChain agent components:**\n\n| Component | Role |\n|-----------|------|\n| `Tool` | Function the agent can call (name + description + run()) |\n| `AgentExecutor` | Runs the think→act→observe loop |\n| `create_react_agent()` | Wires prompt + LLM + tools into a Runnable |\n| `hub.pull('hwchase17/react')` | Standard ReAct prompt template |\n| `verbose=True` | Prints the full Thought/Action/Observation trace |\n\n**Agent types in LangChain:**\n\n| Agent | When to use |\n|-------|-------------|\n| `create_react_agent` | Standard ReAct, any LLM |\n| `create_tool_calling_agent` | Uses native function calling (GPT-4, Claude) — more reliable |\n| `create_openai_functions_agent` | Legacy OpenAI functions API |\n| `create_json_chat_agent` | Forces JSON output from model |\n\n**`create_tool_calling_agent` vs `create_react_agent`:**\n- `tool_calling` uses the model's native function calling — more reliable, fewer parse errors\n- `react` works with any LLM that follows text instructions — needed for open-source models\n- For production with GPT-4/Claude: always prefer `create_tool_calling_agent`\n\n**AgentExecutor key params:**\n```python\nAgentExecutor(\n    agent=agent,\n    tools=tools,\n    verbose=True,           # print trace\n    max_iterations=10,      # prevent infinite loops\n    handle_parsing_errors=True,  # retry on malformed output\n    return_intermediate_steps=True,  # get full trace in response\n)\n```"
+    },
+    {
+      "type": "code",
+      "title": "LangChain Agents — Full Implementation",
+      "language": "python",
+      "code": "# pip install langchain langchain-openai langchain-community langchain-core\n# pip install duckduckgo-search wikipedia\nfrom langchain import hub\nfrom langchain.agents import AgentExecutor, create_react_agent, create_tool_calling_agent\nfrom langchain.memory import ConversationBufferMemory\nfrom langchain_core.tools import tool, BaseTool\nfrom langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder\nfrom langchain_openai import ChatOpenAI\nfrom pydantic import BaseModel, Field\nimport json\nfrom typing import Optional\n\nllm = ChatOpenAI(model='gpt-4o-mini', temperature=0)\n\n\n# ── 1. Custom tools with @tool decorator ─────────────────────────────────────\n\n@tool\ndef calculator(expression: str) -> str:\n    \"\"\"Evaluate a mathematical expression. Input: arithmetic string like '(15 * 8) / 2'.\"\"\"\n    allowed = set('0123456789+-*/.() ')\n    if not all(c in allowed for c in expression):\n        return 'Error: Only arithmetic operators allowed'\n    try:\n        result = eval(expression, {'__builtins__': {}})  # noqa: S307\n        return str(result)\n    except Exception as e:\n        return f'Error: {e}'\n\n\n@tool\ndef product_lookup(product_name: str) -> str:\n    \"\"\"Look up product details by name. Returns price and stock availability.\"\"\"\n    inventory = {\n        'widget': {'price': 29.99, 'stock': 150, 'category': 'hardware'},\n        'gadget': {'price': 49.99, 'stock': 0, 'category': 'electronics'},\n        'tool':   {'price': 99.99, 'stock': 42, 'category': 'equipment'},\n    }\n    key = product_name.lower().strip()\n    for k, v in inventory.items():\n        if k in key:\n            return json.dumps({'name': k, **v})\n    return json.dumps({'error': f'Product not found: {product_name}'})\n\n\n@tool\ndef get_company_info(topic: str) -> str:\n    \"\"\"Get information about the company: topics include 'policy', 'hours', 'contact', 'shipping'.\"\"\"\n    info = {\n        'policy': 'Returns accepted within 30 days with receipt.',\n        'hours': 'Mon-Fri 9am-6pm EST. Closed weekends.',\n        'contact': 'support@example.com | 1-800-555-0100',\n        'shipping': 'Free shipping on orders over $50. 3-5 business days.',\n    }\n    return info.get(topic.lower(), f'No info for topic: {topic}. Try: {list(info.keys())}')\n\n\n# ── 2. BaseTool for complex tools ─────────────────────────────────────────────\n\nclass SearchInput(BaseModel):\n    query: str = Field(description='Search query')\n    max_results: int = Field(default=3, description='Max results to return', ge=1, le=10)\n\nclass DatabaseTool(BaseTool):\n    name: str = 'database_query'\n    description: str = (\n        'Query the customer database. Use for order history, customer details. '\n        'Input: {query: str, max_results: int}'\n    )\n    args_schema: type[BaseModel] = SearchInput\n\n    def _run(self, query: str, max_results: int = 3) -> str:\n        # Simulated DB results\n        results = [\n            {'order_id': 'ORD-001', 'customer': 'Alice', 'total': 89.97, 'status': 'shipped'},\n            {'order_id': 'ORD-002', 'customer': 'Bob', 'total': 29.99, 'status': 'pending'},\n        ]\n        filtered = [r for r in results if query.lower() in str(r).lower()]\n        return json.dumps(filtered[:max_results] or results[:max_results])\n\n\n# ── 3. ReAct agent (text-based, works with any LLM) ───────────────────────────\n\ntools_react = [calculator, product_lookup, get_company_info]\n\nreact_prompt = hub.pull('hwchase17/react')  # standard ReAct prompt from LangChain Hub\nreact_agent = create_react_agent(llm, tools_react, react_prompt)\nreact_executor = AgentExecutor(\n    agent=react_agent,\n    tools=tools_react,\n    verbose=True,\n    max_iterations=8,\n    handle_parsing_errors=True,\n)\n\n\n# ── 4. Tool-calling agent (uses native function calling — preferred) ───────────\n\ntools_tc = [calculator, product_lookup, get_company_info, DatabaseTool()]\n\ntc_prompt = ChatPromptTemplate.from_messages([\n    ('system', 'You are a helpful customer service assistant. Use tools to answer questions accurately.'),\n    MessagesPlaceholder('chat_history', optional=True),\n    ('human', '{input}'),\n    MessagesPlaceholder('agent_scratchpad'),\n])\n\ntc_agent = create_tool_calling_agent(llm, tools_tc, tc_prompt)\ntc_executor = AgentExecutor(\n    agent=tc_agent,\n    tools=tools_tc,\n    verbose=True,\n    max_iterations=8,\n    return_intermediate_steps=True,\n)\n\n\n# ── 5. Agent with memory ──────────────────────────────────────────────────────\n\nmemory = ConversationBufferMemory(memory_key='chat_history', return_messages=True)\n\nmemory_prompt = ChatPromptTemplate.from_messages([\n    ('system', 'You are a helpful assistant. Remember what the user tells you.'),\n    MessagesPlaceholder('chat_history'),\n    ('human', '{input}'),\n    MessagesPlaceholder('agent_scratchpad'),\n])\n\nmemory_agent = create_tool_calling_agent(llm, [calculator, product_lookup], memory_prompt)\nmemory_executor = AgentExecutor(\n    agent=memory_agent,\n    tools=[calculator, product_lookup],\n    memory=memory,\n    verbose=False,\n)\n\n\n# ── 6. Inspecting intermediate steps ──────────────────────────────────────────\n\ndef run_with_trace(question: str) -> None:\n    result = tc_executor.invoke({'input': question})\n    print(f'\\nQ: {question}')\n    print(f'A: {result[\"output\"]}')\n    print('\\nTool calls made:')\n    for action, observation in result.get('intermediate_steps', []):\n        print(f'  {action.tool}({action.tool_input}) → {observation[:80]}...')\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    # Tool-calling agent\n    questions = [\n        'What is the price of a widget? And if I buy 7 of them, what is the total?',\n        'Do you have gadgets in stock? What are your shipping hours?',\n    ]\n    for q in questions:\n        run_with_trace(q)\n    \n    # Memory agent\n    print('\\n=== Memory Agent ===')\n    memory_executor.invoke({'input': 'My name is Sarah and I prefer metric units'})\n    resp = memory_executor.invoke({'input': 'What is 15 miles in km? (1 mile = 1.60934 km)'})\n    print(resp['output'])\n    # Model will remember the user's name from prior turn"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Common Agent Mistakes",
+      "items": [
+        {
+          "mistake": "Using create_react_agent when the LLM supports native tool calling",
+          "why": "ReAct relies on text parsing (Thought/Action/Observation) which breaks on unexpected model output. Native tool calling is structurally enforced and far more reliable.",
+          "fix": "Use create_tool_calling_agent for GPT-4o, GPT-4o-mini, and Claude models. Reserve ReAct for open-source models that don't support function calling."
+        },
+        {
+          "mistake": "Not setting max_iterations",
+          "why": "A confused agent can loop indefinitely, burning tokens and API budget.",
+          "fix": "Always set max_iterations (8-15 for complex tasks). AgentExecutor returns a graceful error when the limit is hit."
+        },
+        {
+          "mistake": "Tool descriptions are too short",
+          "why": "The model selects tools based on description. Vague descriptions → wrong tool selection → failed agent runs.",
+          "fix": "Describe: what the tool does, when to use it, what format the input should be, what the output looks like."
+        },
+        {
+          "mistake": "Putting all capabilities into one mega-tool",
+          "why": "The model can only pass one intent per tool call. A tool that does 10 things requires complex argument parsing and confuses the model.",
+          "fix": "One tool, one responsibility. Let the agent chain multiple tool calls."
+        },
+        {
+          "mistake": "Not handling parsing errors in production",
+          "why": "Even strong models occasionally produce malformed ReAct traces. Without handle_parsing_errors=True, the agent crashes on first parse failure.",
+          "fix": "Always set handle_parsing_errors=True. In production, add monitoring for how often parse errors occur."
+        }
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Research Agent",
+      "problem": "Build an agent with three tools:\n1. `search_papers(topic: str)` — returns 2-3 fake paper titles and abstracts\n2. `count_words(text: str)` — returns word count\n3. `summarize_list(items: list[str])` — join items with newlines\n\nAsk it: 'Find papers about transformer attention, then tell me how many words are in the title of the first paper.'",
+      "hints": [
+        "Use @tool decorator for all three functions",
+        "Use create_tool_calling_agent with a simple system prompt",
+        "The agent will chain: search_papers → extract first title → count_words",
+        "Enable verbose=True to see the reasoning trace"
+      ],
+      "solution": "```python\nfrom langchain_core.tools import tool\nfrom langchain.agents import AgentExecutor, create_tool_calling_agent\nfrom langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder\nfrom langchain_openai import ChatOpenAI\nimport json\n\n@tool\ndef search_papers(topic: str) -> str:\n    \"\"\"Search academic papers on a topic. Returns title and abstract.\"\"\"\n    return json.dumps([{\n        'title': f'Attention Is All You Need: {topic} Analysis',\n        'abstract': f'We study {topic} in transformer architectures...'\n    }, {\n        'title': f'Efficient {topic} via Sparse Attention',\n        'abstract': f'A sparse approach to {topic} reduces complexity...'\n    }])\n\n@tool\ndef count_words(text: str) -> str:\n    \"\"\"Count the number of words in a text string.\"\"\"\n    return str(len(text.split()))\n\nllm = ChatOpenAI(model='gpt-4o-mini', temperature=0)\ntools = [search_papers, count_words]\nprompt = ChatPromptTemplate.from_messages([\n    ('system', 'You are a research assistant.'),\n    ('human', '{input}'),\n    MessagesPlaceholder('agent_scratchpad'),\n])\nagent = create_tool_calling_agent(llm, tools, prompt)\nexecutor = AgentExecutor(agent=agent, tools=tools, verbose=True)\nprint(executor.invoke({'input': 'Find papers about transformer attention, then tell me how many words are in the title of the first paper.'})['output'])\n```",
+      "difficulty": "intermediate"
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "Explain the ReAct pattern and why it was an improvement over pure chain-of-thought prompting.",
+          "answer": "ReAct (Reasoning + Acting) interleaves thought steps with external tool actions. Pure chain-of-thought is purely internal — the model can only reason over its training knowledge. ReAct adds a feedback loop: the model takes an action (calls a tool), observes the result, then reasons again. This grounds reasoning in current, accurate external data rather than potentially stale training data, and enables tasks that require multiple sequential lookups — which CoT alone cannot do.",
+          "followUps": ["How does ReAct compare to native function calling in production?"]
+        },
+        {
+          "question": "What is the difference between an agent and a chain in LangChain?",
+          "answer": "A chain is a fixed pipeline — the sequence of operations is predetermined (prompt → LLM → parser). An agent is dynamic — the LLM decides at each step which tool to call based on the current state. Chains are deterministic and testable. Agents are flexible but harder to debug and can fail in unexpected ways. Use chains when the steps are known upfront; use agents when the sequence must adapt to the query.",
+          "followUps": ["When would you embed a chain inside an agent's tool?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "What does return_intermediate_steps=True give you in AgentExecutor.invoke()?",
+          "answer": "It adds an 'intermediate_steps' key to the result dict. Each entry is a tuple: (AgentAction, observation_string). AgentAction has .tool (name), .tool_input (args), and .log (the raw Thought/Action text). This lets you inspect every tool call the agent made, reconstruct the reasoning trace, and debug unexpected behavior — essential for production monitoring."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your production agent is making 8-12 tool calls per query where humans only need 2-3. How would you diagnose and fix this?",
+          "answer": "First, enable return_intermediate_steps and log every tool call with the reasoning trace (Thought text) to a structured log. Look for patterns: repeated identical calls (model stuck in a loop), calls to the wrong tool (description mismatch), or excessive verification calls (model not trusting its own tool results). Fixes: (1) improve tool descriptions so the model selects the right tool first try; (2) return richer data from tools to eliminate follow-up lookups; (3) add a planning step — have the model outline its approach before acting, which reduces redundant exploration; (4) use system prompt examples showing the minimal necessary tool call sequence for similar queries.",
+          "followUps": ["How do you set a per-query budget limit on tool calls?"]
+        }
+      ],
+      "wrongAnswers": [
+        "ReAct forces the model to use all available tools — it only calls tools it deems necessary based on the query",
+        "AgentExecutor is only compatible with OpenAI models — it works with any LangChain-compatible LLM",
+        "Setting max_iterations=1 means the agent can only call one tool — it means the agent stops after 1 full think-act-observe cycle"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d29q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "What does the 'Re' in ReAct stand for?",
+          "options": {
+            "A": "Retrieval",
+            "B": "Recursive",
+            "C": "Reasoning",
+            "D": "Response"
+          },
+          "answer": "C",
+          "explanation": "ReAct = Reasoning + Acting. The model alternates between reasoning (Thought steps) and acting (calling tools), with observations feeding back into the next reasoning step."
+        },
+        {
+          "id": "d29q2",
+          "level": "intermediate",
+          "category": "code",
+          "question": "Which agent type is preferred when your LLM supports native function calling?",
+          "options": {
+            "A": "create_react_agent",
+            "B": "create_json_chat_agent",
+            "C": "create_tool_calling_agent",
+            "D": "create_openai_tools_agent"
+          },
+          "answer": "C",
+          "explanation": "create_tool_calling_agent uses the model's built-in function calling, which is more reliable than text-based ReAct parsing. ReAct is reserved for models that don't support native tool calling."
+        },
+        {
+          "id": "d29q3",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What does `handle_parsing_errors=True` do in AgentExecutor?",
+          "options": {
+            "A": "Automatically fixes Python syntax errors in tools",
+            "B": "Retries the LLM generation when the output cannot be parsed as a valid agent action",
+            "C": "Converts all tool outputs to JSON format",
+            "D": "Skips tool calls that return errors"
+          },
+          "answer": "B",
+          "explanation": "When the model produces output that doesn't match the expected Thought/Action format (ReAct) or valid tool call (function calling), handle_parsing_errors retries the generation rather than crashing the agent."
+        },
+        {
+          "id": "d29q4",
+          "level": "basic",
+          "category": "code",
+          "question": "What is the purpose of `MessagesPlaceholder('agent_scratchpad')` in an agent prompt?",
+          "options": {
+            "A": "A slot for injecting the user's conversation history",
+            "B": "A slot where LangChain injects the intermediate tool call/result sequence during reasoning",
+            "C": "A placeholder for the agent's system prompt",
+            "D": "Storage for the agent's memory between sessions"
+          },
+          "answer": "B",
+          "explanation": "agent_scratchpad is where LangChain automatically inserts the growing sequence of tool calls and observations (the working memory) as the agent iterates. Without it, the agent cannot see its previous actions."
+        },
+        {
+          "id": "d29q5",
+          "level": "advanced",
+          "category": "scenario",
+          "question": "An agent needs to process 1000 customer queries. Each query requires 2-3 tool calls. What's the main concern and solution?",
+          "options": {
+            "A": "Context length — use a model with a larger context window",
+            "B": "Latency and cost — run agents asynchronously and cache repeated tool calls",
+            "C": "Tool reliability — test each tool in isolation first",
+            "D": "Memory — use ConversationSummaryMemory to compress history"
+          },
+          "answer": "B",
+          "explanation": "At scale, sequential execution of 1000 agents is too slow, and redundant tool calls (same query, same tool) waste money. Async execution (asyncio + AgentExecutor.ainvoke) parallelizes queries; caching tool results (Redis TTL) eliminates redundant calls."
+        }
+      ]
+    }
+  ]
+}

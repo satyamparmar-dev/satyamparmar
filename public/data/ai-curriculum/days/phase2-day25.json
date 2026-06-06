@@ -1,0 +1,172 @@
+{
+  "day": 25,
+  "phase": 2,
+  "title": "LangChain RAG — Retrievers & Document Loaders",
+  "description": "Build production RAG with LangChain: load documents from PDFs, websites, and databases, split intelligently, store in vector stores, and retrieve with LangChain's retriever abstraction including MMR and self-query retrieval.",
+  "estimatedHours": 4,
+  "difficulty": "Intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["langchain", "rag", "document-loaders", "retrievers", "mmr", "self-query", "text-splitters"],
+  "prerequisites": ["phase2-day23", "phase2-day24"],
+  "learningObjectives": [
+    "Load documents from PDFs, web pages, and text files using LangChain loaders",
+    "Split documents with RecursiveCharacterTextSplitter using optimal parameters",
+    "Build a vector store backed RAG chain with LangChain",
+    "Use MMR retrieval to reduce redundant results",
+    "Implement self-query retrieval for natural language metadata filtering",
+    "Compose a full ConversationalRetrievalChain with memory"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "LangChain's 100+ document loaders and built-in retriever abstractions turn a week of integration work into an afternoon. The retrievers (MMR, self-query, multi-query) implement algorithms that significantly improve RAG quality over naive top-K similarity. Once you've built RAG from scratch (Day 23), LangChain's RAG stack becomes a productivity multiplier rather than a black box."
+    },
+    {
+      "type": "theory",
+      "content": "## Document Loaders\n\nLangChain's `Document` is the base unit: `{page_content: str, metadata: dict}`.\n\n```python\nfrom langchain_community.document_loaders import (\n    PyPDFLoader,          # PDF files\n    WebBaseLoader,        # Web pages\n    TextLoader,           # Plain text\n    DirectoryLoader,      # Entire directories\n    JSONLoader,           # JSON with jq path\n    CSVLoader,            # CSV files\n)\n\n# PDF\nloader = PyPDFLoader(\"report.pdf\")\ndocs = loader.load()  # list of Document, one per page\n\n# Web\nloader = WebBaseLoader([\"https://docs.python.org/3/\"])\ndocs = loader.load()\n\n# Directory of txt files\nloader = DirectoryLoader(\"./docs/\", glob=\"**/*.txt\", loader_cls=TextLoader)\ndocs = loader.load()\n```\n\n---\n\n## Text Splitters\n\n`RecursiveCharacterTextSplitter` — the recommended default:\n\n```python\nfrom langchain_text_splitters import RecursiveCharacterTextSplitter\n\nsplitter = RecursiveCharacterTextSplitter(\n    chunk_size=500,        # target chunk size in chars (≈ 125 tokens)\n    chunk_overlap=50,      # overlap between chunks\n    length_function=len,   # or use tiktoken for token-accurate counting\n    separators=[\"\\n\\n\", \"\\n\", \". \", \" \", \"\"]  # try in order\n)\nchunks = splitter.split_documents(docs)\n```\n\nFor token-accurate splitting:\n```python\nfrom langchain_text_splitters import TokenTextSplitter\nsplitter = TokenTextSplitter(chunk_size=400, chunk_overlap=40)\n```\n\n---\n\n## Vector Store + Retriever\n\n```python\nfrom langchain_openai import OpenAIEmbeddings\nfrom langchain_community.vectorstores import Chroma\n\nembeddings = OpenAIEmbeddings(model=\"text-embedding-3-small\")\nvectorstore = Chroma.from_documents(chunks, embeddings, persist_directory=\"./chroma\")\n\n# Basic retriever\nretriever = vectorstore.as_retriever(search_kwargs={\"k\": 5})\n\n# MMR retriever (reduces redundant results)\nretriever = vectorstore.as_retriever(\n    search_type=\"mmr\",\n    search_kwargs={\"k\": 5, \"fetch_k\": 20, \"lambda_mult\": 0.5}\n)\n```\n\n**MMR (Maximal Marginal Relevance)**: Fetches 20 candidates, then selects 5 that maximize both relevance AND diversity. Avoids returning 5 near-identical chunks.\n\n---\n\n## Self-Query Retriever\n\nLets users filter by metadata using natural language:\n\n```python\nfrom langchain.retrievers.self_query.base import SelfQueryRetriever\nfrom langchain.chains.query_constructor.base import AttributeInfo\n\nmetadata_info = [\n    AttributeInfo(name=\"year\",   description=\"Publication year\",    type=\"integer\"),\n    AttributeInfo(name=\"source\", description=\"Document source/URL\",  type=\"string\"),\n    AttributeInfo(name=\"topic\",  description=\"Main topic category\",  type=\"string\"),\n]\n\nretriever = SelfQueryRetriever.from_llm(\n    llm=ChatOpenAI(model=\"gpt-4o-mini\"),\n    vectorstore=vectorstore,\n    document_contents=\"Research papers about AI\",\n    metadata_field_info=metadata_info,\n)\n\n# User can query with natural language filters:\nresults = retriever.invoke(\"papers about RAG from 2023\")\n# → automatically adds filter: {year: {$eq: 2023}, topic: {$eq: 'RAG'}}\n```\n\n---\n\n## Full RAG Chain with LCEL\n\n```python\nfrom langchain_core.runnables import RunnablePassthrough\nfrom langchain_core.output_parsers import StrOutputParser\n\nprompt = ChatPromptTemplate.from_messages([\n    (\"system\", \"\"\"Answer using ONLY the context. Cite sources.\nContext: {context}\"\"\"),\n    (\"user\", \"{question}\")\n])\n\ndef format_docs(docs):\n    return \"\\n\\n\".join(f\"[{i+1}] {d.page_content} (source: {d.metadata.get('source','?')})\" for i, d in enumerate(docs))\n\nrag_chain = (\n    {\"context\": retriever | format_docs, \"question\": RunnablePassthrough()}\n    | prompt\n    | llm\n    | StrOutputParser()\n)\n\nanswer = rag_chain.invoke(\"What is RAG?\")\n```\n\n---\n\n## Multi-Query Retriever\n\nGenerates multiple query variations to improve recall:\n\n```python\nfrom langchain.retrievers.multi_query import MultiQueryRetriever\n\nretriever = MultiQueryRetriever.from_llm(\n    retriever=vectorstore.as_retriever(),\n    llm=llm\n)\n# For query \"RAG systems\", generates 3-5 variants:\n# \"retrieval augmented generation\", \"RAG pipelines\", \"document retrieval for LLMs\"...\n# Combines and deduplicates results\n```"
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "langchain_rag.py",
+      "level": "Intermediate",
+      "code": "\"\"\"LangChain RAG: loaders, splitters, vector store, retrieval chain.\"\"\"\nimport os\nfrom pathlib import Path\nfrom langchain_openai import ChatOpenAI, OpenAIEmbeddings\nfrom langchain_community.vectorstores import Chroma\nfrom langchain_community.document_loaders import TextLoader, WebBaseLoader\nfrom langchain_text_splitters import RecursiveCharacterTextSplitter\nfrom langchain_core.prompts import ChatPromptTemplate\nfrom langchain_core.output_parsers import StrOutputParser\nfrom langchain_core.runnables import RunnablePassthrough\nfrom langchain.schema import Document\n\nllm = ChatOpenAI(model=\"gpt-4o-mini\", temperature=0.0, api_key=os.environ[\"OPENAI_API_KEY\"])\nembeddings = OpenAIEmbeddings(model=\"text-embedding-3-small\", api_key=os.environ[\"OPENAI_API_KEY\"])\n\n\n# ── 1. Document loading ──────────────────────────────────────────\ndef load_text_docs(directory: str) -> list[Document]:\n    \"\"\"Load all .txt files from a directory.\"\"\"\n    docs = []\n    for path in Path(directory).glob(\"**/*.txt\"):\n        loader = TextLoader(str(path))\n        docs.extend(loader.load())\n    print(f\"Loaded {len(docs)} documents\")\n    return docs\n\n\ndef create_sample_docs() -> list[Document]:\n    \"\"\"Create sample documents for demo.\"\"\"\n    return [\n        Document(page_content=\"RAG (Retrieval-Augmented Generation) combines retrieval systems with generative models. It retrieves relevant documents from a corpus and uses them as context for the LLM to generate grounded, accurate answers. RAG reduces hallucinations significantly.\",\n                 metadata={\"source\": \"rag_guide.txt\", \"topic\": \"rag\", \"year\": 2023}),\n        Document(page_content=\"LangChain is a framework for building LLM applications. It provides abstractions for document loaders, text splitters, vector stores, and chains. LCEL (LangChain Expression Language) uses the pipe operator to compose runnables.\",\n                 metadata={\"source\": \"langchain_docs.txt\", \"topic\": \"frameworks\", \"year\": 2024}),\n        Document(page_content=\"Vector databases store high-dimensional embeddings and enable fast approximate nearest-neighbor search using HNSW indexing. Popular options include Chroma for local development, Pinecone for production, and pgvector for Postgres teams.\",\n                 metadata={\"source\": \"vector_db_guide.txt\", \"topic\": \"infrastructure\", \"year\": 2024}),\n        Document(page_content=\"Prompt engineering patterns include chain-of-thought (CoT), few-shot examples, self-consistency, and role prompting. CoT improves multi-step reasoning by adding 'Let's think step by step'. Few-shot examples improve format compliance.\",\n                 metadata={\"source\": \"prompt_guide.txt\", \"topic\": \"prompting\", \"year\": 2023}),\n        Document(page_content=\"Fine-tuning adapts a pre-trained model to a specific task using labeled examples. It requires significant compute and data. For most use cases, prompt engineering and RAG are more cost-effective than fine-tuning.\",\n                 metadata={\"source\": \"finetuning_guide.txt\", \"topic\": \"training\", \"year\": 2024}),\n    ]\n\n\n# ── 2. Splitting ─────────────────────────────────────────────────\ndef split_documents(docs: list[Document], chunk_size: int = 400, overlap: int = 40) -> list[Document]:\n    splitter = RecursiveCharacterTextSplitter(\n        chunk_size=chunk_size,\n        chunk_overlap=overlap,\n        separators=[\"\\n\\n\", \"\\n\", \". \", \" \", \"\"],\n    )\n    chunks = splitter.split_documents(docs)\n    print(f\"Split into {len(chunks)} chunks\")\n    return chunks\n\n\n# ── 3. Vector store ──────────────────────────────────────────────\ndef build_vectorstore(chunks: list[Document], persist_dir: str = \"./lc_chroma\") -> Chroma:\n    vs = Chroma.from_documents(chunks, embeddings, persist_directory=persist_dir)\n    print(f\"Indexed {vs._collection.count()} chunks\")\n    return vs\n\n\n# ── 4. RAG chain ─────────────────────────────────────────────────\ndef build_rag_chain(vectorstore: Chroma, search_type: str = \"mmr\", k: int = 4):\n    retriever = vectorstore.as_retriever(\n        search_type=search_type,\n        search_kwargs={\"k\": k, \"fetch_k\": 15} if search_type == \"mmr\" else {\"k\": k},\n    )\n\n    def format_docs(docs: list[Document]) -> str:\n        return \"\\n\\n\".join(\n            f\"[Source {i+1}: {d.metadata.get('source', '?')}]\\n{d.page_content}\"\n            for i, d in enumerate(docs)\n        )\n\n    rag_prompt = ChatPromptTemplate.from_messages([\n        (\"system\", \"\"\"Answer using ONLY the provided context. Cite [Source N] for each fact.\nIf context is insufficient, say 'I don't have that information.'\n\nContext:\n{context}\"\"\"),\n        (\"user\", \"{question}\")\n    ])\n\n    return (\n        {\"context\": retriever | format_docs, \"question\": RunnablePassthrough()}\n        | rag_prompt\n        | llm\n        | StrOutputParser()\n    )\n\n\n# ── 5. Retrieval comparison ──────────────────────────────────────\ndef compare_retrieval(vectorstore: Chroma, query: str) -> None:\n    \"\"\"Compare standard similarity vs MMR retrieval.\"\"\"\n    sim_retriever = vectorstore.as_retriever(search_kwargs={\"k\": 3})\n    mmr_retriever = vectorstore.as_retriever(search_type=\"mmr\", search_kwargs={\"k\": 3, \"fetch_k\": 10})\n\n    sim_docs = sim_retriever.invoke(query)\n    mmr_docs = mmr_retriever.invoke(query)\n\n    print(f\"\\nQuery: '{query}'\")\n    print(\"\\nStandard (similarity):\")\n    for d in sim_docs:\n        print(f\"  {d.metadata['source']}: {d.page_content[:60]}...\")\n    print(\"\\nMMR (diverse):\")\n    for d in mmr_docs:\n        print(f\"  {d.metadata['source']}: {d.page_content[:60]}...\")\n\n\nif __name__ == \"__main__\":\n    # Build pipeline\n    docs   = create_sample_docs()\n    chunks = split_documents(docs)\n    vs     = build_vectorstore(chunks)\n    chain  = build_rag_chain(vs)\n\n    # Query\n    print(\"\\n=== RAG Query ===\")\n    answer = chain.invoke(\"How does RAG reduce hallucinations?\")\n    print(answer)\n\n    # Streaming\n    print(\"\\n=== Streaming ===\")\n    for chunk in chain.stream(\"What is LangChain LCEL?\"):\n        print(chunk, end=\"\", flush=True)\n    print()\n\n    # Compare retrieval strategies\n    compare_retrieval(vs, \"AI frameworks and tools\")",
+      "output": "Loaded 5 documents\nSplit into 5 chunks\nIndexed 5 chunks\n\n=== RAG Query ===\nRAG reduces hallucinations by grounding the LLM's responses in retrieved documents [Source 1]. Instead of relying on parametric knowledge, it retrieves relevant documents from a corpus and uses them as context, ensuring answers are based on actual evidence rather than potentially incorrect memorized information [Source 1].\n\n=== Streaming ===\nLangChain Expression Language (LCEL) uses the pipe operator (|) to compose runnables — components like prompts, models, and parsers — into chains [Source 2]. It automatically enables streaming, batching, and async across the entire pipeline without additional configuration.\n\nQuery: 'AI frameworks and tools'\n\nStandard (similarity):\n  langchain_docs.txt: LangChain is a framework for building LLM applications...\n  rag_guide.txt: RAG (Retrieval-Augmented Generation) combines retrieval...\n  vector_db_guide.txt: Vector databases store high-dimensional embeddings...\n\nMMR (diverse):\n  langchain_docs.txt: LangChain is a framework for building LLM applications...\n  vector_db_guide.txt: Vector databases store high-dimensional embeddings...\n  prompt_guide.txt: Prompt engineering patterns include chain-of-thought..."
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Using chunk_size in characters but thinking in tokens — RecursiveCharacterTextSplitter's default length_function=len counts characters, not tokens. 500 characters ≈ 125 tokens. Use TokenTextSplitter or a tiktoken-based length function for token-accurate splitting.",
+        "Re-embedding all documents on every run — Chroma.from_documents() re-embeds every time. Use Chroma(persist_directory=...) with .add_documents() on first run, then .load() on subsequent runs.",
+        "Ignoring MMR's fetch_k parameter — MMR fetches fetch_k candidates then selects k diverse ones. If fetch_k equals k, MMR provides no diversity benefit. Use fetch_k = 3-5x your final k.",
+        "Using WebBaseLoader without handling robots.txt and rate limits — scraping websites in production can get your IP blocked. Add delays and respect robots.txt. For production, use a dedicated web scraping service.",
+        "Not preserving metadata through the chunking pipeline — when splitting, LangChain preserves source document metadata but appends chunk location. Verify metadata is present in chunks before indexing."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Multi-Document Q&A System with Source Attribution",
+      "problem": "Build a Q&A system that: (1) loads documents from a list of URLs using WebBaseLoader, (2) splits and indexes them with metadata including URL and load timestamp, (3) answers questions with exact source citations in format '[URL] quote', (4) returns confidence as 'high' if any chunk has score > 0.85, else 'medium'. Wrap everything in a QASystem class with index(urls) and ask(question) methods.",
+      "hints": [
+        "WebBaseLoader accepts a list of URLs: WebBaseLoader(['url1', 'url2'])",
+        "Add timestamp metadata: {'url': url, 'loaded_at': datetime.now().isoformat()}",
+        "For confidence, use vectorstore.similarity_search_with_score() before building the chain",
+        "Inject confidence calculation between retrieval and generation steps"
+      ],
+      "solution": "from datetime import datetime\nfrom langchain_community.document_loaders import WebBaseLoader\n\nclass QASystem:\n    def __init__(self):\n        self.embeddings = OpenAIEmbeddings(model='text-embedding-3-small')\n        self.llm = ChatOpenAI(model='gpt-4o-mini', temperature=0.0)\n        self.vectorstore = None\n        self.splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)\n\n    def index(self, urls: list[str]) -> None:\n        loader = WebBaseLoader(urls)\n        docs = loader.load()\n        # Add timestamp metadata\n        for doc in docs:\n            doc.metadata['loaded_at'] = datetime.now().isoformat()\n        chunks = self.splitter.split_documents(docs)\n        self.vectorstore = Chroma.from_documents(chunks, self.embeddings)\n        print(f'Indexed {len(chunks)} chunks from {len(urls)} URLs')\n\n    def ask(self, question: str) -> dict:\n        if not self.vectorstore:\n            raise RuntimeError('Call index() first')\n        docs_scores = self.vectorstore.similarity_search_with_score(question, k=5)\n        confidence = 'high' if any(score > 0.85 for _, score in docs_scores) else 'medium'\n        docs = [doc for doc, _ in docs_scores]\n        context = '\\n\\n'.join(f'[{d.metadata.get(\"source\", \"?\")}]\\n{d.page_content}' for d in docs)\n        prompt = ChatPromptTemplate.from_messages([\n            ('system', 'Answer using ONLY context. Cite [URL] for each fact.\\nContext:\\n{context}'),\n            ('user', '{question}')\n        ])\n        chain = prompt | self.llm | StrOutputParser()\n        answer = chain.invoke({'context': context, 'question': question})\n        return {'answer': answer, 'confidence': confidence, 'sources': [d.metadata.get('source') for d in docs]}",
+      "difficulty": "Intermediate"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "What is MMR retrieval and why is it better than standard similarity search for RAG?",
+          "answer": "MMR (Maximal Marginal Relevance) balances relevance and diversity. Standard similarity search returns the K most similar vectors — which often means K nearly-identical chunks from the same paragraph. MMR fetches a larger candidate pool (fetch_k), then iteratively selects the next chunk that maximizes both similarity to the query AND dissimilarity to already-selected chunks. The lambda_mult parameter (0-1) controls the relevance-diversity tradeoff. For RAG, MMR is usually better because diverse sources produce more comprehensive answers and reduce the risk of hallucinating details from repetitive context.",
+          "followUps": [
+            "What lambda_mult value gives maximum diversity vs maximum relevance?",
+            "How does multi-query retrieval complement MMR?"
+          ]
+        },
+        {
+          "question": "What is the difference between TextLoader, PyPDFLoader, and WebBaseLoader, and when would you use each?",
+          "answer": "TextLoader reads plain .txt files with optional encoding specification — good for preprocessed text content. PyPDFLoader uses pypdf to extract text from PDFs page by page, preserving page numbers in metadata — good for structured reports and documents where page location matters. WebBaseLoader uses BeautifulSoup to scrape web pages, stripping HTML tags — good for documentation sites and knowledge bases. All return List[Document] with the same interface. For production: PDFs often need OCR (pytesseract) for scanned documents; web scraping needs rate limiting and robots.txt respect.",
+          "followUps": [
+            "How would you handle PDFs with tables and images?",
+            "What LangChain loader would you use for Notion or Google Docs?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write LCEL code for a RAG chain that retrieves documents and formats them with source metadata before passing to the LLM.",
+          "answer": "from langchain_core.runnables import RunnablePassthrough\nfrom langchain_core.output_parsers import StrOutputParser\nfrom langchain_core.prompts import ChatPromptTemplate\nfrom langchain.schema import Document\n\ndef format_docs(docs: list[Document]) -> str:\n    return '\\n\\n'.join(\n        f'[Source {i+1}: {d.metadata.get(\"source\", \"unknown\")} (page {d.metadata.get(\"page\", \"?\")})]\\n{d.page_content}'\n        for i, d in enumerate(docs)\n    )\n\nprompt = ChatPromptTemplate.from_messages([\n    ('system', 'Answer from context only. Cite [Source N].\\nContext:\\n{context}'),\n    ('user', '{question}')\n])\n\nrag_chain = (\n    {'context': retriever | format_docs, 'question': RunnablePassthrough()}\n    | prompt | llm | StrOutputParser()\n)\nanswer = rag_chain.invoke('What is RAG?')",
+          "followUps": [
+            "How would you add the retrieved documents to the returned result alongside the answer?",
+            "How would you stream this chain and capture the full text at the end?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You're building a RAG system for a company's internal knowledge base with 50,000 documents across 200 topics. How do you architect it for relevance and performance?",
+          "answer": "Architecture decisions: (1) Hierarchical retrieval — use topic classification (fast classifier model) to narrow to the relevant topic namespace before vector search. Reduces search space from 50K to ~250 docs per topic. (2) Metadata-rich indexing — store department, author, date, document_type, access_level in metadata for filtering. (3) Hybrid search — combine vector similarity with BM25 keyword search; many enterprise queries are keyword-heavy ('Q4 2023 revenue' needs keyword match, not semantic). Use RRF (Reciprocal Rank Fusion) to merge results. (4) Chunking strategy — use structure-aware splitting for PDFs and HTML; 400-token chunks with 50-token overlap. (5) Regular re-indexing — document updates need re-embedding; use CDC (Change Data Capture) to detect updates and re-index only changed documents. (6) Caching — cache embeddings for frequently queried topics to reduce API costs.",
+          "followUps": [
+            "What is BM25 and how does it complement vector similarity search?",
+            "How would you implement access control so users only retrieve documents they're authorized to see?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "MMR retriever fetch_k should equal k — more candidates don't improve diversity",
+        "RecursiveCharacterTextSplitter chunk_size=500 means 500 tokens",
+        "Chroma.from_documents() is efficient for repeated runs because it only embeds new documents"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "What does RecursiveCharacterTextSplitter do when it can't find the primary separator?",
+          "options": {
+            "A": "It raises an error and stops processing",
+            "B": "It falls back to the next separator in the list until it can split",
+            "C": "It returns the entire document as one chunk",
+            "D": "It uses whitespace as the default separator"
+          },
+          "answer": "B",
+          "explanation": "RecursiveCharacterTextSplitter tries separators in order: ['\\n\\n', '\\n', '. ', ' ', '']. If the text can't be split by '\\n\\n', it tries '\\n', then '. ', then individual words, then characters. This recursive approach ensures chunks stay under chunk_size while preserving as much semantic structure as possible."
+        },
+        {
+          "id": 2,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is the purpose of the lambda_mult parameter in MMR retrieval?",
+          "options": {
+            "A": "Controls the learning rate of the HNSW index",
+            "B": "Sets the minimum similarity threshold for results",
+            "C": "Controls the relevance-diversity tradeoff: 1.0 = pure relevance, 0.0 = pure diversity",
+            "D": "Determines how many candidates are fetched before selection"
+          },
+          "answer": "C",
+          "explanation": "lambda_mult in MMR controls the balance: lambda=1.0 means pure similarity (identical to standard search), lambda=0.0 means pure diversity (maximally different results). lambda=0.5 is the common default balancing both. fetch_k controls the candidate pool size, not lambda_mult."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "code",
+          "question": "In LCEL, how do you pass the original user question through the chain while also retrieving context?",
+          "options": {
+            "A": "chain = retriever | prompt | llm",
+            "B": "chain = {'context': retriever | format_docs, 'question': RunnablePassthrough()} | prompt | llm",
+            "C": "chain = RunnableParallel(retriever, question) | prompt | llm",
+            "D": "chain = prompt.partial(context=retriever.invoke('')) | llm"
+          },
+          "answer": "B",
+          "explanation": "The dict syntax in LCEL creates a RunnableParallel that runs retriever on the input (for context) while RunnablePassthrough() passes the original input unchanged (for question). Both are combined into {'context': ..., 'question': ...} which the prompt template then uses."
+        },
+        {
+          "id": 4,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "Your RAG system returns 5 similar chunks but 4 of them are from the same source document. What should you change?",
+          "options": {
+            "A": "Increase chunk_size so each chunk covers more content",
+            "B": "Switch from similarity search to MMR retrieval with appropriate lambda_mult",
+            "C": "Reduce k from 5 to 1",
+            "D": "Use a different embedding model"
+          },
+          "answer": "B",
+          "explanation": "Getting 4 of 5 chunks from the same document is a textbook MMR use case. Standard similarity search returns the most similar chunks regardless of diversity. MMR's diversity penalty would deprioritize additional chunks from the same document, ensuring coverage from multiple sources. Set lambda_mult=0.5 and fetch_k=20 for good balance."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## LangChain RAG — Quick Reference\n\n### Document Loaders\n```python\nfrom langchain_community.document_loaders import PyPDFLoader, WebBaseLoader, TextLoader\ndocs = PyPDFLoader('file.pdf').load()  # per-page Documents\ndocs = WebBaseLoader(['https://...']).load()\ndocs = TextLoader('file.txt').load()\n```\n\n### Text Splitting\n```python\nfrom langchain_text_splitters import RecursiveCharacterTextSplitter\nsplitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)\nchunks = splitter.split_documents(docs)\n# chunk_size is in CHARACTERS, not tokens\n```\n\n### Vector Store\n```python\nfrom langchain_community.vectorstores import Chroma\nfrom langchain_openai import OpenAIEmbeddings\nvs = Chroma.from_documents(chunks, OpenAIEmbeddings())\nretriever = vs.as_retriever(search_kwargs={'k': 5})\n# MMR:\nretriever = vs.as_retriever(search_type='mmr', search_kwargs={'k': 5, 'fetch_k': 20})\n```\n\n### RAG Chain\n```python\nfrom langchain_core.runnables import RunnablePassthrough\nchain = (\n    {'context': retriever | format_docs, 'question': RunnablePassthrough()}\n    | prompt | llm | StrOutputParser()\n)\nanswer = chain.invoke('Your question')\n```\n\n### Retrieval Strategies\n| Strategy | When to use |\n|----------|-------------|\n| similarity | Default, simple |\n| mmr | Diverse sources needed |\n| self_query | Natural language metadata filters |\n| multi_query | Improve recall on ambiguous queries |"
+    }
+  ]
+}

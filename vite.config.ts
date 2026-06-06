@@ -1,13 +1,13 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Relative base: works on GitHub Pages for any repo name (user.github.io/REPO/)
-// and local dev at http://localhost:5173/ — pair with HashRouter in App.tsx
+// Root base for custom domain (https://satyamparmar.blog). HashRouter avoids SPA 404 issues.
 export default defineConfig({
-  base: './',
+  base: '/',
   plugins: [react()],
   build: {
     outDir: 'dist',
+    sourcemap: 'hidden',
     rollupOptions: {
       output: {
         manualChunks: {

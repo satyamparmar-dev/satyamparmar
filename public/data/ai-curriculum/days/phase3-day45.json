@@ -1,0 +1,173 @@
+{
+  "id": "phase3-day45",
+  "day": 45,
+  "phase": 3,
+  "title": "Agent Observability & Debugging",
+  "estimatedHours": 4,
+  "difficulty": "intermediate",
+  "level": "Senior",
+  "track": "Senior",
+  "tags": ["observability", "debugging", "tracing", "langsmith", "monitoring", "agents"],
+  "prerequisites": ["phase3-day37", "phase2-day33"],
+  "learningObjectives": [
+    "Implement structured logging for agent traces",
+    "Use LangSmith for LLM observability",
+    "Build custom trace collectors for multi-step agent flows",
+    "Debug agent failures using execution traces",
+    "Set up alerts and dashboards for production agents"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Agent Observability Is Different",
+      "content": "A web server that returns a 500 error is easy to debug — you have a stack trace and a clear request. An agent that 'gave a wrong answer after 12 steps' is much harder: you need to know what every tool returned, what the model reasoned about each result, and at which step the reasoning diverged from correct. Standard application logging isn't enough for agents — you need traces: structured records of every LLM call, every tool invocation, inputs and outputs at each step, token counts, latency, and evaluation scores. Without this, debugging agent failures is guesswork."
+    },
+    {
+      "type": "theory",
+      "title": "Agent Observability Stack",
+      "content": "**What to capture in a trace:**\n\n```\nTrace: task_id='abc123' total_time=12.3s\n  ├── LLM Call 1: model=gpt-4o-mini, tokens=450, latency=1.2s\n  │     Input: 'Decompose this task...'\n  │     Output: {'steps': [...]}\n  ├── Tool: web_search(query='Python async') → 3 results, latency=0.8s\n  ├── LLM Call 2: model=gpt-4o-mini, tokens=812, latency=2.1s  \n  │     Input: context + search results\n  │     Output: 'Based on the search...'\n  └── Evaluation: faithfulness=0.92, relevancy=0.88\n```\n\n**Observability tools comparison:**\n\n| Tool | Best for | Key features |\n|------|---------|-------------|\n| LangSmith | LangChain apps | Automatic tracing, evals, datasets |\n| Langfuse | Open source | Self-host, session tracking |\n| OpenAI usage dashboard | OpenAI-only | Built-in, token/cost tracking |\n| Arize/Phoenix | ML monitoring | Drift detection, RAGAS integration |\n| Custom (structlog + Postgres) | Full control | Cheapest, most flexible |\n\n**LangSmith tracing setup:**\n```python\nimport os\nos.environ['LANGCHAIN_TRACING_V2'] = 'true'\nos.environ['LANGCHAIN_API_KEY'] = 'ls_...'\nos.environ['LANGCHAIN_PROJECT'] = 'my-agent'\n# All LangChain calls auto-traced!\n\n# Or explicit tracing:\nfrom langsmith import traceable\n\n@traceable(name='My RAG Step', run_type='retriever')\ndef my_retrieval_fn(query):\n    return retriever.get_relevant_documents(query)\n```\n\n**Structured trace format:**\n```python\n@dataclass\nclass AgentSpan:\n    span_id: str\n    parent_span_id: Optional[str]\n    type: str  # 'llm' | 'tool' | 'retrieval' | 'agent'\n    name: str\n    inputs: dict\n    outputs: dict\n    start_time: float\n    end_time: float\n    model: Optional[str]\n    tokens: Optional[int]\n    cost_usd: Optional[float]\n    error: Optional[str]\n    metadata: dict\n```\n\n**Key metrics to track:**\n- Latency (P50, P95, P99 per step type)\n- Token usage (input, output, total per session)\n- Cost (per session, per user, per task type)\n- Tool call frequency (which tools are called most)\n- Error rate (per tool, per step, overall)\n- Faithfulness score (ongoing evaluation)\n- User satisfaction (thumbs up/down, resolution rate)\n\n**Alerts to configure:**\n1. Session cost > $1.00 (runaway agent)\n2. Tool error rate > 10% in 5 minutes (tool down)\n3. Average latency > 10s (degraded performance)\n4. Faithfulness score < 0.7 (quality regression)\n5. Daily active sessions drop > 50% (potential outage)"
+    },
+    {
+      "type": "code",
+      "title": "Agent Tracer and LangSmith Integration",
+      "language": "python",
+      "code": "# pip install langsmith openai\nfrom __future__ import annotations\nimport json\nimport logging\nimport os\nimport time\nimport uuid\nfrom contextlib import contextmanager\nfrom dataclasses import dataclass, field, asdict\nfrom datetime import datetime\nfrom typing import Any, Optional\nfrom openai import OpenAI\n\nlog = logging.getLogger(__name__)\nclient = OpenAI(api_key=os.environ['OPENAI_API_KEY'])\n\n\n# ── Span model ─────────────────────────────────────────────────────────────────\n\n@dataclass\nclass Span:\n    span_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])\n    parent_id: Optional[str] = None\n    span_type: str = 'unknown'  # llm | tool | agent | retrieval\n    name: str = ''\n    inputs: dict = field(default_factory=dict)\n    outputs: dict = field(default_factory=dict)\n    start_time: float = field(default_factory=time.time)\n    end_time: Optional[float] = None\n    model: Optional[str] = None\n    input_tokens: int = 0\n    output_tokens: int = 0\n    cost_usd: float = 0.0\n    error: Optional[str] = None\n    metadata: dict = field(default_factory=dict)\n\n    @property\n    def duration_ms(self) -> float:\n        if self.end_time:\n            return (self.end_time - self.start_time) * 1000\n        return 0.0\n\n    def finish(self, outputs: dict = None, error: str = None) -> None:\n        self.end_time = time.time()\n        if outputs:\n            self.outputs = outputs\n        if error:\n            self.error = error\n\n\n# ── Trace (collection of spans) ────────────────────────────────────────────────\n\n@dataclass\nclass Trace:\n    trace_id: str = field(default_factory=lambda: str(uuid.uuid4())[:12])\n    task: str = ''\n    spans: list[Span] = field(default_factory=list)\n    start_time: float = field(default_factory=time.time)\n    end_time: Optional[float] = None\n    success: bool = True\n    metadata: dict = field(default_factory=dict)\n\n    def add_span(self, span: Span) -> None:\n        self.spans.append(span)\n\n    def finish(self, success: bool = True) -> None:\n        self.end_time = time.time()\n        self.success = success\n\n    @property\n    def total_duration_ms(self) -> float:\n        return (self.end_time - self.start_time) * 1000 if self.end_time else 0.0\n\n    @property\n    def total_cost_usd(self) -> float:\n        return sum(s.cost_usd for s in self.spans)\n\n    @property\n    def total_tokens(self) -> int:\n        return sum(s.input_tokens + s.output_tokens for s in self.spans)\n\n    def summary(self) -> dict:\n        return {\n            'trace_id': self.trace_id,\n            'task': self.task[:80],\n            'duration_ms': round(self.total_duration_ms),\n            'total_tokens': self.total_tokens,\n            'total_cost_usd': round(self.total_cost_usd, 5),\n            'n_spans': len(self.spans),\n            'n_llm_calls': sum(1 for s in self.spans if s.span_type == 'llm'),\n            'n_tool_calls': sum(1 for s in self.spans if s.span_type == 'tool'),\n            'errors': [s.error for s in self.spans if s.error],\n            'success': self.success,\n        }\n\n\n# ── Tracer ─────────────────────────────────────────────────────────────────────\n\nclass AgentTracer:\n    # GPT-4o-mini pricing (per 1K tokens)\n    COST_TABLE = {\n        'gpt-4o-mini': {'input': 0.00015, 'output': 0.00060},\n        'gpt-4o': {'input': 0.0025, 'output': 0.01},\n    }\n\n    def __init__(self, export_fn=None):\n        self._current_trace: Optional[Trace] = None\n        self._export_fn = export_fn or self._log_trace\n\n    @contextmanager\n    def trace(self, task: str, **metadata):\n        self._current_trace = Trace(task=task, metadata=metadata)\n        try:\n            yield self._current_trace\n            self._current_trace.finish(success=True)\n        except Exception as e:\n            if self._current_trace:\n                self._current_trace.finish(success=False)\n                self._current_trace.metadata['error'] = str(e)\n            raise\n        finally:\n            if self._current_trace:\n                self._export_fn(self._current_trace)\n\n    @contextmanager\n    def span(self, name: str, span_type: str, **kwargs):\n        parent_id = self._current_trace.spans[-1].span_id if self._current_trace and self._current_trace.spans else None\n        s = Span(span_type=span_type, name=name, parent_id=parent_id, metadata=kwargs)\n        try:\n            yield s\n        except Exception as e:\n            s.finish(error=str(e))\n            raise\n        finally:\n            if not s.end_time:\n                s.finish()\n            if self._current_trace:\n                self._current_trace.add_span(s)\n\n    def traced_llm_call(\n        self,\n        messages: list[dict],\n        model: str = 'gpt-4o-mini',\n        tools: Optional[list] = None,\n        **kwargs,\n    ):\n        with self.span(f'LLM:{model}', 'llm') as span:\n            span.model = model\n            span.inputs = {'messages_count': len(messages), 'has_tools': bool(tools)}\n\n            response = client.chat.completions.create(\n                model=model,\n                messages=messages,\n                tools=tools or [],\n                **kwargs,\n            ) if tools else client.chat.completions.create(\n                model=model,\n                messages=messages,\n                **kwargs,\n            )\n\n            usage = response.usage\n            span.input_tokens = usage.prompt_tokens\n            span.output_tokens = usage.completion_tokens\n\n            costs = self.COST_TABLE.get(model, {'input': 0, 'output': 0})\n            span.cost_usd = (\n                usage.prompt_tokens / 1000 * costs['input'] +\n                usage.completion_tokens / 1000 * costs['output']\n            )\n            span.outputs = {'finish_reason': response.choices[0].finish_reason}\n            span.finish()\n            return response\n\n    def traced_tool_call(\n        self,\n        tool_name: str,\n        tool_args: dict,\n        tool_fn,\n    ) -> str:\n        with self.span(f'Tool:{tool_name}', 'tool') as span:\n            span.inputs = tool_args\n            try:\n                result = tool_fn(**tool_args)\n                result_str = json.dumps(result) if not isinstance(result, str) else result\n                span.finish(outputs={'result_length': len(result_str)})\n                return result_str\n            except Exception as e:\n                span.finish(error=str(e))\n                return json.dumps({'error': str(e)})\n\n    def _log_trace(self, trace: Trace) -> None:\n        summary = trace.summary()\n        level = logging.ERROR if not trace.success else logging.INFO\n        log.log(level, 'TRACE: %s', json.dumps(summary))\n        # In production: send to Langfuse, DataDog, or your observability backend\n\n\n# ── LangSmith integration (when using LangChain) ──────────────────────────────\n\ndef setup_langsmith(project_name: str) -> None:\n    \"\"\"Configure LangSmith tracing for all LangChain calls.\"\"\"\n    if not os.environ.get('LANGCHAIN_API_KEY'):\n        log.warning('LANGCHAIN_API_KEY not set — LangSmith tracing disabled')\n        return\n    os.environ['LANGCHAIN_TRACING_V2'] = 'true'\n    os.environ['LANGCHAIN_PROJECT'] = project_name\n    log.info('LangSmith tracing enabled for project: %s', project_name)\n\n\n# From langsmith import traceable — use this decorator for custom functions\n# @traceable(name='My Function', run_type='tool')  \n# def my_custom_function(input: str) -> str:\n#     return process(input)\n\n\n# ── Trace-enabled agent ───────────────────────────────────────────────────────\n\ntracer = AgentTracer()\n\n\ndef get_weather(city: str) -> str:\n    return json.dumps({'city': city, 'temp': '20°C', 'condition': 'sunny'})\n\ndef calculate(expression: str) -> str:\n    try:\n        result = eval(expression, {'__builtins__': {}})  # noqa: S307\n        return json.dumps({'result': result})\n    except Exception as e:\n        return json.dumps({'error': str(e)})\n\nTOOL_REGISTRY = {'get_weather': get_weather, 'calculate': calculate}\n\nTOOLS = [\n    {'type': 'function', 'function': {\n        'name': 'get_weather', 'description': 'Get weather for a city',\n        'parameters': {'type': 'object', 'properties': {'city': {'type': 'string'}}, 'required': ['city']}\n    }},\n    {'type': 'function', 'function': {\n        'name': 'calculate', 'description': 'Evaluate a math expression',\n        'parameters': {'type': 'object', 'properties': {'expression': {'type': 'string'}}, 'required': ['expression']}\n    }},\n]\n\n\ndef traced_agent(task: str) -> str:\n    with tracer.trace(task=task) as trace:\n        messages = [{'role': 'user', 'content': task}]\n\n        for _ in range(5):\n            response = tracer.traced_llm_call(messages, model='gpt-4o-mini', tools=TOOLS)\n            msg = response.choices[0].message\n            messages.append(msg)\n\n            if not msg.tool_calls:\n                return msg.content\n\n            for tc in msg.tool_calls:\n                args = json.loads(tc.function.arguments)\n                result = tracer.traced_tool_call(\n                    tc.function.name, args, TOOL_REGISTRY[tc.function.name]\n                )\n                messages.append({'role': 'tool', 'tool_call_id': tc.id, 'content': result})\n\n        return 'Max rounds'\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')\n\n    tasks = [\n        'What is the weather in Tokyo and what is 18 * 24?',\n        'Calculate the sum of squares from 1 to 5 and check weather in Paris',\n    ]\n\n    for task in tasks:\n        print(f'\\n--- Task: {task} ---')\n        result = traced_agent(task)\n        print(f'Result: {result}')\n\n    # Print trace summary from last run\n    print('\\nTrace spans from last run would be logged above (see INFO lines)')"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Observability Pitfalls",
+      "items": [
+        {
+          "mistake": "Logging only the final answer, not intermediate steps",
+          "why": "When an agent gives a wrong answer, knowing only the final output tells you nothing about where it went wrong. You need the full trace.",
+          "fix": "Log every LLM call (input messages, output, tokens, latency) and every tool call (name, args, result) with a common trace_id that links them."
+        },
+        {
+          "mistake": "Not tracking cost per session",
+          "why": "A 'runaway agent' that makes 50 tool calls in a loop can cost $5 in one session. Without cost tracking, you won't notice until the monthly bill arrives.",
+          "fix": "Track input_tokens × input_cost + output_tokens × output_cost per session. Set up an alert when a single session exceeds a cost threshold."
+        },
+        {
+          "mistake": "Logging sensitive user data in traces",
+          "why": "Traces may contain PII (names, emails, queries about personal issues). Sending these to a third-party observability service creates a compliance risk.",
+          "fix": "Apply PII masking before logging: replace emails with [EMAIL], names with [NAME], etc. Or hash sensitive fields. Review what goes into traces before sending to external services."
+        },
+        {
+          "mistake": "Synchronous logging blocking the hot path",
+          "why": "Writing traces to a database or sending HTTP requests in the hot path adds 50-200ms latency per request.",
+          "fix": "Use async logging: fire-and-forget to a queue (Redis, SQS). A background worker consumes the queue and writes to storage. Never block the main thread for logging."
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "What information should every agent trace capture?",
+          "answer": "Every trace should capture: (1) Identifiers: trace_id, session_id, user_id, task_type. (2) LLM calls: model, input messages (or hash for privacy), output, token counts, latency, cost. (3) Tool calls: name, arguments, result (truncated), latency, success/failure. (4) Retrieval: query, chunks retrieved, similarity scores. (5) Evaluation: faithfulness score, answer relevancy (if computed). (6) Metadata: agent version, environment, total session cost. (7) Error: any exceptions with stack trace. This enables root cause analysis, cost attribution, performance profiling, and quality monitoring.",
+          "followUps": ["How do you handle tracing for parallel tool calls?"]
+        },
+        {
+          "question": "What is LangSmith and how does it integrate with LangChain?",
+          "answer": "LangSmith is an observability platform by LangChain Inc. Integration is nearly zero-config: set LANGCHAIN_TRACING_V2=true and LANGCHAIN_API_KEY, and all LangChain component calls (LLMs, retrievers, chains, agents) are automatically traced. Each trace appears in the LangSmith UI with a visual tree of spans, inputs/outputs, latency, and token counts. Additional features: test datasets, evaluators that run against traces, prompt playground, and feedback collection. For non-LangChain code, use the @traceable decorator to add custom spans.",
+          "followUps": ["What are the privacy implications of sending traces to LangSmith?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "How do you calculate the cost of a GPT-4o-mini API call from the response object?",
+          "answer": "```python\ndef calculate_cost(usage, model='gpt-4o-mini'):\n    RATES = {\n        'gpt-4o-mini': {'input': 0.00015, 'output': 0.00060},  # per 1K tokens\n        'gpt-4o': {'input': 0.0025, 'output': 0.01},\n    }\n    rates = RATES.get(model, RATES['gpt-4o-mini'])\n    cost = (\n        usage.prompt_tokens / 1000 * rates['input'] +\n        usage.completion_tokens / 1000 * rates['output']\n    )\n    return round(cost, 6)  # USD\n\n# Usage:\nresponse = client.chat.completions.create(...)\ncost = calculate_cost(response.usage, model='gpt-4o-mini')\nprint(f'This call cost: ${cost:.6f}')\n```"
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your production agent's quality scores dropped from 0.88 to 0.71 faithfulness over the last week. You have traces for every request. How do you debug this?",
+          "answer": "Step 1: filter traces from the bad period, group by: question_type, tool_call_pattern, model_version, and document_source. Step 2: compare low-score traces to high-score traces — what's different? Common patterns: (1) A specific tool started returning different data (e.g., database schema changed). Check tool output diffs — if get_product_info changed its response format, the model may be misinterpreting it. (2) A new document type was added to the knowledge base. Check which source documents are cited in low-score answers. (3) Model was updated by the provider. Check if the version in traces changed. (4) Specific question types dropped: look for clustering in low-score questions. Step 3: pull 20 low-score traces, read the full reasoning trace manually. Look for where the model's context diverges from the answer. Step 4: fix the root cause (update tool schema, re-chunk new documents, adjust system prompt). Re-run evaluation on the failed question set to verify the fix.",
+          "followUps": ["How would you set up automated regression testing to catch quality drops before they reach production?"]
+        }
+      ],
+      "wrongAnswers": [
+        "Agent tracing only needs to capture the final answer and total cost — every intermediate step must be traced to enable root cause analysis of failures",
+        "LangSmith requires extensive code changes to integrate with LangChain — setting two environment variables auto-traces all LangChain calls",
+        "Synchronous logging to a database is acceptable since it only adds a few milliseconds — database writes can take 10-100ms and should never be on the hot path; use async queues"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d45q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "What is a trace_id in agent observability?",
+          "options": {
+            "A": "The model's internal tracking number for a request",
+            "B": "A unique identifier linking all spans (LLM calls, tool calls) belonging to one agent task",
+            "C": "The user's session identifier",
+            "D": "The sequence number of the current LLM call"
+          },
+          "answer": "B",
+          "explanation": "A trace_id uniquely identifies one complete agent execution (task). All spans within that execution share the same trace_id, enabling reconstruction of the full reasoning chain and debugging which step went wrong."
+        },
+        {
+          "id": "d45q2",
+          "level": "intermediate",
+          "category": "code",
+          "question": "How do you enable automatic LangSmith tracing for all LangChain calls?",
+          "options": {
+            "A": "Import langsmith and call langsmith.init()",
+            "B": "Set LANGCHAIN_TRACING_V2=true and LANGCHAIN_API_KEY environment variables",
+            "C": "Wrap every chain with a LangSmithTracer callback",
+            "D": "Add verbose=True to every AgentExecutor"
+          },
+          "answer": "B",
+          "explanation": "LangSmith tracing is activated by two env vars: LANGCHAIN_TRACING_V2='true' and LANGCHAIN_API_KEY='ls_...'. No code changes needed — all LangChain components are automatically traced."
+        },
+        {
+          "id": "d45q3",
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "An agent session cost $3.50 in a single run. Which alert should have fired?",
+          "options": {
+            "A": "Token rate limit exceeded",
+            "B": "Session cost exceeds threshold (runaway agent alert)",
+            "C": "Tool error rate > 10%",
+            "D": "Response latency > 10s"
+          },
+          "answer": "B",
+          "explanation": "A $3.50 session indicates a runaway agent — likely stuck in a tool call loop or processing an unexpectedly large input. A cost threshold alert ($1.00-$2.00 typical) would have caught this early, allowing intervention before the full cost was incurred."
+        },
+        {
+          "id": "d45q4",
+          "level": "advanced",
+          "category": "theory",
+          "question": "Why should trace logging be done asynchronously rather than synchronously?",
+          "options": {
+            "A": "Async logging is cheaper",
+            "B": "Synchronous logging to a database or HTTP endpoint adds latency to every user request in the critical path",
+            "C": "Synchronous logging misses some trace data",
+            "D": "Async logging compresses trace data better"
+          },
+          "answer": "B",
+          "explanation": "Database writes and HTTP calls can take 10-200ms. Doing these synchronously in the agent's hot path adds that latency to every user-facing request. Fire traces to a local queue (Redis, SQS) asynchronously — a background worker consumes and persists them without affecting request latency."
+        },
+        {
+          "id": "d45q5",
+          "level": "basic",
+          "category": "theory",
+          "question": "Which metric is most useful for detecting a regression in RAG system quality?",
+          "options": {
+            "A": "P95 latency",
+            "B": "Token count per request",
+            "C": "Average faithfulness score over time",
+            "D": "Number of tool calls per session"
+          },
+          "answer": "C",
+          "explanation": "Faithfulness score measures whether answers are grounded in retrieved context. A drop in faithfulness indicates the system is starting to hallucinate. Tracking this over time with automated evaluation (LLM judge) provides a continuous quality signal."
+        }
+      ]
+    }
+  ]
+}

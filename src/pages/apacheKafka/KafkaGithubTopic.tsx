@@ -14,6 +14,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { getKafkaStepByParam, kafkaAssetUrl, kafkaKindLabel } from '../../content/apacheKafka/curriculum';
 import type { KafkaContentKind } from '../../content/apacheKafka/curriculum';
 import { highlightCode } from '../../utils/markdown';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 function hljsLanguageForKind(kind: KafkaContentKind): string {
   if (kind === 'java') return 'java';
@@ -23,6 +24,7 @@ function hljsLanguageForKind(kind: KafkaContentKind): string {
 }
 
 const KafkaGithubTopic: React.FC = () => {
+  usePageTitle('Apache Kafka Reference');
   const { step } = useParams<{ step: string }>();
   const navigate = useNavigate();
   const theme = useTheme();
@@ -119,7 +121,7 @@ const KafkaGithubTopic: React.FC = () => {
         <Typography variant="overline" color="text.secondary" display="block">
           Step {row.step}
         </Typography>
-        <Typography variant="h4" fontWeight={800} sx={{ letterSpacing: '-0.02em' }}>
+        <Typography variant="h4" component="h1" fontWeight={800} sx={{ letterSpacing: '-0.02em' }}>
           {row.displayName}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontFamily: 'JetBrains Mono, monospace' }}>

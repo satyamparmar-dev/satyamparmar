@@ -18,11 +18,13 @@ import {
   getTotalLessons,
   getTotalHours,
 } from '../../content/promptEngineeringCourse/courseData';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 const ACCENT = '#7c3aed';
 const ACCENT_DARK = '#6d28d9';
 
 const PromptEngineeringCourseHome: React.FC = () => {
+  usePageTitle('Prompt Engineering');
   const theme = useTheme();
   const navigate = useNavigate();
   const isDark = theme.palette.mode === 'dark';

@@ -2,7 +2,10 @@
 // Persisted to localStorage. Passwords stored as SHA-256 hashes only.
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist } from 'zustand/middleware';
+import type { PersistStorage } from 'zustand/middleware';
+import { encryptedPersistStorage } from './encryptedStorage';
+import { isPermanentUserEmail, mergePermanentUsers } from './ensurePermanentUsers';
 import {
   generateSalt,
   hashPassword,
@@ -27,7 +30,7 @@ export interface UserRecord {
   emailVerified: boolean;  // must be true before login is allowed
 }
 
-interface AuthState {
+export interface AuthState {
   // Stored data
   users: Record<string, UserRecord>; // keyed by email (lowercase)
   sessionToken: string | null;
@@ -70,6 +73,8 @@ interface AuthState {
   ) => Promise<{ success: boolean; error?: string }>;
 }
 
+type AuthPersistedSlice = Pick<AuthState, 'users' | 'sessionToken' | 'currentUser'>;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getInitials(name: string): string {
@@ -107,6 +112,13 @@ export const useAuthStore = create<AuthState>()(
       // ── Pre-Register: store unverified user, no session created ───────────────
       preRegister: async (email, displayName, password) => {
         const key = email.toLowerCase().trim();
+
+        if (isPermanentUserEmail(key)) {
+          return {
+            success: false,
+            error: 'This account is already set up. Use Sign In with your password.',
+          };
+        }
 
         if (!key || !displayName.trim() || !password) {
           return { success: false, error: 'All fields are required.' };
@@ -190,6 +202,9 @@ export const useAuthStore = create<AuthState>()(
       login: async (email, password) => {
         const key = email.toLowerCase().trim();
 
+        // Restore built-in accounts (Register tab may have overwritten them this session)
+        set((s) => ({ users: mergePermanentUsers(s.users) }));
+
         const rateCheck = checkRateLimit(key);
         if (!rateCheck.allowed) {
           const mins = Math.ceil(rateCheck.remainingMs / 60000);
@@ -245,6 +260,8 @@ export const useAuthStore = create<AuthState>()(
 
       // ── Validate Session ──────────────────────────────────────────────────────
       validateSession: async () => {
+        set((s) => ({ users: mergePermanentUsers(s.users) }));
+
         const { sessionToken, currentUser, users } = get();
         if (!sessionToken || !currentUser) {
           set({ isAuthenticated: false });
@@ -371,13 +388,22 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'satyverse-satyam-parmar-auth-store',
-      storage: createJSONStorage(() => localStorage),
+      storage: encryptedPersistStorage as PersistStorage<AuthPersistedSlice>,
       // Persist users and token only — NOT isAuthenticated (revalidated on load)
       partialize: (state) => ({
         users: state.users,
         sessionToken: state.sessionToken,
         currentUser: state.currentUser,
       }),
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<AuthPersistedSlice>;
+        return {
+          ...current,
+          users: mergePermanentUsers(p.users ?? {}),
+          sessionToken: p.sessionToken ?? null,
+          currentUser: p.currentUser ?? null,
+        };
+      },
     }
   )
 );

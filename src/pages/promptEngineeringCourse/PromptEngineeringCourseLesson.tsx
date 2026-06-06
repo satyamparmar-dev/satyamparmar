@@ -26,6 +26,7 @@ import {
   type CourseSection, type SectionType,
 } from '../../content/promptEngineeringCourse/courseData';
 import { parseMarkdown } from '../../utils/markdown';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 const ACCENT = '#7c3aed';
 const ACCENT_DARK = '#6d28d9';
@@ -105,6 +106,8 @@ const PromptEngineeringCourseLesson: React.FC = () => {
 
   const lesson = useMemo(() => (lessonId ? getLessonById(lessonId) : undefined), [lessonId]);
   const nextLesson = useMemo(() => (lessonId ? getNextLesson(lessonId) : undefined), [lessonId]);
+
+  usePageTitle(lesson?.title ?? 'Prompt Engineering');
   const prevLesson = useMemo(() => (lessonId ? getPrevLesson(lessonId) : undefined), [lessonId]);
   const isComplete = !!lessonId && completed.has(lessonId);
   const phase = lesson ? COURSE_PHASES.find((p) => p.number === lesson.phase) : undefined;

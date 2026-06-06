@@ -29,7 +29,6 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
 import BusinessIcon from '@mui/icons-material/Business';
-import DataObjectIcon from '@mui/icons-material/DataObject';
 import HubIcon from '@mui/icons-material/Hub';
 import LocalCafeIcon from '@mui/icons-material/LocalCafe';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
@@ -46,8 +45,6 @@ const navItems = [
   { path: '/progress', icon: <BarChartIcon />, label: 'Progress' },
   { path: '/scenarios', icon: <RecordVoiceOverIcon />, label: 'Scenarios' },
   { path: '/llm', icon: <AutoAwesomeIcon />, label: 'LLM & GenAI' },
-  { path: '/java-repo', icon: <DataObjectIcon />, label: 'Java' },
-  { path: '/kafka-repo', icon: <HubIcon />, label: 'Apache Kafka' },
   { path: '/java-course', icon: <LocalCafeIcon />, label: 'Java Course', badge: 'NEW' },
   { path: '/pricing', icon: <LocalOfferIcon />, label: 'Pricing' },
   { path: '/kafka-course', icon: <HubIcon />, label: 'Kafka Course', badge: 'NEW' },
@@ -177,7 +174,7 @@ const Sidebar: React.FC<Props> = ({ open, onClose }) => {
       </Box>
 
       {/* Nav Items */}
-      <Box sx={{ px: 1.5, py: 1.5 }}>
+      <Box component="nav" aria-label="Main navigation" sx={{ px: 1.5, py: 1.5 }}>
         <List disablePadding dense>
           {navItems.map((item) => {
             const active = location.pathname === item.path ||
@@ -308,7 +305,7 @@ const Sidebar: React.FC<Props> = ({ open, onClose }) => {
         </Typography>
         <List disablePadding dense>
           {curriculum?.phases?.map((phase) => {
-            const [startDay, endDay] = phase.days.split('–').map(Number);
+            const [startDay, endDay] = (phase.days ?? '0–0').split('–').map(Number);
             const phaseDays = endDay - startDay + 1;
             const phaseComplete = (progress.completedDays ?? []).filter(
               (d) => d >= startDay && d <= endDay

@@ -1,0 +1,172 @@
+{
+  "day": 21,
+  "phase": 1,
+  "title": "Phase 1 Capstone — AI Assistant",
+  "description": "Build a complete AI assistant that synthesizes all Phase 1 skills: multi-provider support, structured output, prompt engineering patterns, streaming, cost tracking, and conversation management. Ship a working product.",
+  "estimatedHours": 5,
+  "difficulty": "Intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["capstone", "ai-assistant", "full-stack", "structured-output", "multi-provider", "production-ready"],
+  "prerequisites": ["phase1-day20", "phase1-day19", "phase1-day18"],
+  "learningObjectives": [
+    "Integrate all Phase 1 concepts into a single cohesive application",
+    "Design a command-routing system that dispatches specialized prompts by task type",
+    "Implement task-specific parameter presets and prompt templates",
+    "Add a markdown report generator with structured output",
+    "Build a usage dashboard that shows cost, token, and provider statistics",
+    "Write a complete end-to-end test that validates each feature"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "A capstone project does what isolated exercises can't: expose integration problems, force architectural decisions, and produce something you can show. This AI assistant is designed to hit every Phase 1 skill simultaneously. When it works, you have proof — not just knowledge — that you can build production AI systems."
+    },
+    {
+      "type": "theory",
+      "content": "## The Capstone: AI Work Assistant\n\nA CLI AI assistant with specialized modes:\n\n```\n┌──────────────────────────────────────────┐\n│           AI Work Assistant              │\n├──────────────────────────────────────────┤\n│  /chat     — Multi-turn conversation      │\n│  /summarize — Summarize text/documents    │\n│  /extract  — Structured data extraction  │\n│  /review   — Code review with CoT        │\n│  /research — Multi-step research task    │\n│  /cost     — Show session cost dashboard │\n│  /provider — Switch active provider      │\n│  /save     — Save conversation to file   │\n└──────────────────────────────────────────┘\n```\n\n---\n\n## Command Router Design\n\nEach command maps to a specialized handler with its own:\n- System prompt\n- Temperature and max_tokens preset\n- Output schema (for extraction commands)\n- Post-processing logic\n\n```python\nCOMMANDS = {\n    \"/summarize\": SummarizeHandler(),\n    \"/extract\":   ExtractHandler(),\n    \"/review\":    ReviewHandler(),\n    \"/research\":  ResearchHandler(),\n}\n```\n\nThe router parses the command, delegates to the handler, and formats output for display.\n\n---\n\n## Prompt Template System\n\nEach handler owns a `build_prompt(user_input, context)` method:\n\n```python\nclass SummarizeHandler:\n    SYSTEM = build_system_prompt(\n        role=\"You are a professional summarizer.\",\n        task=\"Produce a concise, accurate summary.\",\n        output_format=\"Bullet points for key facts, one paragraph for narrative. Under 200 words.\",\n        constraints=[\"Never add information not in the original\", \"Preserve all numbers and dates\"]\n    )\n    PARAMS = {\"temperature\": 0.3, \"max_tokens\": 400}\n\n    def handle(self, text: str, provider: LLMProvider) -> str:\n        text, _, _ = provider.complete(\n            [{\"role\": \"user\", \"content\": f\"Summarize:\\n{text}\"}],\n            system=self.SYSTEM, **self.PARAMS\n        )\n        return text\n```\n\n---\n\n## Structured Extraction Schema\n\nThe `/extract` command returns validated Pydantic objects:\n\n```python\nclass ExtractedData(BaseModel):\n    entities: list[str]\n    key_facts: list[str]\n    dates: list[str]\n    numbers: list[str]\n    sentiment: Literal[\"positive\", \"negative\", \"neutral\", \"mixed\"]\n```\n\n---\n\n## Research Handler with Chain-of-Thought\n\nFor complex research questions, use CoT:\n\n```python\nclass ResearchHandler:\n    SYSTEM = \"\"\"You are a research analyst.\nApproach every question in three phases:\n1. ANALYZE: Identify what information is needed\n2. REASON: Work through the problem step by step\n3. CONCLUDE: Give a clear, actionable answer\nLabel each phase.\"\"\"\n\n    def handle(self, question: str, provider: LLMProvider) -> str:\n        text, _, _ = provider.complete(\n            [{\"role\": \"user\", \"content\": question}],\n            system=self.SYSTEM, temperature=0.2, max_tokens=1500\n        )\n        return text\n```\n\n---\n\n## Usage Dashboard\n\nTrack and display comprehensive usage stats:\n\n```\n╔══════════════════════════════════════════╗\n║           SESSION STATISTICS             ║\n╠══════════════════════════════════════════╣\n║ Active provider: openai (gpt-4o-mini)    ║\n║ Total calls:     12                      ║\n║ Input tokens:    4,832                   ║\n║ Output tokens:   1,241                   ║\n║ Estimated cost:  $0.0245                 ║\n╠══════════════════════════════════════════╣\n║ By command:                              ║\n║   /chat       6 calls  $0.0121          ║\n║   /summarize  3 calls  $0.0089          ║\n║   /review     2 calls  $0.0034          ║\n║   /extract    1 call   $0.0001          ║\n╚══════════════════════════════════════════╝\n```"
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "ai_assistant.py",
+      "level": "Intermediate",
+      "code": "\"\"\"Phase 1 Capstone: AI Work Assistant — full integration of all Phase 1 skills.\"\"\"\nimport os\nimport json\nimport time\nfrom abc import ABC, abstractmethod\nfrom collections import defaultdict\nfrom dataclasses import dataclass, field\nfrom typing import Literal\nfrom pydantic import BaseModel, Field\nfrom openai import OpenAI\n\noai = OpenAI(api_key=os.environ[\"OPENAI_API_KEY\"])\n\n\n# ── Pydantic schema for /extract ─────────────────────────────────\nclass ExtractedData(BaseModel):\n    entities: list[str] = Field(default_factory=list)\n    key_facts: list[str] = Field(default_factory=list)\n    dates: list[str] = Field(default_factory=list)\n    numbers: list[str] = Field(default_factory=list)\n    sentiment: Literal[\"positive\", \"negative\", \"neutral\", \"mixed\"] = \"neutral\"\n\n\n# ── Usage tracking ────────────────────────────────────────────────\n@dataclass\nclass CommandUsage:\n    calls: int = 0\n    input_tokens: int = 0\n    output_tokens: int = 0\n\n    def cost(self) -> float:\n        return (self.input_tokens / 1e6) * 0.15 + (self.output_tokens / 1e6) * 0.60  # mini pricing\n\n\n@dataclass\nclass UsageDashboard:\n    by_command: dict = field(default_factory=lambda: defaultdict(CommandUsage))\n\n    def record(self, command: str, in_t: int, out_t: int) -> None:\n        u = self.by_command[command]\n        u.calls += 1\n        u.input_tokens += in_t\n        u.output_tokens += out_t\n\n    def total_cost(self) -> float:\n        return sum(u.cost() for u in self.by_command.values())\n\n    def display(self) -> str:\n        lines = [\"\\n╔══════════════════════════════════════╗\",\n                 \"║         SESSION STATISTICS           ║\",\n                 \"╠══════════════════════════════════════╣\"]\n        total_calls = sum(u.calls for u in self.by_command.values())\n        total_in  = sum(u.input_tokens for u in self.by_command.values())\n        total_out = sum(u.output_tokens for u in self.by_command.values())\n        lines += [\n            f\"║ Total calls:    {total_calls:<20}║\",\n            f\"║ Input tokens:   {total_in:<20,}║\",\n            f\"║ Output tokens:  {total_out:<20,}║\",\n            f\"║ Est. cost:      ${self.total_cost():<19.5f}║\",\n            \"╠══════════════════════════════════════╣\",\n            \"║ By command:                          ║\",\n        ]\n        for cmd, u in sorted(self.by_command.items()):\n            line = f\"  {cmd:<12} {u.calls} calls  ${u.cost():.5f}\"\n            lines.append(f\"║ {line:<36}║\")\n        lines.append(\"╚══════════════════════════════════════╝\")\n        return \"\\n\".join(lines)\n\n\n# ── Command handlers ─────────────────────────────────────────────\nclass BaseHandler(ABC):\n    SYSTEM = \"\"\n    PARAMS: dict = {}\n\n    @abstractmethod\n    def handle(self, user_input: str) -> tuple[str, int, int]: ...\n\n\nclass ChatHandler(BaseHandler):\n    SYSTEM = \"You are a helpful AI work assistant. Be concise and practical.\"\n    PARAMS = {\"temperature\": 0.7, \"max_tokens\": 800}\n\n    def __init__(self):\n        self.history: list[dict] = []\n\n    def handle(self, user_input: str) -> tuple[str, int, int]:\n        self.history.append({\"role\": \"user\", \"content\": user_input})\n        # Prune to last 20 messages\n        if len(self.history) > 20:\n            self.history = self.history[-20:]\n        messages = [{\"role\": \"system\", \"content\": self.SYSTEM}] + self.history\n        r = oai.chat.completions.create(model=\"gpt-4o-mini\", messages=messages, **self.PARAMS)\n        reply = r.choices[0].message.content\n        self.history.append({\"role\": \"assistant\", \"content\": reply})\n        return reply, r.usage.prompt_tokens, r.usage.completion_tokens\n\n\nclass SummarizeHandler(BaseHandler):\n    SYSTEM = \"\"\"You are a professional document summarizer.\nProduce concise, accurate summaries under 200 words.\nUse bullet points for key facts. Preserve all numbers and dates.\nNever add information not present in the original.\"\"\"\n    PARAMS = {\"temperature\": 0.3, \"max_tokens\": 400}\n\n    def handle(self, user_input: str) -> tuple[str, int, int]:\n        messages = [{\"role\": \"system\", \"content\": self.SYSTEM},\n                    {\"role\": \"user\",   \"content\": f\"Summarize:\\n\\n<document>\\n{user_input}\\n</document>\"}]\n        r = oai.chat.completions.create(model=\"gpt-4o-mini\", messages=messages, **self.PARAMS)\n        return r.choices[0].message.content, r.usage.prompt_tokens, r.usage.completion_tokens\n\n\nclass ExtractHandler(BaseHandler):\n    def handle(self, user_input: str) -> tuple[str, int, int]:\n        completion = oai.beta.chat.completions.parse(\n            model=\"gpt-4o-mini\",\n            messages=[\n                {\"role\": \"system\", \"content\": \"Extract structured information from the text.\"},\n                {\"role\": \"user\",   \"content\": user_input}\n            ],\n            response_format=ExtractedData,\n            temperature=0.0,\n        )\n        data = completion.choices[0].message.parsed\n        usage = completion.usage\n        output = json.dumps(data.model_dump(), indent=2)\n        return output, usage.prompt_tokens, usage.completion_tokens\n\n\nclass ReviewHandler(BaseHandler):\n    SYSTEM = \"\"\"You are a senior software engineer performing code review.\nUse chain-of-thought:\n1. UNDERSTAND: What does this code do?\n2. ANALYZE: Check for bugs, edge cases, security issues, performance\n3. VERDICT: Overall quality and top 3 improvements\"\"\"\n    PARAMS = {\"temperature\": 0.1, \"max_tokens\": 1000}\n\n    def handle(self, user_input: str) -> tuple[str, int, int]:\n        messages = [{\"role\": \"system\", \"content\": self.SYSTEM},\n                    {\"role\": \"user\",   \"content\": f\"Review this code:\\n```\\n{user_input}\\n```\"}]\n        r = oai.chat.completions.create(model=\"gpt-4o-mini\", messages=messages, **self.PARAMS)\n        return r.choices[0].message.content, r.usage.prompt_tokens, r.usage.completion_tokens\n\n\nclass ResearchHandler(BaseHandler):\n    SYSTEM = \"\"\"You are a research analyst. Answer questions in three phases:\n1. ANALYZE: What information is needed?\n2. REASON: Work through step by step\n3. CONCLUDE: Clear, actionable answer\"\"\"\n    PARAMS = {\"temperature\": 0.2, \"max_tokens\": 1500}\n\n    def handle(self, user_input: str) -> tuple[str, int, int]:\n        messages = [{\"role\": \"system\", \"content\": self.SYSTEM},\n                    {\"role\": \"user\",   \"content\": user_input}]\n        r = oai.chat.completions.create(model=\"gpt-4o-mini\", messages=messages, **self.PARAMS)\n        return r.choices[0].message.content, r.usage.prompt_tokens, r.usage.completion_tokens\n\n\n# ── Main assistant ────────────────────────────────────────────────\nclass AIAssistant:\n    HANDLERS = {\n        \"/chat\":      ChatHandler,\n        \"/summarize\": SummarizeHandler,\n        \"/extract\":   ExtractHandler,\n        \"/review\":    ReviewHandler,\n        \"/research\":  ResearchHandler,\n    }\n\n    def __init__(self):\n        self.dashboard = UsageDashboard()\n        self.handlers  = {cmd: cls() for cmd, cls in self.HANDLERS.items()}\n        self.active_cmd = \"/chat\"\n\n    def process(self, user_input: str) -> str:\n        stripped = user_input.strip()\n\n        if stripped == \"/cost\":\n            return self.dashboard.display()\n        if stripped == \"/help\":\n            return \"Commands: \" + \", \".join(list(self.HANDLERS.keys()) + [\"/cost\", \"/help\", \"/quit\"])\n        if stripped in self.HANDLERS:\n            self.active_cmd = stripped\n            return f\"Switched to {stripped} mode.\"\n\n        handler = self.handlers[self.active_cmd]\n        try:\n            reply, in_t, out_t = handler.handle(stripped)\n            self.dashboard.record(self.active_cmd, in_t, out_t)\n            return reply\n        except Exception as e:\n            return f\"Error: {e}\"\n\n    def run(self) -> None:\n        print(\"AI Work Assistant | Type /help for commands | /quit to exit\")\n        print(f\"Mode: {self.active_cmd}\")\n        while True:\n            try:\n                user_input = input(\"\\nYou: \").strip()\n                if not user_input:\n                    continue\n                if user_input == \"/quit\":\n                    print(self.dashboard.display())\n                    break\n                print(f\"\\nAssistant [{self.active_cmd}]:\")\n                print(self.process(user_input))\n            except KeyboardInterrupt:\n                print(\"\\n\" + self.dashboard.display())\n                break\n\n\nif __name__ == \"__main__\":\n    assistant = AIAssistant()\n    assistant.run()",
+      "output": "AI Work Assistant | Type /help for commands | /quit to exit\nMode: /chat\n\nYou: What is RAG?\n\nAssistant [/chat]:\nRAG (Retrieval-Augmented Generation) combines LLMs with a retrieval system. Instead of relying solely on training data, the model retrieves relevant documents from a knowledge base and uses them as context to generate more accurate, up-to-date answers.\n\nYou: /extract\nSwitched to /extract mode.\n\nYou: Apple released iPhone 16 on Sept 2024 in Cupertino. Price: $999.\n\nAssistant [/extract]:\n{\n  \"entities\": [\"Apple\", \"iPhone 16\", \"Cupertino\"],\n  \"key_facts\": [\"iPhone 16 released in September 2024\"],\n  \"dates\": [\"September 2024\"],\n  \"numbers\": [\"$999\"],\n  \"sentiment\": \"neutral\"\n}\n\nYou: /cost\n\n╔══════════════════════════════════════╗\n║         SESSION STATISTICS           ║\n╠══════════════════════════════════════╣\n║ Total calls:    2                    ║\n║ Input tokens:   248                  ║\n║ Output tokens:  143                  ║\n║ Est. cost:      $0.00012             ║\n╠══════════════════════════════════════╣\n║ By command:                          ║\n║   /chat         1 calls  $0.00007   ║\n║   /extract      1 calls  $0.00005   ║\n╚══════════════════════════════════════╝"
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Sharing a single handler instance's state across commands — the ChatHandler stores conversation history. If you create handlers lazily or share instances, state bleeds across users. Always instantiate per-session.",
+        "Not resetting chat history when switching modes — if a user does /chat then /review, the chat handler retains history but /review has its own fresh context. Decide if mode-switching should reset chat history.",
+        "Using gpt-4o for all commands in a capstone — gpt-4o-mini handles most of these tasks equally well at 10x lower cost. Reserve expensive models for genuinely complex tasks.",
+        "Missing error propagation — if a handler throws (e.g., API error), the app should catch it, log it, and show a user-friendly message — not crash the entire CLI loop.",
+        "Not testing each command path independently — integration tests that only test /chat won't catch bugs in /extract. Write a test that exercises each command with known inputs and validates outputs."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Add a /report Command",
+      "problem": "Add a `/report` command to AIAssistant that: (1) takes a topic string, (2) uses ResearchHandler with CoT reasoning to analyze the topic, (3) then formats the research output into a structured markdown report using a second LLM call with structured output. The report schema: title (str), sections (list of {heading: str, content: str}), key_takeaways (list[str]), confidence: Literal['high', 'medium', 'low']. Save the report to a markdown file named `{topic_slug}.md`.",
+      "hints": [
+        "Chain two LLM calls: first ResearchHandler.handle(), then format with structured output",
+        "Topic slug: topic.lower().replace(' ', '-').replace('/', '-')",
+        "Write markdown as: # Title\\n\\n## Heading\\ncontent\\n\\n## Key Takeaways\\n- item",
+        "Use client.beta.chat.completions.parse() for the formatting step with a Pydantic schema"
+      ],
+      "solution": "from pydantic import BaseModel\n\nclass ReportSection(BaseModel):\n    heading: str\n    content: str\n\nclass Report(BaseModel):\n    title: str\n    sections: list[ReportSection]\n    key_takeaways: list[str]\n    confidence: Literal['high', 'medium', 'low']\n\nclass ReportHandler(BaseHandler):\n    def __init__(self):\n        self.researcher = ResearchHandler()\n\n    def handle(self, topic: str) -> tuple[str, int, int]:\n        # Step 1: research\n        research, in1, out1 = self.researcher.handle(f'Research this topic thoroughly: {topic}')\n\n        # Step 2: format as structured report\n        completion = oai.beta.chat.completions.parse(\n            model='gpt-4o-mini',\n            messages=[\n                {'role': 'system', 'content': 'Format the research into a structured report.'},\n                {'role': 'user', 'content': research}\n            ],\n            response_format=Report,\n            temperature=0.0\n        )\n        report = completion.choices[0].message.parsed\n        usage = completion.usage\n\n        # Step 3: write markdown\n        slug = topic.lower().replace(' ', '-').replace('/', '-')\n        lines = [f'# {report.title}', '']\n        for section in report.sections:\n            lines += [f'## {section.heading}', section.content, '']\n        lines += ['## Key Takeaways'] + [f'- {t}' for t in report.key_takeaways]\n        lines += ['', f'*Confidence: {report.confidence}*']\n        md = '\\n'.join(lines)\n        with open(f'{slug}.md', 'w') as f:\n            f.write(md)\n\n        return f'Report saved to {slug}.md\\n\\n{md[:300]}...', in1 + usage.prompt_tokens, out1 + usage.completion_tokens",
+      "difficulty": "Intermediate"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "How do you design a command routing system for an AI assistant that's easy to extend?",
+          "answer": "Use a handler registry: a dict mapping command strings to handler instances, each implementing a common interface (handle(input) -> (str, int, int)). The router looks up the command, delegates to the handler, and collects usage stats centrally. Adding a new command = creating a new handler class, registering it — zero changes to the router or main loop. This is the Command pattern from software design. Key constraints: handlers are stateless per-invocation (or manage their own state), the router is unaware of handler internals, and usage tracking happens at the router level so handlers don't need to know about billing.",
+          "followUps": [
+            "How would you add middleware to the handler chain (e.g., rate limiting per command)?",
+            "How would you make handlers configurable (different models per command) without hardcoding?"
+          ]
+        },
+        {
+          "question": "What are the key architectural decisions you made in this capstone and what are the trade-offs?",
+          "answer": "Key decisions: (1) Single-provider for capstone simplicity (gpt-4o-mini) vs multi-provider — trade-off: easier to build and test, but lacks resilience. Production would add provider abstraction. (2) In-process state for ChatHandler history — trade-off: simple, works for CLI, breaks in multi-server deployment. (3) Separate handler classes per command — trade-off: verbose for simple cases, but each command's prompt/params are isolated and testable. (4) Chained LLM calls for /report — trade-off: 2x cost per call, but produces higher-quality structured output than a single call trying to research AND format simultaneously.",
+          "followUps": [
+            "What would you change first if converting this to a web API serving multiple users?",
+            "How would you add authentication and per-user cost limits?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write a test that exercises all assistant commands with known inputs and validates each output.",
+          "answer": "def test_assistant_commands():\n    assistant = AIAssistant()\n    # Test /chat\n    response = assistant.process('What is 2+2?')\n    assert '4' in response, f'/chat failed: {response}'\n\n    # Test /summarize\n    assistant.process('/summarize')\n    response = assistant.process('The quick brown fox jumped over the lazy dog. The dog slept all day.')\n    assert len(response) < 500, '/summarize response too long'\n\n    # Test /extract\n    assistant.process('/extract')\n    response = assistant.process('Meeting with Alice on Jan 15 at 3pm. Budget: $5000.')\n    import json\n    data = json.loads(response)\n    assert 'entities' in data\n    assert 'dates' in data\n\n    # Test /cost\n    cost_output = assistant.process('/cost')\n    assert 'SESSION STATISTICS' in cost_output\n    assert '/chat' in cost_output\n    assert '/summarize' in cost_output\n    print('All tests passed!')\n\ntest_assistant_commands()",
+          "followUps": [
+            "How would you mock the OpenAI API calls in these tests to make them fast and free?",
+            "What edge cases are missing from this test?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "A startup wants to productize this AI assistant as a SaaS. What are the top 5 changes needed to go from CLI to production web service?",
+          "answer": "1. **API layer**: Replace CLI loop with FastAPI endpoints. Each command becomes a POST endpoint. Implement auth (JWT tokens). 2. **Stateless handlers**: Move ChatHandler history from in-process to Redis. Key = user_id:session_id, TTL = 24h. 3. **Multi-tenancy**: Add per-user cost tracking and limits. Each user has a monthly token budget. Reject requests when budget exhausted. 4. **Async processing**: Use async/await throughout for non-blocking I/O. Stream responses using Server-Sent Events (SSE). 5. **Observability**: Structured logging (request_id, user_id, command, provider, tokens, latency, cost), Prometheus metrics, error rate alerts. Additionally: rate limiting per user, provider failover, and a billing system that charges based on actual token usage.",
+          "followUps": [
+            "How would you implement streaming from a FastAPI endpoint using SSE?",
+            "How would you handle a user's session across multiple devices simultaneously?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "Handler instances can be safely shared across all users in a web service",
+        "The CLI loop architecture transfers directly to a web service with minimal changes",
+        "Using gpt-4o for all commands ensures the best user experience"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What software design pattern does the command handler registry implement?",
+          "options": {
+            "A": "Singleton — one instance handles all commands",
+            "B": "Command pattern — each command encapsulates its own logic and can be registered/swapped",
+            "C": "Factory pattern — the registry creates new handlers on demand",
+            "D": "Observer pattern — handlers subscribe to user input events"
+          },
+          "answer": "B",
+          "explanation": "The command pattern encapsulates each action (command) as an object with a defined interface. The router dispatches to handlers without knowing their internals. This makes it trivial to add new commands (new handler class + registry entry) without modifying the routing logic — the Open/Closed principle."
+        },
+        {
+          "id": 2,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "Why would you chain two LLM calls for a /report command instead of doing it in one call?",
+          "options": {
+            "A": "Two calls are always cheaper than one long call",
+            "B": "One call researching AND formatting simultaneously produces lower quality on both tasks",
+            "C": "The model can only focus on one task per conversation turn",
+            "D": "Two calls allow streaming the first call while processing the second"
+          },
+          "answer": "B",
+          "explanation": "When you ask a model to simultaneously research a topic deeply AND format the output into a rigid schema, it divides attention and produces mediocre results on both. Chaining — research first (unconstrained, high quality) then format (structured output, constrained) — gives each LLM call a single focused objective, producing better results at the cost of 2x calls."
+        },
+        {
+          "id": 3,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "What must change first to make the CLI assistant work as a multi-user web service?",
+          "options": {
+            "A": "Switch from gpt-4o-mini to gpt-4o for better quality",
+            "B": "Add async/await to all functions",
+            "C": "Move conversation history from in-process to external state storage (Redis)",
+            "D": "Implement streaming for all handlers"
+          },
+          "answer": "C",
+          "explanation": "In-process conversation state breaks immediately in a multi-server deployment — user requests may be routed to any server instance, losing history. Moving history to Redis (keyed by user_id + session_id) is the minimum change required. Without it, users experience random history loss. Async, streaming, and model choice are important but secondary to this fundamental architectural fix."
+        },
+        {
+          "id": 4,
+          "level": "advanced",
+          "category": "theory",
+          "question": "What is the purpose of per-command usage tracking in the dashboard?",
+          "options": {
+            "A": "To debug which commands have API errors",
+            "B": "To identify cost drivers and optimize the most expensive command workflows",
+            "C": "To comply with OpenAI's terms of service",
+            "D": "To measure response latency per command"
+          },
+          "answer": "B",
+          "explanation": "Per-command cost tracking reveals which features drive your AI budget. If /research uses 80% of tokens, you optimize that command first — maybe with a cheaper model, smaller max_tokens, or a cached response layer. Without per-command visibility, you can only see total cost, making it impossible to prioritize optimizations."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## Phase 1 Capstone — Quick Reference\n\n### Phase 1 Skills Integrated\n| Skill | Where used |\n|-------|------------|\n| Tokens & context | History pruning in ChatHandler |\n| Temperature params | Per-command PARAMS presets |\n| System prompts | Each handler's SYSTEM constant |\n| OpenAI API | All handlers |\n| Structured output | ExtractHandler + /report |\n| Prompt patterns | CoT in ReviewHandler + ResearchHandler |\n| Cost tracking | UsageDashboard per command |\n| Multi-provider | Architecture ready for it |\n\n### Command Handler Pattern\n```python\nclass MyHandler(BaseHandler):\n    SYSTEM = \"...\"  # specialized system prompt\n    PARAMS = {\"temperature\": 0.3, \"max_tokens\": 500}\n\n    def handle(self, user_input: str) -> tuple[str, int, int]:\n        r = oai.chat.completions.create(...)\n        return r.choices[0].message.content, r.usage.prompt_tokens, r.usage.completion_tokens\n\n# Register:\nHANDLERS[\"/mycommand\"] = MyHandler\n```\n\n### Production Upgrade Path\n1. CLI → FastAPI endpoints\n2. In-process history → Redis (user_id:session_id, TTL)\n3. Single provider → Provider abstraction + failover\n4. Sync → Async + SSE streaming\n5. No auth → JWT + per-user token budgets\n6. Print logs → Structured logging + metrics\n\n### Test Template\n```python\ndef test_command(assistant, command, input, assertion):\n    assistant.process(command)  # switch mode\n    output = assistant.process(input)\n    assert assertion(output), f'Failed: {output}'\n```"
+    }
+  ]
+}

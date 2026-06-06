@@ -13,10 +13,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAppStore, selectCompletionRate } from '../store/useAppStore';
 import { getLevelColor, formatHours, formatDate, getScoreColor } from '../utils/formatters';
 import LevelBadge from '../components/LevelBadge';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const RADIAN = Math.PI / 180;
 
 const Progress: React.FC = () => {
+  usePageTitle('Progress');
   const navigate = useNavigate();
   const { curriculum, progress, loadedPhases, theme, exportProgress } = useAppStore();
   const completionRate = useAppStore(selectCompletionRate);
@@ -46,7 +48,7 @@ const Progress: React.FC = () => {
   }
 
   const phaseData = curriculum.phases.map((phase) => {
-    const [start, end] = phase.days.split('–').map(Number);
+    const [start, end] = (phase.days ?? '0–0').split('–').map(Number);
     const total = end - start + 1;
     const done = progress.completedDays.filter((d) => d >= start && d <= end).length;
     return {
@@ -94,7 +96,7 @@ const Progress: React.FC = () => {
     <Box className="fade-in">
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} flexWrap="wrap" gap={1}>
         <Box>
-          <Typography variant="h4" fontWeight={800}>Progress</Typography>
+          <Typography variant="h4" component="h1" fontWeight={800}>Progress</Typography>
           <Typography color="text.secondary">Your 90-day Java mastery journey</Typography>
         </Box>
         <Box display="flex" gap={1} flexWrap="wrap">
@@ -145,6 +147,29 @@ const Progress: React.FC = () => {
       </Paper>
 
       <Grid container spacing={3}>
+        {progress.completedDays.length === 0 && (
+          <Grid item xs={12}>
+            <Paper
+              variant="outlined"
+              sx={{ p: 3, borderRadius: 2, textAlign: 'center', borderStyle: 'dashed' }}
+            >
+              <Typography variant="h6" fontWeight={700} gutterBottom>
+                Ready to begin?
+              </Typography>
+              <Typography color="text.secondary" sx={{ mb: 2 }}>
+                Complete your first day to start tracking progress, streaks, and quiz scores here.
+              </Typography>
+              <Button
+                variant="contained"
+                onClick={() => navigate('/learn/1')}
+                sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', fontWeight: 700 }}
+              >
+                Start Day 1
+              </Button>
+            </Paper>
+          </Grid>
+        )}
+
         {/* Overall Donut */}
         <Grid item xs={12} md={4}>
           <Card>

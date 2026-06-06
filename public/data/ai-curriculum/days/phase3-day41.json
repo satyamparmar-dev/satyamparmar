@@ -1,0 +1,178 @@
+{
+  "id": "phase3-day41",
+  "day": 41,
+  "phase": 3,
+  "title": "Web Browsing & Information Gathering Agents",
+  "estimatedHours": 4,
+  "difficulty": "advanced",
+  "level": "Senior",
+  "track": "Senior",
+  "tags": ["web-browsing", "scraping", "search", "tavily", "playwright", "research-agent"],
+  "prerequisites": ["phase3-day37", "phase3-day39"],
+  "learningObjectives": [
+    "Build an agent that can search the web and extract structured information",
+    "Use Tavily API for LLM-optimized web search",
+    "Implement headless browser automation with Playwright",
+    "Design a research agent that synthesizes information from multiple sources",
+    "Handle anti-scraping measures and rate limiting"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Web Browsing Agents Matter",
+      "content": "LLMs have a training cutoff — they don't know about events after their cutoff date, current stock prices, live sports scores, or that a company just pivoted its product strategy. Web browsing agents solve this by grounding responses in current, live information from the internet. They can research competitors, check product availability, verify claims against current news, aggregate market data, and monitor websites for changes. This is how ChatGPT's Browse with Bing, Perplexity AI, and similar products work. The challenge is doing this reliably: handling JavaScript-heavy sites, pagination, anti-bot measures, and synthesis of conflicting information from multiple sources."
+    },
+    {
+      "type": "theory",
+      "title": "Web Research Architecture",
+      "content": "**Search vs. browse:**\n\n| Approach | How | Best for | Tools |\n|----------|-----|---------|-------|\n| Web search API | Query → snippets | Quick facts, news | Tavily, SerpAPI, DuckDuckGo |\n| Direct HTTP | requests + BeautifulSoup | Text-heavy pages | requests, httpx |\n| Headless browser | Playwright/Selenium | JS-rendered, SPAs | playwright, selenium |\n| Scraping service | API call | Reliable extraction | ScraperAPI, Apify |\n\n**Tavily API (built for LLM agents):**\n- Returns pre-cleaned text content, not raw HTML\n- Handles JS rendering internally\n- Provides relevance scores\n- `search_depth: 'basic'` (fast) vs `'advanced'` (deeper, slower)\n\n```python\nfrom tavily import TavilyClient\nclient = TavilyClient(api_key=os.environ['TAVILY_API_KEY'])\nresult = client.search(\n    query='OpenAI GPT-4o release date',\n    search_depth='basic',\n    max_results=5,\n    include_answer=True,   # AI-generated answer\n    include_raw_content=False,\n)\n# result.answer: direct answer string\n# result.results: list of {url, title, content, score}\n```\n\n**Research agent pipeline:**\n```\n1. DECOMPOSE: Break research question into 2-4 focused sub-queries\n2. SEARCH:    Run parallel Tavily searches for each sub-query\n3. FILTER:    Score results by relevance, remove duplicates\n4. EXTRACT:   Pull key facts from top N results\n5. RECONCILE: Identify conflicts across sources\n6. SYNTHESIZE: Write answer with citations\n```\n\n**Citation format (important for trust):**\n```\nAccording to [Source Name](url) (accessed 2024-01-15):\n\"Direct quote from source\"\n\n[1] https://source1.com — used for claim about X\n[2] https://source2.com — used for claim about Y\n```\n\n**Handling information conflicts:**\n```python\nconflict_prompt = '''\nMultiple sources disagree on this fact:\nSource A (authority: 0.9): \"{claim_a}\"\nSource B (authority: 0.7): \"{claim_b}\"\n\nWhich source is more reliable and why? Return your reasoning\nand the conclusion you'll use in the final answer.\n'''\n```\n\n**Anti-scraping considerations:**\n- Add delays between requests (1-3 seconds)\n- Rotate user agents\n- Respect robots.txt\n- Use official APIs where available\n- Don't scrape at scale without permission"
+    },
+    {
+      "type": "code",
+      "title": "Research Agent with Multi-Source Synthesis",
+      "language": "python",
+      "code": "# pip install tavily-python requests beautifulsoup4 openai\nfrom __future__ import annotations\nimport asyncio\nimport json\nimport os\nimport re\nimport time\nfrom dataclasses import dataclass, field\nfrom typing import Optional\nimport requests\nfrom bs4 import BeautifulSoup\nfrom openai import OpenAI\n\nclient = OpenAI(api_key=os.environ['OPENAI_API_KEY'])\nMODEL = 'gpt-4o-mini'\n\n\n# ── Web search tools ──────────────────────────────────────────────────────────\n\n@dataclass\nclass SearchResult:\n    url: str\n    title: str\n    content: str\n    score: float = 0.0\n    published_date: Optional[str] = None\n\n\ndef search_tavily(query: str, max_results: int = 5) -> list[SearchResult]:\n    \"\"\"Search using Tavily (LLM-optimized search API).\"\"\"\n    api_key = os.environ.get('TAVILY_API_KEY', '')\n    if not api_key:\n        # Fallback: simulate results for demo\n        return _mock_search(query, max_results)\n\n    try:\n        from tavily import TavilyClient\n        tavily = TavilyClient(api_key=api_key)\n        response = tavily.search(\n            query=query,\n            search_depth='basic',\n            max_results=max_results,\n            include_answer=False,\n        )\n        return [\n            SearchResult(\n                url=r['url'],\n                title=r['title'],\n                content=r['content'][:500],  # limit content length\n                score=r.get('score', 0.5),\n                published_date=r.get('published_date'),\n            )\n            for r in response.get('results', [])\n        ]\n    except Exception as e:\n        print(f'Search error: {e}')\n        return _mock_search(query, max_results)\n\n\ndef _mock_search(query: str, max_results: int) -> list[SearchResult]:\n    \"\"\"Simulated search results for demo without API key.\"\"\"\n    return [\n        SearchResult(\n            url=f'https://example.com/{i}',\n            title=f'Article {i} about: {query[:40]}',\n            content=f'This article discusses {query}. Key findings include relevant information that addresses the query.',\n            score=0.9 - i * 0.1,\n        )\n        for i in range(min(max_results, 3))\n    ]\n\n\ndef fetch_page(url: str, timeout: int = 10) -> Optional[str]:\n    \"\"\"Fetch and clean a webpage's text content.\"\"\"\n    headers = {'User-Agent': 'Mozilla/5.0 (compatible; ResearchBot/1.0)'}\n    try:\n        resp = requests.get(url, headers=headers, timeout=timeout)\n        resp.raise_for_status()\n        soup = BeautifulSoup(resp.content, 'html.parser')\n        for tag in soup(['script', 'style', 'nav', 'footer', 'header']):\n            tag.decompose()\n        main = soup.find('main') or soup.find('article') or soup.find('body')\n        if main:\n            text = main.get_text(separator=' ', strip=True)\n            return re.sub(r'\\s{2,}', ' ', text)[:3000]  # limit to 3K chars\n        return None\n    except Exception:\n        return None\n\n\n# ── Research agent ─────────────────────────────────────────────────────────────\n\n@dataclass\nclass ResearchResult:\n    question: str\n    answer: str\n    sources: list[dict]\n    sub_queries: list[str]\n    conflicts_found: int = 0\n\n\nclass ResearchAgent:\n    def __init__(self, max_sources: int = 8):\n        self.max_sources = max_sources\n\n    def _decompose_query(self, question: str) -> list[str]:\n        \"\"\"Break a complex question into 2-4 focused search queries.\"\"\"\n        response = client.chat.completions.create(\n            model=MODEL,\n            messages=[{\n                'role': 'user',\n                'content': f'Break this research question into 2-4 specific web search queries.\\n'\n                           f'Question: {question}\\n'\n                           f'Return JSON: {{\"queries\": [\"query1\", \"query2\", ...]}}',\n            }],\n            temperature=0,\n            response_format={'type': 'json_object'},\n        )\n        data = json.loads(response.choices[0].message.content)\n        return data.get('queries', [question])[:4]\n\n    def _collect_sources(\n        self, queries: list[str]\n    ) -> list[SearchResult]:\n        \"\"\"Search for all queries and collect results.\"\"\"\n        all_results = []\n        seen_urls = set()\n\n        for query in queries:\n            print(f'  Searching: {query[:60]}')\n            results = search_tavily(query, max_results=3)\n            for r in results:\n                if r.url not in seen_urls and r.score > 0.4:\n                    seen_urls.add(r.url)\n                    all_results.append(r)\n            time.sleep(0.5)  # polite delay\n\n        # Sort by relevance score\n        return sorted(all_results, key=lambda r: r.score, reverse=True)[:self.max_sources]\n\n    def _extract_facts(self, question: str, sources: list[SearchResult]) -> list[dict]:\n        \"\"\"Extract relevant facts from each source.\"\"\"\n        facts = []\n        for source in sources:\n            response = client.chat.completions.create(\n                model=MODEL,\n                messages=[{\n                    'role': 'user',\n                    'content': f'Extract facts relevant to: \"{question}\"\\n\\nContent from {source.url}:\\n{source.content}\\n\\n'\n                               f'Return JSON: {{\"facts\": [\"fact1\", \"fact2\"], \"relevance\": 0-1}}',\n                }],\n                temperature=0,\n                response_format={'type': 'json_object'},\n            )\n            data = json.loads(response.choices[0].message.content)\n            if data.get('relevance', 0) > 0.3:\n                facts.append({\n                    'source_url': source.url,\n                    'source_title': source.title,\n                    'facts': data.get('facts', []),\n                    'relevance': data.get('relevance', 0),\n                })\n        return facts\n\n    def _detect_conflicts(self, fact_groups: list[dict]) -> list[str]:\n        \"\"\"Identify conflicting claims across sources.\"\"\"\n        if len(fact_groups) < 2:\n            return []\n        all_facts = [f for fg in fact_groups for f in fg['facts']]\n        if not all_facts:\n            return []\n\n        response = client.chat.completions.create(\n            model=MODEL,\n            messages=[{\n                'role': 'user',\n                'content': f'Identify any conflicts or contradictions in these facts:\\n'\n                           + '\\n'.join(f'- {f}' for f in all_facts[:20])\n                           + '\\nReturn JSON: {\"conflicts\": [\"conflict description\"]}',\n            }],\n            temperature=0,\n            response_format={'type': 'json_object'},\n        )\n        data = json.loads(response.choices[0].message.content)\n        return data.get('conflicts', [])\n\n    def _synthesize(\n        self, question: str, fact_groups: list[dict], conflicts: list[str]\n    ) -> str:\n        \"\"\"Synthesize facts into a final answer with citations.\"\"\"\n        facts_str = '\\n'.join(\n            f'[Source: {fg[\"source_title\"]}] {fact}'\n            for fg in fact_groups\n            for fact in fg['facts'][:3]\n        )\n        conflicts_str = '\\n'.join(f'- {c}' for c in conflicts) if conflicts else 'None'\n\n        prompt = f\"\"\"Answer this question using ONLY the provided facts. Include citations.\n\nQuestion: {question}\n\nFacts gathered:\n{facts_str}\n\nConflicts noted:\n{conflicts_str}\n\nWrite a comprehensive answer. Cite sources with [Source Name] inline.\nIf conflicts exist, acknowledge them and explain which source you relied on and why.\"\"\"\n\n        response = client.chat.completions.create(\n            model=MODEL,\n            messages=[{'role': 'user', 'content': prompt}],\n            temperature=0.3,\n        )\n        return response.choices[0].message.content\n\n    def research(self, question: str) -> ResearchResult:\n        print(f'Researching: {question}')\n\n        # 1. Decompose\n        sub_queries = self._decompose_query(question)\n        print(f'Sub-queries: {sub_queries}')\n\n        # 2. Search\n        sources = self._collect_sources(sub_queries)\n        print(f'Found {len(sources)} unique sources')\n\n        # 3. Extract facts\n        fact_groups = self._extract_facts(question, sources)\n        print(f'Extracted facts from {len(fact_groups)} relevant sources')\n\n        # 4. Check for conflicts\n        conflicts = self._detect_conflicts(fact_groups)\n        if conflicts:\n            print(f'Found {len(conflicts)} conflict(s)!')\n\n        # 5. Synthesize\n        answer = self._synthesize(question, fact_groups, conflicts)\n\n        return ResearchResult(\n            question=question,\n            answer=answer,\n            sources=[{'url': fg['source_url'], 'title': fg['source_title']} for fg in fact_groups],\n            sub_queries=sub_queries,\n            conflicts_found=len(conflicts),\n        )\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    agent = ResearchAgent(max_sources=6)\n\n    questions = [\n        'What are the main differences between GPT-4o and Claude 3.5 Sonnet?',\n        'What is the current state of AI regulation in the European Union?',\n    ]\n\n    for question in questions:\n        print(f'\\n{\"=\"*60}')\n        result = agent.research(question)\n        print(f'\\nAnswer:\\n{result.answer}')\n        print(f'\\nSources used ({len(result.sources)}):')\n        for s in result.sources:\n            print(f'  - {s[\"title\"]}: {s[\"url\"]}')\n        print(f'Conflicts found: {result.conflicts_found}')"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Web Research Agent Pitfalls",
+      "items": [
+        {
+          "mistake": "Not rate limiting web requests",
+          "why": "Firing 10 requests to the same domain in 1 second will trigger rate limiting, CAPTCHAs, or IP blocks. Your agent will start getting empty or error responses.",
+          "fix": "Add `time.sleep(1-2)` between requests to the same domain. Use exponential backoff on 429 responses. Respect Retry-After headers."
+        },
+        {
+          "mistake": "Using scraped content without checking freshness",
+          "why": "A cached search result from 2022 about 'current AI models' will produce an answer with stale information, presented as current.",
+          "fix": "Always include the publication date in the context. Tell the LLM 'This article was published on DATE.' Let the model flag when sources may be outdated."
+        },
+        {
+          "mistake": "Treating all web sources as equally reliable",
+          "why": "Wikipedia, random blogs, official documentation, and news sites have very different reliability levels. The agent may cite a random blog over an official source.",
+          "fix": "Score sources by domain authority: official sites (.gov, .edu, primary documentation) > major news > Wikipedia > blogs. Use this in the synthesis prompt."
+        },
+        {
+          "mistake": "Not deduplicating facts across sources",
+          "why": "Multiple sources may report the same fact. The synthesizer may treat repeated facts as stronger evidence than they are.",
+          "fix": "Identify and collapse duplicate facts before synthesis. Use semantic similarity to detect paraphrased duplicates, not just string matching."
+        },
+        {
+          "mistake": "No citation tracking in the final answer",
+          "why": "An answer without citations is impossible to verify. Users can't check the sources and trust degrades.",
+          "fix": "Every factual claim in the final answer should have an inline citation: [Source Name](url). Include a references section at the end."
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "How does a web browsing agent address the LLM knowledge cutoff problem?",
+          "answer": "LLMs are trained on data up to a cutoff date and have no knowledge of events after that. Web browsing agents solve this by fetching current information at query time, injecting it into the LLM's context window. The LLM then synthesizes the retrieved information rather than relying on training data. The tradeoff: (1) Latency — web search adds 1-5 seconds. (2) Reliability — web pages may be unavailable or return irrelevant content. (3) Cost — each search + page fetch is an extra operation. (4) Hallucination risk — the LLM may still blend retrieved facts with stale training knowledge if the grounding prompt isn't strict.",
+          "followUps": ["How do you handle the case where web search returns contradictory information about a current event?"]
+        },
+        {
+          "question": "What is Tavily and why is it preferred over raw web scraping for LLM agents?",
+          "answer": "Tavily is a search API purpose-built for LLM agents. Unlike raw Google/Bing search (which returns HTML or snippets that need extensive processing) or raw web scraping (which must handle JavaScript, pagination, and anti-bot measures), Tavily: (1) Returns cleaned, LLM-ready text content. (2) Handles JavaScript-rendered pages internally. (3) Provides relevance scores. (4) Optionally returns an AI-generated direct answer. (5) Respects robots.txt and rate limits for you. This reduces the complexity of the agent's tool layer and improves reliability.",
+          "followUps": ["When would you use raw web scraping instead of Tavily?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "How do you prevent a research agent from treating a 2019 article as current information?",
+          "answer": "```python\ndef build_synthesis_prompt(question, fact_groups):\n    facts_with_dates = []\n    for fg in fact_groups:\n        date = fg.get('published_date', 'unknown date')\n        for fact in fg['facts']:\n            facts_with_dates.append(f'[{fg[\"source_title\"]} - {date}]: {fact}')\n    \n    return f'''\nAnswer: {question}\n\nFacts (with publication dates):\n{chr(10).join(facts_with_dates)}\n\nIMPORTANT: If any source is more than 6 months old for a fast-changing topic,\nnote that the information may be outdated. Prefer more recent sources.\n'''\n```\nAlways include publication dates in the fact context and instruct the model to flag stale information."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You're building a competitive intelligence agent that monitors 50 competitor websites daily for pricing changes. How do you architect this?",
+          "answer": "Architecture: (1) Scheduled crawler: cron job triggers daily. For each competitor URL, fetch the pricing page with Playwright (handles JavaScript) with a 3-second delay between sites. (2) Extraction: use an LLM to extract structured pricing data {product, price, tier} from the cleaned HTML. Store as JSON in a database with timestamp. (3) Change detection: compare today's extraction with yesterday's. Flag if any field changed. (4) Alert: when changes are detected, call the research agent to find supporting context (e.g., search for news about the competitor + price change). (5) Report: generate a daily digest summarizing all changes with context. Infrastructure: Cloud Run for the crawler (isolated, scalable). DynamoDB for price history. SQS for change event queue. SNS for alerts. Rate limiting: 1 request per site per 24 hours — well within normal web traffic patterns.",
+          "followUps": ["How do you handle sites that block automated crawlers?"]
+        }
+      ],
+      "wrongAnswers": [
+        "Web browsing agents eliminate the need for RAG because they can always fetch current information — RAG is still better for internal documents, proprietary data, and scenarios where web access is not appropriate",
+        "All web pages can be scraped with requests and BeautifulSoup — JavaScript-rendered single-page applications require a headless browser like Playwright",
+        "More search results always produce better answers — too many sources add noise and conflicting information; 5-8 high-quality sources typically outperform 30 mixed-quality ones"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d41q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "What problem does a web browsing agent solve that a pure LLM cannot?",
+          "options": {
+            "A": "Complex reasoning about structured data",
+            "B": "Accessing current information beyond the model's training cutoff",
+            "C": "Generating longer responses",
+            "D": "Understanding images and documents"
+          },
+          "answer": "B",
+          "explanation": "LLMs have a knowledge cutoff and cannot access current information. Web browsing agents fetch live content from the internet and inject it into the LLM's context, enabling responses grounded in current data."
+        },
+        {
+          "id": "d41q2",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What makes Tavily different from a standard Google search API for LLM agents?",
+          "options": {
+            "A": "Tavily is faster and free",
+            "B": "Tavily returns cleaned text content optimized for LLM consumption rather than raw HTML",
+            "C": "Tavily searches only academic papers",
+            "D": "Tavily requires no API key"
+          },
+          "answer": "B",
+          "explanation": "Tavily is purpose-built for LLM agents: it returns cleaned, pre-processed text content (not raw HTML), handles JS rendering, provides relevance scores, and optionally returns an AI-generated direct answer — all reducing the complexity of the agent's tool layer."
+        },
+        {
+          "id": "d41q3",
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "Your research agent is citing a 2019 article as a current fact about a rapidly evolving topic. What is the best fix?",
+          "options": {
+            "A": "Use a more powerful LLM model",
+            "B": "Include publication dates in the fact context and instruct the model to flag and prefer recent sources",
+            "C": "Increase the number of search results from 5 to 20",
+            "D": "Disable the Tavily cache"
+          },
+          "answer": "B",
+          "explanation": "The model must know when sources were published to judge staleness. Include dates in the synthesis prompt and explicitly instruct the model to note when sources may be outdated for time-sensitive topics."
+        },
+        {
+          "id": "d41q4",
+          "level": "advanced",
+          "category": "scenario",
+          "question": "Why should research agents decompose queries into sub-queries before searching?",
+          "options": {
+            "A": "To reduce API costs by running fewer searches",
+            "B": "Complex questions have multiple aspects; focused sub-queries retrieve relevant content for each aspect separately",
+            "C": "Most search APIs have a character limit on queries",
+            "D": "To avoid rate limiting on search APIs"
+          },
+          "answer": "B",
+          "explanation": "A question like 'How does GPT-4 compare to Claude 3 in terms of cost, speed, and reasoning?' has three dimensions. A single search query retrieves mixed results. Three focused sub-queries (cost comparison, speed comparison, reasoning comparison) each return highly relevant results."
+        },
+        {
+          "id": "d41q5",
+          "level": "basic",
+          "category": "theory",
+          "question": "Why is citing sources crucial in research agent outputs?",
+          "options": {
+            "A": "To avoid copyright issues",
+            "B": "To let users verify claims and build trust in the agent's responses",
+            "C": "To reduce the token count of responses",
+            "D": "Search APIs require citation attribution"
+          },
+          "answer": "B",
+          "explanation": "Without citations, users cannot verify whether the agent's claims are accurate or which sources were used. Citations enable fact-checking, build trust, and make it clear what the answer is based on — critical for any research or decision-making context."
+        }
+      ]
+    }
+  ]
+}

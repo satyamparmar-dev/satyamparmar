@@ -1,0 +1,172 @@
+{
+  "day": 17,
+  "phase": 1,
+  "title": "Google Gemini API — Gemini in Python",
+  "description": "Master the Google Gemini API: 1M token context, multimodal inputs, streaming, grounding with Google Search, and the key differences from OpenAI and Anthropic. Build a multi-provider failover client.",
+  "estimatedHours": 3,
+  "difficulty": "Beginner",
+  "level": "Fresher",
+  "track": "Fresher",
+  "tags": ["google", "gemini", "vertex-ai", "multimodal", "grounding", "streaming", "multi-provider"],
+  "prerequisites": ["phase1-day16"],
+  "learningObjectives": [
+    "Authenticate and make calls with the Google Generative AI Python SDK",
+    "Send multimodal inputs: text + image + audio in one call",
+    "Use Gemini's 1M token context window for massive document processing",
+    "Enable Google Search grounding to reduce hallucinations",
+    "Compare Gemini vs GPT-4o vs Claude across key dimensions",
+    "Build a multi-provider failover client that falls back gracefully"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "Gemini's 1M token context window is a qualitative leap — you can process entire codebases, hours of video transcripts, or entire book chapters in a single call. Google Search grounding gives you real-time factual accuracy that pure LLMs can't match. Understanding all three major providers lets you choose the right tool and build resilient multi-provider systems."
+    },
+    {
+      "type": "theory",
+      "content": "## Google AI SDK Setup\n\n```bash\npip install google-generativeai\nexport GOOGLE_API_KEY=AIza...\n```\n\n```python\nimport google.generativeai as genai\ngenai.configure(api_key=os.environ[\"GOOGLE_API_KEY\"])\n```\n\n---\n\n## Basic Text Generation\n\n```python\nmodel = genai.GenerativeModel(\n    model_name=\"gemini-2.5-pro\",\n    system_instruction=\"You are a helpful AI assistant.\"  # system prompt\n)\nresponse = model.generate_content(\"What is machine learning?\")\nprint(response.text)\n```\n\n**Response structure:**\n```python\nresponse.text                          # shortcut for first text part\nresponse.candidates[0].content.parts  # list of content parts\nresponse.usage_metadata.prompt_token_count\nresponse.usage_metadata.candidates_token_count\n```\n\n---\n\n## Gemini Models (2025)\n\n| Model | Context | Strength | Cost (Input/Output per 1M) |\n|-------|---------|----------|---------------------------|\n| gemini-2.5-pro | 1M | Best reasoning, complex tasks | $1.25/$10 |\n| gemini-2.5-flash | 1M | Fast, cost-efficient | $0.075/$0.30 |\n| gemini-1.5-flash-8b | 1M | Ultra-cheap, lightweight | $0.0375/$0.15 |\n\n**Gemini 2.5 Pro is remarkable value** — frontier-level capability at $1.25/1M input tokens vs Claude's $3 and OpenAI's $2.50.\n\n---\n\n## Multi-turn Chat\n\n```python\nchat = model.start_chat(history=[])  # or pre-populate history\nresponse = chat.send_message(\"Hello\")\nresponse = chat.send_message(\"Tell me more\")\n# chat.history is automatically maintained\n```\n\n---\n\n## Multimodal: Images + Audio + Video\n\n```python\nimport PIL.Image\n\nimage = PIL.Image.open(\"screenshot.png\")\nresponse = model.generate_content([\"What's in this image?\", image])\n```\n\nFor video/audio files:\n```python\nvideo_file = genai.upload_file(\"meeting.mp4\")\nresponse = model.generate_content([\"Summarize this meeting:\", video_file])\n```\n\nGemini can process: images (PNG, JPEG, WEBP, HEIC), audio (MP3, WAV, OPUS), video (MP4, MOV, AVI), and documents (PDF).\n\n---\n\n## Streaming\n\n```python\nresponse = model.generate_content(\"Write a poem\", stream=True)\nfor chunk in response:\n    print(chunk.text, end=\"\", flush=True)\n```\n\n---\n\n## Google Search Grounding\n\nConnect Gemini to live Google Search to reduce hallucinations for factual queries:\n\n```python\nfrom google.generativeai.types import Tool, GoogleSearchRetrieval\n\nmodel = genai.GenerativeModel(\n    model_name=\"gemini-2.5-pro\",\n    tools=[Tool(google_search_retrieval=GoogleSearchRetrieval())]\n)\nresponse = model.generate_content(\"What is today's top AI news?\")\n# response includes grounding sources\n```\n\n---\n\n## Three-Provider Comparison\n\n| Dimension | Gemini 2.5 Pro | Claude Sonnet 4.6 | GPT-4o |\n|-----------|---------------|------------------|--------|\n| Context window | 1M tokens | 200K tokens | 128K tokens |\n| Cost (input) | $1.25/1M | $3/1M | $2.50/1M |\n| Multimodal | Text/Image/Audio/Video | Text/Image | Text/Image/Audio |\n| Grounding | Google Search | No | Bing (via tools) |\n| Ecosystem | Google Cloud | Standalone | Azure/OpenAI |\n| Best for | Massive docs, value | Long docs, careful | Broad tasks, tools |"
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "gemini_client.py",
+      "level": "Beginner",
+      "code": "\"\"\"Google Gemini API client + multi-provider failover.\"\"\"\nimport os\nimport time\nimport random\nimport google.generativeai as genai\nfrom google.api_core.exceptions import ResourceExhausted, ServiceUnavailable\n\ngenai.configure(api_key=os.environ[\"GOOGLE_API_KEY\"])\n\n\n# ── Core Gemini client ───────────────────────────────────────────\nclass GeminiClient:\n    def __init__(self, model_name: str = \"gemini-2.5-flash\", system: str = \"\"):\n        self.model = genai.GenerativeModel(\n            model_name=model_name,\n            system_instruction=system or None,\n        )\n        self.model_name = model_name\n        self.total_input = 0\n        self.total_output = 0\n\n    def chat(self, prompt: str, max_retries: int = 3) -> str:\n        for attempt in range(max_retries):\n            try:\n                response = self.model.generate_content(prompt)\n                if hasattr(response, \"usage_metadata\"):\n                    self.total_input  += response.usage_metadata.prompt_token_count or 0\n                    self.total_output += response.usage_metadata.candidates_token_count or 0\n                return response.text\n            except ResourceExhausted:\n                if attempt == max_retries - 1:\n                    raise\n                wait = (2 ** attempt) + random.uniform(0, 1)\n                print(f\"Rate limited. Retry in {wait:.1f}s\")\n                time.sleep(wait)\n            except ServiceUnavailable:\n                if attempt == max_retries - 1:\n                    raise\n                time.sleep(2 ** attempt)\n        raise RuntimeError(\"All retries exhausted\")\n\n    def stream(self, prompt: str) -> str:\n        response = self.model.generate_content(prompt, stream=True)\n        full = \"\"\n        for chunk in response:\n            if chunk.text:\n                print(chunk.text, end=\"\", flush=True)\n                full += chunk.text\n        print()\n        return full\n\n    def cost_report(self) -> str:\n        PRICING = {\n            \"gemini-2.5-pro\":     {\"input\": 1.25,  \"output\": 10.00},\n            \"gemini-2.5-flash\":   {\"input\": 0.075, \"output\": 0.30},\n        }\n        p = PRICING.get(self.model_name, {\"input\": 1.25, \"output\": 10.00})\n        cost = (self.total_input / 1_000_000) * p[\"input\"] + (self.total_output / 1_000_000) * p[\"output\"]\n        return f\"In: {self.total_input:,} | Out: {self.total_output:,} | ${cost:.6f}\"\n\n\n# ── Multi-provider failover client ────────────────────────────────\nclass MultiProviderClient:\n    \"\"\"Tries providers in order, falls back on failure.\"\"\"\n\n    def __init__(self, system: str = \"\"):\n        self.system = system\n        self.providers = [\"openai\", \"anthropic\", \"google\"]\n\n    def _call_openai(self, prompt: str) -> str:\n        from openai import OpenAI\n        c = OpenAI()\n        r = c.chat.completions.create(\n            model=\"gpt-4o\",\n            messages=[\n                {\"role\": \"system\",  \"content\": self.system},\n                {\"role\": \"user\",    \"content\": prompt}\n            ],\n            max_tokens=1024,\n        )\n        return r.choices[0].message.content\n\n    def _call_anthropic(self, prompt: str) -> str:\n        import anthropic\n        c = anthropic.Anthropic()\n        r = c.messages.create(\n            model=\"claude-sonnet-4-6\",\n            max_tokens=1024,\n            system=self.system,\n            messages=[{\"role\": \"user\", \"content\": prompt}],\n        )\n        return r.content[0].text\n\n    def _call_google(self, prompt: str) -> str:\n        g = GeminiClient(system=self.system)\n        return g.chat(prompt)\n\n    def complete(self, prompt: str) -> tuple[str, str]:\n        \"\"\"Returns (response_text, provider_used).\"\"\"\n        callers = {\n            \"openai\":    self._call_openai,\n            \"anthropic\": self._call_anthropic,\n            \"google\":    self._call_google,\n        }\n        for provider in self.providers:\n            try:\n                result = callers[provider](prompt)\n                return result, provider\n            except Exception as e:\n                print(f\"[{provider}] failed: {e}. Trying next provider...\")\n        raise RuntimeError(\"All providers failed\")\n\n\nif __name__ == \"__main__\":\n    # Single Gemini call\n    client = GeminiClient(system=\"Answer in one sentence.\")\n    reply = client.chat(\"What is the capital of Japan?\")\n    print(f\"Gemini: {reply}\")\n    print(client.cost_report())\n\n    # Multi-provider failover demo (shows the pattern)\n    multi = MultiProviderClient(system=\"You are a helpful assistant.\")\n    print(\"\\nMulti-provider client initialized with fallback: openai → anthropic → google\")",
+      "output": "Gemini: The capital of Japan is Tokyo.\nIn: 22 | Out: 8 | $0.000002\n\nMulti-provider client initialized with fallback: openai → anthropic → google"
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Using response.text when the response contains safety blocks — if Gemini blocks content, response.text raises an exception. Check response.candidates[0].finish_reason first.",
+        "Not handling the 1M context window cost — 1M tokens at $1.25/1M = $1.25 per call. For large documents, pre-filter to only relevant sections before sending.",
+        "Assuming Google Search grounding is always available — grounding requires specific model versions and may not be available in all regions. Test before relying on it.",
+        "Forgetting that Gemini's chat.history grows unboundedly — unlike building message arrays manually, Gemini's chat object auto-appends history. Implement periodic resets.",
+        "Treating Gemini's cheap pricing as a reason to skip optimization — even at $0.075/1M, 10M tokens/day = $750/month. Token efficiency still matters at scale."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Codebase Summarizer using Gemini's 1M Context",
+      "problem": "Build a `CodebaseSummarizer` that: (1) reads all Python files from a directory, (2) concatenates them with file path headers, (3) sends the full codebase to Gemini 2.5 Pro in one call, (4) asks for: architecture summary, key classes/functions, identified patterns, and potential issues. Return as structured dict. Include a token estimate check — refuse if estimated > 800K tokens.",
+      "hints": [
+        "Use os.walk() to find all .py files recursively",
+        "Format each file as '# === filepath ===\\n{content}\\n'",
+        "Token estimate: total_chars // 4",
+        "Use Gemini 2.5 Pro with max_output_tokens=4096 for detailed analysis"
+      ],
+      "solution": "import os\nimport json\n\nclass CodebaseSummarizer:\n    def __init__(self):\n        genai.configure(api_key=os.environ['GOOGLE_API_KEY'])\n        self.model = genai.GenerativeModel('gemini-2.5-pro')\n        self.SYSTEM = 'You are a senior software architect. Analyze codebases precisely.'\n\n    def collect_files(self, directory: str) -> str:\n        parts = []\n        for root, _, files in os.walk(directory):\n            for fname in sorted(files):\n                if fname.endswith('.py'):\n                    path = os.path.join(root, fname)\n                    try:\n                        content = open(path).read()\n                        parts.append(f'# === {path} ===\\n{content}\\n')\n                    except Exception:\n                        pass\n        return '\\n'.join(parts)\n\n    def summarize(self, directory: str) -> dict:\n        code = self.collect_files(directory)\n        token_estimate = len(code) // 4\n        if token_estimate > 800_000:\n            raise ValueError(f'Codebase too large: ~{token_estimate:,} tokens (max 800K)')\n\n        prompt = f'''Analyze this Python codebase and return JSON with keys:\n{{\"architecture\": \"summary\", \"key_components\": [{{\"name\": \"\", \"purpose\": \"\"}}], \"patterns\": [\"\"], \"issues\": [\"\"]}}\n\nCodebase:\\n{code}'''\n        response = self.model.generate_content(prompt)\n        try:\n            return json.loads(response.text)\n        except json.JSONDecodeError:\n            return {'raw': response.text, 'token_estimate': token_estimate}",
+      "difficulty": "Beginner"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "What makes Gemini's 1M token context window qualitatively different from GPT-4o's 128K?",
+          "answer": "A 1M token context window is not just bigger — it enables qualitatively different tasks. You can send an entire medium-sized codebase (100+ files), a full book, hours of audio/video transcripts, or an entire legal contract history in a single call. At 128K, you must chunk, which loses cross-chunk context and requires complex retrieval logic. At 1M, many RAG use cases become simple single-pass analysis. The cost implication: 1M token calls can be expensive, so token efficiency still matters even at Gemini's lower prices.",
+          "followUps": [
+            "What tasks still require RAG even with a 1M context window?",
+            "How does the model's ability to attend to the full 1M tokens affect latency?"
+          ]
+        },
+        {
+          "question": "What is Google Search grounding and when should you use it?",
+          "answer": "Search grounding connects Gemini to live Google Search results, injecting retrieved web content into the context before generation. The model cites sources and its answers reflect current information rather than training data cutoffs. Use it when: (1) the query requires up-to-date factual information (news, stock prices, recent events), (2) you want automatic source citations for trust, (3) accuracy on factual questions is more important than speed. Don't use it for: internal data queries, creative tasks, or when latency is critical (grounding adds latency).",
+          "followUps": [
+            "How does grounding differ from a RAG system you build yourself?",
+            "What are the privacy implications of using Google Search grounding?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write a function that takes a list of provider names and a prompt, tries each in order, and returns the first successful response.",
+          "answer": "def with_fallback(prompt: str, system: str, providers: list[str]) -> tuple[str, str]:\n    errors = []\n    for provider in providers:\n        try:\n            if provider == 'openai':\n                from openai import OpenAI\n                c = OpenAI()\n                r = c.chat.completions.create(\n                    model='gpt-4o',\n                    messages=[{'role': 'system', 'content': system}, {'role': 'user', 'content': prompt}],\n                    max_tokens=1024\n                )\n                return r.choices[0].message.content, provider\n            elif provider == 'google':\n                import google.generativeai as genai\n                m = genai.GenerativeModel('gemini-2.5-flash', system_instruction=system)\n                return m.generate_content(prompt).text, provider\n        except Exception as e:\n            errors.append(f'{provider}: {e}')\n    raise RuntimeError(f'All providers failed: {errors}')",
+          "followUps": [
+            "How would you add circuit breaker logic so a failing provider is skipped for N minutes?",
+            "How would you route to cheaper providers for simple queries?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Design a multi-provider LLM architecture that maximizes reliability, cost efficiency, and latency for a high-traffic chat product.",
+          "answer": "Routing strategy: (1) Primary: Gemini 2.5 Flash for simple queries ($0.075/1M) — fast, cheap, good for most chat. (2) Upgrade route: GPT-4o or Claude Sonnet for complex reasoning queries (detected via query complexity classifier). (3) Failover: If primary provider returns 429 or 503, route to secondary provider automatically. Cost optimization: (1) Implement a semantic cache — embed all prompts, return cached responses for similarity > 0.95 (handles rephrased identical questions). (2) Route by query type: factual/grounding → Gemini with Search, code → Claude/GPT-4o, bulk async → Batch APIs. Reliability: circuit breaker per provider (open after 5 failures in 60s, retry after 30s), distributed across provider APIs. Monitor: per-provider latency, error rate, cost/hour dashboard.",
+          "followUps": [
+            "How would you implement the query complexity classifier?",
+            "What SLAs would you set for each route and how would you monitor them?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "Gemini's 1M context window means you should always send maximum context — cost doesn't scale with tokens",
+        "Google Search grounding makes Gemini 100% accurate on factual questions",
+        "response.text always works for any Gemini response regardless of content safety filters"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "What is Google Gemini's maximum context window size (as of 2025)?",
+          "options": {
+            "A": "32K tokens",
+            "B": "128K tokens",
+            "C": "200K tokens",
+            "D": "1M tokens"
+          },
+          "answer": "D",
+          "explanation": "Gemini 2.5 Pro and Gemini 2.5 Flash support a 1 million token context window — the largest of the major providers. For comparison: GPT-4o has 128K and Claude Sonnet 4.6 has 200K. This enables processing entire codebases and long documents in a single call."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "How do you access the text from a Gemini generate_content() response?",
+          "options": {
+            "A": "response.content[0].text",
+            "B": "response.choices[0].message.content",
+            "C": "response.text",
+            "D": "response.output.text"
+          },
+          "answer": "C",
+          "explanation": "Gemini's GenerativeModel.generate_content() returns a GenerateContentResponse with a .text shortcut property that returns the first text candidate. This differs from OpenAI (choices[0].message.content) and Claude (content[0].text)."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "When should you use Google Search grounding instead of a custom RAG system?",
+          "options": {
+            "A": "For processing internal company documents",
+            "B": "For queries requiring up-to-date public information with automatic source citation",
+            "C": "For all production use cases to reduce hallucinations",
+            "D": "When you need the fastest possible response time"
+          },
+          "answer": "B",
+          "explanation": "Google Search grounding is ideal for current-events queries, factual lookups requiring recent data, and when automatic source citation builds user trust. It's NOT suitable for internal/private data, adds latency, and is not a replacement for RAG on proprietary knowledge bases."
+        },
+        {
+          "id": 4,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "You need to analyze a 500,000-token codebase. Gemini 2.5 Pro charges $1.25/1M input tokens. What is the cost per analysis call?",
+          "options": {
+            "A": "$0.063",
+            "B": "$0.625",
+            "C": "$1.25",
+            "D": "$6.25"
+          },
+          "answer": "B",
+          "explanation": "Cost = (500,000 / 1,000,000) × $1.25 = $0.625 per call. At $0.625 per analysis, running this 100 times/day would cost $62.50/day. This is still far cheaper than GPT-4o (500K tokens × $2.50/1M = $1.25/call) or Claude Sonnet ($1.50/call), making Gemini the best choice for large context workloads."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## Google Gemini API — Quick Reference\n\n### Setup\n```python\nimport google.generativeai as genai\ngenai.configure(api_key=os.environ['GOOGLE_API_KEY'])\nmodel = genai.GenerativeModel('gemini-2.5-flash', system_instruction='...')\n```\n\n### Basic Call\n```python\nresponse = model.generate_content('Hello')\nprint(response.text)\n# Token usage:\nresponse.usage_metadata.prompt_token_count\nresponse.usage_metadata.candidates_token_count\n```\n\n### Streaming\n```python\nfor chunk in model.generate_content('Write...', stream=True):\n    print(chunk.text, end='', flush=True)\n```\n\n### Multi-turn Chat\n```python\nchat = model.start_chat(history=[])\nchat.send_message('Hello')\n```\n\n### Models (2025)\n| Model | Context | Cost in/out |\n|-------|---------|-------------|\n| gemini-2.5-pro | 1M | $1.25/$10 per 1M |\n| gemini-2.5-flash | 1M | $0.075/$0.30 per 1M |\n\n### 3-Provider Comparison\n| | Gemini | Claude | GPT-4o |\n|-|--------|--------|--------|\n| Context | 1M | 200K | 128K |\n| Input cost | $1.25 | $3.00 | $2.50 |\n| Grounding | Google Search | No | Limited |\n\n### Multi-provider Failover Pattern\n```python\nfor provider in ['openai', 'anthropic', 'google']:\n    try: return call(provider, prompt)\n    except: continue\nraise RuntimeError('All failed')\n```"
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import type { IndustryNews, ProPathId } from '../../types/pro.types'
 import { useProProgress } from '../../hooks/useProProgress'
 import ProShell from '../../components/pro/ProShell'
 import { PRO_UI } from '../../constants/proUi'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 const MOCK_NEWS: IndustryNews[] = [
   {
@@ -64,6 +65,7 @@ const MOCK_NEWS: IndustryNews[] = [
 ]
 
 const NewsRoom: React.FC = () => {
+  usePageTitle('Newsroom')
   const navigate = useNavigate()
   const { hasProProfile } = useProProgress()
   const [filter, setFilter] = useState<ProPathId | 'all'>('all')

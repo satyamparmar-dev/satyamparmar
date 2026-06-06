@@ -1,5 +1,5 @@
 /** Legacy password + OTP flow (LoginPage). Disabled when using email allowlist gate. */
-export const AUTH_LOGIN_ENABLED = false;
+export const AUTH_LOGIN_ENABLED = false; // temporarily disabled — re-enable when ready
 
 /**
  * Email allowlist for **full** content (solutions, full theory, quiz answers, scenario drill
@@ -7,7 +7,7 @@ export const AUTH_LOGIN_ENABLED = false;
  * “Why” tab, theory excerpt, assignment questions without solutions) stay public; sign-in
  * is via `/login`. Replaces `AUTH_LOGIN_ENABLED` when both would apply.
  */
-export const EMAIL_ALLOWLIST_GATE_ENABLED = true;
+export const EMAIL_ALLOWLIST_GATE_ENABLED = false;
 
 /**
  * Secret for PBKDF2 + AES-256-GCM over the allowlist payload. Set

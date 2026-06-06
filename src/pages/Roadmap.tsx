@@ -12,10 +12,12 @@ import { CurriculumId, Track } from '../types';
 import { getLevelColor, getTrackColor } from '../utils/formatters';
 import LevelBadge from '../components/LevelBadge';
 import PrintIcon from '@mui/icons-material/Print';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const trackOptions: (Track | 'All')[] = ['All', 'Fresher', 'Mid-Level', 'Senior'];
 
 const Roadmap: React.FC = () => {
+  usePageTitle('Learning Roadmap');
   const navigate = useNavigate();
   const {
     curriculum, setCurriculum, loadedPhases, loadPhase, progress, activeTrack, setActiveTrack,
@@ -49,7 +51,7 @@ const Roadmap: React.FC = () => {
     <Box className="fade-in">
       <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={3} flexWrap="wrap" gap={2}>
         <Box>
-          <Typography variant="h4" fontWeight={800}>{curriculum.title}</Typography>
+          <Typography variant="h4" component="h1" fontWeight={800}>{curriculum.title}</Typography>
           <Typography color="text.secondary">{curriculum.subtitle}</Typography>
         </Box>
         <Button variant="outlined" startIcon={<PrintIcon />} onClick={() => window.print()}>
@@ -115,7 +117,7 @@ const Roadmap: React.FC = () => {
 
       {/* Phase Sections */}
       {filteredPhases.map((phase) => {
-        const [startDay, endDay] = phase.days.split('–').map(Number);
+        const [startDay, endDay] = (phase.days ?? '0–0').split('–').map(Number);
         const levelColor = getLevelColor(phase.level);
         const phaseData = loadedPhases[phase.id];
 

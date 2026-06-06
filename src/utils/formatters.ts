@@ -82,7 +82,7 @@ export const getGreeting = (): string => {
 
 // ─── Day Range Display ───────────────────────────────────
 export const formatDayRange = (days: string): string => {
-  const [start, end] = days.split('–').map(Number);
+  const [start, end] = (days ?? '0–0').split('–').map(Number);
   return `Days ${start}–${end}`;
 };
 

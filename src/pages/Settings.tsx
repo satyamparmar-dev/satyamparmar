@@ -13,8 +13,10 @@ import { useAppStore } from '../store/useAppStore';
 import { useToast } from '../components/ToastProvider';
 import { AppProgress } from '../types';
 import { APP_DISPLAY_NAME } from '../constants/branding';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const Settings: React.FC = () => {
+  usePageTitle('Settings');
   const { theme, toggleTheme, progress, exportProgress, importProgress, resetProgress, curriculum } = useAppStore();
   const { showSuccess, showError, showWarning } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -62,7 +64,7 @@ const Settings: React.FC = () => {
 
   return (
     <Box className="fade-in">
-      <Typography variant="h4" fontWeight={800} mb={0.5}>
+      <Typography variant="h4" component="h1" fontWeight={800} mb={0.5}>
         Settings
       </Typography>
       <Typography color="text.secondary" mb={3}>

@@ -45,6 +45,7 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   return (
     <ToastContext.Provider value={{ showToast, showSuccess, showError, showInfo, showWarning }}>
       {children}
+      <div aria-live="polite" aria-atomic="true" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', left: -9999 }} />
       {toasts.map((toast, index) => (
         <Snackbar
           key={toast.id}

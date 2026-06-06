@@ -1,0 +1,173 @@
+{
+  "id": "phase3-day42",
+  "day": 42,
+  "phase": 3,
+  "title": "Long-Horizon Task Agents",
+  "estimatedHours": 5,
+  "difficulty": "advanced",
+  "level": "Senior",
+  "track": "Senior",
+  "tags": ["long-horizon", "task-management", "checkpointing", "agent-state", "persistence"],
+  "prerequisites": ["phase3-day37", "phase3-day38", "phase2-day30"],
+  "learningObjectives": [
+    "Design agents for tasks spanning minutes to hours",
+    "Implement agent state persistence and checkpointing",
+    "Build interrupt and resume capabilities",
+    "Handle long-context challenges in multi-step tasks",
+    "Implement hierarchical task decomposition for complex goals"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Long-Horizon Tasks Are Hard",
+      "content": "Most agentic examples show 3-5 step tasks that complete in under a minute. Real enterprise automation involves tasks that take 10-30 steps, run for minutes to hours, and may need to pause (waiting for an external API, human approval, a scheduled trigger). Without state persistence, a crash at step 17 of 25 means starting over. Without context management, step 20 can't remember what was decided in step 3. Without checkpointing, resumability is impossible. Long-horizon agents require the same discipline as distributed systems: explicit state management, durable storage, idempotent execution, and graceful recovery."
+    },
+    {
+      "type": "theory",
+      "title": "Long-Horizon Agent Architecture",
+      "content": "**State persistence strategies:**\n\n| When to persist | What to save | Storage |\n|----------------|-------------|--------|\n| After each step | Step result + updated plan | Redis / DynamoDB |\n| On pause/interrupt | Full agent state | S3 / DB |\n| On completion | Final result + trace | DB + S3 |\n| On failure | Error + last good state | DB for replay |\n\n**Agent state schema:**\n```python\n@dataclass\nclass AgentCheckpoint:\n    task_id: str\n    status: str  # 'running' | 'paused' | 'completed' | 'failed'\n    original_task: str\n    plan: list[dict]\n    completed_steps: list[dict]  # step results\n    current_step_index: int\n    context: dict  # accumulated facts\n    created_at: str\n    updated_at: str\n    error: Optional[str]\n```\n\n**Context window management for long tasks:**\n\nAt step 20, you can't pass all 19 previous steps into the context (tokens!). Strategies:\n\n1. **Sliding window**: last K steps only — simple but loses early context\n2. **Hierarchical summary**: compress every 5 steps into a summary; keep last 3 steps verbatim\n3. **Working memory**: distill key facts from all steps into a compact 'memory' dict\n4. **Episodic buffer**: vector store of all step results; retrieve semantically relevant ones\n\n**Hierarchical task decomposition:**\n```\nHigh-level goal\n    └── Sub-goal 1 (steps 1-5)\n    │       └── Task 1.1\n    │       └── Task 1.2\n    └── Sub-goal 2 (steps 6-12)\n    │       └── Task 2.1\n    │       └── Task 2.2\n    └── Sub-goal 3 (steps 13-20)\n```\nEach sub-goal has its own context. Sub-goals are sequenced; tasks within a sub-goal may be parallel.\n\n**Interrupt and resume protocol:**\n```\nINTERRUPT:  Agent receives interrupt signal\n            → Complete current atomic step (don't interrupt mid-step)\n            → Serialize full state to durable store\n            → Mark status = 'paused'\n            → Return control\n\nRESUME:     Load state from store by task_id\n            → Restore plan + context\n            → Continue from current_step_index\n            → Mark status = 'running'\n```\n\n**Idempotency in long-horizon agents:**\nEach step should have an idempotency key (task_id + step_number). If a step was already completed (status = 'success'), skip it without re-executing — even if re-started from scratch.\n\n**Human-in-the-loop gates:**\nInsert explicit 'pause and wait for approval' steps in the plan for high-stakes actions. The agent pauses, notifies the human, and resumes only after receiving approval."
+    },
+    {
+      "type": "code",
+      "title": "Persistent Long-Horizon Agent",
+      "language": "python",
+      "code": "from __future__ import annotations\nimport json\nimport os\nimport time\nfrom dataclasses import dataclass, field, asdict\nfrom datetime import datetime\nfrom pathlib import Path\nfrom typing import Optional\nfrom openai import OpenAI\n\nclient = OpenAI(api_key=os.environ['OPENAI_API_KEY'])\nMODEL = 'gpt-4o-mini'\n\n\n# ── Persistent state store ─────────────────────────────────────────────────────\n\nclass CheckpointStore:\n    \"\"\"File-based checkpoint store. In production: use DynamoDB/Redis.\"\"\"\n\n    def __init__(self, storage_dir: str = '/tmp/agent_checkpoints'):\n        self.dir = Path(storage_dir)\n        self.dir.mkdir(exist_ok=True)\n\n    def save(self, checkpoint: 'AgentCheckpoint') -> None:\n        path = self.dir / f'{checkpoint.task_id}.json'\n        path.write_text(json.dumps(asdict(checkpoint), indent=2))\n\n    def load(self, task_id: str) -> Optional['AgentCheckpoint']:\n        path = self.dir / f'{task_id}.json'\n        if not path.exists():\n            return None\n        data = json.loads(path.read_text())\n        return AgentCheckpoint(**data)\n\n    def list_tasks(self) -> list[str]:\n        return [p.stem for p in self.dir.glob('*.json')]\n\n\n# ── Agent state ────────────────────────────────────────────────────────────────\n\n@dataclass\nclass StepResult:\n    step_index: int\n    description: str\n    result: str\n    status: str  # 'success' | 'failed' | 'skipped'\n    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())\n\n\n@dataclass\nclass AgentCheckpoint:\n    task_id: str\n    status: str\n    original_task: str\n    plan: list[dict]  # list of {index, description, tool, requires_approval}\n    completed_steps: list[dict]  # list of StepResult as dict\n    current_step_index: int\n    context: dict\n    created_at: str\n    updated_at: str\n    error: Optional[str] = None\n\n    def get_step_result(self, idx: int) -> Optional[StepResult]:\n        for s in self.completed_steps:\n            if s['step_index'] == idx:\n                return StepResult(**s)\n        return None\n\n    def context_summary(self, max_steps: int = 5) -> str:\n        \"\"\"Compact context for the agent prompt.\"\"\"\n        recent = [StepResult(**s) for s in self.completed_steps[-max_steps:]]\n        parts = ['Working memory:', json.dumps(self.context, indent=2)[:500]]\n        if recent:\n            parts.append('\\nRecent steps:')\n            for s in recent:\n                parts.append(f'  [{s.step_index}] {s.description}: {s.result[:100]}')\n        return '\\n'.join(parts)\n\n\n# ── Planner ────────────────────────────────────────────────────────────────────\n\ndef create_plan(task: str) -> list[dict]:\n    response = client.chat.completions.create(\n        model=MODEL,\n        messages=[{\n            'role': 'user',\n            'content': f'Create a detailed execution plan for: {task}\\n\\n'\n                       'Break into 5-10 steps. Mark any step requiring human approval.\\n'\n                       'Return JSON: {\"steps\": [{\"index\": 1, \"description\": \"...\", \"tool\": null, \"requires_approval\": false}]}',\n        }],\n        temperature=0,\n        response_format={'type': 'json_object'},\n    )\n    return json.loads(response.choices[0].message.content).get('steps', [])\n\n\n# ── Step executor ──────────────────────────────────────────────────────────────\n\ndef execute_step(step: dict, context: dict, task: str) -> tuple[str, bool]:  # (result, success)\n    \"\"\"Execute a single step using LLM reasoning + simulated tools.\"\"\"\n    response = client.chat.completions.create(\n        model=MODEL,\n        messages=[{\n            'role': 'user',\n            'content': f'Execute this step as part of: {task}\\n\\n'\n                       f'Context so far:\\n{json.dumps(context, indent=2)[:500]}\\n\\n'\n                       f'Current step: {step[\"description\"]}\\n'\n                       f'Provide a detailed result for this step.',\n        }],\n        temperature=0.3,\n    )\n    return response.choices[0].message.content, True\n\n\n# ── Context manager ────────────────────────────────────────────────────────────\n\ndef update_context(context: dict, step: dict, result: str) -> dict:\n    \"\"\"Extract key facts from step result and update working memory.\"\"\"\n    response = client.chat.completions.create(\n        model=MODEL,\n        messages=[{\n            'role': 'user',\n            'content': f'Extract key facts from this step result and update the context.\\n\\n'\n                       f'Step: {step[\"description\"]}\\nResult: {result[:500]}\\n\\n'\n                       f'Current context: {json.dumps(context)}\\n\\n'\n                       f'Return updated context JSON (add new facts, preserve important existing ones):',\n        }],\n        temperature=0,\n        response_format={'type': 'json_object'},\n    )\n    return json.loads(response.choices[0].message.content)\n\n\n# ── Long-horizon agent ─────────────────────────────────────────────────────────\n\nclass LongHorizonAgent:\n    def __init__(\n        self,\n        store: CheckpointStore,\n        approval_handler: Optional[callable] = None,\n    ):\n        self.store = store\n        self.approval_handler = approval_handler or self._default_approval\n\n    def _default_approval(self, step: dict, checkpoint: AgentCheckpoint) -> bool:\n        \"\"\"In production: send notification and wait for async approval.\"\"\"\n        print(f'\\n  [APPROVAL REQUIRED] Step {step[\"index\"]}: {step[\"description\"]}')\n        response = input('  Approve? (y/n): ').strip().lower()\n        return response == 'y'\n\n    def start(self, task_id: str, task: str) -> AgentCheckpoint:\n        \"\"\"Start a new long-horizon task.\"\"\"\n        print(f'Starting new task: {task_id}')\n        plan = create_plan(task)\n        checkpoint = AgentCheckpoint(\n            task_id=task_id,\n            status='running',\n            original_task=task,\n            plan=plan,\n            completed_steps=[],\n            current_step_index=0,\n            context={},\n            created_at=datetime.utcnow().isoformat(),\n            updated_at=datetime.utcnow().isoformat(),\n        )\n        self.store.save(checkpoint)\n        print(f'Plan created ({len(plan)} steps)')\n        return checkpoint\n\n    def resume(self, task_id: str) -> Optional[AgentCheckpoint]:\n        \"\"\"Resume a paused or interrupted task.\"\"\"\n        checkpoint = self.store.load(task_id)\n        if checkpoint is None:\n            print(f'Task {task_id} not found')\n            return None\n        if checkpoint.status == 'completed':\n            print(f'Task {task_id} already completed')\n            return checkpoint\n        print(f'Resuming task {task_id} from step {checkpoint.current_step_index + 1}/{len(checkpoint.plan)}')\n        checkpoint.status = 'running'\n        return checkpoint\n\n    def run(self, checkpoint: AgentCheckpoint, interrupt_after: Optional[int] = None) -> AgentCheckpoint:\n        \"\"\"Execute the agent loop with checkpointing.\"\"\"\n        for i, step in enumerate(checkpoint.plan):\n            if i < checkpoint.current_step_index:\n                continue  # already completed\n\n            # Check idempotency: skip already-completed steps\n            existing = checkpoint.get_step_result(step['index'])\n            if existing and existing.status == 'success':\n                print(f'  [SKIP] Step {step[\"index\"]} already completed')\n                continue\n\n            print(f'\\n  Step {step[\"index\"]}/{len(checkpoint.plan)}: {step[\"description\"]}')\n\n            # Human approval gate\n            if step.get('requires_approval', False):\n                approved = self.approval_handler(step, checkpoint)\n                if not approved:\n                    print(f'  Step {step[\"index\"]} rejected by human. Pausing.')\n                    checkpoint.status = 'paused'\n                    checkpoint.updated_at = datetime.utcnow().isoformat()\n                    self.store.save(checkpoint)\n                    return checkpoint\n\n            # Execute step\n            result, success = execute_step(step, checkpoint.context, checkpoint.original_task)\n\n            # Store result\n            step_result = StepResult(\n                step_index=step['index'],\n                description=step['description'],\n                result=result,\n                status='success' if success else 'failed',\n            )\n            checkpoint.completed_steps.append(asdict(step_result))\n            checkpoint.current_step_index = i + 1\n\n            # Update working memory\n            if success:\n                checkpoint.context = update_context(checkpoint.context, step, result)\n\n            checkpoint.updated_at = datetime.utcnow().isoformat()\n            self.store.save(checkpoint)  # checkpoint after every step\n            print(f'  ✓ Completed. Context keys: {list(checkpoint.context.keys())}')\n\n            # Interrupt if requested (e.g., for testing)\n            if interrupt_after is not None and i + 1 >= interrupt_after:\n                print(f'  [INTERRUPT] Pausing after step {i+1}')\n                checkpoint.status = 'paused'\n                self.store.save(checkpoint)\n                return checkpoint\n\n        # All steps complete\n        checkpoint.status = 'completed'\n        checkpoint.updated_at = datetime.utcnow().isoformat()\n        self.store.save(checkpoint)\n        print(f'\\nTask completed! Ran {len(checkpoint.completed_steps)} steps.')\n        return checkpoint\n\n    def get_summary(self, task_id: str) -> str:\n        checkpoint = self.store.load(task_id)\n        if not checkpoint:\n            return f'Task {task_id} not found'\n        lines = [\n            f'Task: {checkpoint.original_task}',\n            f'Status: {checkpoint.status}',\n            f'Progress: {checkpoint.current_step_index}/{len(checkpoint.plan)} steps',\n            f'Context keys: {list(checkpoint.context.keys())}',\n        ]\n        return '\\n'.join(lines)\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    store = CheckpointStore('/tmp/demo_checkpoints')\n\n    # Auto-approve all steps (for demo — no interactive input)\n    auto_approve = lambda step, cp: True\n    agent = LongHorizonAgent(store=store, approval_handler=auto_approve)\n\n    task_id = 'task_research_001'\n    task = 'Research Python async programming best practices and create a concise guide with 5 key recommendations'\n\n    # Start the task, run 3 steps, then interrupt\n    checkpoint = agent.start(task_id, task)\n    print(f'\\nRunning first 3 steps...')\n    checkpoint = agent.run(checkpoint, interrupt_after=3)\n    print(f'\\nStatus: {checkpoint.status}')\n\n    # Simulate resuming after an interruption\n    print(f'\\nResuming task...')\n    checkpoint = agent.resume(task_id)\n    if checkpoint:\n        checkpoint = agent.run(checkpoint)  # run to completion\n\n    print(f'\\n{agent.get_summary(task_id)}')"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Long-Horizon Task Pitfalls",
+      "items": [
+        {
+          "mistake": "Not checkpointing after every step",
+          "why": "A 20-step task that crashes at step 18 loses all work if you only checkpoint at the end. The agent must restart from the beginning.",
+          "fix": "Save the full checkpoint after every successfully completed step. Use a durable store (database, S3) not in-memory. Each step's idempotency key enables safe replay."
+        },
+        {
+          "mistake": "Passing all previous step results as context",
+          "why": "20 steps × 200 tokens per result = 4000 tokens of history. For a 128K context window this seems fine, but at 100 steps it's 20K tokens, and the signal-to-noise ratio degrades.",
+          "fix": "Use a working memory dict that distills key facts from all steps. Add a summarization step every 10 steps to compress history. Only pass the last 3-5 step results verbatim."
+        },
+        {
+          "mistake": "No approval mechanism for irreversible steps in automated workflows",
+          "why": "A long-horizon agent that sends emails, deploys code, or modifies databases without any human oversight can compound small errors into large, hard-to-reverse consequences.",
+          "fix": "Mark irreversible steps in the plan with `requires_approval: true`. Pause at these steps, notify the human, and resume only after explicit approval."
+        },
+        {
+          "mistake": "Not idempotent step execution on resume",
+          "why": "After resuming from a checkpoint, the agent re-executes all steps from the beginning instead of skipping completed ones — doubling the work and potentially causing duplicate actions.",
+          "fix": "Before executing step N, check if it has a 'success' result in the checkpoint. If yes, skip it. Use (task_id, step_index) as the idempotency key."
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "What is checkpointing in long-horizon agents and why is it critical?",
+          "answer": "Checkpointing is saving the full agent state (plan, completed steps, working memory, current position) to durable storage after each step. It's critical because: (1) Resilience — if the process crashes at step 15/25, it can resume from step 15 instead of restarting. (2) Cost control — long tasks are expensive; restarting from scratch doubles the cost. (3) Human oversight — checkpoints let humans inspect the agent's state mid-execution and intervene if needed. (4) Audit trail — each checkpoint is a record of what the agent decided and did. In distributed systems terms, checkpoints are the equivalent of write-ahead logs.",
+          "followUps": ["How do you handle the case where the plan itself needs to change mid-execution?"]
+        },
+        {
+          "question": "How do you manage context window limitations for a 50-step task?",
+          "answer": "Three-tier memory: (1) Working memory — a compact JSON dict of distilled key facts from all completed steps (~200 tokens). Updated by an LLM extraction call after each step. (2) Recent verbatim — last 3-5 step results in full (~1000 tokens). Provides immediate context. (3) Episodic retrieval — full step results stored in a vector database; semantically relevant past steps retrieved when needed. This keeps the active context to ~2000 tokens regardless of how many steps have been completed, while still having access to all historical information through retrieval.",
+          "followUps": ["How do you decide what to store in working memory vs what to discard?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "How do you implement idempotent step execution in a resumable agent?",
+          "answer": "```python\ndef run_step(checkpoint, step_index):\n    step = checkpoint.plan[step_index]\n    \n    # Check if already completed\n    existing = checkpoint.get_step_result(step['index'])\n    if existing and existing.status == 'success':\n        print(f'Step {step[\"index\"]} already completed — skipping')\n        return existing.result\n    \n    # Execute\n    result, success = execute_step(step, checkpoint.context)\n    \n    # Store result\n    checkpoint.completed_steps.append(StepResult(\n        step_index=step['index'],\n        description=step['description'],\n        result=result,\n        status='success' if success else 'failed',\n    ))\n    store.save(checkpoint)\n    return result\n```"
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You're building a financial report generation agent that takes 45 minutes and involves 30 steps. How do you ensure reliability and auditability?",
+          "answer": "Architecture: (1) Persistent state: DynamoDB table with (task_id, step_index) as composite key. Each step result stored as an item. Agent state stored separately. (2) Idempotency: before executing step N, check DynamoDB for existing result. Skip if found. (3) Checkpointing frequency: after every step (financial data is critical, no tolerance for data loss). (4) Human gates: steps involving external communications (sending report to executives) require explicit approval via Slack webhook. (5) Audit trail: every step logged with: user_id, task_id, step_index, input data hash, result hash, timestamp, model version. Stored immutably in S3. (6) Dead-letter queue: failed tasks (after 3 retries) go to a DLQ with full state for manual investigation. (7) Rollback: for any data modification steps, store the before-state so the run can be reversed. (8) Monitoring: CloudWatch alarms on task duration (>60 min = alert), step failure rate, and cost per task.",
+          "followUps": ["How would you handle a scenario where step 28 fails and requires recomputing step 15?"]
+        }
+      ],
+      "wrongAnswers": [
+        "Long-horizon tasks should be split into multiple separate agent runs to avoid context issues — splitting loses the accumulated context and checkpointing within a single run is more reliable",
+        "Checkpointing after every step is too expensive in API calls for summarization — summarization calls are cheap (tiny prompts) relative to the cost of re-running a 30-step task",
+        "Human approval gates should be avoided in automated agents — they are essential for irreversible high-stakes actions and can be designed to be non-blocking (async approval with notification)"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d42q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "What is the purpose of checkpointing in a long-horizon agent?",
+          "options": {
+            "A": "To speed up execution by caching intermediate results",
+            "B": "To save agent state after each step so the task can resume after a failure",
+            "C": "To reduce the number of LLM API calls",
+            "D": "To validate that each step produces correct output"
+          },
+          "answer": "B",
+          "explanation": "Checkpointing saves the full agent state (plan, completed steps, context) to durable storage after each step. If the process crashes, the agent resumes from the last checkpoint rather than restarting from step 1."
+        },
+        {
+          "id": "d42q2",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is 'working memory' in a long-horizon agent?",
+          "options": {
+            "A": "RAM allocated to the agent process",
+            "B": "A compact dict of key facts distilled from all completed steps, passed to each subsequent step",
+            "C": "The last N messages in the conversation history",
+            "D": "The agent's planning buffer before execution starts"
+          },
+          "answer": "B",
+          "explanation": "Working memory is a structured summary of key facts accumulated across all steps — small enough to fit in a prompt but carrying the essential context. It's updated by an extraction call after each step, replacing the need to pass full step histories."
+        },
+        {
+          "id": "d42q3",
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "An agent crashes at step 20 of 30. On restart, it begins executing step 20 again, which sends an email a second time. What is the root cause?",
+          "options": {
+            "A": "The checkpoint was not saved before the crash",
+            "B": "Step execution is not idempotent — there is no check for already-completed steps on resume",
+            "C": "The email tool doesn't have rate limiting",
+            "D": "The agent restarted with a different task_id"
+          },
+          "answer": "B",
+          "explanation": "Idempotent execution requires checking if a step was already completed before re-executing it. On resume, the agent should find step 20's result in the checkpoint and skip it — not re-execute. The email tool being non-idempotent makes re-execution dangerous."
+        },
+        {
+          "id": "d42q4",
+          "level": "advanced",
+          "category": "scenario",
+          "question": "A 30-step agent is at step 25. Its context now has 8000 tokens of history. What is the best approach?",
+          "options": {
+            "A": "Increase the model's context window to accommodate",
+            "B": "Compress history by running a summarization step that condenses the last 20 steps into a 500-token summary",
+            "C": "Clear the context and start fresh from step 25",
+            "D": "Split the task into two separate agent runs at step 25"
+          },
+          "answer": "B",
+          "explanation": "Periodic summarization (every 10-15 steps) compresses accumulated history into a compact working memory. The model in step 25 gets the 500-token summary of steps 1-20 plus the last 5 steps verbatim — enough context without the 8000-token overhead."
+        },
+        {
+          "id": "d42q5",
+          "level": "basic",
+          "category": "code",
+          "question": "What information should a checkpoint store to enable complete task resumption?",
+          "options": {
+            "A": "Only the current step number",
+            "B": "Original task, full plan, completed step results, current step index, and working memory context",
+            "C": "The LLM conversation history only",
+            "D": "The task ID and error log"
+          },
+          "answer": "B",
+          "explanation": "Complete resumption requires: the original task (what to do), the plan (what steps exist), completed step results (what has been done and what was found), the current position (where to resume), and working memory (accumulated context for future steps)."
+        }
+      ]
+    }
+  ]
+}

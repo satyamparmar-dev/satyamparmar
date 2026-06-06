@@ -21,6 +21,7 @@ import { getProPath } from '../../constants/proCurriculum'
 import type { ProPathId } from '../../types/pro.types'
 import { PRO_UI } from '../../constants/proUi'
 import { getProInterviewAnswer } from '../../constants/proRoles'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 const ProPathDetail: React.FC = () => {
   const { pathId } = useParams<{ pathId: string; week?: string }>()
@@ -33,6 +34,8 @@ const ProPathDetail: React.FC = () => {
   }, [hasProProfile, navigate])
 
   const path = pathId ? getProPath(pathId as ProPathId) : undefined
+
+  usePageTitle(path?.title ?? 'Pro Path')
 
   const projectLessons = useMemo(() => {
     if (!path) return []

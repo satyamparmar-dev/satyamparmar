@@ -10,8 +10,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import LevelBadge from '../components/LevelBadge';
 import TrackBanner from '../components/TrackBanner';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const Bookmarks: React.FC = () => {
+  usePageTitle('Bookmarks');
   const navigate = useNavigate();
   const { curriculum, loadedPhases, progress, toggleBookmark } = useAppStore();
   const [filterPhase, setFilterPhase] = useState<string>('all');
@@ -27,7 +29,7 @@ const Bookmarks: React.FC = () => {
         ? loadedPhases[phaseKey]?.days?.find((d) => d.day === dayNum) ?? null
         : null;
       const phase = curriculum.phases.find((p) => {
-        const [s, e] = p.days.split('–').map(Number);
+        const [s, e] = (p.days ?? '0–0').split('–').map(Number);
         return dayNum >= s && dayNum <= e;
       });
       return { dayNum, dayData, phase };
@@ -39,7 +41,7 @@ const Bookmarks: React.FC = () => {
     <Box className="fade-in">
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} flexWrap="wrap" gap={2}>
         <Box>
-          <Typography variant="h4" fontWeight={800}>Bookmarks</Typography>
+          <Typography variant="h4" component="h1" fontWeight={800}>Bookmarks</Typography>
           <Typography color="text.secondary">
             {(progress.bookmarks ?? []).length} saved {(progress.bookmarks ?? []).length === 1 ? 'day' : 'days'}
           </Typography>

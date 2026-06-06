@@ -42,11 +42,46 @@ const MainLayout: React.FC<Props> = ({ children }) => {
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
+      {/* Skip navigation — visible only on keyboard focus */}
+      <Box
+        component="a"
+        href="#main-content"
+        sx={{
+          position: 'absolute',
+          left: '-9999px',
+          top: 'auto',
+          width: 1,
+          height: 1,
+          overflow: 'hidden',
+          zIndex: 9999,
+          '&:focus': {
+            position: 'fixed',
+            top: 12,
+            left: 12,
+            width: 'auto',
+            height: 'auto',
+            px: 2,
+            py: 1,
+            bgcolor: 'background.paper',
+            border: '2px solid',
+            borderColor: 'primary.main',
+            borderRadius: 1,
+            fontWeight: 700,
+            fontSize: '0.875rem',
+            color: 'text.primary',
+            textDecoration: 'none',
+          },
+        }}
+      >
+        Skip to main content
+      </Box>
+
       <Header onMenuToggle={handleMenuToggle} />
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <Box
         component="main"
+        id="main-content"
         sx={{
           flexGrow: 1,
           width: {

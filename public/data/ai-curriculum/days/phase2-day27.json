@@ -1,0 +1,172 @@
+{
+  "day": 27,
+  "phase": 2,
+  "title": "Advanced RAG — Reranking, HyDE & Parent-Child Chunking",
+  "description": "Move beyond basic RAG: implement cross-encoder reranking, HyDE (Hypothetical Document Embeddings), parent-child chunking, and contextual compression. These techniques push retrieval precision from 70% to 90%+.",
+  "estimatedHours": 4,
+  "difficulty": "Intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["advanced-rag", "reranking", "hyde", "parent-child-chunking", "contextual-compression", "colbert"],
+  "prerequisites": ["phase2-day23", "phase2-day25"],
+  "learningObjectives": [
+    "Implement two-stage retrieval: embedding recall then cross-encoder reranking",
+    "Use HyDE to improve embedding retrieval for vague queries",
+    "Build parent-child chunking for context-rich small chunk retrieval",
+    "Apply contextual compression to reduce noise in retrieved content",
+    "Combine advanced techniques into a production retrieval pipeline",
+    "Measure the precision and recall improvement of each technique"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "Basic RAG with top-K cosine similarity retrieval typically achieves 65-75% precision. Advanced RAG techniques push this to 85-95%. For a customer-facing AI product, the difference between answering 7 out of 10 questions correctly vs 9 out of 10 is the difference between a useful product and a trusted one. These techniques are what separate junior RAG implementations from production-grade systems."
+    },
+    {
+      "type": "theory",
+      "content": "## The Two-Stage Retrieval Pattern\n\nStage 1 (fast, recall-focused): embedding similarity retrieves top-50 candidates\nStage 2 (slow, precision-focused): reranker scores all 50, returns top-5\n\n```\nQuery → Embed → Top-50 by cosine (fast, O(log n))\n                        ↓\n              Cross-Encoder Reranker\n          (scores all 50 against query)\n                        ↓\n              Top-5 by reranker score\n                        ↓\n                   LLM + Generate\n```\n\n**Why two stages?** Embedding models compress semantics into a fixed vector — they're optimized for recall (don't miss relevant docs) but not precision. Cross-encoders see the query and document together, enabling much more nuanced relevance scoring.\n\n---\n\n## Cross-Encoder Reranking\n\n**Bi-encoder** (standard RAG): embed query separately, embed doc separately, compare vectors.\n**Cross-encoder**: concatenate query+doc, feed to model, outputs a single relevance score.\n\n```python\n# Using Cohere Rerank API (simplest production option)\nimport cohere\nco = cohere.Client(os.environ[\"COHERE_API_KEY\"])\n\nresults = co.rerank(\n    query=\"How does RAG reduce hallucinations?\",\n    documents=[doc1_text, doc2_text, ...],  # 20-50 candidate texts\n    top_n=5,\n    model=\"rerank-english-v3.0\",\n)\nreranked = [results.results[i].document[\"text\"] for i in range(len(results.results))]\n\n# Open-source alternative: sentence-transformers\nfrom sentence_transformers import CrossEncoder\nmodel = CrossEncoder(\"cross-encoder/ms-marco-MiniLM-L-6-v2\")\nscores = model.predict([(query, doc) for doc in candidates])\nranked_docs = [d for _, d in sorted(zip(scores, candidates), reverse=True)][:5]\n```\n\n---\n\n## HyDE — Hypothetical Document Embeddings\n\nFor vague or abstract queries, the query vector doesn't match document vectors well.\n\n**Standard RAG**: embed query → compare to document vectors (different distributions)\n**HyDE**: LLM generates a hypothetical answer → embed the answer → compare to documents\n\n```python\ndef hyde_retrieve(query: str, vectorstore, k: int = 5) -> list:\n    # Step 1: Generate hypothetical answer\n    hypothetical = llm.invoke(f\"Write a paragraph that would answer: {query}\")\n    # Step 2: Embed the hypothetical answer (not the query)\n    hyp_embedding = embed(hypothetical.content)\n    # Step 3: Retrieve using hypothetical embedding\n    return vectorstore.similarity_search_by_vector(hyp_embedding, k=k)\n```\n\nWhy it works: the hypothetical answer uses the same vocabulary and style as actual documents, so its embedding is in the same semantic space as documents rather than the question space.\n\n**When to use**: vague queries, domain-specific jargon, questions very different from document style.\n\n---\n\n## Parent-Child Chunking\n\nProblem: small chunks retrieve precisely but lack context. Large chunks have context but reduce precision.\n\nSolution: index SMALL chunks for retrieval, return PARENT chunks for generation.\n\n```\nDocument\n   ├── Parent chunk 1 (800 tokens) ← returned to LLM\n   │   ├── Child chunk 1.1 (200 tokens) ← indexed for search\n   │   ├── Child chunk 1.2 (200 tokens) ← indexed for search\n   │   └── Child chunk 1.3 (200 tokens) ← indexed for search\n   └── Parent chunk 2 (800 tokens)\n       ├── Child chunk 2.1 (200 tokens)\n       └── Child chunk 2.2 (200 tokens)\n```\n\n```python\n# LangChain implementation\nfrom langchain.retrievers import ParentDocumentRetriever\nfrom langchain.storage import InMemoryStore\nfrom langchain_text_splitters import RecursiveCharacterTextSplitter\n\nparent_splitter = RecursiveCharacterTextSplitter(chunk_size=800)\nchild_splitter  = RecursiveCharacterTextSplitter(chunk_size=200)\ndocstore = InMemoryStore()  # or RedisStore for production\n\nretriever = ParentDocumentRetriever(\n    vectorstore=vectorstore,\n    docstore=docstore,\n    child_splitter=child_splitter,\n    parent_splitter=parent_splitter,\n)\nretriever.add_documents(docs)\n# Retrieves child chunks by similarity, returns parent chunks\n```\n\n---\n\n## Contextual Compression\n\nFilter retrieved chunks to keep only the relevant sentences:\n\n```python\nfrom langchain.retrievers import ContextualCompressionRetriever\nfrom langchain.retrievers.document_compressors import LLMChainExtractor\n\ncompressor = LLMChainExtractor.from_llm(llm)\ncompression_retriever = ContextualCompressionRetriever(\n    base_compressor=compressor,\n    base_retriever=vectorstore.as_retriever(search_kwargs={\"k\": 10})\n)\n# Retrieves 10 chunks, then extracts only relevant sentences from each\n# Returns compressed, focused content for each chunk\n```\n\n---\n\n## Advanced RAG Combination\n\nA production retrieval pipeline combining all techniques:\n\n```\nQuery\n  → HyDE (if query is vague/abstract)\n  → Embed\n  → Retrieve top-50 (parent-child: index child, return parent)\n  → Rerank top-50 → top-10\n  → Contextual compression → extract relevant sentences\n  → Generate with top-5 compressed chunks\n```\n\nCost tradeoffs:\n- HyDE: +1 LLM call per query\n- Reranking: +Cohere API call or +local model inference\n- Parent-child: +2x storage\n- Compression: +top_k LLM calls per query"
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "advanced_rag.py",
+      "level": "Intermediate",
+      "code": "\"\"\"Advanced RAG: HyDE, parent-child chunking, reranking pipeline.\"\"\"\nimport os\nimport math\nfrom openai import OpenAI\nimport chromadb\n\nclient = OpenAI(api_key=os.environ[\"OPENAI_API_KEY\"])\n\n\n# ── Embedding helper ─────────────────────────────────────────────\ndef embed(texts: list[str]) -> list[list[float]]:\n    r = client.embeddings.create(model=\"text-embedding-3-small\", input=texts)\n    return [item.embedding for item in r.data]\n\ndef cosine_sim(a: list[float], b: list[float]) -> float:\n    dot = sum(x * y for x, y in zip(a, b))\n    ma  = math.sqrt(sum(x**2 for x in a))\n    mb  = math.sqrt(sum(x**2 for x in b))\n    return dot / (ma * mb) if ma and mb else 0.0\n\n\n# ── 1. HyDE retrieval ────────────────────────────────────────────\nclass HyDERetriever:\n    def __init__(self, vectorstore, k: int = 5):\n        self.vs = vectorstore\n        self.k  = k\n\n    def _generate_hypothesis(self, query: str) -> str:\n        response = client.chat.completions.create(\n            model=\"gpt-4o-mini\",\n            messages=[{\n                \"role\": \"user\",\n                \"content\": f\"Write a 2-3 sentence technical paragraph that would be the ideal answer to: {query}\"\n            }],\n            temperature=0.0, max_tokens=200,\n        )\n        return response.choices[0].message.content\n\n    def retrieve(self, query: str) -> list[dict]:\n        hypothesis   = self._generate_hypothesis(query)\n        hyp_emb      = embed([hypothesis])[0]\n        query_emb    = embed([query])[0]\n\n        # Retrieve with both and merge results\n        hyp_results   = self.vs.retrieve(hyp_emb,   top_k=self.k)\n        query_results = self.vs.retrieve(query_emb, top_k=self.k)\n\n        # Deduplicate by chunk text, prefer higher score\n        seen, merged = set(), []\n        for r in hyp_results + query_results:\n            key = r[\"text\"][:50]\n            if key not in seen:\n                seen.add(key)\n                merged.append(r)\n        return sorted(merged, key=lambda x: -x[\"score\"])[:self.k]\n\n\n# ── 2. Cross-encoder reranker (pure Python, no sentence-transformers) ──\nclass LLMReranker:\n    \"\"\"Uses an LLM to score document relevance — production use Cohere rerank API.\"\"\"\n    def rerank(self, query: str, documents: list[dict], top_n: int = 5) -> list[dict]:\n        if not documents:\n            return []\n        scores = []\n        for doc in documents:\n            response = client.chat.completions.create(\n                model=\"gpt-4o-mini\",\n                messages=[{\n                    \"role\": \"user\",\n                    \"content\": f\"Rate 0-10 how relevant this document is to the query.\\nQuery: {query}\\nDocument: {doc['text'][:300]}\\nReturn only a number.\"\n                }],\n                temperature=0.0, max_tokens=5,\n            )\n            try:\n                score = float(response.choices[0].message.content.strip())\n            except ValueError:\n                score = 0.0\n            scores.append((score, doc))\n        scores.sort(key=lambda x: -x[0])\n        return [doc for _, doc in scores[:top_n]]\n\n\n# ── 3. Parent-child chunking ──────────────────────────────────────\nclass ParentChildChunker:\n    def __init__(self, parent_size: int = 800, child_size: int = 200, overlap: int = 20):\n        self.parent_size = parent_size\n        self.child_size  = child_size\n        self.overlap     = overlap\n        self._parent_map: dict[str, str] = {}  # child_id → parent_text\n\n    def chunk(self, text: str, doc_id: str) -> list[dict]:\n        # Split into parents\n        parents = []\n        for i in range(0, len(text), self.parent_size - self.overlap):\n            parents.append(text[i:i + self.parent_size])\n\n        # Split each parent into children\n        children = []\n        for p_idx, parent in enumerate(parents):\n            for c_idx in range(0, len(parent), self.child_size - self.overlap):\n                child_text = parent[c_idx:c_idx + self.child_size]\n                child_id   = f\"{doc_id}_p{p_idx}_c{c_idx}\"\n                self._parent_map[child_id] = parent\n                children.append({\"text\": child_text, \"id\": child_id, \"parent_text\": parent})\n        return children\n\n    def get_parent(self, child_id: str) -> str | None:\n        return self._parent_map.get(child_id)\n\n\n# ── 4. Simple vector store for demo ──────────────────────────────\nclass SimpleVectorStore:\n    def __init__(self):\n        self._items: list[dict] = []\n\n    def add(self, items: list[dict], embeddings: list[list[float]]) -> None:\n        for item, emb in zip(items, embeddings):\n            self._items.append({**item, \"embedding\": emb})\n\n    def retrieve(self, query_emb: list[float], top_k: int = 10) -> list[dict]:\n        scored = [(cosine_sim(query_emb, it[\"embedding\"]), it) for it in self._items]\n        scored.sort(key=lambda x: -x[0])\n        return [{\"text\": it[\"text\"], \"score\": s, \"id\": it.get(\"id\", \"\")} for s, it in scored[:top_k]]\n\n\n# ── 5. Advanced RAG pipeline ──────────────────────────────────────\nclass AdvancedRAGPipeline:\n    def __init__(self):\n        self.child_store  = SimpleVectorStore()\n        self.chunker      = ParentChildChunker(parent_size=600, child_size=150)\n        self.reranker     = LLMReranker()\n\n    def index(self, documents: list[dict]) -> None:\n        all_children = []\n        for doc in documents:\n            children = self.chunker.chunk(doc[\"text\"], doc[\"doc_id\"])\n            all_children.extend(children)\n        embeddings = embed([c[\"text\"] for c in all_children])\n        self.child_store.add(all_children, embeddings)\n        print(f\"Indexed {len(all_children)} child chunks from {len(documents)} documents\")\n\n    def query(self, question: str, use_hyde: bool = True, top_k_recall: int = 20, top_k_final: int = 3) -> dict:\n        # Stage 1: Embed and retrieve children\n        if use_hyde:\n            hyp = client.chat.completions.create(\n                model=\"gpt-4o-mini\",\n                messages=[{\"role\": \"user\", \"content\": f\"Write a 2-sentence answer to: {question}\"}],\n                temperature=0.0, max_tokens=100,\n            ).choices[0].message.content\n            q_emb = embed([hyp])[0]\n        else:\n            q_emb = embed([question])[0]\n\n        candidates = self.child_store.retrieve(q_emb, top_k=top_k_recall)\n\n        # Stage 2: Upgrade to parent chunks\n        parent_chunks = []\n        seen_parents  = set()\n        for c in candidates:\n            parent = self.chunker.get_parent(c[\"id\"]) or c[\"text\"]\n            if parent[:50] not in seen_parents:\n                seen_parents.add(parent[:50])\n                parent_chunks.append({\"text\": parent, \"score\": c[\"score\"], \"id\": c[\"id\"]})\n\n        # Stage 3: Rerank parents\n        reranked = self.reranker.rerank(question, parent_chunks, top_n=top_k_final)\n\n        # Stage 4: Generate\n        context = \"\\n\\n\".join(f\"[{i+1}] {r['text']}\" for i, r in enumerate(reranked))\n        answer  = client.chat.completions.create(\n            model=\"gpt-4o-mini\",\n            messages=[\n                {\"role\": \"system\", \"content\": \"Answer from context only. Cite [N].\"},\n                {\"role\": \"user\",   \"content\": f\"Context:\\n{context}\\n\\nQuestion: {question}\"}\n            ],\n            temperature=0.0, max_tokens=500,\n        ).choices[0].message.content\n        return {\"answer\": answer, \"chunks_retrieved\": len(candidates), \"chunks_used\": len(reranked)}\n\n\nif __name__ == \"__main__\":\n    pipeline = AdvancedRAGPipeline()\n    pipeline.index([\n        {\"doc_id\": \"rag\",   \"text\": \"RAG retrieves relevant documents and uses them as context. It reduces hallucinations by grounding responses. The key insight: models generate more accurate answers when given evidence. RAG is dynamic — you update the knowledge base without retraining the model. Chunking strategy is critical: 400-512 tokens with 10-15% overlap works best for most corpora.\"},\n        {\"doc_id\": \"finetune\", \"text\": \"Fine-tuning trains a model on task-specific examples. It improves style consistency and domain vocabulary but does not reliably update factual knowledge. Cost: significant compute and labeled data required. Fine-tuning is best for format adherence, not knowledge updating.\"},\n    ])\n    result = pipeline.query(\"Why is chunking strategy important in RAG?\")\n    print(f\"Answer: {result['answer']}\")\n    print(f\"Retrieved {result['chunks_retrieved']} → used {result['chunks_used']}\")",
+      "output": "Indexed 8 child chunks from 2 documents\nAnswer: Chunking strategy is critical in RAG because it determines the granularity and coherence of retrieved context [1]. Using 400-512 tokens with 10-15% overlap works best for most corpora, balancing specificity with enough context for meaningful retrieval [1].\nRetrieved 8 → used 3"
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Using HyDE for all queries — HyDE adds a full LLM call per query. For queries with specific keywords (proper nouns, product names, version numbers), direct embedding often outperforms HyDE. Only use HyDE when you measure it improving retrieval quality.",
+        "LLM reranking in production — using an LLM to rerank is expensive (top_k LLM calls). Use Cohere Rerank API or a local cross-encoder model (sentence-transformers) instead. LLM reranking is only for prototyping.",
+        "Parent-child docstore in memory — InMemoryStore loses all parent mappings on restart. Use a persistent store (Redis, SQLite) for production parent-child retrieval.",
+        "Contextual compression adding latency — LLMChainExtractor calls the LLM once per retrieved chunk, multiplying latency by top_k. Use EmbeddingsFilter instead for a cheaper compression approach.",
+        "Combining all techniques without measuring each — each advanced technique adds cost and latency. Measure the precision improvement of each individually before combining. Some may not help your specific use case."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Implement a Retrieval Evaluation Harness",
+      "problem": "Build a `RetrievalEvaluator` that: (1) takes a list of test cases: {query, relevant_doc_ids}, (2) runs each query through both basic retrieval and HyDE retrieval, (3) computes Precision@5 for each method, (4) prints a comparison table showing improvement. Test with at least 5 queries and a vector store containing 20+ documents.",
+      "hints": [
+        "Precision@K = len(set(retrieved_ids[:k]) & set(relevant_ids)) / k",
+        "Run basic retrieval: embed query → retrieve top-5",
+        "Run HyDE: generate hypothesis → embed → retrieve top-5",
+        "Report: mean precision for each method, difference, improvement %"
+      ],
+      "solution": "class RetrievalEvaluator:\n    def __init__(self, store: SimpleVectorStore, chunker_map: dict):\n        self.store = store\n        self.chunker_map = chunker_map  # chunk_id → doc_id mapping\n\n    def precision_at_k(self, retrieved_ids: list[str], relevant_ids: set, k: int = 5) -> float:\n        top_k_doc_ids = [self.chunker_map.get(rid, rid) for rid in retrieved_ids[:k]]\n        hits = len(set(top_k_doc_ids) & relevant_ids)\n        return hits / k\n\n    def evaluate(self, test_cases: list[dict]) -> dict:\n        basic_scores, hyde_scores = [], []\n        hyde_retriever = HyDERetriever(self.store)\n\n        for case in test_cases:\n            q = case['query']\n            relevant = set(case['relevant_doc_ids'])\n\n            # Basic retrieval\n            q_emb = embed([q])[0]\n            basic_results = self.store.retrieve(q_emb, top_k=5)\n            basic_ids = [r['id'] for r in basic_results]\n            basic_scores.append(self.precision_at_k(basic_ids, relevant))\n\n            # HyDE retrieval\n            hyde_results = hyde_retriever.retrieve(q)\n            hyde_ids = [r['id'] for r in hyde_results]\n            hyde_scores.append(self.precision_at_k(hyde_ids, relevant))\n\n        basic_mean = sum(basic_scores) / len(basic_scores)\n        hyde_mean  = sum(hyde_scores) / len(hyde_scores)\n        improvement = ((hyde_mean - basic_mean) / basic_mean * 100) if basic_mean > 0 else 0\n\n        print(f'Basic P@5: {basic_mean:.3f} | HyDE P@5: {hyde_mean:.3f} | Improvement: {improvement:+.1f}%')\n        return {'basic': basic_mean, 'hyde': hyde_mean, 'improvement_pct': improvement}",
+      "difficulty": "Intermediate"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "Explain the two-stage retrieval pattern and why it improves precision over single-stage.",
+          "answer": "Two-stage retrieval: Stage 1 uses embedding-based similarity (bi-encoder) to retrieve a large candidate pool (top-50) with high recall but moderate precision — fast, O(log n) with HNSW. Stage 2 uses a cross-encoder reranker that sees the query AND document together to produce fine-grained relevance scores — slow but high precision. Cross-encoders outperform bi-encoders for precision because they can model complex query-document interactions. You use the fast stage to avoid running the expensive cross-encoder against millions of documents, then apply it to just 50 candidates. Result: near-cross-encoder precision at near-bi-encoder latency.",
+          "followUps": [
+            "What is the difference between a bi-encoder and cross-encoder architecture?",
+            "How does Cohere Rerank work and what model does it use?"
+          ]
+        },
+        {
+          "question": "What is HyDE and when should you use it instead of standard embedding retrieval?",
+          "answer": "HyDE (Hypothetical Document Embeddings): instead of embedding the user's query, use an LLM to generate a hypothetical ideal answer, then embed that. The hypothesis uses the same vocabulary and style as real documents, so its embedding better matches the document embedding space. Use HyDE when: (1) queries are very different in style from documents (questions vs. answers), (2) queries are abstract or vague with little signal, (3) domain-specific language in documents differs from user query language. Avoid HyDE for: specific keyword queries (product names, version numbers), high-latency-sensitive applications (adds an LLM call), and when you can measure it doesn't improve quality for your corpus.",
+          "followUps": [
+            "What are the latency and cost implications of HyDE in production?",
+            "How would you A/B test HyDE vs standard retrieval in production?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write a function that implements parent-child retrieval: given child chunks and a docstore mapping children to parents, return the parent chunks for retrieved children, deduplicating by parent.",
+          "answer": "def get_parent_chunks(retrieved_children: list[dict], parent_map: dict[str, str]) -> list[dict]:\n    seen_parents = set()\n    parent_chunks = []\n    for child in retrieved_children:\n        child_id = child.get('id', '')\n        parent_text = parent_map.get(child_id)\n        if parent_text is None:\n            parent_text = child['text']  # fallback to child if no parent\n        parent_key = parent_text[:100]  # use first 100 chars as dedup key\n        if parent_key not in seen_parents:\n            seen_parents.add(parent_key)\n            parent_chunks.append({'text': parent_text, 'score': child['score'], 'child_id': child_id})\n    return parent_chunks",
+          "followUps": [
+            "How would you handle the case where two children belong to the same parent but have different relevance scores?",
+            "What storage backend would you use for parent-child mappings in production?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your RAG system's retrieval precision@5 is 0.72. You have a $500/month budget to improve it. What techniques do you prioritize and in what order?",
+          "answer": "Cost-prioritized improvement plan: (1) Parent-child chunking — zero marginal cost per query (storage only), adds initial engineering effort. Expected gain: +5-8% precision. Do this first. (2) MMR retrieval — zero additional cost, just a parameter change. Expected gain: +2-4% on diverse corpora. (3) Measure if HyDE helps your specific query distribution — cost: +1 LLM call per query at ~$0.00015 each. At 100K queries/month = $15/month. Worth it if precision gain > 5%. (4) Cohere Rerank — $1/1000 reranks. At 100K queries/month with top-20 candidates = $100/month. Expected gain: +8-15%. This is the highest-precision improvement. (5) Contextual compression — adds top_k LLM calls per query; expensive. Only worth it for very high-value queries. Total: parent-child + MMR is free, HyDE adds ~$15/month, reranking adds ~$100/month — well within budget for significant precision gains.",
+          "followUps": [
+            "How would you set up an A/B test to measure the impact of each technique?",
+            "What monitoring would you put in place to detect retrieval quality regression?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "HyDE always outperforms direct query embedding — use it for all queries",
+        "Cross-encoder reranking is fast enough to run against the full document index",
+        "Parent-child chunking stores parent text in the vector database for fast retrieval"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "What is the key difference between a bi-encoder and a cross-encoder in retrieval?",
+          "options": {
+            "A": "Bi-encoders are trained on more data; cross-encoders are smaller",
+            "B": "Bi-encoders embed query and document separately; cross-encoders process them jointly for higher precision",
+            "C": "Bi-encoders are used for images; cross-encoders for text",
+            "D": "Cross-encoders are faster because they use a smaller model"
+          },
+          "answer": "B",
+          "explanation": "Bi-encoders encode query and document independently into fixed vectors, enabling fast HNSW search. Cross-encoders concatenate query+document and process them together, enabling fine-grained interaction modeling — much higher precision but O(n) complexity (can't precompute). Two-stage retrieval uses bi-encoder for recall, cross-encoder for precision."
+        },
+        {
+          "id": 2,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "In parent-child chunking, what is indexed for semantic search and what is returned to the LLM?",
+          "options": {
+            "A": "Parent chunks are indexed; parent chunks are returned",
+            "B": "Child chunks are indexed; parent chunks are returned",
+            "C": "Both parent and child chunks are indexed; child chunks are returned",
+            "D": "Child chunks are indexed; child chunks are returned"
+          },
+          "answer": "B",
+          "explanation": "Child chunks (small, e.g., 200 tokens) are indexed in the vector database for precise retrieval. When a child is retrieved, its parent chunk (larger, e.g., 800 tokens with surrounding context) is returned to the LLM. This gives precision in retrieval (small chunks match better) with context in generation (parent chunk is coherent and meaningful)."
+        },
+        {
+          "id": 3,
+          "level": "advanced",
+          "category": "theory",
+          "question": "Why does HyDE improve retrieval for vague queries?",
+          "options": {
+            "A": "HyDE uses a larger embedding model than standard retrieval",
+            "B": "The hypothetical answer has the same vocabulary/style as documents, putting it in the same embedding space",
+            "C": "HyDE increases the temperature of the LLM for more creative retrieval",
+            "D": "HyDE adds keywords from the query to improve BM25 matching"
+          },
+          "answer": "B",
+          "explanation": "Embedding models map text into a geometric space where similar-style text clusters together. A user question ('How does RAG work?') and a document answer ('RAG works by...') may have different embedding distributions despite being semantically related. HyDE's hypothetical answer is written in document-style text, so its embedding lands in the document cluster, finding better matches than the question's embedding would."
+        },
+        {
+          "id": 4,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "You're implementing two-stage retrieval with Cohere reranking. Stage 1 retrieves top-50, Stage 2 reranks to top-5. What happens to latency and cost compared to top-5 only?",
+          "options": {
+            "A": "Latency doubles; cost increases by 10x",
+            "B": "Latency increases by reranking time (~100-300ms); cost adds Cohere API charge per query",
+            "C": "Latency decreases because fewer chunks reach the LLM",
+            "D": "Cost is identical because you're still only using 5 final chunks"
+          },
+          "answer": "B",
+          "explanation": "Stage 1 (top-50 vector search) adds minimal latency (~10ms more than top-5). Stage 2 (Cohere rerank of 50 docs) adds ~100-300ms latency and ~$0.001 per 50-doc rerank call. The LLM generation cost is the same (top-5 chunks). Net result: +100-300ms latency, +$0.001/query, significantly higher precision. For most production use cases this trade-off is very worthwhile."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## Advanced RAG — Quick Reference\n\n### Two-Stage Retrieval\n```\nStage 1: Embed → top-50 (fast, recall-focused)\nStage 2: Rerank → top-5 (slow, precision-focused)\n```\n\n### HyDE\n```python\nhypothesis = llm.invoke(f'Write an answer to: {query}')\nhyp_emb = embed([hypothesis])[0]\ndocs = vectorstore.similarity_search_by_vector(hyp_emb, k=5)\n```\nUse for: abstract queries, style mismatch between Q and docs\n\n### Parent-Child Chunking\n- Index: child chunks (200 tokens) for precision\n- Return: parent chunks (800 tokens) for context\n```python\nParentDocumentRetriever(vectorstore, docstore, child_splitter, parent_splitter)\n```\n\n### Reranking Options\n| Option | Cost | Latency | Quality |\n|--------|------|---------|--------|\n| Cohere Rerank API | $1/1K | 100-300ms | High |\n| cross-encoder local | Free | 200-500ms | High |\n| LLM rerank | High | 1-5s | Highest |\n\n### Technique Impact (typical)\n| Technique | Precision gain | Cost |\n|-----------|---------------|------|\n| MMR | +2-4% | None |\n| Parent-child | +5-8% | Storage |\n| HyDE | +5-10% | +1 LLM call |\n| Reranking | +8-15% | ~$1/1K queries |"
+    }
+  ]
+}

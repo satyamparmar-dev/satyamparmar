@@ -4,6 +4,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useNavigate, useParams } from 'react-router-dom';
 import { parseMarkdown } from '../utils/markdown';
 import { getBlogMarkdown, getBlogPostMeta } from '../content/blog/registry';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const BlogPost: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -14,6 +15,8 @@ const BlogPost: React.FC = () => {
 
   const meta = slug ? getBlogPostMeta(slug) : undefined;
   const raw = slug ? getBlogMarkdown(slug) : undefined;
+
+  usePageTitle(meta?.title ?? 'Post Not Found');
 
   const html = useMemo(() => (raw ? parseMarkdown(raw) : ''), [raw]);
 
@@ -70,7 +73,7 @@ const BlogPost: React.FC = () => {
             border: 'none',
           }}
         />
-        <Typography variant="h4" fontWeight={800} gutterBottom sx={{ letterSpacing: '-0.02em' }}>
+        <Typography variant="h4" component="h1" fontWeight={800} gutterBottom sx={{ letterSpacing: '-0.02em' }}>
           {meta.title}
         </Typography>
         <Typography color="text.secondary" sx={{ maxWidth: 820, lineHeight: 1.75, fontSize: '0.95rem' }}>

@@ -1,0 +1,172 @@
+{
+  "day": 20,
+  "phase": 1,
+  "title": "Multi-Provider Chatbot App",
+  "description": "Build a complete multi-turn chatbot that works with OpenAI, Anthropic, and Gemini — with provider switching, conversation persistence, streaming UI, cost tracking, and graceful error handling.",
+  "estimatedHours": 4,
+  "difficulty": "Intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["chatbot", "multi-provider", "streaming", "conversation", "cost-tracking", "production-patterns"],
+  "prerequisites": ["phase1-day15", "phase1-day16", "phase1-day17"],
+  "learningObjectives": [
+    "Build a provider-agnostic chat interface with a unified API",
+    "Implement persistent conversation history with token budget management",
+    "Add real-time streaming output to the chat UI",
+    "Track per-session cost across multiple providers",
+    "Handle provider failures with automatic failover",
+    "Design the app for extensibility — adding new providers without refactoring core logic"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "Most real AI products aren't locked to a single provider. A well-designed chatbot should swap between GPT-4o, Claude, and Gemini without breaking. This day brings together everything from Phase 1 into a working multi-provider app — the architectural patterns here (provider abstraction, conversation management, cost tracking) are what distinguish production AI systems from demos."
+    },
+    {
+      "type": "theory",
+      "content": "## Architecture: Provider Abstraction\n\nThe key design principle: **separate the interface from the implementation**.\n\n```\n┌─────────────────────────────────┐\n│         ChatApp (CLI/Web)        │\n│   knows nothing about providers  │\n└───────────────┬─────────────────┘\n                │ uses\n┌───────────────▼─────────────────┐\n│         ChatSession              │\n│   history, cost, token budget    │\n└───────────────┬─────────────────┘\n                │ delegates to\n┌───────────────▼─────────────────┐\n│       LLMProvider (abstract)     │\n│   complete(messages, **kwargs)   │\n└────┬──────────┬──────────┬──────┘\n     │          │          │\n  OpenAI   Anthropic    Gemini\n```\n\nEach concrete provider implements the same interface. The session doesn't know which provider it's using.\n\n---\n\n## Conversation History Management\n\nThe #1 production bug: unbounded history.\n\n```python\nclass ConversationHistory:\n    def __init__(self, max_tokens: int = 100_000):\n        self.messages: list[dict] = []\n        self.max_tokens = max_tokens\n\n    def add(self, role: str, content: str) -> None:\n        self.messages.append({\"role\": role, \"content\": content})\n        self._prune_if_needed()\n\n    def _prune_if_needed(self) -> None:\n        # Remove oldest non-system messages until under budget\n        while self._estimated_tokens() > self.max_tokens and len(self.messages) > 2:\n            self.messages.pop(1)  # keep system message at [0]\n\n    def _estimated_tokens(self) -> int:\n        return sum(len(m[\"content\"]) // 4 for m in self.messages)\n```\n\n---\n\n## Streaming Across Providers\n\nEach provider has a different streaming API — the abstraction must normalize this:\n\n```python\ndef stream_response(provider, messages) -> Generator[str, None, None]:\n    if provider == 'openai':\n        with client.chat.completions.stream(model=..., messages=messages) as s:\n            yield from s.text_stream\n    elif provider == 'anthropic':\n        with ac.messages.stream(model=..., messages=messages) as s:\n            yield from s.text_stream\n    elif provider == 'google':\n        for chunk in model.generate_content(prompt, stream=True):\n            yield chunk.text\n```\n\n---\n\n## Cost Tracking Pattern\n\nTrack cost by session for billing/monitoring:\n\n```python\n@dataclass\nclass SessionCost:\n    session_id: str\n    provider: str\n    input_tokens: int = 0\n    output_tokens: int = 0\n    calls: int = 0\n\n    def add(self, input_t: int, output_t: int) -> None:\n        self.input_tokens  += input_t\n        self.output_tokens += output_t\n        self.calls         += 1\n\n    def estimate_usd(self) -> float:\n        RATES = {\n            \"openai\":    (2.50, 10.00),\n            \"anthropic\": (3.00, 15.00),\n            \"google\":    (1.25, 10.00),\n        }\n        inp, out = RATES.get(self.provider, (2.50, 10.00))\n        return (self.input_tokens / 1e6) * inp + (self.output_tokens / 1e6) * out\n```\n\n---\n\n## Failover Strategy\n\n```\nRequest → Primary provider\n         ↓ (error)\n         → Secondary provider\n                  ↓ (error)\n                  → Tertiary provider\n                           ↓ (error)\n                           → Return error to user\n```\n\nCircuit breaker: after 3 failures within 60s, skip that provider for 5 minutes."
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "multi_provider_chatbot.py",
+      "level": "Intermediate",
+      "code": "\"\"\"Multi-provider chatbot: OpenAI + Anthropic + Gemini with failover and cost tracking.\"\"\"\nimport os\nimport time\nimport random\nimport uuid\nfrom abc import ABC, abstractmethod\nfrom collections import defaultdict\nfrom dataclasses import dataclass, field\nfrom typing import Generator\n\n\n# ── Provider abstraction ─────────────────────────────────────────\nclass LLMProvider(ABC):\n    @abstractmethod\n    def complete(self, messages: list[dict], system: str = \"\", **kwargs) -> tuple[str, int, int]:\n        \"\"\"Returns (response_text, input_tokens, output_tokens).\"\"\"\n\n    @abstractmethod\n    def stream(self, messages: list[dict], system: str = \"\") -> Generator[str, None, None]:\n        \"\"\"Yields text chunks as they arrive.\"\"\"\n\n    @property\n    @abstractmethod\n    def name(self) -> str: ...\n\n\nclass OpenAIProvider(LLMProvider):\n    def __init__(self, model: str = \"gpt-4o-mini\"):\n        from openai import OpenAI\n        self.client = OpenAI(api_key=os.environ[\"OPENAI_API_KEY\"])\n        self.model = model\n\n    @property\n    def name(self) -> str:\n        return \"openai\"\n\n    def complete(self, messages, system=\"\", **kwargs) -> tuple[str, int, int]:\n        all_messages = ([{\"role\": \"system\", \"content\": system}] if system else []) + messages\n        r = self.client.chat.completions.create(\n            model=self.model, messages=all_messages,\n            max_tokens=kwargs.get(\"max_tokens\", 1024),\n            temperature=kwargs.get(\"temperature\", 0.7),\n        )\n        return r.choices[0].message.content, r.usage.prompt_tokens, r.usage.completion_tokens\n\n    def stream(self, messages, system=\"\") -> Generator[str, None, None]:\n        all_messages = ([{\"role\": \"system\", \"content\": system}] if system else []) + messages\n        with self.client.chat.completions.stream(\n            model=self.model, messages=all_messages, max_tokens=1024\n        ) as s:\n            yield from s.text_stream\n\n\nclass AnthropicProvider(LLMProvider):\n    def __init__(self, model: str = \"claude-haiku-4-5\"):\n        import anthropic\n        self.client = anthropic.Anthropic(api_key=os.environ[\"ANTHROPIC_API_KEY\"])\n        self.model = model\n\n    @property\n    def name(self) -> str:\n        return \"anthropic\"\n\n    def complete(self, messages, system=\"\", **kwargs) -> tuple[str, int, int]:\n        kwargs_clean = {\"model\": self.model, \"max_tokens\": kwargs.get(\"max_tokens\", 1024), \"messages\": messages}\n        if system:\n            kwargs_clean[\"system\"] = system\n        r = self.client.messages.create(**kwargs_clean)\n        return r.content[0].text, r.usage.input_tokens, r.usage.output_tokens\n\n    def stream(self, messages, system=\"\") -> Generator[str, None, None]:\n        kwargs = {\"model\": self.model, \"max_tokens\": 1024, \"messages\": messages}\n        if system:\n            kwargs[\"system\"] = system\n        with self.client.messages.stream(**kwargs) as s:\n            yield from s.text_stream\n\n\nclass GeminiProvider(LLMProvider):\n    def __init__(self, model: str = \"gemini-2.5-flash\"):\n        import google.generativeai as genai\n        genai.configure(api_key=os.environ[\"GOOGLE_API_KEY\"])\n        self._genai = genai\n        self.model_name = model\n\n    @property\n    def name(self) -> str:\n        return \"google\"\n\n    def _to_gemini_messages(self, messages: list[dict]) -> list[dict]:\n        role_map = {\"user\": \"user\", \"assistant\": \"model\"}\n        return [{\"role\": role_map.get(m[\"role\"], \"user\"), \"parts\": [m[\"content\"]]} for m in messages if m[\"role\"] != \"system\"]\n\n    def complete(self, messages, system=\"\", **kwargs) -> tuple[str, int, int]:\n        model = self._genai.GenerativeModel(self.model_name, system_instruction=system or None)\n        chat = model.start_chat(history=self._to_gemini_messages(messages[:-1]))\n        r = chat.send_message(messages[-1][\"content\"])\n        in_t  = getattr(r.usage_metadata, \"prompt_token_count\", 0) or 0\n        out_t = getattr(r.usage_metadata, \"candidates_token_count\", 0) or 0\n        return r.text, in_t, out_t\n\n    def stream(self, messages, system=\"\") -> Generator[str, None, None]:\n        model = self._genai.GenerativeModel(self.model_name, system_instruction=system or None)\n        last = messages[-1][\"content\"]\n        for chunk in model.generate_content(last, stream=True):\n            if chunk.text:\n                yield chunk.text\n\n\n# ── Conversation history ─────────────────────────────────────────\nclass ConversationHistory:\n    def __init__(self, max_tokens: int = 50_000):\n        self.messages: list[dict] = []\n        self.max_tokens = max_tokens\n\n    def add(self, role: str, content: str) -> None:\n        self.messages.append({\"role\": role, \"content\": content})\n        self._prune()\n\n    def _prune(self) -> None:\n        while self._token_estimate() > self.max_tokens and len(self.messages) > 2:\n            self.messages.pop(0)\n\n    def _token_estimate(self) -> int:\n        return sum(len(m[\"content\"]) // 4 for m in self.messages)\n\n    def get(self) -> list[dict]:\n        return self.messages.copy()\n\n\n# ── Cost tracker ─────────────────────────────────────────────────\n@dataclass\nclass SessionCost:\n    session_id: str\n    provider: str\n    input_tokens: int = 0\n    output_tokens: int = 0\n    calls: int = 0\n    RATES = {\"openai\": (2.50, 10.00), \"anthropic\": (3.00, 15.00), \"google\": (1.25, 10.00)}\n\n    def record(self, inp: int, out: int) -> None:\n        self.input_tokens += inp; self.output_tokens += out; self.calls += 1\n\n    def usd(self) -> float:\n        r = self.RATES.get(self.provider, (2.50, 10.00))\n        return (self.input_tokens / 1e6) * r[0] + (self.output_tokens / 1e6) * r[1]\n\n    def summary(self) -> str:\n        return f\"[{self.provider}] calls={self.calls} in={self.input_tokens} out={self.output_tokens} ${self.usd():.5f}\"\n\n\n# ── Chat session ─────────────────────────────────────────────────\nclass ChatSession:\n    def __init__(self, providers: list[LLMProvider], system: str = \"\", stream: bool = False):\n        self.providers = providers\n        self.system = system\n        self.stream_mode = stream\n        self.history = ConversationHistory()\n        self.cost = SessionCost(str(uuid.uuid4())[:8], providers[0].name)\n        self.active_provider_idx = 0\n\n    def _get_provider(self) -> LLMProvider:\n        return self.providers[self.active_provider_idx]\n\n    def send(self, user_message: str) -> str:\n        self.history.add(\"user\", user_message)\n        messages = self.history.get()\n\n        for i, provider in enumerate(self.providers):\n            try:\n                if self.stream_mode:\n                    reply = \"\"\n                    for chunk in provider.stream(messages, self.system):\n                        print(chunk, end=\"\", flush=True)\n                        reply += chunk\n                    print()\n                    text, in_t, out_t = reply, len(\" \".join(m[\"content\"] for m in messages)) // 4, len(reply) // 4\n                else:\n                    text, in_t, out_t = provider.complete(messages, self.system)\n\n                self.cost.provider = provider.name\n                self.cost.record(in_t, out_t)\n                self.history.add(\"assistant\", text)\n                self.active_provider_idx = i\n                return text\n\n            except Exception as e:\n                print(f\"[{provider.name}] failed: {e}\")\n                if i == len(self.providers) - 1:\n                    raise RuntimeError(\"All providers failed\")\n\n        raise RuntimeError(\"All providers failed\")\n\n    def switch_provider(self, name: str) -> None:\n        for i, p in enumerate(self.providers):\n            if p.name == name:\n                self.active_provider_idx = i\n                print(f\"Switched to {name}\")\n                return\n        raise ValueError(f\"Provider '{name}' not configured\")\n\n\n# ── CLI interface ─────────────────────────────────────────────────\ndef run_cli(session: ChatSession) -> None:\n    print(\"Multi-provider chatbot | Commands: /switch <provider>, /cost, /quit\")\n    print(f\"Active: {session._get_provider().name}\")\n    while True:\n        try:\n            user_input = input(\"You: \").strip()\n            if not user_input:\n                continue\n            if user_input == \"/quit\":\n                print(session.cost.summary())\n                break\n            elif user_input == \"/cost\":\n                print(session.cost.summary())\n                continue\n            elif user_input.startswith(\"/switch \"):\n                session.switch_provider(user_input.split()[1])\n                continue\n            reply = session.send(user_input)\n            if not session.stream_mode:\n                print(f\"AI [{session._get_provider().name}]: {reply}\")\n        except KeyboardInterrupt:\n            print(\"\\n\" + session.cost.summary())\n            break\n\n\nif __name__ == \"__main__\":\n    providers = [\n        OpenAIProvider(\"gpt-4o-mini\"),\n        AnthropicProvider(\"claude-haiku-4-5\"),\n        GeminiProvider(\"gemini-2.5-flash\"),\n    ]\n    session = ChatSession(\n        providers=providers,\n        system=\"You are a helpful AI assistant. Keep responses concise.\",\n        stream=True,\n    )\n    run_cli(session)",
+      "output": "Multi-provider chatbot | Commands: /switch <provider>, /cost, /quit\nActive: openai\nYou: What is Python?\nAI [openai]: Python is a high-level, interpreted programming language known for its readable syntax and versatility. It's widely used in web development, data science, automation, and AI/ML.\nYou: /switch anthropic\nSwitched to anthropic\nYou: Give me a Python hello world\nAI [anthropic]: print('Hello, World!')\nYou: /cost\n[anthropic] calls=1 in=89 out=12 $0.00031\nYou: /quit\n[anthropic] calls=1 in=89 out=12 $0.00031"
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Storing conversation history without token limits — in a long session, history can exceed the context window, causing API errors. Always implement pruning with a max token budget.",
+        "Converting OpenAI message format to Gemini's role format incorrectly — Gemini uses 'model' not 'assistant' for AI turns. Sending 'assistant' as a role causes API validation errors.",
+        "Not switching the cost tracker's provider name when failover happens — if you fail over from OpenAI to Claude, cost is tracked against the wrong pricing. Update provider reference on each successful call.",
+        "Sharing provider client instances across threads — the SDK clients are generally safe for concurrent use, but conversation state is not. Each session must have its own ConversationHistory instance.",
+        "Streaming without capturing the full text for history — if you only print streaming chunks without accumulating them, you can't add the assistant's reply to history. Always collect streamed chunks into a string."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Add Conversation Persistence to Disk",
+      "problem": "Extend ChatSession to persist conversation history to disk as JSON. Implement: (1) `save(filepath)` — saves session id, provider, messages, and cost to JSON file, (2) `load(filepath)` — class method that restores a session from a saved file, (3) Auto-save after every turn to a default path like `sessions/{session_id}.json`. Test by saving a 3-turn conversation and loading it back.",
+      "hints": [
+        "Use json.dumps/json.loads for serialization",
+        "The session dict should include: session_id, provider_name, messages, cost_data",
+        "classmethod load() creates a new ChatSession from the saved data",
+        "Create the sessions/ directory if it doesn't exist with os.makedirs(exist_ok=True)"
+      ],
+      "solution": "import json, os\n\nclass PersistentChatSession(ChatSession):\n    def __init__(self, providers, system='', stream=False, sessions_dir='sessions'):\n        super().__init__(providers, system, stream)\n        self.sessions_dir = sessions_dir\n        os.makedirs(sessions_dir, exist_ok=True)\n\n    def _session_path(self) -> str:\n        return os.path.join(self.sessions_dir, f'{self.cost.session_id}.json')\n\n    def save(self, filepath: str | None = None) -> None:\n        path = filepath or self._session_path()\n        data = {\n            'session_id': self.cost.session_id,\n            'provider': self.cost.provider,\n            'system': self.system,\n            'messages': self.history.messages,\n            'cost': {\n                'input_tokens': self.cost.input_tokens,\n                'output_tokens': self.cost.output_tokens,\n                'calls': self.cost.calls,\n            }\n        }\n        with open(path, 'w') as f:\n            json.dump(data, f, indent=2)\n\n    def send(self, user_message: str) -> str:\n        reply = super().send(user_message)\n        self.save()  # auto-save after every turn\n        return reply\n\n    @classmethod\n    def load(cls, filepath: str, providers: list) -> 'PersistentChatSession':\n        with open(filepath) as f:\n            data = json.load(f)\n        session = cls(providers, system=data.get('system', ''))\n        session.history.messages = data['messages']\n        session.cost.session_id = data['session_id']\n        session.cost.provider = data['provider']\n        session.cost.input_tokens = data['cost']['input_tokens']\n        session.cost.output_tokens = data['cost']['output_tokens']\n        session.cost.calls = data['cost']['calls']\n        return session",
+      "difficulty": "Intermediate"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "How do you design a multi-provider LLM abstraction that's easy to extend with new providers?",
+          "answer": "Use an abstract base class (ABC) with a defined interface: `complete(messages, system, **kwargs) -> (str, int, int)` and `stream(messages, system) -> Generator`. Each provider implements this interface. The ChatSession only knows the ABC — it never calls OpenAI or Anthropic directly. Adding a new provider means creating a new class that implements the interface. Configuration (which models to use, which providers to enable) lives outside the classes. This follows the Open/Closed principle: open for extension (new providers), closed for modification (don't change ChatSession).",
+          "followUps": [
+            "How would you handle providers that have different message format requirements?",
+            "How would you implement provider selection based on task type?"
+          ]
+        },
+        {
+          "question": "What are the main challenges of building a production multi-turn chatbot?",
+          "answer": "Four main challenges: (1) Context window management — conversations grow unboundedly; you must prune, summarize, or paginate history to stay within limits. (2) Cost control — multi-turn conversations resend all history each turn, so a 10-turn conversation costs 10x a single-turn call in input tokens. (3) Provider reliability — rate limits, outages, and latency spikes require fallback logic. (4) State consistency — if a request fails mid-conversation, do you retry (risk duplicate messages) or surface the error? Each requires deliberate design decisions.",
+          "followUps": [
+            "How would you implement conversation summarization to reduce long-context costs?",
+            "What does idempotency mean in the context of chat API calls?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write a function that converts OpenAI message format to Gemini's format (role mapping and structure).",
+          "answer": "def to_gemini_format(messages: list[dict]) -> list[dict]:\n    role_map = {'user': 'user', 'assistant': 'model'}\n    result = []\n    for msg in messages:\n        if msg['role'] == 'system':\n            continue  # system handled separately in GenerativeModel(system_instruction=...)\n        gemini_role = role_map.get(msg['role'])\n        if gemini_role:\n            result.append({'role': gemini_role, 'parts': [msg['content']]})\n    return result",
+          "followUps": [
+            "How would you handle messages with multiple content types (text + image) in the conversion?",
+            "Why does Gemini use 'model' instead of 'assistant'?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You're building a chatbot for a SaaS product with 10,000 concurrent users. How do you architect conversation state management?",
+          "answer": "Don't store conversation state in-process. Use Redis for session storage: (1) Key by user_id + session_id, (2) Store messages as a Redis list with max length (e.g., 50 messages), (3) Set TTL (e.g., 24 hours for inactive sessions). On each request: fetch history from Redis, call LLM, append new messages, write back to Redis. This makes the API server stateless — any server instance handles any user. For very long conversations: implement a sliding window (keep last N turns) + a periodic summarization job that condenses old history into a system prompt prefix. Cost management: charge cost per token back to the user's account using the usage data returned by each provider.",
+          "followUps": [
+            "How would you handle race conditions if two requests for the same user arrive simultaneously?",
+            "How would you implement conversation branching (like ChatGPT's edit message feature)?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "You can use 'assistant' as the role name in Gemini's message format",
+        "History pruning is only needed when you hit an error — implement it reactively",
+        "Each provider client instance maintains its own conversation state internally"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why does multi-turn conversation cost grow faster than single-turn calls?",
+          "options": {
+            "A": "Each turn uses a different model which has higher pricing",
+            "B": "The full conversation history is re-sent as input tokens every turn",
+            "C": "Multi-turn calls use streaming which costs more",
+            "D": "Provider APIs charge extra for conversation context"
+          },
+          "answer": "B",
+          "explanation": "Every API call sends the entire conversation history as input tokens. A 10-turn conversation at 100 tokens per turn costs: turn 1 = 100 input, turn 2 = 200 input, ... turn 10 = 1000 input. Total = 5,500 input tokens vs 1,000 if each turn was independent. Input token costs accumulate quadratically with conversation length."
+        },
+        {
+          "id": 2,
+          "level": "intermediate",
+          "category": "code",
+          "question": "In Gemini's messages API, what role name replaces 'assistant'?",
+          "options": {
+            "A": "\"ai\"",
+            "B": "\"bot\"",
+            "C": "\"model\"",
+            "D": "\"system\""
+          },
+          "answer": "C",
+          "explanation": "Gemini uses 'model' instead of 'assistant' for AI turns in conversation history. Sending 'assistant' as a role in Gemini's history causes a validation error. Always convert message formats when switching between provider APIs."
+        },
+        {
+          "id": 3,
+          "level": "advanced",
+          "category": "theory",
+          "question": "What is the correct approach to accumulate streamed chunks into history?",
+          "options": {
+            "A": "Add each chunk to history as a separate message",
+            "B": "Collect all chunks into a string, then add the complete text to history once",
+            "C": "Only add to history after the user confirms the response is correct",
+            "D": "Don't add streamed responses to history — only non-streamed calls"
+          },
+          "answer": "B",
+          "explanation": "Streamed chunks are partial text fragments. You must accumulate them into a complete string, then add the full assistant message to history. Adding each chunk as a separate message would create hundreds of tiny messages per turn and break the conversation structure."
+        },
+        {
+          "id": 4,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "A chatbot has 10,000 concurrent users with 30-minute average sessions. Why is storing conversation state in-process wrong?",
+          "options": {
+            "A": "In-process state is too slow for concurrent access",
+            "B": "The process may restart or requests may be routed to different server instances, losing state",
+            "C": "Python's GIL prevents concurrent in-process state access",
+            "D": "In-process storage doesn't support JSON serialization"
+          },
+          "answer": "B",
+          "explanation": "In a multi-server deployment (required for 10K concurrent users), a user's requests may be routed to any server instance. If conversation state is in-process on server A and the next request goes to server B, the history is lost. External state storage (Redis, database) is required to make the API tier stateless."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## Multi-Provider Chatbot — Quick Reference\n\n### Provider Abstraction Pattern\n```python\nclass LLMProvider(ABC):\n    @abstractmethod\n    def complete(self, messages, system, **kwargs) -> tuple[str, int, int]: ...\n    @abstractmethod\n    def stream(self, messages, system) -> Generator[str, None, None]: ...\n    @property\n    @abstractmethod\n    def name(self) -> str: ...\n```\n\n### Message Format by Provider\n| Role | OpenAI | Anthropic | Gemini |\n|------|--------|-----------|--------|\n| System | messages[0] role=system | top-level param | system_instruction= |\n| User | role=user | role=user | role=user |\n| AI | role=assistant | role=assistant | role=model |\n\n### History Pruning\n```python\nwhile token_estimate() > max_tokens and len(messages) > 2:\n    messages.pop(0)  # remove oldest non-system message\n```\n\n### Cost Formula\n```\nCost = (input_tokens / 1M) × input_rate\n     + (output_tokens / 1M) × output_rate\n```\n\n### Failover Pattern\n```python\nfor provider in providers:\n    try: return provider.complete(...)\n    except: continue\nraise RuntimeError('All providers failed')\n```\n\n### Production State Storage\n- Never in-process for multi-server deployment\n- Use Redis: key=user_id:session_id, TTL=24h\n- Stateless API tier → any server handles any user"
+    }
+  ]
+}

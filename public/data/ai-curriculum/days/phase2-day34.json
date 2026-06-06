@@ -1,0 +1,178 @@
+{
+  "id": "phase2-day34",
+  "day": 34,
+  "phase": 2,
+  "title": "Caching Strategies for LLM Applications",
+  "estimatedHours": 3,
+  "difficulty": "intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["caching", "redis", "semantic-cache", "cost-optimization", "performance"],
+  "prerequisites": ["phase1-day15", "phase2-day22"],
+  "learningObjectives": [
+    "Understand exact vs semantic caching for LLM outputs",
+    "Implement Redis-based exact match cache",
+    "Build a semantic cache using embeddings and cosine similarity",
+    "Apply prompt-level caching (OpenAI prompt cache)",
+    "Design a multi-tier caching strategy for production"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "Why Caching Matters for LLM Apps",
+      "content": "LLM API calls cost money and take 500ms–5s. Many production applications receive highly repetitive queries: 'What are your business hours?' gets asked 10,000 times a day. Without caching, you pay for 10,000 identical LLM calls. Caching strategies for LLMs are non-trivial because queries are rarely byte-identical — 'What are your hours?' and 'When are you open?' mean the same thing but don't match with exact string comparison. Semantic caching solves this by embedding queries and finding cached responses for semantically similar queries. A well-designed cache can cut LLM costs by 40-80% for high-traffic apps."
+    },
+    {
+      "type": "theory",
+      "title": "LLM Caching Strategies",
+      "content": "**Cache types:**\n\n| Type | Match method | Savings | Complexity | Risk |\n|------|-------------|---------|------------|------|\n| Exact match | Hash(prompt) == Hash(stored) | High for FAQs | Low | Low |\n| Semantic | cosine(embed(q), embed(stored)) > threshold | High for paraphrases | Medium | Stale data |\n| Prompt prefix | Model caches repeated system prompt tokens | Medium | Zero (auto) | None |\n| Result memoization | Key = (function, args) hash | Medium | Low | Staleness |\n\n**OpenAI Prompt Caching (automatic):**\n- For inputs > 1,024 tokens: OpenAI automatically caches the prefix (system prompt + first messages)\n- Cached tokens cost 50% less\n- Cache hit requires the EXACT same prefix — any change invalidates it\n- Keep system prompts identical across requests to maximize cache hits\n- Reported in: `response.usage.prompt_tokens_details.cached_tokens`\n\n**Semantic cache similarity threshold:**\n- 0.95+ : Very strict — only near-identical phrasing\n- 0.90-0.95: Good for factual Q&A (recommended)\n- 0.85-0.90: Broader — may return wrong cached answer for edge cases\n- Below 0.85: Risky — semantically distant queries may match\n\n**Cache invalidation strategies:**\n1. **TTL (Time-to-Live)**: Auto-expire after N seconds (simple, always fresh)\n2. **Event-based**: Invalidate on data change (e.g., product updated → invalidate product Q&A cache)\n3. **Version tag**: Tag cache entries with data version — bump version to invalidate all\n4. **LRU eviction**: Least-recently-used eviction when cache is full\n\n**What NOT to cache:**\n- User-personalized responses (different users, different answers)\n- Time-sensitive queries ('What's the weather today?')\n- Queries with PII that shouldn't persist\n- Creative/generative tasks where variety is desired"
+    },
+    {
+      "type": "code",
+      "title": "Exact and Semantic Cache Implementation",
+      "language": "python",
+      "code": "# pip install redis openai numpy\nimport hashlib\nimport json\nimport time\nimport os\nfrom dataclasses import dataclass, field\nfrom typing import Optional\nimport numpy as np\nfrom openai import OpenAI\n\nclient = OpenAI(api_key=os.environ['OPENAI_API_KEY'])\n\n\n# ── 1. Exact match cache (in-memory, Redis-compatible interface) ───────────────\n\nclass InMemoryCache:\n    \"\"\"Production version would use Redis. Same interface.\"\"\"\n    \n    def __init__(self, default_ttl: int = 3600):\n        self._store: dict[str, tuple[str, float]] = {}  # key → (value, expiry)\n        self.default_ttl = default_ttl\n        self.hits = 0\n        self.misses = 0\n    \n    def _cache_key(self, model: str, messages: list[dict], **kwargs) -> str:\n        \"\"\"Deterministic hash of (model, messages, relevant kwargs).\"\"\"\n        payload = {'model': model, 'messages': messages, 'temperature': kwargs.get('temperature', 1.0)}\n        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()\n    \n    def get(self, key: str) -> Optional[str]:\n        if key not in self._store:\n            self.misses += 1\n            return None\n        value, expiry = self._store[key]\n        if expiry < time.time():\n            del self._store[key]\n            self.misses += 1\n            return None\n        self.hits += 1\n        return value\n    \n    def set(self, key: str, value: str, ttl: Optional[int] = None) -> None:\n        expiry = time.time() + (ttl or self.default_ttl)\n        self._store[key] = (value, expiry)\n    \n    @property\n    def hit_rate(self) -> float:\n        total = self.hits + self.misses\n        return self.hits / total if total > 0 else 0.0\n\n\nexact_cache = InMemoryCache(default_ttl=3600)\n\n\ndef cached_completion(\n    messages: list[dict],\n    model: str = 'gpt-4o-mini',\n    temperature: float = 0,\n    ttl: int = 3600,\n) -> tuple[str, bool]:  # (response, cache_hit)\n    \"\"\"LLM completion with exact match caching.\"\"\"\n    # Only cache deterministic (temperature=0) calls\n    if temperature != 0:\n        response = client.chat.completions.create(model=model, messages=messages, temperature=temperature)\n        return response.choices[0].message.content, False\n    \n    key = exact_cache._cache_key(model, messages, temperature=temperature)\n    cached = exact_cache.get(key)\n    if cached is not None:\n        return cached, True\n    \n    response = client.chat.completions.create(model=model, messages=messages, temperature=temperature)\n    content = response.choices[0].message.content\n    exact_cache.set(key, content, ttl=ttl)\n    return content, False\n\n\n# ── 2. Semantic cache ──────────────────────────────────────────────────────────\n\n@dataclass\nclass SemanticCacheEntry:\n    query: str\n    embedding: list[float]\n    response: str\n    created_at: float = field(default_factory=time.time)\n    ttl: int = 3600\n\n    def is_expired(self) -> bool:\n        return time.time() > self.created_at + self.ttl\n\n\nclass SemanticCache:\n    def __init__(self, similarity_threshold: float = 0.92, max_entries: int = 1000):\n        self.threshold = similarity_threshold\n        self.max_entries = max_entries\n        self._entries: list[SemanticCacheEntry] = []\n        self.hits = 0\n        self.misses = 0\n    \n    def _embed(self, text: str) -> list[float]:\n        response = client.embeddings.create(\n            model='text-embedding-3-small',\n            input=text,\n        )\n        return response.data[0].embedding\n    \n    @staticmethod\n    def _cosine_similarity(a: list[float], b: list[float]) -> float:\n        a_np, b_np = np.array(a), np.array(b)\n        return float(np.dot(a_np, b_np) / (np.linalg.norm(a_np) * np.linalg.norm(b_np)))\n    \n    def _evict_expired(self) -> None:\n        self._entries = [e for e in self._entries if not e.is_expired()]\n    \n    def get(self, query: str) -> Optional[tuple[str, float]]:  # (response, similarity)\n        self._evict_expired()\n        if not self._entries:\n            self.misses += 1\n            return None\n        \n        query_embedding = self._embed(query)\n        best_similarity = 0.0\n        best_response = None\n        \n        for entry in self._entries:\n            sim = self._cosine_similarity(query_embedding, entry.embedding)\n            if sim > best_similarity:\n                best_similarity = sim\n                best_response = entry.response\n        \n        if best_similarity >= self.threshold and best_response is not None:\n            self.hits += 1\n            return best_response, best_similarity\n        \n        self.misses += 1\n        return None\n    \n    def set(self, query: str, response: str, ttl: int = 3600) -> None:\n        self._evict_expired()\n        if len(self._entries) >= self.max_entries:\n            self._entries.pop(0)  # remove oldest (LRU in production = Redis sorted set)\n        \n        embedding = self._embed(query)\n        self._entries.append(SemanticCacheEntry(\n            query=query, embedding=embedding, response=response, ttl=ttl\n        ))\n    \n    @property\n    def stats(self) -> dict:\n        total = self.hits + self.misses\n        return {\n            'entries': len(self._entries),\n            'hits': self.hits,\n            'misses': self.misses,\n            'hit_rate': f'{self.hits/total*100:.1f}%' if total > 0 else '0%',\n        }\n\n\nsemantic_cache = SemanticCache(similarity_threshold=0.92)\n\n\ndef semantic_cached_completion(query: str, system_prompt: str = '') -> tuple[str, bool, Optional[float]]:\n    \"\"\"LLM completion with semantic caching.\n    Returns: (response, cache_hit, similarity_score)\n    \"\"\"\n    cached = semantic_cache.get(query)\n    if cached is not None:\n        response, similarity = cached\n        print(f'  [SEMANTIC CACHE HIT] similarity={similarity:.4f}')\n        return response, True, similarity\n    \n    messages = []\n    if system_prompt:\n        messages.append({'role': 'system', 'content': system_prompt})\n    messages.append({'role': 'user', 'content': query})\n    \n    response = client.chat.completions.create(\n        model='gpt-4o-mini',\n        messages=messages,\n        temperature=0,\n    )\n    content = response.choices[0].message.content\n    semantic_cache.set(query, content)\n    return content, False, None\n\n\n# ── 3. Multi-tier cache (exact → semantic → LLM) ───────────────────────────────\n\nclass MultiTierCache:\n    def __init__(self):\n        self.exact = InMemoryCache(default_ttl=7200)\n        self.semantic = SemanticCache(similarity_threshold=0.92)\n    \n    def query(\n        self,\n        messages: list[dict],\n        model: str = 'gpt-4o-mini',\n        system_prompt: str = '',\n    ) -> tuple[str, str]:  # (response, cache_tier)\n        # Tier 1: exact match\n        key = self.exact._cache_key(model, messages)\n        cached = self.exact.get(key)\n        if cached:\n            return cached, 'exact'\n        \n        # Tier 2: semantic match (on user message only)\n        user_msg = next((m['content'] for m in messages if m['role'] == 'user'), '')\n        sem_result = self.semantic.get(user_msg)\n        if sem_result:\n            response, _ = sem_result\n            self.exact.set(key, response)  # promote to exact cache\n            return response, 'semantic'\n        \n        # Tier 3: LLM call\n        resp = client.chat.completions.create(model=model, messages=messages, temperature=0)\n        content = resp.choices[0].message.content\n        self.exact.set(key, content)\n        self.semantic.set(user_msg, content)\n        return content, 'llm'\n\n\n# ── Demo ──────────────────────────────────────────────────────────────────────\n\nif __name__ == '__main__':\n    system = 'You are a helpful customer service agent for TechCorp.'\n    \n    print('=== Exact Cache Demo ===')\n    q1 = [{'role': 'system', 'content': system}, {'role': 'user', 'content': 'What are your business hours?'}]\n    r1, hit1 = cached_completion(q1, temperature=0)\n    print(f'Call 1 (miss): {r1[:80]}...')\n    r2, hit2 = cached_completion(q1, temperature=0)\n    print(f'Call 2 (hit={hit2}): returned same response')\n    print(f'Cache hit rate: {exact_cache.hit_rate:.0%}')\n    \n    print('\\n=== Semantic Cache Demo (requires API) ===')\n    similar_queries = [\n        'What are your business hours?',\n        'When are you open?',\n        'What time do you close?',\n        'Are you open on weekends?',\n    ]\n    print('Would test these semantically similar queries:')\n    for q in similar_queries:\n        print(f'  - {q}')\n    print('After first query, subsequent ones should be served from semantic cache.')"
+    },
+    {
+      "type": "pitfalls",
+      "title": "Caching Pitfalls",
+      "items": [
+        {
+          "mistake": "Caching responses at temperature > 0",
+          "why": "Caching creative outputs (temp=0.8) means all users get the same creative response — defeats the purpose of temperature. Also, non-deterministic models may not produce the same output even with the same cache key.",
+          "fix": "Only cache temperature=0 (deterministic) completions. Add temperature to the cache key to avoid mixing."
+        },
+        {
+          "mistake": "Setting similarity threshold too low (< 0.85) for semantic cache",
+          "why": "Questions with similar vocabulary but different intent may match: 'Cancel my order' and 'How do I cancel my subscription?' might both embed near a general 'cancel' cached response.",
+          "fix": "Start at 0.95 and lower gradually. Log matches and manually review the false positives. Domain-specific embeddings (fine-tuned) reduce false matches."
+        },
+        {
+          "mistake": "Not including the system prompt in the exact cache key",
+          "why": "Two different system prompts may produce different answers for the same user query. Keying only on user message returns wrong cached answer.",
+          "fix": "Hash the full message list (including system, user, assistant messages) for the cache key."
+        },
+        {
+          "mistake": "Caching PII or sensitive data",
+          "why": "Cached LLM responses containing user-specific data (name, account details) can be served to other users if the cache key collision occurs.",
+          "fix": "Strip PII before caching. Never cache personalized responses. Use user-scoped cache namespaces (prefix key with user_id) for user-specific data."
+        },
+        {
+          "mistake": "Not monitoring cache hit rates and cost savings",
+          "why": "You can't optimize what you don't measure. A cache that hits 5% of the time is barely worth the complexity.",
+          "fix": "Log cache hits, misses, and tier (exact/semantic/LLM). Track cost savings (hits × cost_per_call). Set alerts if hit rate drops suddenly (may indicate broken cache)."
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Interview Questions",
+      "conceptual": [
+        {
+          "question": "What is semantic caching and when is it better than exact match caching?",
+          "answer": "Semantic caching stores LLM responses indexed by the embedding of the query. On a new query, embed it and find the stored entry with highest cosine similarity — if above threshold, return the cached response. Better than exact match when users paraphrase the same intent: 'business hours', 'when are you open', 'what time do you close' all mean the same thing. Exact match misses all paraphrases; semantic cache hits them all. Trade-off: semantic cache requires an embedding call per lookup (adds ~50ms), may have false matches if threshold is too low, and adds operational complexity.",
+          "followUps": ["How do you decide the similarity threshold for semantic caching?"]
+        },
+        {
+          "question": "How does OpenAI's automatic prompt caching work and how do you maximize cache hits?",
+          "answer": "OpenAI automatically caches the longest prefix of your prompt that is ≥ 1024 tokens when reused. Cached tokens cost 50% less and are reflected in `usage.prompt_tokens_details.cached_tokens`. To maximize hits: (1) Keep the system prompt identical across requests — any change breaks the cache. (2) Put stable content first (system prompt, documents) and variable content last (user question). (3) Batch similar requests to the same prefix. The cache has a short TTL (5-10 minutes of inactivity), so high-traffic apps benefit most.",
+          "followUps": ["Does Anthropic have a similar mechanism?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write the cache key function for an exact match LLM cache.",
+          "answer": "```python\nimport hashlib, json\n\ndef cache_key(model: str, messages: list[dict], temperature: float = 0) -> str:\n    payload = {\n        'model': model,\n        'messages': messages,\n        'temperature': temperature,\n    }\n    return hashlib.sha256(\n        json.dumps(payload, sort_keys=True).encode()\n    ).hexdigest()\n```\nKey points: include temperature in the key (different temperatures should have different caches), use sort_keys=True for deterministic JSON serialization, SHA-256 produces a fixed-length key safe for Redis/memcached."
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "Your RAG app has 50,000 daily queries. Profiling shows 70% are factual Q&A about your product docs, 20% are personalized support queries, and 10% are creative requests. Design the caching architecture.",
+          "answer": "Three-tier strategy: (1) Factual Q&A (70%) — semantic cache with 0.92 threshold, 24hr TTL. These are highly repetitive ('what does feature X do?'). Expected hit rate: 60-80% of this segment after warm-up. (2) Personalized queries (20%) — never cache directly. Use a template cache: cache the formatted prompt template (without user data), so the system prompt prefix is cached by OpenAI's automatic prompt caching. (3) Creative (10%) — no caching, temperature > 0. Implementation: Redis for exact match (O(1) lookup), pgvector or Chroma for semantic cache (cosine similarity). Monitoring: hit rate per segment, cost savings, response time P95 with/without cache. Cache warming: pre-load top 100 FAQ answers on startup.",
+          "followUps": ["How would you handle cache invalidation when product documentation is updated?"]
+        }
+      ],
+      "wrongAnswers": [
+        "Semantic caching finds responses to byte-identical queries — it finds responses to semantically similar queries using embedding cosine similarity",
+        "OpenAI prompt caching requires you to implement it explicitly — it is automatic for inputs over 1024 tokens; you just benefit from it by keeping prompts consistent",
+        "You can safely cache all LLM responses including personalized ones — never cache personalized responses containing user-specific data, as they can be served to other users"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d34q1",
+          "level": "basic",
+          "category": "theory",
+          "question": "Which queries should NOT be cached in an LLM application?",
+          "options": {
+            "A": "FAQ questions about product features",
+            "B": "Queries with temperature > 0 for creative generation",
+            "C": "Product documentation lookups",
+            "D": "Static knowledge base questions"
+          },
+          "answer": "B",
+          "explanation": "Caching non-deterministic (temperature > 0) completions means all users get the same 'creative' response, which defeats the purpose. Also: personalized queries and time-sensitive queries should not be cached."
+        },
+        {
+          "id": "d34q2",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "How does OpenAI's automatic prompt caching reduce costs?",
+          "options": {
+            "A": "It stores your model fine-tune between requests",
+            "B": "For prompts over 1024 tokens, repeated prefixes are cached and billed at 50% of normal input token cost",
+            "C": "It automatically deduplicates identical messages within a single request",
+            "D": "It stores the last response and returns it for identical queries"
+          },
+          "answer": "B",
+          "explanation": "OpenAI caches the longest matching prefix ≥ 1024 tokens. Cached input tokens cost 50% less. To benefit: keep system prompts and document context identical across requests."
+        },
+        {
+          "id": "d34q3",
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "A semantic cache with threshold 0.88 is matching 'Cancel my order' with the cached response for 'How do I process a refund?'. What should you do?",
+          "options": {
+            "A": "Lower the threshold to 0.80 to reduce false matches",
+            "B": "Raise the threshold to 0.95 to require closer semantic matches",
+            "C": "Remove the semantic cache and use exact match only",
+            "D": "Add more training data to the embedding model"
+          },
+          "answer": "B",
+          "explanation": "False matches (different intent, similar vocabulary) indicate the threshold is too low. Raising it to 0.95 requires much higher semantic similarity before returning cached responses, reducing false positives at the cost of fewer cache hits."
+        },
+        {
+          "id": "d34q4",
+          "level": "advanced",
+          "category": "code",
+          "question": "Why must the cache key include the full message list (not just the user message)?",
+          "options": {
+            "A": "To make the hash longer and avoid collisions",
+            "B": "The same user question may produce different answers with different system prompts or conversation history",
+            "C": "To enable cache invalidation by message role",
+            "D": "Redis requires keys of a minimum length"
+          },
+          "answer": "B",
+          "explanation": "A user asking 'What are my options?' in a customer service context gets a different answer than in a medical advice context. The system prompt changes the response. Similarly, conversation history (previous assistant messages) changes context. The full message list must be hashed."
+        },
+        {
+          "id": "d34q5",
+          "level": "basic",
+          "category": "theory",
+          "question": "What cache strategy is best for a high-traffic FAQ bot that answers the same 200 questions repeatedly?",
+          "options": {
+            "A": "No cache — LLM responses should always be fresh",
+            "B": "Exact match cache — all queries are identical",
+            "C": "Semantic cache — users phrase the same 200 questions in many different ways",
+            "D": "TTL-based LRU cache — evict old questions daily"
+          },
+          "answer": "C",
+          "explanation": "FAQ bots receive the same intent phrased many ways. Exact match would miss 'When do you open?' vs 'What are your hours?'. Semantic cache finds the underlying intent and returns the cached answer for paraphrases, dramatically increasing hit rate."
+        }
+      ]
+    }
+  ]
+}

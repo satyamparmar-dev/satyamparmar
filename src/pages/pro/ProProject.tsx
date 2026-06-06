@@ -17,6 +17,7 @@ import { useProProgress } from '../../hooks/useProProgress'
 import ProShell from '../../components/pro/ProShell'
 import { findProjectSpecById } from '../../constants/proCurriculum'
 import { PRO_UI } from '../../constants/proUi'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 const storageKey = (projectId: string) => `pro_project_checks_${projectId}`
 
@@ -25,6 +26,7 @@ const ProProject: React.FC = () => {
   const navigate = useNavigate()
   const { profile, hasProProfile, markProjectComplete, saveProfile } = useProProgress()
   const found = projectId ? findProjectSpecById(projectId) : null
+  usePageTitle(found?.spec.title ?? 'Pro Project')
   const [checks, setChecks] = useState<boolean[]>([])
   const [github, setGithub] = useState('')
 

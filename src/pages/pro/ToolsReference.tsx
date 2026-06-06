@@ -6,6 +6,7 @@ import ProShell from '../../components/pro/ProShell'
 import { PRO_CURRICULUM } from '../../constants/proCurriculum'
 import type { ProPathId } from '../../types/pro.types'
 import { PRO_UI } from '../../constants/proUi'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 type Cat = 'Core Python' | 'ML Libraries' | 'DL Frameworks' | 'LLM Tools' | 'Vector Databases' | 'MLOps' | 'Deployment' | 'Evaluation'
 
@@ -22,6 +23,7 @@ function categorize(tool: string): Cat {
 }
 
 const ToolsReference: React.FC = () => {
+  usePageTitle('Tools Reference')
   const navigate = useNavigate()
   const { hasProProfile } = useProProgress()
 

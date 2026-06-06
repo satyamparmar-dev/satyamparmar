@@ -1,0 +1,207 @@
+{
+  "id": "phase2-day36",
+  "day": 36,
+  "phase": 2,
+  "title": "Phase 2 Capstone — RAG Q&A System",
+  "estimatedHours": 6,
+  "difficulty": "advanced",
+  "level": "Senior",
+  "track": "Senior",
+  "tags": ["capstone", "rag", "production", "full-stack-ai", "evaluation", "async"],
+  "prerequisites": ["phase2-day22", "phase2-day23", "phase2-day24", "phase2-day25", "phase2-day33", "phase2-day34", "phase2-day35"],
+  "learningObjectives": [
+    "Integrate all Phase 2 components into a production-ready RAG system",
+    "Build an end-to-end pipeline: ingest → index → query → cache → evaluate",
+    "Implement async document processing with proper error handling",
+    "Add semantic caching and evaluation metrics",
+    "Design the system for production readiness (monitoring, retry, logging)"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "title": "What We're Building",
+      "content": "This capstone integrates every Phase 2 concept into a production-quality RAG Q&A system. You'll build: (1) a document ingestion pipeline that handles PDFs and HTML with async processing; (2) a vector store with ChromaDB for semantic retrieval; (3) a query pipeline with semantic caching, retrieval, and LLM generation; (4) an evaluation harness using the LLM-as-judge pattern from Day 33; and (5) an API layer with metrics. This is the system architecture you'd present in a senior AI engineer interview or ship to production."
+    },
+    {
+      "type": "theory",
+      "title": "Production RAG Architecture",
+      "content": "**System components:**\n```\n┌─────────────────────────────────────────────────────────┐\n│                   Document Ingestion                      │\n│  PDF/HTML → Chunk → Embed (async, batched) → Chroma DB   │\n└───────────────────────────┬─────────────────────────────┘\n                             │\n┌───────────────────────────▼─────────────────────────────┐\n│                    Query Pipeline                         │\n│  Query → Semantic Cache?  →  Retrieve → Rerank → Answer  │\n│              ↓ miss               ↑ hit                   │\n│         LLM Generate ──────────── Cache Store             │\n└───────────────────────────┬─────────────────────────────┘\n                             │\n┌───────────────────────────▼─────────────────────────────┐\n│              Evaluation & Monitoring                      │\n│  Faithfulness | Answer Relevancy | Latency | Cache Rate   │\n└─────────────────────────────────────────────────────────┘\n```\n\n**Production checklist:**\n- Async ingestion with retry and checkpointing\n- Semantic cache with configurable threshold\n- Retrieval with metadata filtering\n- Grounded system prompt (prevents hallucination)\n- Graceful 'I don't know' for out-of-context queries\n- Per-request metrics logging\n- RAGAS-style evaluation harness\n- Rate limit handling with exponential backoff\n\n**Key design decisions:**\n1. **Embedding model**: `text-embedding-3-small` (faster, cheaper) vs `text-embedding-3-large` (better quality)\n2. **Chunk size**: 300-500 tokens (smaller = more precise retrieval, larger = more context per chunk)\n3. **Top-K**: Retrieve 5-10 chunks, pass top 3-5 to context (rerank if needed)\n4. **Cache threshold**: 0.92 for factual Q&A, 0.95 for critical systems\n5. **LLM**: GPT-4o-mini for cost, GPT-4o for quality-critical use"
+    },
+    {
+      "type": "code",
+      "title": "Complete RAG Q&A System",
+      "language": "python",
+      "code": "#!/usr/bin/env python3\n\"\"\"\nPhase 2 Capstone: Production RAG Q&A System\n\nDependencies: pip install openai chromadb langchain langchain-openai \\\n                          langchain-community numpy aiofiles\n\"\"\"\nfrom __future__ import annotations\nimport asyncio\nimport json\nimport os\nimport time\nimport hashlib\nimport logging\nfrom dataclasses import dataclass, field\nfrom pathlib import Path\nfrom typing import Optional\nfrom datetime import datetime\nimport numpy as np\nfrom openai import AsyncOpenAI, OpenAI\nimport chromadb\nfrom chromadb.utils.embedding_functions import OpenAIEmbeddingFunction\n\nlogging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')\nlog = logging.getLogger(__name__)\n\nsync_client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])\nasync_client = AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])\n\n\n# ══ Data Models ══════════════════════════════════════════════════════════════\n\n@dataclass\nclass Document:\n    id: str\n    content: str\n    metadata: dict = field(default_factory=dict)\n\n@dataclass\nclass Chunk:\n    id: str\n    text: str\n    doc_id: str\n    metadata: dict = field(default_factory=dict)\n\n@dataclass\nclass QueryResult:\n    answer: str\n    sources: list[dict]\n    cache_hit: bool\n    latency_ms: float\n    faithfulness_score: Optional[float] = None\n\n@dataclass\nclass RequestMetrics:\n    query: str\n    latency_ms: float\n    cache_hit: bool\n    n_sources: int\n    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())\n\n\n# ══ Document Chunker ═════════════════════════════════════════════════════════\n\nclass DocumentChunker:\n    def __init__(self, chunk_size: int = 400, overlap: int = 50):\n        self.chunk_size = chunk_size\n        self.overlap = overlap\n    \n    def chunk(self, doc: Document) -> list[Chunk]:\n        words = doc.content.split()\n        chunks = []\n        start = 0\n        idx = 0\n        while start < len(words):\n            end = min(start + self.chunk_size, len(words))\n            text = ' '.join(words[start:end])\n            chunks.append(Chunk(\n                id=f'{doc.id}_chunk_{idx}',\n                text=text,\n                doc_id=doc.id,\n                metadata={**doc.metadata, 'chunk_idx': idx, 'doc_id': doc.id},\n            ))\n            start = end - self.overlap\n            idx += 1\n        return chunks\n\n\n# ══ Vector Store ═════════════════════════════════════════════════════════════\n\nclass VectorStore:\n    def __init__(self, collection_name: str = 'rag_docs', persist_dir: str = '/tmp/chroma_rag'):\n        ef = OpenAIEmbeddingFunction(\n            api_key=os.environ['OPENAI_API_KEY'],\n            model_name='text-embedding-3-small',\n        )\n        self._client = chromadb.PersistentClient(path=persist_dir)\n        self._collection = self._client.get_or_create_collection(\n            name=collection_name,\n            embedding_function=ef,\n            metadata={'hnsw:space': 'cosine'},\n        )\n    \n    def add_chunks(self, chunks: list[Chunk]) -> None:\n        if not chunks:\n            return\n        self._collection.add(\n            ids=[c.id for c in chunks],\n            documents=[c.text for c in chunks],\n            metadatas=[c.metadata for c in chunks],\n        )\n        log.info('Indexed %d chunks', len(chunks))\n    \n    def query(\n        self,\n        query_text: str,\n        top_k: int = 5,\n        where: Optional[dict] = None,\n    ) -> list[dict]:\n        kwargs: dict = {'query_texts': [query_text], 'n_results': min(top_k, self._collection.count() or 1)}\n        if where:\n            kwargs['where'] = where\n        results = self._collection.query(**kwargs)\n        sources = []\n        for i, (doc, meta, dist) in enumerate(zip(\n            results['documents'][0], results['metadatas'][0], results['distances'][0]\n        )):\n            sources.append({\n                'text': doc,\n                'metadata': meta,\n                'score': 1 - dist,  # cosine distance → similarity\n            })\n        return sources\n\n\n# ══ Semantic Cache ════════════════════════════════════════════════════════════\n\n@dataclass\nclass CacheEntry:\n    query: str\n    embedding: list[float]\n    answer: str\n    expires_at: float\n\nclass SemanticCache:\n    def __init__(self, threshold: float = 0.92, ttl: int = 3600):\n        self.threshold = threshold\n        self.ttl = ttl\n        self._entries: list[CacheEntry] = []\n        self.hits = 0\n        self.misses = 0\n    \n    def _embed(self, text: str) -> list[float]:\n        r = sync_client.embeddings.create(model='text-embedding-3-small', input=text)\n        return r.data[0].embedding\n    \n    @staticmethod\n    def _cosine(a, b) -> float:\n        a, b = np.array(a), np.array(b)\n        return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))\n    \n    def get(self, query: str) -> Optional[str]:\n        now = time.time()\n        self._entries = [e for e in self._entries if e.expires_at > now]\n        if not self._entries:\n            self.misses += 1\n            return None\n        emb = self._embed(query)\n        best_sim, best_ans = 0.0, None\n        for entry in self._entries:\n            sim = self._cosine(emb, entry.embedding)\n            if sim > best_sim:\n                best_sim, best_ans = sim, entry.answer\n        if best_sim >= self.threshold:\n            self.hits += 1\n            log.info('Cache HIT (sim=%.3f)', best_sim)\n            return best_ans\n        self.misses += 1\n        return None\n    \n    def set(self, query: str, answer: str) -> None:\n        emb = self._embed(query)\n        self._entries.append(CacheEntry(\n            query=query, embedding=emb, answer=answer, expires_at=time.time() + self.ttl\n        ))\n\n\n# ══ RAG Engine ════════════════════════════════════════════════════════════════\n\nRAG_SYSTEM = \"\"\"You are a knowledgeable assistant. Answer the user's question using ONLY \\\nthe information provided in the context below.\n\nIf the context does not contain enough information to answer, say: \\\n\"I don't have enough information in my knowledge base to answer this question.\"\n\nContext:\n{context}\"\"\"\n\nclass RAGEngine:\n    def __init__(\n        self,\n        vector_store: VectorStore,\n        cache: SemanticCache,\n        model: str = 'gpt-4o-mini',\n        top_k: int = 5,\n    ):\n        self.vs = vector_store\n        self.cache = cache\n        self.model = model\n        self.top_k = top_k\n        self._metrics: list[RequestMetrics] = []\n    \n    def query(self, question: str, metadata_filter: Optional[dict] = None) -> QueryResult:\n        start = time.time()\n        \n        # 1. Check semantic cache\n        cached = self.cache.get(question)\n        if cached:\n            latency = (time.time() - start) * 1000\n            self._record(question, latency, cache_hit=True, n_sources=0)\n            return QueryResult(answer=cached, sources=[], cache_hit=True, latency_ms=latency)\n        \n        # 2. Retrieve relevant chunks\n        sources = self.vs.query(question, top_k=self.top_k, where=metadata_filter)\n        if not sources:\n            return QueryResult(\n                answer=\"I don't have information about this topic in my knowledge base.\",\n                sources=[], cache_hit=False, latency_ms=(time.time()-start)*1000\n            )\n        \n        # 3. Assemble context (top 3 most relevant)\n        top_sources = sources[:3]\n        context_parts = []\n        for i, s in enumerate(top_sources, 1):\n            src_label = s['metadata'].get('source', 'Unknown')\n            context_parts.append(f'[Source {i} — {src_label}]\\n{s[\"text\"]}')\n        context = '\\n\\n'.join(context_parts)\n        \n        # 4. Generate answer\n        response = sync_client.chat.completions.create(\n            model=self.model,\n            messages=[\n                {'role': 'system', 'content': RAG_SYSTEM.format(context=context)},\n                {'role': 'user', 'content': question},\n            ],\n            temperature=0,\n            max_tokens=400,\n        )\n        answer = response.choices[0].message.content\n        \n        # 5. Cache the result\n        self.cache.set(question, answer)\n        \n        latency = (time.time() - start) * 1000\n        self._record(question, latency, cache_hit=False, n_sources=len(top_sources))\n        \n        return QueryResult(answer=answer, sources=top_sources, cache_hit=False, latency_ms=latency)\n    \n    def _record(self, query: str, latency_ms: float, cache_hit: bool, n_sources: int):\n        self._metrics.append(RequestMetrics(\n            query=query, latency_ms=latency_ms, cache_hit=cache_hit, n_sources=n_sources\n        ))\n    \n    def metrics_summary(self) -> dict:\n        if not self._metrics:\n            return {}\n        latencies = [m.latency_ms for m in self._metrics]\n        return {\n            'total_queries': len(self._metrics),\n            'cache_hit_rate': f'{sum(m.cache_hit for m in self._metrics)/len(self._metrics):.1%}',\n            'avg_latency_ms': f'{sum(latencies)/len(latencies):.0f}',\n            'p95_latency_ms': f'{sorted(latencies)[int(len(latencies)*0.95)]:.0f}',\n            'cache_stats': {'hits': self.cache.hits, 'misses': self.cache.misses},\n        }\n\n\n# ══ Evaluator ════════════════════════════════════════════════════════════════\n\ndef evaluate_faithfulness(question: str, context: str, answer: str) -> float:\n    prompt = f\"\"\"Evaluate faithfulness of this RAG answer:\nQuestion: {question}\\nContext: {context[:800]}\\nAnswer: {answer}\nScore 0-1: fraction of answer claims supported by context.\nReturn JSON: {{\"score\": <float>, \"reasoning\": \"<one sentence>\"}}\"\"\"\n    r = sync_client.chat.completions.create(\n        model='gpt-4o-mini',\n        messages=[{'role': 'user', 'content': prompt}],\n        temperature=0,\n        response_format={'type': 'json_object'},\n    )\n    return json.loads(r.choices[0].message.content)['score']\n\n\ndef run_evaluation(engine: RAGEngine, eval_set: list[dict]) -> dict:\n    scores = []\n    for sample in eval_set:\n        result = engine.query(sample['question'])\n        if not result.cache_hit and result.sources:\n            context = ' '.join(s['text'] for s in result.sources)\n            score = evaluate_faithfulness(sample['question'], context, result.answer)\n            scores.append(score)\n            log.info('Q: %s | faithfulness=%.2f', sample['question'][:50], score)\n    avg = sum(scores) / len(scores) if scores else 0\n    return {'avg_faithfulness': avg, 'n_evaluated': len(scores), 'scores': scores}\n\n\n# ══ Main Demo ════════════════════════════════════════════════════════════════\n\ndef main():\n    # Sample documents (in production: load from PDFs/HTML)\n    documents = [\n        Document(\n            id='doc-ai-overview',\n            content='Artificial intelligence (AI) is the simulation of human intelligence by machines. '\n                    'Machine learning is a subset of AI where models learn from data without explicit programming. '\n                    'Deep learning uses neural networks with many layers to learn complex patterns.',\n            metadata={'source': 'AI Overview', 'category': 'fundamentals'},\n        ),\n        Document(\n            id='doc-transformers',\n            content='The Transformer architecture was introduced in the 2017 paper \"Attention Is All You Need\". '\n                    'It uses self-attention mechanisms to process sequential data in parallel. '\n                    'BERT, GPT, and T5 are all based on the Transformer architecture. '\n                    'The key innovation is the multi-head attention mechanism that allows the model to attend to different positions simultaneously.',\n            metadata={'source': 'Transformers Paper', 'category': 'architecture'},\n        ),\n        Document(\n            id='doc-rag',\n            content='Retrieval-Augmented Generation (RAG) combines information retrieval with language generation. '\n                    'A RAG system first retrieves relevant documents from a knowledge base, then uses an LLM to generate an answer grounded in those documents. '\n                    'This reduces hallucination and allows the model to answer questions about private or recent data.',\n            metadata={'source': 'RAG Overview', 'category': 'techniques'},\n        ),\n    ]\n    \n    # Initialize components\n    chunker = DocumentChunker(chunk_size=100, overlap=20)\n    vector_store = VectorStore(collection_name='capstone_demo')\n    cache = SemanticCache(threshold=0.92, ttl=3600)\n    engine = RAGEngine(vector_store, cache, model='gpt-4o-mini', top_k=3)\n    \n    # Ingest documents\n    log.info('Ingesting %d documents...', len(documents))\n    all_chunks = []\n    for doc in documents:\n        all_chunks.extend(chunker.chunk(doc))\n    vector_store.add_chunks(all_chunks)\n    log.info('Indexed %d total chunks', len(all_chunks))\n    \n    # Query loop\n    questions = [\n        'What is the Transformer architecture?',\n        'How does RAG reduce hallucination?',\n        'What is the difference between AI and machine learning?',\n        'Tell me about the Transformer architecture.',  # semantic cache test\n    ]\n    \n    print('\\n' + '='*60)\n    print('RAG Q&A SYSTEM — Phase 2 Capstone')\n    print('='*60)\n    \n    for q in questions:\n        result = engine.query(q)\n        print(f'\\nQ: {q}')\n        print(f'A: {result.answer[:200]}...' if len(result.answer) > 200 else f'A: {result.answer}')\n        print(f'   [cache_hit={result.cache_hit} | latency={result.latency_ms:.0f}ms | sources={len(result.sources)}]')\n    \n    print('\\n' + '='*60)\n    print('METRICS SUMMARY')\n    print('='*60)\n    for k, v in engine.metrics_summary().items():\n        print(f'  {k}: {v}')\n    \n    # Evaluation\n    eval_set = [\n        {'question': 'What year was the Attention paper published?'},\n        {'question': 'What does RAG stand for?'},\n    ]\n    print('\\n' + '='*60)\n    print('EVALUATION')\n    print('='*60)\n    eval_results = run_evaluation(engine, eval_set)\n    print(f'  Average Faithfulness: {eval_results[\"avg_faithfulness\"]:.2f}')\n    print(f'  Samples evaluated: {eval_results[\"n_evaluated\"]}')\n\n\nif __name__ == '__main__':\n    main()"
+    },
+    {
+      "type": "exercise",
+      "title": "Extend the Capstone",
+      "problem": "Extend the RAG system with three improvements:\n1. Add a metadata filter parameter so users can query only documents in a specific category (e.g., 'architecture')\n2. Add answer confidence detection: if the answer contains 'I don't have enough information', log it as a 'no-answer' case\n3. Add an async ingestion path that processes multiple documents concurrently using asyncio",
+      "hints": [
+        "Metadata filter: ChromaDB supports `where={'category': 'architecture'}` in query()",
+        "No-answer detection: check if 'I don't have' in result.answer, increment a counter",
+        "Async ingestion: use asyncio.Semaphore(10) + async_client.embeddings.create for batched embed calls",
+        "Track no-answer rate in metrics_summary() alongside cache hit rate"
+      ],
+      "solution": "```python\n# 1. Metadata filter — already supported in engine.query()\nresult = engine.query('What is self-attention?', metadata_filter={'category': 'architecture'})\n\n# 2. No-answer tracking\nclass RAGEngineV2(RAGEngine):\n    def __init__(self, *args, **kwargs):\n        super().__init__(*args, **kwargs)\n        self._no_answers = 0\n    \n    def query(self, question, metadata_filter=None):\n        result = super().query(question, metadata_filter)\n        if 'I don\\'t have' in result.answer or \"don't have enough\" in result.answer:\n            self._no_answers += 1\n            log.warning('NO ANSWER for: %s', question[:60])\n        return result\n    \n    def metrics_summary(self):\n        summary = super().metrics_summary()\n        if self._metrics:\n            summary['no_answer_rate'] = f'{self._no_answers/len(self._metrics):.1%}'\n        return summary\n\n# 3. Async ingestion\nasync def async_ingest(documents, vector_store, chunker):\n    sem = asyncio.Semaphore(10)\n    \n    async def embed_and_add(doc):\n        chunks = chunker.chunk(doc)\n        async with sem:\n            # Use batch embedding for efficiency\n            response = await async_client.embeddings.create(\n                model='text-embedding-3-small',\n                input=[c.text for c in chunks],\n            )\n        # Store with custom embeddings\n        vector_store._collection.add(\n            ids=[c.id for c in chunks],\n            documents=[c.text for c in chunks],\n            embeddings=[e.embedding for e in response.data],\n            metadatas=[c.metadata for c in chunks],\n        )\n    \n    await asyncio.gather(*[embed_and_add(doc) for doc in documents])\n    print(f'Async ingested {len(documents)} documents')\n\nasyncio.run(async_ingest(documents, vector_store, chunker))\n```",
+      "difficulty": "advanced"
+    },
+    {
+      "type": "cheatsheet",
+      "title": "Phase 2 RAG Components Cheatsheet",
+      "sections": [
+        {
+          "heading": "Core Pipeline",
+          "items": [
+            "Chunk: split docs into 300-500 token pieces with 10-15% overlap",
+            "Embed: text-embedding-3-small (speed) or 3-large (quality)",
+            "Store: ChromaDB (local), Pinecone (cloud), pgvector (Postgres)",
+            "Retrieve: cosine similarity, top-K, optional metadata filter",
+            "Generate: temperature=0, grounded system prompt, max_tokens=400",
+            "Cache: semantic cache threshold 0.92, TTL 1-24h"
+          ]
+        },
+        {
+          "heading": "Evaluation Metrics",
+          "items": [
+            "Faithfulness: claims in answer supported by context (0-1)",
+            "Answer Relevancy: answer addresses the question (0-1)",
+            "Context Precision: retrieved chunks are relevant (0-1)",
+            "Context Recall: context covers ground truth (needs GT, 0-1)",
+            "Production targets: Faithfulness ≥ 0.85, Relevancy ≥ 0.80"
+          ]
+        },
+        {
+          "heading": "Performance Optimization",
+          "items": [
+            "Semantic cache → 40-80% cost reduction for FAQ-heavy apps",
+            "Async ingestion with Semaphore(10) → 10-50× faster bulk indexing",
+            "OpenAI prompt caching → 50% off for repeated prefixes > 1024 tokens",
+            "Batch API → 50% off for offline/non-realtime jobs",
+            "Reranking → better precision at small K (top 3 from 20)"
+          ]
+        },
+        {
+          "heading": "Common Pitfalls",
+          "items": [
+            "Splitting tables across chunks — never split tables",
+            "No metadata on chunks — always store source, page, section",
+            "Semantic cache threshold < 0.90 — false matches corrupt responses",
+            "Not grounding the system prompt — hallucination rate increases",
+            "No 'I don't know' path — model invents answers for unknown queries"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "interview",
+      "title": "Phase 2 Capstone Interview Questions",
+      "conceptual": [
+        {
+          "question": "Walk me through a production RAG architecture from document ingestion to user response.",
+          "answer": "Ingestion: documents are loaded (PDF/HTML parsers), cleaned, chunked (300-500 tokens with 50-token overlap), embedded using text-embedding-3-small, and stored in a vector DB (ChromaDB/pgvector) with metadata (source, page, section, date). Chunking is section-aware for structured docs and tables are kept atomic. Query-time: (1) check semantic cache — if hit above 0.92 threshold, return cached response immediately. (2) Embed the query, retrieve top-5 chunks by cosine similarity, optionally filter by metadata. (3) Optionally rerank top-5 with a cross-encoder to get top-3. (4) Assemble context with citations, inject into system prompt that instructs the model to only use the provided context. (5) Generate with temperature=0. (6) Store result in semantic cache. Monitoring: track faithfulness, cache hit rate, latency P95, and no-answer rate.",
+          "followUps": ["How would you handle a query that spans multiple documents?"]
+        },
+        {
+          "question": "Your RAG system's faithfulness score dropped from 0.88 to 0.65 after a recent update. How do you debug this?",
+          "answer": "First, identify what changed: was it the prompt, the retrieval strategy, or the LLM model? Look at low-scoring samples — what types of questions are now hallucinating? Common causes: (1) Prompt change removed grounding instruction — check system prompt. (2) Chunk size increased — larger chunks may dilute relevance, pushing out context the model needs. (3) Top-K decreased — fewer context chunks → model fills gaps from memory. (4) Model updated — newer model may be more confident but less faithful. Debug systematically: fix one variable at a time, re-run evaluation on the same test set, compare before/after. If the prompt is unchanged, try reducing chunk_overlap and increasing top_k from 3 to 5 to give the model more context.",
+          "followUps": ["How do you prevent faithfulness regression across code changes?"]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "How do you convert ChromaDB cosine distance to similarity?",
+          "answer": "ChromaDB with `hnsw:space: cosine` returns distances where 0 = identical and 2 = maximally different. Convert to similarity: `similarity = 1 - distance`. A similarity of 0.92 means the vectors are very similar. Note: only for cosine distance — L2 distance needs different normalization. Example:\n```python\nresults = collection.query(query_texts=['...'], n_results=5)\nfor dist in results['distances'][0]:\n    similarity = 1 - dist\n    print(f'similarity: {similarity:.3f}')\n```"
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You're asked to build a RAG system for a legal firm's 500,000 document corpus. Queries must return answers in under 2 seconds with citations. What are the key architectural decisions?",
+          "answer": "Scale: 500K docs × avg 5 chunks = 2.5M vectors. Storage: pgvector on PostgreSQL (production-grade, SQL for metadata filtering, ACID). IVFFlat index with 500 lists (sqrt(2.5M) ≈ 1581, round up). Ingestion: async pipeline with 20 concurrent workers, 10K docs/hour. Each chunk gets: document_id, date, practice_area, court, jurisdiction metadata. Query: metadata pre-filter by practice_area (reduces search space 10-100×) → cosine search → cross-encoder rerank. Latency budget: 50ms cache check + 100ms embedding + 200ms retrieval + 1000ms generation = ~1.35s P50. Semantic cache threshold: 0.95 (legal queries are precise — wrong cached answer is a liability). Citations: every source must include document_id, section, page_number, date. Compliance: encrypt PII at rest, log all queries with user_id for audit trail, RBAC so users only access documents they're authorized for.",
+          "followUps": ["How do you handle conflicting information across documents from different dates?"]
+        }
+      ],
+      "wrongAnswers": [
+        "A higher semantic cache threshold always improves accuracy — lower thresholds might return more wrong cached answers, but a threshold of 1.0 would never cache anything (identical string would be 1.0 cosine similarity, paraphrases would be 0.95-0.98)",
+        "RAG eliminates hallucination entirely — RAG reduces hallucination but the model can still hallucinate if the context is ambiguous or the retrieval fails",
+        "You should always retrieve as many chunks as possible to give the model more context — too many chunks dilute the relevant signal; 3-5 highly relevant chunks outperform 20 mixed-relevance chunks"
+      ]
+    },
+    {
+      "type": "mcq",
+      "title": "Knowledge Check",
+      "questions": [
+        {
+          "id": "d36q1",
+          "level": "advanced",
+          "category": "scenario",
+          "question": "Your RAG system has: cache_hit_rate=5%, avg_faithfulness=0.92, avg_latency=3200ms. Which optimization gives the biggest impact?",
+          "options": {
+            "A": "Increase cache TTL to improve hit rate",
+            "B": "Lower cache threshold from 0.92 to 0.85 to increase cache hits",
+            "C": "Use a faster embedding model and reduce top_k from 10 to 5",
+            "D": "Switch to the Batch API for lower cost"
+          },
+          "answer": "C",
+          "explanation": "3.2 second latency is the main problem. Reducing top_k from 10 to 5 halves retrieval+embedding time. A faster embedding model (3-small vs 3-large) saves ~100-200ms. Don't lower the cache threshold — it may introduce wrong answers. The 5% cache hit rate with 0.92 threshold is correct behavior for a diverse query set."
+        },
+        {
+          "id": "d36q2",
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why does the grounded system prompt ('answer ONLY using the context below') improve faithfulness?",
+          "options": {
+            "A": "It increases the model's temperature, making it more creative",
+            "B": "It explicitly instructs the model not to use knowledge outside the retrieved context, reducing hallucination",
+            "C": "It compresses the context to fit in fewer tokens",
+            "D": "It enables the model to use tool calling for retrieval"
+          },
+          "answer": "B",
+          "explanation": "Without grounding instructions, the model blends retrieved context with parametric knowledge (training data), causing hallucination when context is incomplete. The grounding instruction raises the cost of hallucinating by making it an explicit policy violation."
+        },
+        {
+          "id": "d36q3",
+          "level": "intermediate",
+          "category": "code",
+          "question": "What does `1 - distance` compute when using ChromaDB's cosine distance metric?",
+          "options": {
+            "A": "L2 (Euclidean) distance",
+            "B": "Cosine similarity (0 = orthogonal, 1 = identical)",
+            "C": "Dot product similarity",
+            "D": "Jaccard similarity"
+          },
+          "answer": "B",
+          "explanation": "ChromaDB cosine distance = 1 - cosine_similarity. So similarity = 1 - distance. A distance of 0.08 = similarity of 0.92, meaning the vectors are 92% similar. Use this conversion when thresholding retrieval results."
+        },
+        {
+          "id": "d36q4",
+          "level": "advanced",
+          "category": "scenario",
+          "question": "A user asks a question for which your knowledge base has no relevant documents. What should your RAG system return?",
+          "options": {
+            "A": "An empty response",
+            "B": "The model's best answer from its training data",
+            "C": "A clear 'I don't have information about this in my knowledge base' response",
+            "D": "The top retrieved documents even if their similarity score is low"
+          },
+          "answer": "C",
+          "explanation": "For out-of-scope queries, the grounded system prompt should instruct the model to say it doesn't have enough information rather than hallucinating. This is more trustworthy than a fabricated answer and signals to the user that the knowledge base needs to be expanded."
+        },
+        {
+          "id": "d36q5",
+          "level": "basic",
+          "category": "theory",
+          "question": "Which component of the RAG pipeline is responsible for reducing hallucination?",
+          "options": {
+            "A": "The chunker — smaller chunks reduce confusion",
+            "B": "The grounded system prompt combined with retrieved context — anchoring the answer to verified sources",
+            "C": "The semantic cache — cached answers were already verified",
+            "D": "Temperature=0 — deterministic output prevents hallucination"
+          },
+          "answer": "B",
+          "explanation": "Hallucination reduction in RAG comes from providing relevant context AND explicitly instructing the model to use only that context. Temperature=0 makes outputs deterministic but doesn't reduce hallucination — it just makes the same hallucination happen every time."
+        }
+      ]
+    }
+  ]
+}

@@ -14,6 +14,7 @@ import QuizCard from '../components/QuizCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useContentAccess } from '../auth/ContentAccessContext';
 import SignInToContinueCallout from '../components/SignInToContinueCallout';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 interface QuizQuestion {
   question: string;
@@ -22,6 +23,7 @@ interface QuizQuestion {
 }
 
 const Quiz: React.FC = () => {
+  usePageTitle('Quiz');
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const initialDay = searchParams.get('day');
@@ -91,7 +93,7 @@ const Quiz: React.FC = () => {
 
     const dayNum = Number(selectedDay);
     const phase = curriculum.phases.find((p) => {
-      const [s, e] = p.days.split('–').map(Number);
+      const [s, e] = (p.days ?? '0–0').split('–').map(Number);
       return dayNum >= s && dayNum <= e;
     });
 
@@ -146,7 +148,7 @@ const Quiz: React.FC = () => {
 
   return (
     <Box className="fade-in">
-      <Typography variant="h4" fontWeight={800} mb={0.5}>
+      <Typography variant="h4" component="h1" fontWeight={800} mb={0.5}>
         Quiz Mode
       </Typography>
       <Typography color="text.secondary" mb={3}>

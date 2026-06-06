@@ -27,6 +27,7 @@ import { PRO_UI } from '../../constants/proUi'
 import PathCard from '../../components/pro/PathCard'
 import RoleRoadmap from '../../components/pro/RoleRoadmap'
 import SkillMatrix from '../../components/pro/SkillMatrix'
+import { usePageTitle } from '../../hooks/usePageTitle'
 import { getProPath } from '../../constants/proCurriculum'
 import { PRO_ROLES } from '../../constants/proRoles'
 
@@ -109,6 +110,7 @@ const initialState: OnboardingState = {
 }
 
 const ProOnboarding: React.FC = () => {
+  usePageTitle('Pro Onboarding')
   const navigate = useNavigate()
   const { saveProfile, hasProProfile } = useProProgress()
   const [activeStep, setActiveStep] = useState(0)

@@ -8,6 +8,7 @@ import { PRO_CURRICULUM, getAllProLessons } from '../../constants/proCurriculum'
 import { PRO_ROLES, getProInterviewAnswer } from '../../constants/proRoles'
 import type { ProPathId, ProRole } from '../../types/pro.types'
 import { PRO_UI } from '../../constants/proUi'
+import { usePageTitle } from '../../hooks/usePageTitle'
 
 type PrepItem = { lessonId: string; pathId: ProPathId; question: string; qIndex: number }
 
@@ -21,6 +22,7 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 const InterviewPrep: React.FC = () => {
+  usePageTitle('Interview Prep')
   const { role: roleParam } = useParams<{ role?: string }>()
   const navigate = useNavigate()
   const { profile, hasProProfile } = useProProgress()

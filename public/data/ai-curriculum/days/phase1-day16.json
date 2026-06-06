@@ -1,0 +1,172 @@
+{
+  "day": 16,
+  "phase": 1,
+  "title": "Anthropic Claude API — Claude in Python",
+  "description": "Master the Anthropic SDK: messages API, streaming, vision, tool use basics, and production patterns. Learn Claude's unique strengths — long context, safety design, and XML prompt structure — and how it differs from OpenAI.",
+  "estimatedHours": 3,
+  "difficulty": "Beginner",
+  "level": "Fresher",
+  "track": "Fresher",
+  "tags": ["anthropic", "claude", "messages-api", "streaming", "vision", "tool-use", "python-sdk"],
+  "prerequisites": ["phase1-day15"],
+  "learningObjectives": [
+    "Authenticate and make basic calls with the Anthropic Python SDK",
+    "Structure prompts using Claude's preferred XML tag format",
+    "Implement streaming with the Anthropic SDK",
+    "Send images to Claude for vision tasks",
+    "Understand Claude's unique safety design and how it affects prompting",
+    "Compare Claude vs GPT-4o across dimensions: context, cost, strengths"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "Claude is the leading alternative to GPT-4o and often outperforms it on long-document analysis, instruction following, and coding tasks. More importantly: diversifying across providers is a production best practice. If OpenAI has an outage, you route to Claude. This day teaches you the Anthropic API so you can build multi-provider systems."
+    },
+    {
+      "type": "theory",
+      "content": "## Anthropic SDK Setup\n\n```bash\npip install anthropic\nexport ANTHROPIC_API_KEY=sk-ant-...\n```\n\n```python\nimport anthropic\nclient = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env\n```\n\n---\n\n## Messages API\n\nClaude uses a `messages.create()` API. Key differences from OpenAI:\n- `system` is a **top-level parameter**, not a message role\n- `max_tokens` is **required** (not optional)\n- Response content is a list: `response.content[0].text`\n\n```python\nresponse = client.messages.create(\n    model=\"claude-sonnet-4-6\",\n    max_tokens=1024,\n    system=\"You are a helpful Python tutor.\",  # top-level, not in messages list\n    messages=[\n        {\"role\": \"user\", \"content\": \"What is a decorator?\"}\n    ]\n)\nprint(response.content[0].text)\n```\n\n**Response structure:**\n```python\nresponse.content[0].text            # the text\nresponse.stop_reason                 # 'end_turn' | 'max_tokens' | 'stop_sequence'\nresponse.usage.input_tokens          # input tokens\nresponse.usage.output_tokens         # output tokens\nresponse.model                       # model used\n```\n\n---\n\n## Claude Models (2025)\n\n| Model | Context | Strength | Cost (Input/Output per 1M) |\n|-------|---------|----------|---------------------------|\n| claude-opus-4-7 | 200K | Hardest tasks, complex reasoning | $15/$75 |\n| claude-sonnet-4-6 | 200K | Best balance | $3/$15 |\n| claude-haiku-4-5 | 200K | Fast, cheap | $0.80/$4 |\n\n---\n\n## XML Prompt Structure\n\nClaude is trained to follow XML-tagged instructions reliably:\n\n```python\nsystem = \"\"\"You are a data analyst.\n\n<instructions>\n- Analyze the provided data\n- Return insights as bullet points\n- If data is missing, state what's needed\n</instructions>\n\n<output_format>\nReturn JSON: {\"insights\": [...], \"data_quality\": \"good|poor|missing\"}\n</output_format>\"\"\"\n```\n\nXML tags help Claude clearly distinguish sections of complex prompts and follow nested instructions reliably.\n\n---\n\n## Streaming\n\n```python\nwith client.messages.stream(\n    model=\"claude-sonnet-4-6\",\n    max_tokens=1024,\n    messages=[{\"role\": \"user\", \"content\": \"Tell me a story\"}]\n) as stream:\n    for text in stream.text_stream:\n        print(text, end=\"\", flush=True)\n```\n\n---\n\n## Vision — Sending Images\n\nClaude can process images as base64 or URL:\n\n```python\nimport base64\n\nwith open(\"chart.png\", \"rb\") as f:\n    image_data = base64.standard_b64encode(f.read()).decode(\"utf-8\")\n\nresponse = client.messages.create(\n    model=\"claude-sonnet-4-6\",\n    max_tokens=1024,\n    messages=[{\n        \"role\": \"user\",\n        \"content\": [\n            {\n                \"type\": \"image\",\n                \"source\": {\n                    \"type\": \"base64\",\n                    \"media_type\": \"image/png\",\n                    \"data\": image_data,\n                }\n            },\n            {\"type\": \"text\", \"text\": \"What does this chart show?\"}\n        ]\n    }]\n)\n```\n\n---\n\n## Claude vs GPT-4o Comparison\n\n| Dimension | Claude Sonnet 4.6 | GPT-4o |\n|-----------|------------------|--------|\n| Context window | 200K | 128K |\n| Instruction following | Excellent | Very Good |\n| Long document analysis | Best-in-class | Very Good |\n| Code generation | Excellent | Excellent |\n| Safety / refusals | More conservative | Less conservative |\n| Cost (input) | $3/1M | $2.50/1M |\n| Ecosystem | Growing | Mature |\n\n**When to use Claude**: long documents (contracts, codebases), instruction-heavy prompts, tasks requiring careful reasoning, 200K context tasks."
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "claude_client.py",
+      "level": "Beginner",
+      "code": "\"\"\"Production-ready Anthropic Claude client.\"\"\"\nimport os\nimport time\nimport random\nfrom dataclasses import dataclass\nimport anthropic\nfrom anthropic import RateLimitError, APIConnectionError, AuthenticationError\n\nclient = anthropic.Anthropic(api_key=os.environ[\"ANTHROPIC_API_KEY\"])\n\n\n# ── Cost tracker ─────────────────────────────────────────────────\n@dataclass\nclass ClaudeUsageTracker:\n    model: str = \"claude-sonnet-4-6\"\n    total_input: int = 0\n    total_output: int = 0\n    total_calls: int = 0\n    PRICING = {\n        \"claude-opus-4-7\":   {\"input\": 15.00, \"output\": 75.00},\n        \"claude-sonnet-4-6\": {\"input\": 3.00,  \"output\": 15.00},\n        \"claude-haiku-4-5\":  {\"input\": 0.80,  \"output\": 4.00},\n    }\n    def record(self, usage) -> None:\n        self.total_input  += usage.input_tokens\n        self.total_output += usage.output_tokens\n        self.total_calls  += 1\n\n    def cost(self) -> float:\n        p = self.PRICING.get(self.model, self.PRICING[\"claude-sonnet-4-6\"])\n        return (self.total_input / 1_000_000) * p[\"input\"] + (self.total_output / 1_000_000) * p[\"output\"]\n\n    def report(self) -> str:\n        return f\"Calls: {self.total_calls} | In: {self.total_input:,} | Out: {self.total_output:,} | ${self.cost():.4f}\"\n\n\ntracker = ClaudeUsageTracker()\n\n\n# ── Core chat function ───────────────────────────────────────────\ndef claude_chat(\n    messages: list[dict],\n    system: str = \"\",\n    model: str = \"claude-sonnet-4-6\",\n    max_tokens: int = 1024,\n    temperature: float = 0.7,\n    max_retries: int = 3,\n) -> str:\n    for attempt in range(max_retries):\n        try:\n            kwargs = dict(\n                model=model,\n                max_tokens=max_tokens,\n                messages=messages,\n                temperature=temperature,\n            )\n            if system:\n                kwargs[\"system\"] = system\n\n            response = client.messages.create(**kwargs)\n            tracker.record(response.usage)\n\n            if response.stop_reason == \"max_tokens\":\n                print(f\"[WARN] Response hit max_tokens={max_tokens} limit\")\n\n            return response.content[0].text\n\n        except RateLimitError:\n            if attempt == max_retries - 1:\n                raise\n            wait = (2 ** attempt) + random.uniform(0, 1)\n            print(f\"Rate limited. Retry in {wait:.1f}s\")\n            time.sleep(wait)\n\n        except AuthenticationError:\n            raise RuntimeError(\"Invalid ANTHROPIC_API_KEY\") from None\n\n        except APIConnectionError:\n            if attempt == max_retries - 1:\n                raise\n            time.sleep(2 ** attempt)\n\n    raise RuntimeError(\"All retries exhausted\")\n\n\n# ── Streaming ────────────────────────────────────────────────────\ndef claude_stream(messages: list[dict], system: str = \"\", model: str = \"claude-sonnet-4-6\") -> str:\n    full = \"\"\n    kwargs = {\"model\": model, \"max_tokens\": 1024, \"messages\": messages}\n    if system:\n        kwargs[\"system\"] = system\n    with client.messages.stream(**kwargs) as stream:\n        for text in stream.text_stream:\n            print(text, end=\"\", flush=True)\n            full += text\n    print()\n    return full\n\n\n# ── XML prompt builder ───────────────────────────────────────────\ndef build_claude_system(\n    role: str,\n    instructions: list[str],\n    output_format: str,\n    constraints: list[str] | None = None,\n) -> str:\n    instr = \"\\n\".join(f\"- {i}\" for i in instructions)\n    parts = [role, f\"<instructions>\\n{instr}\\n</instructions>\", f\"<output_format>\\n{output_format}\\n</output_format>\"]\n    if constraints:\n        c = \"\\n\".join(f\"- {c}\" for c in constraints)\n        parts.append(f\"<constraints>\\n{c}\\n</constraints>\")\n    return \"\\n\\n\".join(parts)\n\n\n# ── Multi-turn conversation ──────────────────────────────────────\nclass ClaudeConversation:\n    def __init__(self, system: str, model: str = \"claude-sonnet-4-6\"):\n        self.system = system\n        self.model = model\n        self.messages: list[dict] = []\n\n    def send(self, user_message: str) -> str:\n        self.messages.append({\"role\": \"user\", \"content\": user_message})\n        reply = claude_chat(self.messages, system=self.system, model=self.model)\n        self.messages.append({\"role\": \"assistant\", \"content\": reply})\n        return reply\n\n\nif __name__ == \"__main__\":\n    system = build_claude_system(\n        role=\"You are a concise Python code reviewer.\",\n        instructions=[\"Review the code for correctness and style\", \"Point out bugs if any\", \"Keep response under 3 bullet points\"],\n        output_format=\"Bullet points only. No preamble.\",\n        constraints=[\"Do not rewrite the entire function\", \"Do not discuss off-topic subjects\"]\n    )\n    reply = claude_chat(\n        messages=[{\"role\": \"user\", \"content\": \"def add(a, b):\\n    return a - b\"}],\n        system=system, temperature=0.1\n    )\n    print(\"Review:\", reply)\n    print(tracker.report())",
+      "output": "Review:\n- Bug: function returns `a - b` but is named `add` — should be `return a + b`\n- Style: add type hints `def add(a: int | float, b: int | float) -> int | float`\n- No docstring for a public utility function\nCalls: 1 | In: 134 | Out: 47 | $0.0011"
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Omitting max_tokens — unlike OpenAI, Claude's API requires max_tokens. Missing it causes a validation error.",
+        "Putting the system prompt inside the messages list — Claude's API takes system as a top-level parameter, not as a message with role='system'. Putting it in messages causes unexpected behavior.",
+        "Checking response.choices[0] — Claude uses response.content[0].text, not OpenAI's response.choices[0].message.content. Copy-pasting OpenAI code breaks with Anthropic.",
+        "Checking finish_reason — Claude uses stop_reason, not finish_reason. The value 'max_tokens' (not 'length') indicates truncation.",
+        "Assuming Claude will always refuse sensitive requests — Claude's safety training makes it more conservative, but it can still be misused. Implement your own guardrails."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Document Analyzer with Claude's 200K Context",
+      "problem": "Build a `DocumentAnalyzer` class that: (1) accepts a large text document (up to 150K tokens), (2) uses Claude's 200K context window to analyze it in a single call, (3) extracts: key themes (list), entities (dict of type→list), and a 3-sentence summary. Return results as a structured dict. Include token usage in the return value.",
+      "hints": [
+        "Use claude-sonnet-4-6 with max_tokens=2000 for the output",
+        "Build the system prompt with XML tags for reliable output format",
+        "Ask Claude to return JSON and parse response.content[0].text with json.loads()",
+        "Estimate input tokens as len(document) // 4 before sending"
+      ],
+      "solution": "import json\n\nclass DocumentAnalyzer:\n    def __init__(self):\n        self.client = anthropic.Anthropic()\n        self.SYSTEM = '''You are a document analysis engine.\n\n<instructions>\n- Extract key themes, named entities, and write a 3-sentence summary\n- Be precise and factual\n</instructions>\n\n<output_format>\nReturn ONLY valid JSON:\n{\"themes\": [\"theme1\", ...], \"entities\": {\"people\": [...], \"organizations\": [...], \"locations\": [...]}, \"summary\": \"3 sentence summary\"}\n</output_format>'''\n\n    def analyze(self, document: str) -> dict:\n        estimated_tokens = len(document) // 4\n        if estimated_tokens > 150_000:\n            raise ValueError(f'Document too large: ~{estimated_tokens:,} tokens (max 150K)')\n\n        response = self.client.messages.create(\n            model='claude-sonnet-4-6',\n            max_tokens=2000,\n            system=self.SYSTEM,\n            messages=[{'role': 'user', 'content': f'Analyze this document:\\n\\n{document}'}]\n        )\n        result = json.loads(response.content[0].text)\n        result['usage'] = {'input_tokens': response.usage.input_tokens, 'output_tokens': response.usage.output_tokens}\n        return result",
+      "difficulty": "Beginner"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "What are the key API differences between Anthropic Claude and OpenAI GPT-4o?",
+          "answer": "Three main differences: (1) System prompt: Claude takes system as a top-level API parameter, OpenAI puts it as a message with role='system'. (2) max_tokens: Required in Claude, optional in OpenAI. (3) Response structure: Claude uses response.content[0].text, OpenAI uses response.choices[0].message.content. Also: Claude's stop indicator is stop_reason='max_tokens' vs OpenAI's finish_reason='length'. In both cases, exponential backoff handles rate limits, but the exception class names differ.",
+          "followUps": [
+            "How would you build an abstraction layer that works with both APIs?",
+            "What is Claude's Constitutional AI and how does it affect prompting?"
+          ]
+        },
+        {
+          "question": "When would you choose Claude over GPT-4o for a production task?",
+          "answer": "Choose Claude when: (1) Context window matters — 200K vs 128K, so for analyzing entire codebases, legal documents, or long conversations, Claude fits more in one call. (2) Instruction following on complex prompts — Claude handles multi-layered XML-structured prompts very reliably. (3) Long-form writing or analysis quality — Claude often produces more nuanced, better-structured prose. (4) Multi-provider resilience — route to Claude when OpenAI is degraded. Choose GPT-4o for its larger plugin/tool ecosystem, function calling maturity, and slightly lower cost.",
+          "followUps": [
+            "How do you implement failover between Claude and GPT-4o automatically?",
+            "Can Claude handle the same function calling patterns as OpenAI?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write a function that abstracts over both OpenAI and Anthropic APIs, returning text from either based on a provider parameter.",
+          "answer": "def unified_chat(messages: list[dict], system: str, provider: str = 'openai', model: str | None = None) -> str:\n    if provider == 'openai':\n        from openai import OpenAI\n        c = OpenAI()\n        oai_messages = [{'role': 'system', 'content': system}] + messages\n        resp = c.chat.completions.create(\n            model=model or 'gpt-4o', messages=oai_messages, max_tokens=1024\n        )\n        return resp.choices[0].message.content\n    elif provider == 'anthropic':\n        import anthropic\n        c = anthropic.Anthropic()\n        resp = c.messages.create(\n            model=model or 'claude-sonnet-4-6',\n            max_tokens=1024, system=system, messages=messages\n        )\n        return resp.content[0].text\n    else:\n        raise ValueError(f'Unknown provider: {provider}')",
+          "followUps": [
+            "How would you add error handling and retry logic to this function?",
+            "How would you make this work for streaming responses too?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You need to process 10,000 legal contracts (avg 50 pages each) for key clause extraction. How do you architect this?",
+          "answer": "Claude's 200K context is the right tool — a 50-page contract is ~37,500 tokens, well within limits, so no chunking needed. Architecture: (1) Use Claude Sonnet 4.6 with a structured XML prompt defining exactly which clause types to extract. (2) Process in parallel batches of 50 contracts using asyncio + anthropic's async client. (3) Implement exponential backoff for rate limits. (4) Cache results in a database keyed by document hash to avoid reprocessing. (5) Validate extracted JSON structure before writing to DB. (6) Use Claude Batch API if latency requirements allow, for 50% cost reduction. Estimated cost: 10K contracts × 40K tokens × $3/1M = $1,200.",
+          "followUps": [
+            "How would you validate that extractions are accurate for this high-stakes use case?",
+            "What would you do if some contracts are in languages other than English?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "Claude's system prompt goes inside the messages list with role='system' just like OpenAI",
+        "max_tokens is optional in the Claude API just like OpenAI",
+        "response.choices[0].message.content is how you access Claude's response text"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "code",
+          "question": "How do you access the text content from an Anthropic Claude API response?",
+          "options": {
+            "A": "response.text",
+            "B": "response.choices[0].message.content",
+            "C": "response.content[0].text",
+            "D": "response.message.content"
+          },
+          "answer": "C",
+          "explanation": "Claude's Messages API returns response.content as a list of content blocks. Text is at response.content[0].text. This differs from OpenAI's response.choices[0].message.content — a common source of bugs when switching providers."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "theory",
+          "question": "In the Anthropic Claude API, where does the system prompt go?",
+          "options": {
+            "A": "As the first message in the messages list with role='system'",
+            "B": "As a top-level 'system' parameter in messages.create()",
+            "C": "In the model parameter field",
+            "D": "In the metadata parameter"
+          },
+          "answer": "B",
+          "explanation": "Unlike OpenAI which accepts system as a message role, Claude's API takes system as a top-level parameter: client.messages.create(model=..., system='...', messages=[...]). Putting it in the messages list with role='system' is a common mistake when porting from OpenAI."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "You need to analyze a 180-page legal document in a single API call. Which model/provider is best suited?",
+          "options": {
+            "A": "GPT-4o — it has the best reasoning",
+            "B": "Claude Sonnet 4.6 — 200K context window handles ~135K tokens comfortably",
+            "C": "GPT-4o-mini — it's faster for long documents",
+            "D": "Any model with streaming enabled"
+          },
+          "answer": "B",
+          "explanation": "A 180-page document ≈ 135,000 tokens. GPT-4o's 128K limit would require chunking. Claude Sonnet 4.6's 200K window handles it in a single call. Single-call analysis avoids the complexity of chunking and cross-chunk context loss."
+        },
+        {
+          "id": 4,
+          "level": "intermediate",
+          "category": "theory",
+          "question": "Why does Claude respond well to XML-tagged prompt structure?",
+          "options": {
+            "A": "XML is parsed faster by the API servers",
+            "B": "Claude is trained on XML-formatted instruction data and reliably distinguishes sections",
+            "C": "XML reduces token count significantly",
+            "D": "Anthropic requires XML format for all production prompts"
+          },
+          "answer": "B",
+          "explanation": "Claude's training included XML-structured instructions, so it reliably distinguishes between role definitions, instructions, format requirements, and examples when separated by XML tags. This is not a technical requirement but a prompting best practice that improves reliability on complex multi-part prompts."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## Claude API — Quick Reference\n\n### Setup\n```python\nimport anthropic\nclient = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY\n```\n\n### Basic Call\n```python\nresponse = client.messages.create(\n    model='claude-sonnet-4-6',\n    max_tokens=1024,           # REQUIRED\n    system='You are...',       # top-level, NOT in messages\n    messages=[{'role': 'user', 'content': 'Hello'}]\n)\ntext = response.content[0].text\nreason = response.stop_reason  # 'end_turn' | 'max_tokens'\n```\n\n### Models\n| Model | Context | Cost in/out |\n|-------|---------|-------------|\n| claude-opus-4-7 | 200K | $15/$75 per 1M |\n| claude-sonnet-4-6 | 200K | $3/$15 per 1M |\n| claude-haiku-4-5 | 200K | $0.80/$4 per 1M |\n\n### Streaming\n```python\nwith client.messages.stream(model=..., max_tokens=1024, messages=[...]) as s:\n    for text in s.text_stream:\n        print(text, end='', flush=True)\n```\n\n### XML Prompt Structure\n```\n<instructions>\n- Do X\n- Do Y\n</instructions>\n<output_format>\nReturn JSON: {...}\n</output_format>\n```\n\n### vs OpenAI\n| | Claude | OpenAI |\n|-|--------|--------|\n| System | top-level param | messages role |\n| Response | content[0].text | choices[0].message.content |\n| Truncated | stop_reason='max_tokens' | finish_reason='length' |"
+    }
+  ]
+}

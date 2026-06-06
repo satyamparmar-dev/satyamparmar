@@ -1,0 +1,172 @@
+{
+  "day": 22,
+  "phase": 2,
+  "title": "Vector Databases — ChromaDB, Pinecone & pgvector",
+  "description": "Master vector databases: the storage engine that powers every RAG system, semantic search, and recommendation engine. Learn ChromaDB for local dev, Pinecone for production, and pgvector for Postgres-first teams.",
+  "estimatedHours": 3.5,
+  "difficulty": "Intermediate",
+  "level": "Mid-Level",
+  "track": "Mid-Level",
+  "tags": ["vector-database", "chromadb", "pinecone", "pgvector", "embeddings", "semantic-search", "rag"],
+  "prerequisites": ["phase1-day12"],
+  "learningObjectives": [
+    "Explain what a vector database does and why traditional databases can't replace it",
+    "Use ChromaDB to store, query, and filter embeddings locally",
+    "Connect to Pinecone and perform production-grade similarity search",
+    "Use pgvector to add vector search to an existing PostgreSQL database",
+    "Design index schemas with metadata for filtered semantic search",
+    "Benchmark query performance and understand HNSW indexing"
+  ],
+  "sections": [
+    {
+      "type": "why",
+      "content": "Every RAG system runs on a vector database. Without one, you're doing linear scan similarity search — which costs O(n) per query and breaks at 100K+ documents. Vector databases give you sub-millisecond approximate nearest-neighbor search at millions of vectors. This is the infrastructure layer that makes AI applications scale."
+    },
+    {
+      "type": "theory",
+      "content": "## What is a Vector Database?\n\nA vector database stores high-dimensional float vectors (embeddings) and enables fast **approximate nearest-neighbor (ANN)** search — finding the K most similar vectors to a query vector.\n\nTraditional DB approach:\n```\nSELECT * FROM docs ORDER BY cosine_similarity(embedding, query_vec) DESC LIMIT 5\n-- Scans ALL rows → O(n) → 1M rows = 1 second+\n```\n\nVector database approach:\n```\nindex.query(vector=query_vec, top_k=5)\n-- HNSW index → O(log n) → 1M rows = <10ms\n```\n\n---\n\n## The HNSW Index\n\nHierarchical Navigable Small World (HNSW) is the dominant ANN algorithm:\n- Builds a multi-layer graph of vectors\n- Query traverses from coarse top layer to fine bottom layer\n- Trade-off: ~5-10% recall loss vs exact search for 100x speed gain\n- Parameters: `ef_construction` (build quality), `M` (connectivity)\n\n---\n\n## ChromaDB — Local Development\n\n```bash\npip install chromadb\n```\n\n```python\nimport chromadb\n\nclient = chromadb.PersistentClient(path=\"./chroma_db\")  # persists to disk\ncollection = client.get_or_create_collection(\n    name=\"documents\",\n    metadata={\"hnsw:space\": \"cosine\"}  # distance metric\n)\n\n# Add documents\ncollection.add(\n    documents=[\"Paris is the capital of France\", \"Berlin is in Germany\"],\n    metadatas=[{\"source\": \"wiki\", \"lang\": \"en\"}, {\"source\": \"wiki\", \"lang\": \"en\"}],\n    ids=[\"doc1\", \"doc2\"]\n)\n\n# Query\nresults = collection.query(query_texts=[\"capital city of France\"], n_results=2)\nprint(results[\"documents\"])  # [['Paris is the capital of France', ...]]\n```\n\nChromaDB can use its own built-in embedding model or accept pre-computed vectors.\n\n---\n\n## Pinecone — Production Scale\n\n```bash\npip install pinecone\n```\n\n```python\nfrom pinecone import Pinecone, ServerlessSpec\n\npc = Pinecone(api_key=os.environ[\"PINECONE_API_KEY\"])\n\n# Create index (once)\npc.create_index(\n    name=\"my-index\",\n    dimension=1536,         # must match embedding model\n    metric=\"cosine\",\n    spec=ServerlessSpec(cloud=\"aws\", region=\"us-east-1\")\n)\n\nindex = pc.Index(\"my-index\")\n\n# Upsert vectors\nindex.upsert(vectors=[\n    {\"id\": \"doc1\", \"values\": [0.1, 0.2, ...], \"metadata\": {\"text\": \"...\", \"source\": \"wiki\"}},\n])\n\n# Query\nresults = index.query(vector=query_embedding, top_k=5, include_metadata=True)\nfor match in results[\"matches\"]:\n    print(match[\"score\"], match[\"metadata\"][\"text\"])\n```\n\n---\n\n## pgvector — Postgres Extension\n\nIdeal for teams already running PostgreSQL:\n\n```sql\nCREATE EXTENSION vector;\nCREATE TABLE documents (id SERIAL, content TEXT, embedding vector(1536));\nCREATE INDEX ON documents USING hnsw (embedding vector_cosine_ops);\n\n-- Query\nSELECT content, 1 - (embedding <=> '[0.1, 0.2, ...]') AS similarity\nFROM documents\nORDER BY embedding <=> '[0.1, 0.2, ...]'\nLIMIT 5;\n```\n\nPython via psycopg2 + pgvector:\n```python\nfrom pgvector.psycopg2 import register_vector\nregister_vector(conn)\ncur.execute(\"SELECT content FROM documents ORDER BY embedding <=> %s LIMIT 5\", [query_vec])\n```\n\n---\n\n## Metadata Filtering\n\nAll major vector DBs support pre-filtering on metadata before similarity search:\n\n```python\n# ChromaDB: filter by metadata\nresults = collection.query(\n    query_texts=[\"machine learning\"],\n    n_results=5,\n    where={\"source\": \"arxiv\", \"year\": {\"$gte\": 2023}}  # filter BEFORE similarity\n)\n\n# Pinecone: filter by metadata\nresults = index.query(\n    vector=q_vec, top_k=5,\n    filter={\"source\": {\"$eq\": \"arxiv\"}, \"year\": {\"$gte\": 2023}}\n)\n```\n\n---\n\n## Choosing a Vector Database\n\n| DB | Best for | Hosted | Limitations |\n|----|---------|--------|-------------|\n| ChromaDB | Local dev, prototypes | Self / Docker | Not for >10M vecs at high QPS |\n| Pinecone | Production, managed | Fully managed | Cost at high volume |\n| pgvector | Postgres-first teams | Self / RDS | Less perf than dedicated at massive scale |\n| Weaviate | Multi-modal, rich schema | Self / Cloud | Complex setup |\n| Qdrant | Self-hosted production | Self / Cloud | Smaller ecosystem |"
+    },
+    {
+      "type": "code",
+      "language": "python",
+      "filename": "vector_db_demo.py",
+      "level": "Intermediate",
+      "code": "\"\"\"Vector database operations: ChromaDB local + production patterns.\"\"\"\nimport os\nimport math\nfrom typing import Any\n\n\n# ── Pure-Python cosine similarity (no numpy) ─────────────────────\ndef cosine_sim(a: list[float], b: list[float]) -> float:\n    dot = sum(x * y for x, y in zip(a, b))\n    mag_a = math.sqrt(sum(x**2 for x in a))\n    mag_b = math.sqrt(sum(x**2 for x in b))\n    return dot / (mag_a * mag_b) if mag_a and mag_b else 0.0\n\n\n# ── ChromaDB wrapper ─────────────────────────────────────────────\nclass ChromaDocStore:\n    def __init__(self, collection_name: str, persist_path: str = \"./chroma_db\"):\n        import chromadb\n        self.client = chromadb.PersistentClient(path=persist_path)\n        self.collection = self.client.get_or_create_collection(\n            name=collection_name,\n            metadata={\"hnsw:space\": \"cosine\"}\n        )\n\n    def add_documents(\n        self,\n        texts: list[str],\n        metadatas: list[dict] | None = None,\n        ids: list[str] | None = None,\n    ) -> None:\n        ids = ids or [f\"doc_{i}\" for i in range(len(texts))]\n        metadatas = metadatas or [{} for _ in texts]\n        self.collection.add(documents=texts, metadatas=metadatas, ids=ids)\n        print(f\"Added {len(texts)} documents. Total: {self.collection.count()}\")\n\n    def search(\n        self,\n        query: str,\n        n_results: int = 5,\n        filters: dict | None = None,\n    ) -> list[dict]:\n        kwargs: dict[str, Any] = {\"query_texts\": [query], \"n_results\": n_results}\n        if filters:\n            kwargs[\"where\"] = filters\n        results = self.collection.query(**kwargs)\n        output = []\n        for i, (doc, meta, dist) in enumerate(zip(\n            results[\"documents\"][0],\n            results[\"metadatas\"][0],\n            results[\"distances\"][0],\n        )):\n            output.append({\n                \"rank\": i + 1,\n                \"text\": doc,\n                \"score\": 1 - dist,  # chroma returns distance, convert to similarity\n                \"metadata\": meta,\n            })\n        return output\n\n    def delete(self, ids: list[str]) -> None:\n        self.collection.delete(ids=ids)\n\n    def count(self) -> int:\n        return self.collection.count()\n\n\n# ── Embedding + indexing pipeline ────────────────────────────────\nclass DocumentIndexer:\n    def __init__(self, store: ChromaDocStore):\n        self.store = store\n\n    def index_documents(self, documents: list[dict]) -> None:\n        \"\"\"Each doc: {text, source, category, year}.\"\"\"\n        texts     = [d[\"text\"] for d in documents]\n        metadatas = [{k: v for k, v in d.items() if k != \"text\"} for d in documents]\n        ids       = [f\"{d.get('source', 'doc')}_{i}\" for i, d in enumerate(documents)]\n        self.store.add_documents(texts, metadatas, ids)\n\n    def filtered_search(self, query: str, category: str, top_k: int = 3) -> list[dict]:\n        return self.store.search(query, n_results=top_k, filters={\"category\": category})\n\n\n# ── Naive linear-scan baseline (for comparison) ──────────────────\nclass NaiveVectorStore:\n    \"\"\"O(n) brute force — shows why you need a vector DB at scale.\"\"\"\n    def __init__(self):\n        self._docs: list[tuple[str, list[float], dict]] = []\n\n    def add(self, text: str, embedding: list[float], metadata: dict) -> None:\n        self._docs.append((text, embedding, metadata))\n\n    def search(self, query_embedding: list[float], top_k: int = 5) -> list[dict]:\n        scored = [(text, cosine_sim(query_embedding, emb), meta) for text, emb, meta in self._docs]\n        scored.sort(key=lambda x: -x[1])\n        return [{\"text\": t, \"score\": s, \"metadata\": m} for t, s, m in scored[:top_k]]\n\n\nif __name__ == \"__main__\":\n    # Demo ChromaDB\n    store = ChromaDocStore(\"ai_docs\")\n    indexer = DocumentIndexer(store)\n\n    docs = [\n        {\"text\": \"BERT introduced bidirectional transformers for NLP\",   \"source\": \"arxiv\", \"category\": \"nlp\",  \"year\": 2018},\n        {\"text\": \"GPT-3 demonstrated few-shot learning at massive scale\", \"source\": \"openai\",\"category\": \"llm\",  \"year\": 2020},\n        {\"text\": \"RAG combines retrieval with generation for accuracy\",   \"source\": \"meta\",  \"category\": \"rag\",  \"year\": 2020},\n        {\"text\": \"Attention is all you need — the transformer paper\",    \"source\": \"google\",\"category\": \"nlp\",  \"year\": 2017},\n        {\"text\": \"Vector databases enable fast similarity search at scale\",\"source\": \"blog\", \"category\": \"infra\",\"year\": 2023},\n    ]\n    indexer.index_documents(docs)\n\n    print(\"\\n=== Semantic Search ===\")\n    results = store.search(\"language models and transformers\", n_results=3)\n    for r in results:\n        print(f\"  [{r['score']:.3f}] {r['text'][:60]}\")\n\n    print(\"\\n=== Filtered Search (category=nlp) ===\")\n    filtered = indexer.filtered_search(\"attention mechanisms\", category=\"nlp\")\n    for r in filtered:\n        print(f\"  [{r['score']:.3f}] {r['text'][:60]}\")",
+      "output": "Added 5 documents. Total: 5\n\n=== Semantic Search ===\n  [0.921] Attention is all you need — the transformer paper\n  [0.887] BERT introduced bidirectional transformers for NLP\n  [0.851] GPT-3 demonstrated few-shot learning at massive scale\n\n=== Filtered Search (category=nlp) ===\n  [0.913] Attention is all you need — the transformer paper\n  [0.874] BERT introduced bidirectional transformers for NLP"
+    },
+    {
+      "type": "pitfalls",
+      "items": [
+        "Mismatching embedding dimensions — if you index with text-embedding-3-small (1536 dims) but query with text-embedding-3-large (3072 dims), similarity is undefined. Lock the embedding model at index creation time.",
+        "Not persisting ChromaDB — the default in-memory client loses all data on restart. Always use PersistentClient(path=...) for development, or a hosted solution for production.",
+        "Ignoring metadata schema design — adding documents without consistent metadata keys makes filtered search impossible later. Define your metadata schema before indexing.",
+        "Using distance instead of similarity — ChromaDB returns distances (lower = more similar). Pinecone returns scores (higher = more similar). Convert appropriately: similarity = 1 - cosine_distance.",
+        "Creating a new Pinecone index on every run — index creation takes 30-60 seconds and has limits. Always use get_or_create pattern with a check before creating."
+      ]
+    },
+    {
+      "type": "exercise",
+      "title": "Build a Semantic Document Search with Filters",
+      "problem": "Build a `SemanticSearchEngine` backed by ChromaDB that: (1) indexes a list of product descriptions with metadata fields: category, price (float), in_stock (bool), (2) provides `search(query, category=None, max_price=None, in_stock_only=False)` with metadata filtering, (3) returns top-3 results with text, score, and metadata. Test with at least 8 product descriptions across 3 categories.",
+      "hints": [
+        "ChromaDB filter operators: $eq, $ne, $gt, $gte, $lt, $lte, $and, $or",
+        "Build the where dict dynamically based on which filters are provided",
+        "in_stock is bool — use {$eq: true} not {$eq: 'true'}",
+        "Combine filters with $and: {'$and': [{'category': {'$eq': cat}}, {'in_stock': {'$eq': True}}]}"
+      ],
+      "solution": "class SemanticSearchEngine:\n    def __init__(self):\n        import chromadb\n        client = chromadb.PersistentClient('./product_db')\n        self.col = client.get_or_create_collection('products', metadata={'hnsw:space': 'cosine'})\n\n    def index(self, products: list[dict]) -> None:\n        texts = [p['description'] for p in products]\n        metas = [{k: v for k, v in p.items() if k != 'description'} for p in products]\n        ids = [f'prod_{i}' for i in range(len(products))]\n        self.col.add(documents=texts, metadatas=metas, ids=ids)\n\n    def search(self, query: str, category=None, max_price=None, in_stock_only=False, top_k=3):\n        conditions = []\n        if category:\n            conditions.append({'category': {'$eq': category}})\n        if max_price is not None:\n            conditions.append({'price': {'$lte': max_price}})\n        if in_stock_only:\n            conditions.append({'in_stock': {'$eq': True}})\n        where = {'$and': conditions} if len(conditions) > 1 else (conditions[0] if conditions else None)\n        kwargs = {'query_texts': [query], 'n_results': top_k}\n        if where:\n            kwargs['where'] = where\n        res = self.col.query(**kwargs)\n        return [{'text': doc, 'score': 1 - dist, 'metadata': meta}\n                for doc, dist, meta in zip(res['documents'][0], res['distances'][0], res['metadatas'][0])]",
+      "difficulty": "Intermediate"
+    },
+    {
+      "type": "interview",
+      "conceptual": [
+        {
+          "question": "Why can't you use a regular SQL database for vector similarity search at scale?",
+          "answer": "SQL databases store data in B-tree or hash indexes optimized for exact lookups and range queries. Similarity search requires finding vectors with the smallest angular distance to a query vector — which requires comparing against every row (O(n) scan). At 1M documents, that's 1M cosine similarity calculations per query, taking seconds. Vector databases use approximate nearest neighbor (ANN) algorithms like HNSW that build a graph index enabling O(log n) lookups in milliseconds. pgvector brings this to Postgres via an extension, but purpose-built vector DBs are faster at extreme scale.",
+          "followUps": [
+            "What accuracy trade-off does ANN make vs exact search?",
+            "When would you choose pgvector over Pinecone?"
+          ]
+        },
+        {
+          "question": "What is metadata filtering in vector search and why is it important for RAG?",
+          "answer": "Metadata filtering pre-filters the search space by structured attributes before or during similarity search. For example: find the 5 most similar documents to my query, but only from 2024 documents tagged as 'internal'. Without this, RAG might retrieve a relevant but outdated document. In production RAG systems, metadata filters implement tenant isolation (only search user's own docs), recency filtering (only last 6 months), access control (only search docs user has permission for), and topic scoping (only search product docs, not general knowledge).",
+          "followUps": [
+            "What is the difference between pre-filtering and post-filtering in vector search?",
+            "How does metadata filtering affect HNSW index performance?"
+          ]
+        }
+      ],
+      "codeBased": [
+        {
+          "question": "Write a function that takes a list of documents and upserts them into ChromaDB, handling duplicates by ID.",
+          "answer": "import chromadb\n\ndef upsert_documents(collection_name: str, documents: list[dict]) -> None:\n    client = chromadb.PersistentClient('./chroma_db')\n    col = client.get_or_create_collection(collection_name)\n    # ChromaDB upsert: add or update by ID\n    col.upsert(\n        documents=[d['text'] for d in documents],\n        metadatas=[{k: v for k, v in d.items() if k != 'text' and k != 'id'} for d in documents],\n        ids=[d['id'] for d in documents]\n    )\n    print(f'Upserted {len(documents)} documents. Total: {col.count()}')",
+          "followUps": [
+            "How does upsert differ from add in ChromaDB?",
+            "How would you handle embeddings that need to be regenerated when documents update?"
+          ]
+        }
+      ],
+      "seniorScenario": [
+        {
+          "question": "You're building a RAG system for a legal firm with 5 million documents that must respect document-level access control. How do you architect the vector database layer?",
+          "answer": "Architecture: (1) Metadata schema: every document has user_id, firm_id, clearance_level, document_type, created_at, is_active. (2) At query time, inject access control as mandatory metadata filters: {$and: [{firm_id: $eq user.firm_id}, {clearance_level: {$lte: user.clearance}}, {is_active: {$eq: true}}]}. Never rely on post-filtering — pre-filter in the vector DB to prevent any data leakage. (3) At 5M docs, choose Pinecone or Weaviate with namespaces/collections per firm for isolation and performance. (4) Separate indexes per access tier if clearance levels create very different access patterns. (5) Audit log every query with user_id, filters applied, and documents returned — legal compliance requires this. (6) Encrypt document content stored in metadata; keep full text in a separate encrypted store referenced by ID.",
+          "followUps": [
+            "How would you handle document updates when access permissions change?",
+            "What are the performance implications of complex metadata filters on 5M vectors?"
+          ]
+        }
+      ],
+      "wrongAnswers": [
+        "ChromaDB returns similarity scores directly — you don't need to convert from distance",
+        "You can mix embeddings from different models in the same collection as long as dimensions match",
+        "Metadata filtering always happens after similarity search (post-filtering)"
+      ]
+    },
+    {
+      "type": "mcq",
+      "questions": [
+        {
+          "id": 1,
+          "level": "basic",
+          "category": "theory",
+          "question": "What does HNSW stand for and what problem does it solve?",
+          "options": {
+            "A": "Hierarchical Normalized Search Weights — normalizes embedding vectors",
+            "B": "Hierarchical Navigable Small World — enables fast approximate nearest-neighbor search",
+            "C": "High-speed Nearest Sorted Wordvecs — sorts vectors at insert time",
+            "D": "Hash-based Navigation Search Web — hashes vectors for exact lookup"
+          },
+          "answer": "B",
+          "explanation": "HNSW (Hierarchical Navigable Small World) is the dominant algorithm for approximate nearest-neighbor search. It builds a multi-layer graph where queries traverse from coarse to fine layers, achieving O(log n) search complexity vs O(n) for brute-force scan. It trades ~5% recall loss for 100x speed improvement."
+        },
+        {
+          "id": 2,
+          "level": "basic",
+          "category": "code",
+          "question": "ChromaDB's query() returns distances, not similarities. How do you convert cosine distance to similarity?",
+          "options": {
+            "A": "similarity = distance",
+            "B": "similarity = 1 / distance",
+            "C": "similarity = 1 - distance",
+            "D": "similarity = -distance"
+          },
+          "answer": "C",
+          "explanation": "For cosine distance (range 0 to 2), cosine similarity = 1 - cosine_distance. A distance of 0 means identical vectors (similarity=1.0). A distance of 1 means orthogonal (similarity=0.0). A distance of 2 means opposite (similarity=-1.0). ChromaDB with hnsw:space=cosine returns values in [0, 2]."
+        },
+        {
+          "id": 3,
+          "level": "intermediate",
+          "category": "scenario",
+          "question": "You need vector search on data already stored in PostgreSQL. What is the most pragmatic solution?",
+          "options": {
+            "A": "Migrate all data to Pinecone",
+            "B": "Use ChromaDB alongside Postgres with periodic sync",
+            "C": "Install pgvector extension on Postgres and add a vector column",
+            "D": "Implement cosine similarity as a stored procedure"
+          },
+          "answer": "C",
+          "explanation": "pgvector adds native vector support to PostgreSQL: CREATE EXTENSION vector; adds a vector data type and HNSW/IVFFlat indexes. This keeps data in one system (no sync complexity), integrates with existing Postgres auth/transactions, and performs well for moderate scale (<10M vectors). Only move to a dedicated vector DB when pgvector's performance becomes limiting."
+        },
+        {
+          "id": 4,
+          "level": "advanced",
+          "category": "scenario",
+          "question": "Why must embedding model dimension match exactly between indexing and querying?",
+          "options": {
+            "A": "Dimension mismatch triggers a warning but search still works",
+            "B": "The vector database pads shorter vectors with zeros automatically",
+            "C": "Cosine similarity is mathematically undefined between vectors of different dimensions",
+            "D": "Only the first N dimensions are compared where N is the minimum"
+          },
+          "answer": "C",
+          "explanation": "Cosine similarity computes a dot product and magnitudes over corresponding dimensions. If vector A has 1536 elements and vector B has 3072, you cannot define a dot product — there is no mathematical operation that produces a meaningful result. The API will raise an error. This is why you must commit to one embedding model at index creation time."
+        }
+      ]
+    },
+    {
+      "type": "cheatsheet",
+      "content": "## Vector Databases — Quick Reference\n\n### ChromaDB (Local)\n```python\nimport chromadb\nclient = chromadb.PersistentClient('./db')\ncol = client.get_or_create_collection('name', metadata={'hnsw:space': 'cosine'})\ncol.add(documents=[...], metadatas=[...], ids=[...])\ncol.upsert(...)  # add or update\nresults = col.query(query_texts=['...'], n_results=5, where={'field': {'$eq': 'val'}})\n# distance → similarity: 1 - results['distances'][0][i]\n```\n\n### Pinecone (Production)\n```python\nfrom pinecone import Pinecone, ServerlessSpec\npc = Pinecone(api_key=...)\nindex = pc.Index('name')\nindex.upsert(vectors=[{'id': 'x', 'values': [...], 'metadata': {...}}])\nresults = index.query(vector=[...], top_k=5, include_metadata=True, filter={'key': {'$eq': 'val'}})\n```\n\n### pgvector (SQL)\n```sql\nCREATE EXTENSION vector;\nALTER TABLE docs ADD COLUMN embedding vector(1536);\nCREATE INDEX ON docs USING hnsw (embedding vector_cosine_ops);\nSELECT * FROM docs ORDER BY embedding <=> '[...]' LIMIT 5;\n```\n\n### Metadata Filter Operators\n- `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`\n- `$and: [{...}, {...}]`, `$or: [{...}, {...}]`\n\n### Choosing a Vector DB\n| Scale | Choice |\n|-------|--------|\n| Dev/prototype | ChromaDB local |\n| Postgres team | pgvector |\n| Production managed | Pinecone |\n| Self-hosted prod | Qdrant, Weaviate |"
+    }
+  ]
+}
