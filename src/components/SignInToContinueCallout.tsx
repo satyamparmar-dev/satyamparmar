@@ -31,7 +31,7 @@ const SignInToContinueCallout: React.FC<Props> = ({
   };
 
   const label =
-    EMAIL_ALLOWLIST_GATE_ENABLED ? 'Sign in to continue' : 'Log in to continue';
+    EMAIL_ALLOWLIST_GATE_ENABLED ? 'Sign in to continue' : 'Sign in / Register';
 
   return (
     <Paper

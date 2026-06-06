@@ -187,7 +187,8 @@ const Header: React.FC<Props> = ({ onMenuToggle }) => {
           </IconButton>
         </Tooltip>
 
-        {EMAIL_ALLOWLIST_GATE_ENABLED && !gateEmail && (
+        {((EMAIL_ALLOWLIST_GATE_ENABLED && !gateEmail) ||
+          (AUTH_LOGIN_ENABLED && !currentUser)) && (
           <Button
             variant="outlined"
             size="small"
@@ -198,7 +199,7 @@ const Header: React.FC<Props> = ({ onMenuToggle }) => {
             }
             sx={{ mr: 1, fontWeight: 700, textTransform: 'none', flexShrink: 0 }}
           >
-            Sign in
+            {AUTH_LOGIN_ENABLED ? 'Sign in / Register' : 'Sign in'}
           </Button>
         )}
 

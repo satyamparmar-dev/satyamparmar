@@ -9,10 +9,10 @@ import Roadmap from '../pages/Roadmap';
 import Bookmarks from '../pages/Bookmarks';
 import Settings from '../pages/Settings';
 import ScenarioDrill from '../pages/ScenarioDrill';
-import LlmOverview from '../pages/LlmOverview';
+import ComingSoonPage from '../pages/ComingSoonPage';
 import BlogIndex from '../pages/BlogIndex';
 import BlogPost from '../pages/BlogPost';
-import EmailLoginRoute from '../pages/EmailLoginRoute';
+import LoginRoute from '../pages/LoginRoute';
 import { RouteErrorBoundary } from '../components/RouteErrorBoundary';
 import CompaniesHome from '../pages/companies/CompaniesHome';
 import MorganStanley from '../pages/companies/MorganStanley';
@@ -36,16 +36,12 @@ import KafkaCourseHome from '../pages/kafkaCourse/KafkaCourseHome';
 import KafkaCourseLesson from '../pages/kafkaCourse/KafkaCourseLesson';
 import JavaCourseHome from '../pages/javaCourse/JavaCourseHome';
 import JavaCourseLesson from '../pages/javaCourse/JavaCourseLesson';
-import ClaudeCourseHome from '../pages/claudeCourse/ClaudeCourseHome';
-import ClaudeCourseLesson from '../pages/claudeCourse/ClaudeCourseLesson';
-import PromptEngineeringCourseHome from '../pages/promptEngineeringCourse/PromptEngineeringCourseHome';
-import PromptEngineeringCourseLesson from '../pages/promptEngineeringCourse/PromptEngineeringCourseLesson';
 import CourseAccessGuard from '../components/CourseAccessGuard';
 import Pricing from '../pages/Pricing';
 
 const AppRoutes: React.FC = () => (
   <Routes>
-    <Route path="/login" element={<EmailLoginRoute />} />
+    <Route path="/login" element={<LoginRoute />} />
     <Route path="/" element={<Dashboard />} />
     <Route
       path="/learn/:dayNumber"
@@ -75,11 +71,7 @@ const AppRoutes: React.FC = () => (
     <Route path="/pricing" element={<Pricing />} />
     <Route
       path="/llm"
-      element={
-        <CourseAccessGuard courseId="genai-roadmap">
-          <LlmOverview />
-        </CourseAccessGuard>
-      }
+      element={<ComingSoonPage title="LLM & GenAI" />}
     />
     <Route path="/java-repo" element={<CourseAccessGuard courseId="java-roadmap" />}>
       <Route index element={<JavaGithubHome />} />
@@ -91,12 +83,14 @@ const AppRoutes: React.FC = () => (
       <Route index element={<KafkaCourseHome />} />
       <Route path="lesson/:lessonId" element={<KafkaCourseLesson />} />
     </Route>
-    <Route path="/claude-course" element={<CourseAccessGuard courseId="claude-for-developers" />}>
-      <Route index element={<ClaudeCourseHome />} />
-      <Route path="lesson/:lessonId" element={<ClaudeCourseLesson />} />
-    </Route>
-    <Route path="/prompt-course" element={<PromptEngineeringCourseHome />} />
-    <Route path="/prompt-course/lesson/:lessonId" element={<PromptEngineeringCourseLesson />} />
+    <Route
+      path="/claude-course/*"
+      element={<ComingSoonPage title="Claude for Developers" />}
+    />
+    <Route
+      path="/prompt-course/*"
+      element={<ComingSoonPage title="Prompt Engineering" />}
+    />
     <Route path="/java-course" element={<CourseAccessGuard courseId="java-modern" />}>
       <Route index element={<JavaCourseHome />} />
       <Route path="lesson/:lessonId" element={<JavaCourseLesson />} />

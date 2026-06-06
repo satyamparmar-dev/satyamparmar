@@ -5,6 +5,7 @@ import Header from './Header';
 import Sidebar from './Sidebar';
 import SearchModal from '../components/SearchModal';
 import { fetchCurriculum } from '../services/api';
+import { AI_CURRICULUM_COMING_SOON } from '../config/comingSoon';
 
 const DRAWER_WIDTH = 280;
 
@@ -13,7 +14,7 @@ interface Props {
 }
 
 const MainLayout: React.FC<Props> = ({ children }) => {
-  const { sidebarOpen, setSidebarOpen, curriculum, activeCurriculum, setCurriculum } = useAppStore();
+  const { sidebarOpen, setSidebarOpen, curriculum, activeCurriculum, setCurriculum, setActiveCurriculum } = useAppStore();
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('md'));
 
@@ -32,6 +33,12 @@ const MainLayout: React.FC<Props> = ({ children }) => {
   const handleMenuToggle = () => {
     setSidebarOpen(!sidebarOpen);
   };
+
+  useEffect(() => {
+    if (AI_CURRICULUM_COMING_SOON && activeCurriculum === 'ai') {
+      setActiveCurriculum('java');
+    }
+  }, [activeCurriculum, setActiveCurriculum]);
 
   useEffect(() => {
     if (curriculum) return;

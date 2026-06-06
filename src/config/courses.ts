@@ -67,7 +67,7 @@ export const COURSE_CATALOG: CourseDefinition[] = [
     lessons: 12,
     hours: 16,
     route: '/claude-course',
-    isAvailable: true,
+    isAvailable: false,
   },
   {
     id: 'prompt-engineering',
@@ -88,7 +88,7 @@ export const COURSE_CATALOG: CourseDefinition[] = [
     lessons: 16,
     hours: 18,
     route: '/prompt-course',
-    isAvailable: true,
+    isAvailable: false,
   },
   {
     id: 'java-modern',
@@ -151,7 +151,7 @@ export const COURSE_CATALOG: CourseDefinition[] = [
     lessons: 60,
     hours: 80,
     route: '/llm',
-    isAvailable: true,
+    isAvailable: false,
   },
 ];
 

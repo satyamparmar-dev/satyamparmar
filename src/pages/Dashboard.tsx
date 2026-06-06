@@ -20,6 +20,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../auth/useAuthStore';
 import { usePaymentStore } from '../store/usePaymentStore';
 import { getCourseDef } from '../config/courses';
+import { useAccessibleCourseIds } from '../hooks/useCourseAccess';
 import {
   getCompletedLessons as getJavaCompletedLessons,
   getTotalLessons as getJavaTotalLessons,
@@ -46,6 +47,7 @@ import LevelBadge from '../components/LevelBadge';
 import TrackBanner from '../components/TrackBanner';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { usePageTitle } from '../hooks/usePageTitle';
+import { AI_CURRICULUM_COMING_SOON } from '../config/comingSoon';
 
 const trackOptions: (Track | 'All')[] = ['All', 'Fresher', 'Mid-Level', 'Senior'];
 
@@ -72,6 +74,7 @@ const CURRICULUM_OPTIONS = [
     gradient: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
     accentColor: '#6366f1',
     days: 90,
+    comingSoon: AI_CURRICULUM_COMING_SOON,
   },
 ];
 
@@ -88,10 +91,13 @@ const CurriculumSwitcher: React.FC<CurriculumSwitcherProps> = ({ active, onSwitc
     <Grid container spacing={2}>
       {CURRICULUM_OPTIONS.map((opt) => {
         const isActive = active === opt.id;
+        const isDisabled = opt.comingSoon === true;
         return (
           <Grid item xs={12} sm={6} key={opt.id}>
             <Box
-              onClick={() => onSwitch(opt.id)}
+              onClick={() => {
+                if (!isDisabled) onSwitch(opt.id);
+              }}
               sx={{
                 position: 'relative',
                 borderRadius: 2.5,
@@ -100,16 +106,19 @@ const CurriculumSwitcher: React.FC<CurriculumSwitcherProps> = ({ active, onSwitc
                 background: isActive
                   ? alpha(opt.accentColor, 0.06)
                   : 'background.paper',
-                cursor: 'pointer',
+                cursor: isDisabled ? 'not-allowed' : 'pointer',
+                opacity: isDisabled ? 0.72 : 1,
                 p: 2,
                 transition: 'all 0.2s ease',
                 overflow: 'hidden',
-                '&:hover': {
-                  borderColor: opt.accentColor,
-                  background: alpha(opt.accentColor, 0.04),
-                  transform: 'translateY(-2px)',
-                  boxShadow: `0 6px 20px ${alpha(opt.accentColor, 0.18)}`,
-                },
+                '&:hover': isDisabled
+                  ? {}
+                  : {
+                      borderColor: opt.accentColor,
+                      background: alpha(opt.accentColor, 0.04),
+                      transform: 'translateY(-2px)',
+                      boxShadow: `0 6px 20px ${alpha(opt.accentColor, 0.18)}`,
+                    },
               }}
             >
               {/* Active stripe accent at top */}
@@ -164,6 +173,20 @@ const CurriculumSwitcher: React.FC<CurriculumSwitcherProps> = ({ active, onSwitc
                         }}
                       />
                     )}
+                    {isDisabled && (
+                      <Chip
+                        label="Coming Soon"
+                        size="small"
+                        sx={{
+                          height: 18,
+                          fontSize: '0.6rem',
+                          fontWeight: 700,
+                          bgcolor: 'action.hover',
+                          color: 'text.disabled',
+                          borderRadius: '6px',
+                        }}
+                      />
+                    )}
                   </Box>
                   <Typography variant="caption" color="text.secondary" display="block" mb={0.75}>
                     {opt.subtitle} · {opt.days} days
@@ -189,7 +212,7 @@ const CurriculumSwitcher: React.FC<CurriculumSwitcherProps> = ({ active, onSwitc
               </Box>
 
               {/* Switch CTA — shown only on inactive card */}
-              {!isActive && (
+              {!isActive && !isDisabled && (
                 <Box mt={1.5} display="flex" justifyContent="flex-end">
                   <Button
                     size="small"
@@ -260,7 +283,7 @@ const Dashboard: React.FC = () => {
   usePageTitle('Dashboard');
   const navigate = useNavigate();
   const userId = useAuthStore((s) => s.currentUser?.userId ?? null);
-  const purchasesForUser = usePaymentStore((s) => (userId ? s.purchasesByUser[userId] : undefined));
+  const accessibleCourseIds = useAccessibleCourseIds();
   const [paymentHydrated, setPaymentHydrated] = useState(() => usePaymentStore.persist.hasHydrated());
 
   useEffect(() => {
@@ -271,10 +294,12 @@ const Dashboard: React.FC = () => {
     return usePaymentStore.persist.onFinishHydration(() => setPaymentHydrated(true));
   }, []);
 
-  const myPurchasedCourses = useMemo(() => {
-    if (!userId || !purchasesForUser) return [];
-    return Object.values(purchasesForUser).sort((a, b) => b.purchasedAt - a.purchasedAt);
-  }, [userId, purchasesForUser]);
+  const myAccessibleCourses = useMemo(() => {
+    if (!userId) return [];
+    return accessibleCourseIds
+      .map((courseId) => getCourseDef(courseId))
+      .filter((def): def is NonNullable<typeof def> => !!def && def.isAvailable);
+  }, [userId, accessibleCourseIds]);
 
   const {
     curriculum, setCurriculum, loadPhase, loadedPhases,
@@ -417,7 +442,7 @@ const Dashboard: React.FC = () => {
               <CircularProgress size={28} sx={{ color: '#667eea' }} />
             </CardContent>
           </Card>
-        ) : myPurchasedCourses.length === 0 ? (
+        ) : myAccessibleCourses.length === 0 ? (
           <Card variant="outlined" sx={{ borderStyle: 'dashed' }}>
             <CardContent sx={{ py: 3, textAlign: 'center' }}>
               <Typography variant="body1" fontWeight={700} gutterBottom>
@@ -438,12 +463,10 @@ const Dashboard: React.FC = () => {
           </Card>
         ) : (
           <Grid container spacing={2}>
-            {myPurchasedCourses.map((p) => {
-              const def = getCourseDef(p.courseId);
-              if (!def) return null;
-              const pct = getPaidCourseProgressPercent(p.courseId);
+            {myAccessibleCourses.map((def) => {
+              const pct = getPaidCourseProgressPercent(def.id);
               return (
-                <Grid item xs={12} sm={6} md={4} key={p.courseId}>
+                <Grid item xs={12} sm={6} md={4} key={def.id}>
                   <Card sx={{ height: '100%' }}>
                     <CardContent sx={{ p: 2 }}>
                       <Typography variant="subtitle2" fontWeight={800} gutterBottom>
@@ -579,7 +602,7 @@ const Dashboard: React.FC = () => {
                 variant="outlined"
                 fullWidth
                 startIcon={<RecordVoiceOverIcon />}
-                onClick={() => navigate(`/scenarios?day=${progress.currentDay}`)}
+                onClick={() => navigate('/scenarios?view=themes')}
                 sx={{ fontWeight: 600, py: 1, mb: 1.5 }}
               >
                 Scenario interview drill
@@ -588,10 +611,10 @@ const Dashboard: React.FC = () => {
                 variant="outlined"
                 fullWidth
                 startIcon={<AutoAwesomeIcon />}
-                onClick={() => navigate('/llm')}
-                sx={{ fontWeight: 600, py: 1, mb: 1.5 }}
+                disabled
+                sx={{ fontWeight: 600, py: 1, mb: 1.5, opacity: 0.72 }}
               >
-                LLM &amp; GenAI overview
+                LLM &amp; GenAI overview — Coming Soon
               </Button>
               <Button
                 variant="outlined"

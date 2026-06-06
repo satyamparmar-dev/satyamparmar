@@ -33,6 +33,8 @@ import { useContentAccess } from '../auth/ContentAccessContext';
 import SignInToContinueCallout from '../components/SignInToContinueCallout';
 import McqSectionBlock from '../components/McqSectionBlock';
 import { usePageTitle } from '../hooks/usePageTitle';
+import { SCENARIO_CURRICULUM_BY_DAY_DISABLED } from '../config/comingSoon';
+import { AI_CURRICULUM_COMING_SOON } from '../config/comingSoon';
 
 type SectionTab = 'why' | 'theory' | 'code' | 'diagram' | 'pitfalls' | 'exercise' | 'useCases' | 'interview' | 'mcq' | 'cheatsheet' | 'assignment' | 'video';
 
@@ -130,7 +132,7 @@ const Learn: React.FC = () => {
   const savedNote = progress.notes[String(dayNum)] ?? '';
 
   useEffect(() => {
-    if (activeCurriculum !== 'java') {
+    if (activeCurriculum !== 'java' || SCENARIO_CURRICULUM_BY_DAY_DISABLED) {
       setScenarioDrillDays(new Set());
       return;
     }
@@ -299,7 +301,9 @@ const Learn: React.FC = () => {
             }}
           >
             <ToggleButton value="java">Java Track</ToggleButton>
-            <ToggleButton value="ai">AI / GenAI Track</ToggleButton>
+            <ToggleButton value="ai" disabled={AI_CURRICULUM_COMING_SOON}>
+              AI / GenAI Track{AI_CURRICULUM_COMING_SOON ? ' (Soon)' : ''}
+            </ToggleButton>
           </ToggleButtonGroup>
         </Box>
 
@@ -358,7 +362,7 @@ const Learn: React.FC = () => {
         </Box>
       </Box>
 
-      {scenarioDrillDays?.has(dayNum) && (
+      {scenarioDrillDays?.has(dayNum) && !SCENARIO_CURRICULUM_BY_DAY_DISABLED && (
         <Alert
           severity="info"
           sx={{ mb: 3, borderRadius: 2 }}

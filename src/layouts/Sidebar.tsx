@@ -37,19 +37,28 @@ import { useAppStore, selectCompletionRate } from '../store/useAppStore';
 import { getLevelColor } from '../utils/formatters';
 import { APP_DISPLAY_NAME } from '../constants/branding';
 import { CurriculumId } from '../types';
+import { AI_CURRICULUM_COMING_SOON } from '../config/comingSoon';
 
 const DRAWER_WIDTH = 280;
 
-const navItems = [
+type NavItem = {
+  path: string;
+  icon: React.ReactNode;
+  label: string;
+  badge?: string;
+  comingSoon?: boolean;
+};
+
+const navItems: NavItem[] = [
   { path: '/', icon: <DashboardIcon />, label: 'Dashboard' },
   { path: '/progress', icon: <BarChartIcon />, label: 'Progress' },
   { path: '/scenarios', icon: <RecordVoiceOverIcon />, label: 'Scenarios' },
-  { path: '/llm', icon: <AutoAwesomeIcon />, label: 'LLM & GenAI' },
+  { path: '/llm', icon: <AutoAwesomeIcon />, label: 'LLM & GenAI', comingSoon: true },
   { path: '/java-course', icon: <LocalCafeIcon />, label: 'Java Course', badge: 'NEW' },
   { path: '/pricing', icon: <LocalOfferIcon />, label: 'Pricing' },
   { path: '/kafka-course', icon: <HubIcon />, label: 'Kafka Course', badge: 'NEW' },
-  { path: '/claude-course', icon: <AutoAwesomeIcon />, label: 'Claude for developers', badge: 'NEW' },
-  { path: '/prompt-course', icon: <AutoAwesomeIcon />, label: 'Prompt Engineering', badge: 'NEW' },
+  { path: '/claude-course', icon: <AutoAwesomeIcon />, label: 'Claude for developers', comingSoon: true },
+  { path: '/prompt-course', icon: <AutoAwesomeIcon />, label: 'Prompt Engineering', comingSoon: true },
   { path: '/blog', icon: <MenuBookIcon />, label: 'Topics & blog' },
   { path: '/roadmap', icon: <MapIcon />, label: 'Roadmap' },
   { path: '/companies', icon: <BusinessIcon />, label: 'Companies' },
@@ -142,13 +151,16 @@ const Sidebar: React.FC<Props> = ({ open, onClose }) => {
         <Box display="flex" gap={1}>
           {(['java', 'ai'] as CurriculumId[]).map((id) => {
             const isActive = activeCurriculum === id;
+            const isDisabled = id === 'ai' && AI_CURRICULUM_COMING_SOON;
             const cfg = id === 'java'
               ? { label: '☕ Java', color: '#f59e0b' }
               : { label: '🤖 AI / GenAI', color: '#6366f1' };
             return (
               <Box
                 key={id}
-                onClick={() => setActiveCurriculum(id)}
+                onClick={() => {
+                  if (!isDisabled) setActiveCurriculum(id);
+                }}
                 sx={{
                   flex: 1,
                   py: 0.6,
@@ -157,16 +169,29 @@ const Sidebar: React.FC<Props> = ({ open, onClose }) => {
                   border: '1.5px solid',
                   borderColor: isActive ? cfg.color : 'divider',
                   bgcolor: isActive ? `${cfg.color}18` : 'transparent',
-                  color: isActive ? cfg.color : 'text.secondary',
-                  cursor: 'pointer',
+                  color: isDisabled ? 'text.disabled' : isActive ? cfg.color : 'text.secondary',
+                  cursor: isDisabled ? 'not-allowed' : 'pointer',
+                  opacity: isDisabled ? 0.65 : 1,
                   textAlign: 'center',
                   fontSize: '0.68rem',
                   fontWeight: isActive ? 800 : 500,
                   transition: 'all 0.18s ease',
-                  '&:hover': { borderColor: cfg.color, color: cfg.color },
+                  position: 'relative',
+                  '&:hover': isDisabled
+                    ? {}
+                    : { borderColor: cfg.color, color: cfg.color },
                 }}
               >
                 {cfg.label}
+                {isDisabled && (
+                  <Typography
+                    component="span"
+                    display="block"
+                    sx={{ fontSize: '0.5rem', fontWeight: 700, mt: 0.15, color: 'text.disabled' }}
+                  >
+                    Soon
+                  </Typography>
+                )}
               </Box>
             );
           })}
@@ -177,23 +202,33 @@ const Sidebar: React.FC<Props> = ({ open, onClose }) => {
       <Box component="nav" aria-label="Main navigation" sx={{ px: 1.5, py: 1.5 }}>
         <List disablePadding dense>
           {navItems.map((item) => {
-            const active = location.pathname === item.path ||
-              (item.path !== '/' && location.pathname.startsWith(item.path));
+            const active = !item.comingSoon && (
+              location.pathname === item.path ||
+              (item.path !== '/' && location.pathname.startsWith(item.path))
+            );
             return (
               <ListItem disablePadding key={item.path} sx={{ mb: 0.25 }}>
                 <ListItemButton
-                  onClick={() => handleNav(item.path)}
+                  onClick={() => {
+                    if (!item.comingSoon) handleNav(item.path);
+                  }}
+                  disabled={item.comingSoon}
                   sx={{
                     borderRadius: 2,
                     py: 0.75,
                     px: 1.5,
                     bgcolor: active ? 'rgba(102,126,234,0.12)' : 'transparent',
-                    color: active ? 'primary.main' : 'text.secondary',
-                    '&:hover': {
-                      bgcolor: active
-                        ? 'rgba(102,126,234,0.18)'
-                        : 'action.hover',
-                      color: active ? 'primary.main' : 'text.primary',
+                    color: item.comingSoon ? 'text.disabled' : active ? 'primary.main' : 'text.secondary',
+                    '&:hover': item.comingSoon
+                      ? {}
+                      : {
+                          bgcolor: active
+                            ? 'rgba(102,126,234,0.18)'
+                            : 'action.hover',
+                          color: active ? 'primary.main' : 'text.primary',
+                        },
+                    '&.Mui-disabled': {
+                      opacity: 0.72,
                     },
                   }}
                 >
@@ -224,6 +259,20 @@ const Sidebar: React.FC<Props> = ({ open, onClose }) => {
                         borderRadius: '4px',
                         color: '#f59e0b',
                         bgcolor: 'rgba(245,158,11,0.15)',
+                      }}
+                    />
+                  )}
+                  {item.comingSoon && (
+                    <Chip
+                      label="SOON"
+                      size="small"
+                      sx={{
+                        height: 16,
+                        fontSize: '0.55rem',
+                        fontWeight: 700,
+                        borderRadius: '4px',
+                        color: 'text.disabled',
+                        bgcolor: 'action.hover',
                       }}
                     />
                   )}

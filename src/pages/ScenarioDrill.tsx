@@ -34,6 +34,7 @@ import { parseMarkdown } from '../utils/markdown';
 import { useContentAccess } from '../auth/ContentAccessContext';
 import SignInToContinueCallout from '../components/SignInToContinueCallout';
 import { usePageTitle } from '../hooks/usePageTitle';
+import { SCENARIO_CURRICULUM_BY_DAY_DISABLED } from '../config/comingSoon';
 
 function bundleByDayMap(data: ScenarioDrillData): Map<number, ScenarioDayBundle> {
   const m = new Map<number, ScenarioDayBundle>();
@@ -78,9 +79,10 @@ const ScenarioDrill: React.FC = () => {
     return Number.isFinite(n) && n > 0 ? n : 1;
   });
   const [search, setSearch] = useState('');
-  const [viewMode, setViewMode] = useState<'curriculum' | 'themes'>(() =>
-    viewParam === 'themes' ? 'themes' : 'curriculum'
-  );
+  const [viewMode, setViewMode] = useState<'curriculum' | 'themes'>(() => {
+    if (SCENARIO_CURRICULUM_BY_DAY_DISABLED) return 'themes';
+    return viewParam === 'themes' ? 'themes' : 'curriculum';
+  });
   const [themeId, setThemeId] = useState<string>(themeParam ?? '');
 
   useEffect(() => {
@@ -101,7 +103,17 @@ const ScenarioDrill: React.FC = () => {
         setDrill(d);
 
         const themes = d.interviewThemes ?? [];
-        if (viewParam === 'themes' && themes.length > 0) {
+        if (SCENARIO_CURRICULUM_BY_DAY_DISABLED) {
+          if (themes.length > 0) {
+            const tid =
+              themeParam && themes.some((t) => t.id === themeParam) ? themeParam : themes[0].id;
+            if (!cancelled) {
+              setViewMode('themes');
+              setThemeId(tid);
+              setSearchParams({ view: 'themes', theme: tid }, { replace: true });
+            }
+          }
+        } else if (viewParam === 'themes' && themes.length > 0) {
           const tid =
             themeParam && themes.some((t) => t.id === themeParam) ? themeParam : themes[0].id;
           if (!cancelled) {
@@ -111,57 +123,59 @@ const ScenarioDrill: React.FC = () => {
           }
         }
 
-        let resolvedPhase = phaseParam;
-        let resolvedDay = dayParam ? Number(dayParam) : NaN;
+        if (!SCENARIO_CURRICULUM_BY_DAY_DISABLED) {
+          let resolvedPhase = phaseParam;
+          let resolvedDay = dayParam ? Number(dayParam) : NaN;
 
-        const n = dayParam ? Number(dayParam) : NaN;
-        if (Number.isFinite(n) && n > 0) {
-          setDayNum(n);
-          const ph = curr.phases.find((p) => {
-            const [s, e] = (p.days ?? '0–0').split('–').map(Number);
-            return n >= s && n <= e;
-          });
-          if (ph) {
-            setPhaseId(ph.id);
-            resolvedPhase = ph.id;
-            resolvedDay = n;
+          const n = dayParam ? Number(dayParam) : NaN;
+          if (Number.isFinite(n) && n > 0) {
+            setDayNum(n);
+            const ph = curr.phases.find((p) => {
+              const [s, e] = (p.days ?? '0–0').split('–').map(Number);
+              return n >= s && n <= e;
+            });
+            if (ph) {
+              setPhaseId(ph.id);
+              resolvedPhase = ph.id;
+              resolvedDay = n;
+            }
+          } else if (curr && !phaseParam) {
+            const first = curr.phases[0];
+            if (first) {
+              const start = Number((first.days ?? '0–0').split('–')[0]);
+              setPhaseId(first.id);
+              setDayNum(start);
+              resolvedPhase = first.id;
+              resolvedDay = start;
+            }
+          } else if (phaseParam && curr.phases.some((p) => p.id === phaseParam)) {
+            setPhaseId(phaseParam);
+            const p = curr.phases.find((x) => x.id === phaseParam)!;
+            const [start, end] = (p.days ?? '0–0').split('–').map(Number);
+            const dn = dayParam ? Number(dayParam) : NaN;
+            if (Number.isFinite(dn) && dn >= start && dn <= end) {
+              setDayNum(dn);
+              resolvedDay = dn;
+            } else {
+              setDayNum(start);
+              resolvedDay = start;
+            }
+            resolvedPhase = phaseParam;
           }
-        } else if (curr && !phaseParam) {
-          const first = curr.phases[0];
-          if (first) {
-            const start = Number((first.days ?? '0–0').split('–')[0]);
-            setPhaseId(first.id);
-            setDayNum(start);
-            resolvedPhase = first.id;
-            resolvedDay = start;
-          }
-        } else if (phaseParam && curr.phases.some((p) => p.id === phaseParam)) {
-          setPhaseId(phaseParam);
-          const p = curr.phases.find((x) => x.id === phaseParam)!;
-          const [start, end] = (p.days ?? '0–0').split('–').map(Number);
-          const dn = dayParam ? Number(dayParam) : NaN;
-          if (Number.isFinite(dn) && dn >= start && dn <= end) {
-            setDayNum(dn);
-            resolvedDay = dn;
-          } else {
-            setDayNum(start);
-            resolvedDay = start;
-          }
-          resolvedPhase = phaseParam;
-        }
 
-        if (!resolvedPhase || !Number.isFinite(resolvedDay) || resolvedDay < 1) {
-          const f = curr.phases[0];
-          if (f) {
-            resolvedPhase = f.id;
-            resolvedDay = Number((f.days ?? '0–0').split('–')[0]);
-            setPhaseId(f.id);
-            setDayNum(resolvedDay);
+          if (!resolvedPhase || !Number.isFinite(resolvedDay) || resolvedDay < 1) {
+            const f = curr.phases[0];
+            if (f) {
+              resolvedPhase = f.id;
+              resolvedDay = Number((f.days ?? '0–0').split('–')[0]);
+              setPhaseId(f.id);
+              setDayNum(resolvedDay);
+            }
           }
-        }
 
-        if (resolvedPhase && Number.isFinite(resolvedDay) && resolvedDay > 0) {
-          setSearchParams({ phase: resolvedPhase, day: String(resolvedDay) }, { replace: true });
+          if (resolvedPhase && Number.isFinite(resolvedDay) && resolvedDay > 0) {
+            setSearchParams({ phase: resolvedPhase, day: String(resolvedDay) }, { replace: true });
+          }
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load scenario drill');
@@ -201,7 +215,11 @@ const ScenarioDrill: React.FC = () => {
   }, [viewMode, interviewThemes, themeId]);
 
   useEffect(() => {
-    if (viewMode === 'themes' && interviewThemes.length === 0) {
+    if (SCENARIO_CURRICULUM_BY_DAY_DISABLED && viewMode === 'curriculum') {
+      setViewMode('themes');
+      return;
+    }
+    if (viewMode === 'themes' && interviewThemes.length === 0 && !SCENARIO_CURRICULUM_BY_DAY_DISABLED) {
       setViewMode('curriculum');
     }
   }, [viewMode, interviewThemes.length]);
@@ -246,6 +264,7 @@ const ScenarioDrill: React.FC = () => {
 
   const handleViewMode = (_: React.MouseEvent<HTMLElement>, next: 'curriculum' | 'themes' | null) => {
     if (!next || !drill) return;
+    if (next === 'curriculum' && SCENARIO_CURRICULUM_BY_DAY_DISABLED) return;
     setViewMode(next);
     setSearch('');
     if (next === 'themes') {
@@ -309,7 +328,7 @@ const ScenarioDrill: React.FC = () => {
         </Box>
       </Box>
 
-      {(interviewThemes.length > 0 || viewMode === 'themes') && (
+      {(interviewThemes.length > 0 || viewMode === 'themes' || SCENARIO_CURRICULUM_BY_DAY_DISABLED) && (
         <Box mb={2}>
           <ToggleButtonGroup
             exclusive
@@ -319,7 +338,9 @@ const ScenarioDrill: React.FC = () => {
             color="primary"
             sx={{ flexWrap: 'wrap' }}
           >
-            <ToggleButton value="curriculum">Curriculum (by day)</ToggleButton>
+            <ToggleButton value="curriculum" disabled={SCENARIO_CURRICULUM_BY_DAY_DISABLED}>
+              Curriculum (by day){SCENARIO_CURRICULUM_BY_DAY_DISABLED ? ' — Soon' : ''}
+            </ToggleButton>
             <ToggleButton value="themes" disabled={interviewThemes.length === 0}>
               Interview themes
             </ToggleButton>
@@ -327,9 +348,16 @@ const ScenarioDrill: React.FC = () => {
         </Box>
       )}
 
+      {SCENARIO_CURRICULUM_BY_DAY_DISABLED && viewMode === 'curriculum' && (
+        <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
+          Curriculum scenarios mapped by day are coming soon. Use <strong>Interview themes</strong> in the
+          meantime.
+        </Alert>
+      )}
+
       <Card sx={{ mb: 3 }}>
         <CardContent sx={{ p: 2 }}>
-          {viewMode === 'curriculum' ? (
+          {viewMode === 'curriculum' && !SCENARIO_CURRICULUM_BY_DAY_DISABLED ? (
             <GridFilters
               phases={phases}
               phaseId={phaseId}
@@ -352,7 +380,7 @@ const ScenarioDrill: React.FC = () => {
         </CardContent>
       </Card>
 
-      {viewMode === 'curriculum' && activeBundle && activeBundle.scenarios.length > 0 && (
+      {viewMode === 'curriculum' && !SCENARIO_CURRICULUM_BY_DAY_DISABLED && activeBundle && activeBundle.scenarios.length > 0 && (
         <Typography variant="subtitle2" color="text.secondary" gutterBottom>
           Day {activeBundle.day}: {activeBundle.title}
           {(activeBundle.tags?.length ?? 0) > 0 && (
@@ -386,7 +414,7 @@ const ScenarioDrill: React.FC = () => {
         </Box>
       )}
 
-      {viewMode === 'curriculum' && !activeBundle?.scenarios?.length && (
+      {viewMode === 'curriculum' && !SCENARIO_CURRICULUM_BY_DAY_DISABLED && !activeBundle?.scenarios?.length && (
         <Alert severity="warning" sx={{ borderRadius: 2 }}>
           No scenario bundles for Day {dayNum} yet. Try another day or add{' '}
           <code>public/data/days/scenarioDrill-day{dayNum}.json</code> (and list the day in{' '}

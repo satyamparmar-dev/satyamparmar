@@ -1,5 +1,5 @@
 /** Legacy password + OTP flow (LoginPage). Disabled when using email allowlist gate. */
-export const AUTH_LOGIN_ENABLED = false; // temporarily disabled — re-enable when ready
+export const AUTH_LOGIN_ENABLED = true;
 
 /**
  * Email allowlist for **full** content (solutions, full theory, quiz answers, scenario drill

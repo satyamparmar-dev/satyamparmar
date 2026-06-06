@@ -13,6 +13,7 @@ import { getLevelColor, getTrackColor } from '../utils/formatters';
 import LevelBadge from '../components/LevelBadge';
 import PrintIcon from '@mui/icons-material/Print';
 import { usePageTitle } from '../hooks/usePageTitle';
+import { AI_CURRICULUM_COMING_SOON } from '../config/comingSoon';
 
 const trackOptions: (Track | 'All')[] = ['All', 'Fresher', 'Mid-Level', 'Senior'];
 
@@ -70,7 +71,9 @@ const Roadmap: React.FC = () => {
           onChange={(_, value: CurriculumId | null) => value && setActiveCurriculum(value)}
         >
           <ToggleButton value="java">Java Track</ToggleButton>
-          <ToggleButton value="ai">AI / GenAI Track</ToggleButton>
+          <ToggleButton value="ai" disabled={AI_CURRICULUM_COMING_SOON}>
+            AI / GenAI Track{AI_CURRICULUM_COMING_SOON ? ' (Soon)' : ''}
+          </ToggleButton>
         </ToggleButtonGroup>
       </Box>
 
