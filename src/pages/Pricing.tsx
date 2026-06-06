@@ -18,13 +18,14 @@ import {
   BUNDLE_PRICE,
   BUNDLE_SAVINGS,
   COURSE_CATALOG,
+  LIST_SUM,
   type CourseDefinition,
 } from '../config/courses';
 import AccessEnquiryNotice from '../components/AccessEnquiryNotice';
 import { useAccessibleCourseIds } from '../hooks/useCourseAccess';
 import { usePageTitle } from '../hooks/usePageTitle';
 
-const LIST_TOTAL = 799 + 799 + 799 + 1499 + 1499;
+const LIST_TOTAL = LIST_SUM;
 
 const Pricing: React.FC = () => {
   usePageTitle('Courses & Pricing');
@@ -123,7 +124,7 @@ const Pricing: React.FC = () => {
         Choose Your Learning Path
       </Typography>
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        One-time payment. Lifetime access. Contact us by phone or email to complete enrollment.
+        One-time payment. Lifetime access. Contact us by phone, WhatsApp, or email to complete enrollment.
       </Typography>
 
       <Grid container spacing={2}>
@@ -295,8 +296,8 @@ const Pricing: React.FC = () => {
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.65 }}>
           {isAuthenticated
-            ? 'Share your registered email when you contact us so we can activate your course access after payment.'
-            : 'Create an account first, then contact us with your registered email to complete enrollment.'}
+            ? 'Share your registered email when you reach us on telephone, WhatsApp, or email so we can activate your course access after payment.'
+            : 'Create an account first, then contact us by telephone, WhatsApp, or email with your registered email to complete enrollment.'}
         </Typography>
         {!isAuthenticated && (
           <Button

@@ -1,8 +1,11 @@
 import React from 'react';
 import { Box, Typography, Link } from '@mui/material';
 
-const ACCESS_ENQUIRY_PHONE = '08618905855';
-const ACCESS_ENQUIRY_EMAIL = 'Satyverse008@gmail.com';
+export const ACCESS_ENQUIRY_PHONE = '08618905855';
+export const ACCESS_ENQUIRY_PHONE_DISPLAY = '08618905855';
+/** E.164 without + for wa.me links (India). */
+export const ACCESS_ENQUIRY_WHATSAPP = '918618905855';
+export const ACCESS_ENQUIRY_EMAIL = 'Satyverse008@gmail.com';
 
 interface Props {
   /** When true (default), top divider separates this block inside a card. When false, use below a full card (e.g. legacy login page). */
@@ -29,7 +32,7 @@ const AccessEnquiryNotice: React.FC<Props> = ({ embedded = true }) => {
       >
         Access to this course and its learning materials is restricted to authorised
         participants. If you require access or wish to enquire about enrolment, please
-        contact us using the details below.
+        contact us by telephone, WhatsApp, or email using the details below.
       </Typography>
       <Typography
         variant="body2"
@@ -41,7 +44,28 @@ const AccessEnquiryNotice: React.FC<Props> = ({ embedded = true }) => {
           Telephone
         </Box>
         <Link href={`tel:${ACCESS_ENQUIRY_PHONE}`} underline="hover" color="primary">
-          {ACCESS_ENQUIRY_PHONE}
+          {ACCESS_ENQUIRY_PHONE_DISPLAY}
+        </Link>
+        <Box
+          component="span"
+          sx={{
+            display: 'block',
+            fontWeight: 600,
+            color: 'text.primary',
+            mt: 1.25,
+            mb: 0.25,
+          }}
+        >
+          WhatsApp
+        </Box>
+        <Link
+          href={`https://wa.me/${ACCESS_ENQUIRY_WHATSAPP}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          underline="hover"
+          color="primary"
+        >
+          {ACCESS_ENQUIRY_PHONE_DISPLAY}
         </Link>
         <Box
           component="span"

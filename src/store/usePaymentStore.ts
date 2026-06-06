@@ -4,7 +4,9 @@ import type { PersistStorage } from 'zustand/middleware';
 import { encryptedPersistStorage } from '../auth/encryptedStorage';
 import { BUNDLE_PRICE, COURSE_CATALOG, getCourseDef } from '../config/courses';
 
-const LIST_PRICE_SUM = 799 + 799 + 1499 + 1499;
+function listPriceSum(): number {
+  return COURSE_CATALOG.reduce((sum, c) => sum + c.price, 0);
+}
 
 const ORDER_CHARS = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
@@ -20,7 +22,7 @@ function createSimulatedOrderId(): string {
 
 /** Per-course rupee amounts for a bundle purchase; sums exactly to {@link BUNDLE_PRICE}. */
 function bundleAmountsByCourseId(): Record<string, number> {
-  const raw = COURSE_CATALOG.map((c) => Math.floor((c.price / LIST_PRICE_SUM) * BUNDLE_PRICE));
+  const raw = COURSE_CATALOG.map((c) => Math.floor((c.price / listPriceSum()) * BUNDLE_PRICE));
   const sum = raw.reduce((a, b) => a + b, 0);
   const remainder = BUNDLE_PRICE - sum;
   const out: Record<string, number> = {};
